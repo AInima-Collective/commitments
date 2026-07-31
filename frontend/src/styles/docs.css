@@ -1,0 +1,294 @@
+/* Docs route prose — uses semantic tokens defined in tokens.css.
+ * No new color values; light/dark inherits from `data-theme`. */
+
+.ds-doc-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) 1fr;
+  gap: var(--space-8);
+  align-items: start;
+  padding: var(--space-6) var(--space-8);
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* The overview and direct-only historical pages skip the secondary sidebar;
+ * current documentation sections render their own scoped navigation tree. */
+.ds-doc-shell[data-layout='single'] {
+  grid-template-columns: 1fr;
+  max-width: 880px;
+}
+
+@media (width <= 800px) {
+  .ds-doc-shell {
+    grid-template-columns: 1fr;
+    padding: var(--space-4);
+  }
+}
+
+.ds-doc-shell-sidebar {
+  position: sticky;
+  top: var(--space-4);
+  align-self: start;
+  max-height: calc(100vh - var(--space-8));
+  overflow-y: auto;
+  border-right: var(--border-width) solid var(--border);
+  padding-right: var(--space-4);
+}
+
+@media (width <= 800px) {
+  .ds-doc-shell-sidebar {
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--border);
+    padding-right: 0;
+    padding-bottom: var(--space-4);
+  }
+}
+
+.ds-doc-shell-content {
+  min-width: 0;
+}
+
+/* ---- Sidebar ---- */
+.ds-doc-sidebar {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.ds-doc-sidebar-link,
+.ds-doc-sidebar-link--root,
+.ds-doc-sidebar-link--section {
+  display: block;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.ds-doc-sidebar-link:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.ds-doc-sidebar-link.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ds-doc-sidebar-link--root {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: var(--space-2);
+}
+
+.ds-doc-sidebar-section {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  font-size: var(--text-xs);
+}
+
+.ds-doc-sidebar-link--section {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ds-doc-sidebar-children {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Article ---- */
+.ds-doc {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--text);
+  max-width: 78ch;
+}
+
+.ds-doc--loading {
+  color: var(--text-subtle);
+}
+
+.ds-doc h1 {
+  font-size: var(--text-2xl);
+  margin-top: 0;
+  margin-bottom: var(--space-4);
+  letter-spacing: -0.01em;
+}
+
+.ds-doc h2 {
+  font-size: var(--text-xl);
+  margin-top: var(--space-12);
+  margin-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.ds-doc h3 {
+  font-size: var(--text-lg);
+  margin-top: var(--space-8);
+  margin-bottom: var(--space-2);
+}
+
+.ds-doc h4 {
+  font-size: var(--text-base);
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-muted);
+}
+
+.ds-doc-heading-anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ds-doc-heading-anchor:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text-subtle);
+}
+
+.ds-doc p,
+.ds-doc ul,
+.ds-doc ol,
+.ds-doc blockquote,
+.ds-doc table {
+  margin-top: 0;
+  margin-bottom: var(--space-4);
+}
+
+.ds-doc ul,
+.ds-doc ol {
+  padding-left: var(--space-6);
+}
+
+.ds-doc li > p {
+  margin-bottom: var(--space-2);
+}
+
+.ds-doc a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ds-doc a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.ds-doc blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: var(--space-4);
+  color: var(--text-muted);
+}
+
+.ds-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.ds-doc th,
+.ds-doc td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+  text-align: left;
+}
+
+.ds-doc th {
+  background: var(--surface-2);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ds-doc-inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ds-doc-codeblock,
+.ds-doc-codeblock-fallback {
+  margin: 0 0 var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: var(--text-sm);
+}
+
+.ds-doc-codeblock pre,
+.ds-doc-codeblock-fallback {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  line-height: 1.55;
+}
+
+.ds-doc-codeblock pre code,
+.ds-doc-codeblock-fallback code {
+  background: transparent;
+  padding: 0;
+  border: none;
+}
+
+/* Shiki injects inline color styles; the wrapper background should match the surface token. */
+.ds-doc-codeblock pre {
+  background: var(--surface-2) !important;
+}
+
+.ds-doc-mermaid {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  overflow-x: auto;
+}
+
+.ds-doc-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.ds-doc-mermaid-error {
+  background: var(--error-soft);
+  color: var(--error);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--error);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.ds-doc-banner {
+  margin-bottom: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.ds-doc-banner code {
+  font-family: var(--font-mono);
+}
+
+.ds-doc-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}

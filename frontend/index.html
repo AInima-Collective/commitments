@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-webtui-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Commitments — composable enforceable agreements</title>
+    <meta
+      name="description"
+      content="On-chain enforceable agreements backed by productive capital. Lock yield-bearing collateral to back a commitment an arbiter you choose can release or forfeit — the primitive behind restaking, insurance, DAO treaties, and mutual-aid pools."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Commitments — composable enforceable agreements" />
+    <meta
+      property="og:description"
+      content="On-chain enforceable agreements backed by productive capital. Lock yield-bearing collateral to back a commitment an arbiter you choose can release or forfeit — the primitive behind restaking, insurance, DAO treaties, and mutual-aid pools."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Commitments — composable enforceable agreements" />
+    <meta
+      name="twitter:description"
+      content="On-chain enforceable agreements backed by productive capital — the primitive behind restaking, insurance, DAO treaties, and mutual-aid pools."
+    />
+    <script>
+      // Set [data-theme] before React boots to avoid FOUC on /design.
+      //
+      // [data-palette] and [data-type] are the live experiment axes driven from
+      // /app/lab (see components/ui/labTheme.ts). They are replayed here for the
+      // same reason as the theme: the whole palette and the display typeface key
+      // off these attributes, so applying them after hydration would flash the
+      // default direction first. [data-mark] is stamped too, purely so the store
+      // can read its initial value off the DOM rather than localStorage twice.
+      (function () {
+        var root = document.documentElement;
+        function pick(key, allowed, fallback) {
+          try {
+            var v = window.localStorage.getItem(key);
+            return v && allowed.indexOf(v) !== -1 ? v : fallback;
+          } catch (_) {
+            return fallback;
+          }
+        }
+        try {
+          var stored = window.localStorage.getItem('commitments.theme');
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          root.setAttribute('data-theme', theme);
+        } catch (_) {
+          root.setAttribute('data-theme', 'dark');
+        }
+        root.setAttribute('data-palette', pick(
+          'commitments.palette', ['neutral', 'bone', 'void', 'ash'], 'neutral'));
+        root.setAttribute('data-type', pick(
+          'commitments.type',
+          ['newsreader', 'instrument', 'spectral', 'garamond', 'cormorant', 'mono'],
+          'newsreader'));
+        root.setAttribute('data-mark', pick(
+          'commitments.mark',
+          ['seal', 'orbit', 'vesica', 'sigil', 'interlock', 'dovetail', 'bind',
+           'nested', 'held', 'tally', 'double', 'corners'],
+          'held'));
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

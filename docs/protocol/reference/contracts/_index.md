@@ -1,0 +1,88 @@
+---
+title: Generated Contracts
+status: generated
+generated: true
+---
+
+# Generated Contract Reference
+
+Auto-generated from Solidity NatSpec via `just docs-gen`. Edit the contracts to update these pages.
+
+- [ERC20StaticAdapter](/docs/protocol/reference/contracts/backing/ERC20StaticAdapter) — `backing/ERC20StaticAdapter.md`
+- [ERC4626Adapter](/docs/protocol/reference/contracts/backing/ERC4626Adapter) — `backing/ERC4626Adapter.md`
+- [BaseContext](/docs/protocol/reference/contracts/core/interfaces/BaseContext) — `core/interfaces/BaseContext.md`
+- [ClaimContext](/docs/protocol/reference/contracts/core/interfaces/ClaimContext) — `core/interfaces/ClaimContext.md`
+- [CreatedContext](/docs/protocol/reference/contracts/core/interfaces/CreatedContext) — `core/interfaces/CreatedContext.md`
+- [DistributeContext](/docs/protocol/reference/contracts/core/interfaces/DistributeContext) — `core/interfaces/DistributeContext.md`
+- [ForfeitContext](/docs/protocol/reference/contracts/core/interfaces/ForfeitContext) — `core/interfaces/ForfeitContext.md`
+- [IBackingAdapter](/docs/protocol/reference/contracts/core/interfaces/IBackingAdapter) — `core/interfaces/IBackingAdapter.md`
+- [ICommitmentManager](/docs/protocol/reference/contracts/core/interfaces/ICommitmentManager) — `core/interfaces/ICommitmentManager.md`
+- [IDistributionStrategy](/docs/protocol/reference/contracts/core/interfaces/IDistributionStrategy) — `core/interfaces/IDistributionStrategy.md`
+- [LifecycleContext](/docs/protocol/reference/contracts/core/interfaces/LifecycleContext) — `core/interfaces/LifecycleContext.md`
+- [MovementKind](/docs/protocol/reference/contracts/core/interfaces/MovementKind) — `core/interfaces/MovementKind.md`
+- [StrategyBinding](/docs/protocol/reference/contracts/core/interfaces/StrategyBinding) — `core/interfaces/StrategyBinding.md`
+- [TokenMovement](/docs/protocol/reference/contracts/core/interfaces/TokenMovement) — `core/interfaces/TokenMovement.md`
+- [CommitmentManager](/docs/protocol/reference/contracts/core/manager/CommitmentManager) — `core/manager/CommitmentManager.md`
+- [PauseLib](/docs/protocol/reference/contracts/core/manager/libraries/PauseLib) — `core/manager/libraries/PauseLib.md`
+- [CounterpartyPremiumStream](/docs/protocol/reference/contracts/distributions/CounterpartyPremiumStream) — `distributions/CounterpartyPremiumStream.md`
+- [FlatFeeAtCreate](/docs/protocol/reference/contracts/distributions/FlatFeeAtCreate) — `distributions/FlatFeeAtCreate.md`
+- [IndexAppreciationYield](/docs/protocol/reference/contracts/distributions/IndexAppreciationYield) — `distributions/IndexAppreciationYield.md`
+- [FanInNode](/docs/protocol/reference/contracts/extensions/mesh/FanInNode) — `extensions/mesh/FanInNode.md`
+- [FanOutNode](/docs/protocol/reference/contracts/extensions/mesh/FanOutNode) — `extensions/mesh/FanOutNode.md`
+- [MeshFactory](/docs/protocol/reference/contracts/extensions/mesh/MeshFactory) — `extensions/mesh/MeshFactory.md`
+- [TokenWeighting](/docs/protocol/reference/contracts/extensions/mesh/TokenWeighting) — `extensions/mesh/TokenWeighting.md`
+- [AvailableDenom](/docs/protocol/reference/contracts/extensions/mesh/interfaces/AvailableDenom) — `extensions/mesh/interfaces/AvailableDenom.md`
+- [ConsumerInfo](/docs/protocol/reference/contracts/extensions/mesh/interfaces/ConsumerInfo) — `extensions/mesh/interfaces/ConsumerInfo.md`
+- [DenomLink](/docs/protocol/reference/contracts/extensions/mesh/interfaces/DenomLink) — `extensions/mesh/interfaces/DenomLink.md`
+- [FanOutLien](/docs/protocol/reference/contracts/extensions/mesh/interfaces/FanOutLien) — `extensions/mesh/interfaces/FanOutLien.md`
+- [FlowNodeTypes](/docs/protocol/reference/contracts/extensions/mesh/interfaces/FlowNodeTypes) — `extensions/mesh/interfaces/FlowNodeTypes.md`
+- [IFanIn](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFanIn) — `extensions/mesh/interfaces/IFanIn.md`
+- [IFanOut](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFanOut) — `extensions/mesh/interfaces/IFanOut.md`
+- [IFlowQuery](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFlowQuery) — `extensions/mesh/interfaces/IFlowQuery.md`
+- [IFlowQueryPath](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFlowQueryPath) — `extensions/mesh/interfaces/IFlowQueryPath.md`
+- [IMeshFactory](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IMeshFactory) — `extensions/mesh/interfaces/IMeshFactory.md`
+- [ITokenWeighting](/docs/protocol/reference/contracts/extensions/mesh/interfaces/ITokenWeighting) — `extensions/mesh/interfaces/ITokenWeighting.md`
+- [Outflow](/docs/protocol/reference/contracts/extensions/mesh/interfaces/Outflow) — `extensions/mesh/interfaces/Outflow.md`
+- [ProviderInfo](/docs/protocol/reference/contracts/extensions/mesh/interfaces/ProviderInfo) — `extensions/mesh/interfaces/ProviderInfo.md`
+- [StakeInfo](/docs/protocol/reference/contracts/extensions/mesh/interfaces/StakeInfo) — `extensions/mesh/interfaces/StakeInfo.md`
+- [UserInfo](/docs/protocol/reference/contracts/extensions/mesh/interfaces/UserInfo) — `extensions/mesh/interfaces/UserInfo.md`
+- [ClaimRouter](/docs/protocol/reference/contracts/extensions/mutuals/ClaimRouter) — `extensions/mutuals/ClaimRouter.md`
+- [LinkedMutualPolicy](/docs/protocol/reference/contracts/extensions/mutuals/LinkedMutualPolicy) — `extensions/mutuals/LinkedMutualPolicy.md`
+- [MutualRegistry](/docs/protocol/reference/contracts/extensions/mutuals/MutualRegistry) — `extensions/mutuals/MutualRegistry.md`
+- [OptimisticMutualArbiter](/docs/protocol/reference/contracts/extensions/mutuals/OptimisticMutualArbiter) — `extensions/mutuals/OptimisticMutualArbiter.md`
+- [PremiumScheduler](/docs/protocol/reference/contracts/extensions/mutuals/PremiumScheduler) — `extensions/mutuals/PremiumScheduler.md`
+- [IBandValuationAdapter](/docs/protocol/reference/contracts/extensions/mutuals/interfaces/IBandValuationAdapter) — `extensions/mutuals/interfaces/IBandValuationAdapter.md`
+- [ILinkedMutualPolicy](/docs/protocol/reference/contracts/extensions/mutuals/interfaces/ILinkedMutualPolicy) — `extensions/mutuals/interfaces/ILinkedMutualPolicy.md`
+- [CommitmentsRewardsCoordinator](/docs/protocol/reference/contracts/extensions/rewards/CommitmentsRewardsCoordinator) — `extensions/rewards/CommitmentsRewardsCoordinator.md`
+- [MerkleSnapshot](/docs/protocol/reference/contracts/extensions/rewards/MerkleSnapshot) — `extensions/rewards/MerkleSnapshot.md`
+- [MerkleSnapshotAdapter](/docs/protocol/reference/contracts/extensions/rewards/MerkleSnapshotAdapter) — `extensions/rewards/MerkleSnapshotAdapter.md`
+- [RewardsCoordinatorFactory](/docs/protocol/reference/contracts/extensions/rewards/RewardsCoordinatorFactory) — `extensions/rewards/RewardsCoordinatorFactory.md`
+- [ICommitmentsRewardsCoordinator](/docs/protocol/reference/contracts/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator) — `extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.md`
+- [IMerkleSnapshot](/docs/protocol/reference/contracts/extensions/rewards/interfaces/IMerkleSnapshot) — `extensions/rewards/interfaces/IMerkleSnapshot.md`
+- [OperatorCommissionCoupon](/docs/protocol/reference/contracts/extensions/services/distributions/OperatorCommissionCoupon) — `extensions/services/distributions/OperatorCommissionCoupon.md`
+- [IOperatorRegistry](/docs/protocol/reference/contracts/extensions/services/interfaces/IOperatorRegistry) — `extensions/services/interfaces/IOperatorRegistry.md`
+- [IOperatorServiceRegistry](/docs/protocol/reference/contracts/extensions/services/interfaces/IOperatorServiceRegistry) — `extensions/services/interfaces/IOperatorServiceRegistry.md`
+- [IServiceHandler](/docs/protocol/reference/contracts/extensions/services/interfaces/IServiceHandler) — `extensions/services/interfaces/IServiceHandler.md`
+- [IServiceManager](/docs/protocol/reference/contracts/extensions/services/interfaces/IServiceManager) — `extensions/services/interfaces/IServiceManager.md`
+- [OperatorRegistry](/docs/protocol/reference/contracts/extensions/services/operator-registry/OperatorRegistry) — `extensions/services/operator-registry/OperatorRegistry.md`
+- [OperatorServiceRegistry](/docs/protocol/reference/contracts/extensions/services/service-registry/OperatorServiceRegistry) — `extensions/services/service-registry/OperatorServiceRegistry.md`
+- [ERC8004IdentityRegistryDev](/docs/protocol/reference/contracts/periphery/agents/ERC8004IdentityRegistryDev) — `periphery/agents/ERC8004IdentityRegistryDev.md`
+- [AttestationArbiter](/docs/protocol/reference/contracts/periphery/arbiters/AttestationArbiter) — `periphery/arbiters/AttestationArbiter.md`
+- [ManualArbiter](/docs/protocol/reference/contracts/periphery/arbiters/ManualArbiter) — `periphery/arbiters/ManualArbiter.md`
+- [OptimisticInsuranceArbiter](/docs/protocol/reference/contracts/periphery/arbiters/OptimisticInsuranceArbiter) — `periphery/arbiters/OptimisticInsuranceArbiter.md`
+- [CommitmentsGovernor](/docs/protocol/reference/contracts/periphery/governance/CommitmentsGovernor) — `periphery/governance/CommitmentsGovernor.md`
+- [CommitmentsTimelock](/docs/protocol/reference/contracts/periphery/governance/CommitmentsTimelock) — `periphery/governance/CommitmentsTimelock.md`
+- [GovernorFactory](/docs/protocol/reference/contracts/periphery/governance/GovernorFactory) — `periphery/governance/GovernorFactory.md`
+- [TokenWeightingVotesShim](/docs/protocol/reference/contracts/periphery/governance/TokenWeightingVotesShim) — `periphery/governance/TokenWeightingVotesShim.md`
+- [CommitmentsVault](/docs/protocol/reference/contracts/periphery/vaults/CommitmentsVault) — `periphery/vaults/CommitmentsVault.md`
+- [ForfeitDonationBeneficiary](/docs/protocol/reference/contracts/periphery/vaults/ForfeitDonationBeneficiary) — `periphery/vaults/ForfeitDonationBeneficiary.md`
+- [VaultCoverConduit](/docs/protocol/reference/contracts/periphery/vaults/VaultCoverConduit) — `periphery/vaults/VaultCoverConduit.md`
+- [VaultFactory](/docs/protocol/reference/contracts/periphery/vaults/VaultFactory) — `periphery/vaults/VaultFactory.md`
+- [ICommitmentsVault](/docs/protocol/reference/contracts/periphery/vaults/interfaces/ICommitmentsVault) — `periphery/vaults/interfaces/ICommitmentsVault.md`
+- [IYieldStrategy](/docs/protocol/reference/contracts/periphery/vaults/interfaces/IYieldStrategy) — `periphery/vaults/interfaces/IYieldStrategy.md`
+- [IdleStrategy](/docs/protocol/reference/contracts/periphery/vaults/strategies/IdleStrategy) — `periphery/vaults/strategies/IdleStrategy.md`
+- [PremiumSkimStrategy](/docs/protocol/reference/contracts/periphery/vaults/strategies/PremiumSkimStrategy) — `periphery/vaults/strategies/PremiumSkimStrategy.md`
+- [ArbiterCapabilities](/docs/protocol/reference/contracts/shared/arbitration/ArbiterCapabilities) — `shared/arbitration/ArbiterCapabilities.md`
+- [IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter) — `shared/arbitration/interfaces/IArbiter.md`
+- [IEntity](/docs/protocol/reference/contracts/shared/interfaces/IEntity) — `shared/interfaces/IEntity.md`
+- [IVotingPowerSource](/docs/protocol/reference/contracts/shared/interfaces/IVotingPowerSource) — `shared/interfaces/IVotingPowerSource.md`

@@ -1,0 +1,751 @@
+/* Landing page — distinct, marketing-shaped layout that bypasses the app
+ * shell. All colors come from tokens.css; nothing here uses hex literals
+ * (Phase 28 lock — see commitments/CLAUDE.md §Tokens).
+ *
+ * The page is its own document: full-bleed hero, generous vertical rhythm,
+ * a wide reading column. Sections compose ds-* primitives where possible.
+ */
+
+.lp-shell {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+.lp-skip {
+  position: absolute;
+  top: -40px;
+  left: var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+  border: var(--border-width) solid var(--border-strong);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  z-index: 100;
+}
+
+.lp-skip:focus {
+  top: var(--space-3);
+}
+
+.lp-skip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lp-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: var(--border-width) solid var(--border);
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+}
+
+/* Older browsers without backdrop-filter (Firefox Android default off):
+ * fall back to opaque so the nav doesn't bleed scrolled content through. */
+@supports not (backdrop-filter: blur(8px)) {
+  .lp-nav { background: var(--bg); }
+}
+
+.lp-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+/* Matches .ds-topnav-brand — the global `a:hover` underline would otherwise
+ * underline the wordmark. */
+.lp-nav-brand:hover { text-decoration: none; }
+
+.lp-nav-brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lp-nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lp-nav-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lp-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Section frame ---------------------------------------------------------- */
+
+.lp-section {
+  width: 100%;
+  padding: var(--space-16) var(--space-6);
+  display: flex;
+  justify-content: center;
+}
+
+/* Editorial rhythm. A uniform 32px gap between every child made the body
+ * sections read as an evenly-spaced list rather than a page: the eyebrow sat
+ * as far from its own heading as the heading sat from the content it
+ * introduced. Gap is dropped in favour of per-child margins so the eyebrow
+ * hugs its heading and the illustration gets real air above it.
+ *
+ * The hero and the closing section keep the uniform centred stack — they are
+ * bookends, not body copy — and reset the margins below. */
+.lp-section-inner {
+  width: 100%;
+  max-width: 1080px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lp-section-inner > * + * { margin-top: var(--space-4); }
+
+/* The eyebrow belongs to its heading, so it sits closer than the lead does.
+ * Keep these two values distinct — at equal gaps the three read as a list. */
+.lp-section-inner > .lp-section-heading { margin-top: var(--space-3); }
+.lp-section-inner > .lp-section-lead { margin-top: var(--space-6); }
+
+.lp-section-inner > .lp-concept,
+.lp-section-inner > .lp-app-grid {
+  margin-top: var(--space-12);
+}
+
+.lp-hero-inner > * + *,
+.lp-closing-inner > * + * {
+  margin-top: 0;
+}
+
+/* Section eyebrow sits on a hairline that runs to the measure, the way a
+ * running head sits on a rule in printed matter. Body sections only — the
+ * centred bookends would look arbitrary with a rule hanging off one side. */
+.lp-section-inner > .lp-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.lp-section-inner > .lp-eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.lp-hero-inner > .lp-eyebrow,
+.lp-closing-inner > .lp-eyebrow {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.lp-hero-inner > .lp-eyebrow::after,
+.lp-closing-inner > .lp-eyebrow::after {
+  content: none;
+}
+
+/* Hero ------------------------------------------------------------------- */
+
+/* The hero claims the fold. It previously ran to about 620px on a 900px
+ * viewport, so "The primitive" was already pushing into frame while the
+ * headline was still being read — the page opened as a list of sections
+ * rather than a statement. min-height (not height) so the block still grows
+ * on short or zoomed viewports instead of clipping. */
+.lp-hero {
+  min-height: min(88vh, 920px);
+  align-items: center;
+  padding-top: clamp(var(--space-12), 9vh, 112px);
+  padding-bottom: clamp(var(--space-12), 9vh, 112px);
+}
+
+/* Centered, mirroring .lp-closing-inner — the hero and the closing bookend
+ * the left-aligned body sections.
+ *
+ * Rhythm is per-child rather than one uniform gap, for the same reason the
+ * body sections are: the eyebrow belongs to the headline, the CTAs are their
+ * own beat, and the band is a separate register again. */
+.lp-hero-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: center;
+  text-align: center;
+  max-width: 960px;
+}
+
+.lp-hero-inner > .lp-headline { margin-top: var(--space-8); }
+.lp-hero-inner > .lp-subhead { margin-top: var(--space-6); }
+.lp-hero-inner > .lp-cta-row { margin-top: var(--space-8); }
+
+/* The eyebrow comes in two forms:
+ *   - .lp-eyebrow            : bare uppercase label (used at every section
+ *                              head — "The primitive", "Stack and combine",
+ *                              "What you can build", "Why it matters")
+ *   - .lp-eyebrow + --chip   : framed status pill with an optional dot
+ *                              (used in the hero for release/locator metadata)
+ *
+ * Section eyebrows = topic. Chip eyebrows = status. Both share base
+ * typography so the two patterns read as siblings, not unrelated decisions.
+ */
+.lp-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.lp-eyebrow--chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.lp-eyebrow-dot {
+  display: inline-block;
+  width: var(--space-2);
+  height: var(--space-2);
+  background: var(--accent);
+}
+
+/* Headline / subhead / closing-heading clamps use rem units so users who
+ * raise their browser default font size benefit (vw alone ignores zoom and
+ * the user's root-size preference — WCAG 1.4.4 Resize Text). The viewport
+ * term stays so ultra-wide screens still scale. */
+.lp-headline {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 1.7rem + 3.4vw, 5.75rem);
+  line-height: 1.04;
+  letter-spacing: var(--display-tracking);
+  margin: 0;
+  font-weight: var(--display-weight);
+  color: var(--text);
+
+  /* Centred display type wrapping to a short last line is the failure mode
+   * here; balance spreads the lines evenly instead. */
+  text-wrap: balance;
+
+  /* Long compound words like "productive capital" still need to break at
+   * 360px; the serif hyphenates more gracefully than the mono did. */
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Emphasised word inside a headline. The palette no longer has a brand hue to
+ * spend here, so emphasis is carried typographically: the word drops into the
+ * serif italic. Reserve <em>/<strong> for actual emphasis (so SR users hear
+ * matching cadence) — this class is presentational only. */
+.lp-accent-word {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--text);
+}
+
+/* In the hero the emphasised phrase takes a line of its own. Left to balance
+ * the break landed mid-phrase ("Promises that make / themselves true"), which
+ * reads as a complete thought ending on "make". Blocking it puts the roman
+ * clause on one line and the italic on the next at every width, so the
+ * headline stops flipping between one and two lines across breakpoints.
+ * Scoped to .lp-headline: the closing heading sets its period outside the
+ * span and would orphan it onto a third line. */
+.lp-headline .lp-accent-word {
+  display: block;
+}
+
+/* Narrower than the 64ch body measure: centred mono over a long line is hard
+ * to track back to, and the shorter measure gives the headline above it room
+ * to stay the loudest thing in the frame. Balanced so the block doesn't end
+ * on a one-word line. */
+.lp-subhead {
+  font-family: var(--font-mono);
+  font-size: clamp(0.94rem, 0.85rem + 0.45vw, 1.1875rem);
+  line-height: 1.65;
+  color: var(--text-muted);
+  max-width: 62ch;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.lp-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Section heading + lead -------------------------------------------------- */
+
+.lp-section-heading {
+  font-family: var(--font-display);
+  font-size: clamp(1.625rem, 1.15rem + 1.4vw, 2.625rem);
+  line-height: 1.14;
+  letter-spacing: var(--display-tracking);
+  margin: 0;
+  font-weight: var(--display-weight);
+  color: var(--text);
+}
+
+.lp-section-lead {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  max-width: 64ch;
+  margin: 0;
+}
+
+/* Pull quote — the one place the marketing page speaks rather than specifies.
+ * Serif italic at a size above body copy; the rule and wash carry the ink,
+ * not a hue.
+ *
+ * `margin-top: auto` inside .lp-concept-body drops the quote to the foot of
+ * the text column, so it lands level with the figure's caption bar opposite
+ * it. Harmless outside a flex column. */
+.lp-pull-quote {
+  margin-top: auto;
+  border-left: 2px solid var(--border-strong);
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent-soft);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-xl);
+  line-height: 1.4;
+  color: var(--text);
+  max-width: 60ch;
+}
+
+.lp-pull-quote code {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  background: transparent;
+  padding: 0 2px;
+}
+
+/* Two-column "concept + illustration" pattern ---------------------------- */
+
+/* `align-items: stretch`, not `center`. Centring floated the diagram against
+ * a taller text column, so its top edge landed at an arbitrary point partway
+ * down the list beside it. Stretched, the two columns share a top and bottom
+ * edge and the diagram centres itself inside its own plate instead. */
+.lp-concept {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-12);
+  align-items: stretch;
+}
+
+@media (width <= 880px) {
+  .lp-concept {
+    grid-template-columns: 1fr;
+    gap: var(--space-8);
+  }
+}
+
+.lp-concept-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lp-concept-points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.lp-concept-point {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+/* Index marks should recede. --accent is now the text colour itself, so
+ * leaving these on it made the numbering louder than the prose it indexes. */
+.lp-concept-point-num {
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A ruled plate, not a filled card. The rest of the page moved to hairlines
+ * (section eyebrows, the applications table), so a --surface slab was the last
+ * thing on the landing page still drawn as a raised box. The caption now sits
+ * on a rule at the foot of the frame the way a plate caption does in print,
+ * instead of floating under the diagram inside the same padded area. */
+.lp-concept-illus {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  margin: 0;
+  padding: 0;
+  min-height: 340px;
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+}
+
+.lp-concept-illus-plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  min-width: 0;
+}
+
+.lp-concept-illus svg {
+  width: 100%;
+  height: auto;
+  max-width: 480px;
+}
+
+@media (width <= 880px) {
+  .lp-concept-illus { min-height: 240px; }
+  .lp-concept-illus-plate { padding: var(--space-4); }
+}
+
+@media (width <= 540px) {
+  .lp-concept-illus { min-height: 200px; }
+  .lp-concept-illus-plate { padding: var(--space-3); }
+}
+
+/* Subsection heading + body: a smaller heading-pair used inside .lp-concept
+ * blocks. Same vocabulary as .lp-section-heading / .lp-section-lead but a
+ * step down in the hierarchy. */
+.lp-subsection-heading {
+  font-family: var(--font-display);
+  font-size: calc(var(--text-xl) * var(--display-scale) * 1.15);
+  line-height: 1.15;
+  margin: 0;
+  color: var(--text);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+}
+
+.lp-subsection-body {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Footer bar of the plate: full-bleed across the frame, divided by a hairline,
+ * so it reads as the caption *of* the figure rather than another line of copy
+ * that happens to sit underneath it. */
+.lp-concept-illus-caption {
+  border-top: var(--border-width) solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  letter-spacing: 0.05em;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* Applications grid ------------------------------------------------------ */
+
+/* One ruled table, not eight floating boxes. Cells share hairlines: the grid
+ * draws its own top and left edge, each cell draws its right and bottom, so
+ * every rule is exactly 1px regardless of how the eight wrap. */
+.lp-app-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: var(--border-width) solid var(--border);
+  border-left: var(--border-width) solid var(--border);
+}
+
+@media (width <= 1180px) {
+  .lp-app-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (width <= 880px) {
+  .lp-app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (width <= 640px) {
+  .lp-app-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+}
+
+.lp-app-card {
+  padding: var(--space-4);
+  background: transparent;
+  border-right: var(--border-width) solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 160px;
+  transition: background var(--transition);
+}
+
+.lp-app-card:hover { background: var(--accent-soft); }
+
+/* Two-digit index. The set is finite and enumerated ("Eight applications of
+ * one primitive") so the numbers are describing the list, not decorating it. */
+.lp-app-card-index {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-app-card-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  color: var(--text);
+  letter-spacing: 0.02em;
+  font-weight: 500;
+}
+
+.lp-app-card-blurb {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+  margin: 0;
+}
+
+/* Closing tagline -------------------------------------------------------- */
+
+.lp-closing {
+  border-top: var(--border-width) solid var(--border);
+  padding-top: var(--space-16);
+  padding-bottom: var(--space-16);
+}
+
+.lp-closing-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  text-align: center;
+  max-width: 880px;
+}
+
+.lp-closing-heading {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.35rem + 2.2vw, 3.5rem);
+  line-height: 1.1;
+  letter-spacing: var(--display-tracking);
+  margin: 0;
+  font-weight: var(--display-weight);
+  color: var(--text);
+  max-width: 20ch;
+}
+
+.lp-closing-lead {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  max-width: 60ch;
+  margin: 0;
+}
+
+/* Footer ----------------------------------------------------------------- */
+
+.lp-footer {
+  border-top: var(--border-width) solid var(--border);
+  padding: var(--space-8) var(--space-6);
+  display: flex;
+  justify-content: center;
+  background: var(--surface);
+}
+
+.lp-footer-inner {
+  width: 100%;
+  max-width: 1080px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  letter-spacing: 0.05em;
+}
+
+.lp-footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lp-footer-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.lp-footer-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.lp-footer-link:hover {
+  color: var(--accent);
+}
+
+.lp-footer-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Illustration shared bits ----------------------------------------------- */
+
+.lp-illus-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  fill: var(--text-muted);
+}
+
+.lp-illus-label--accent {
+  fill: var(--accent);
+}
+
+.lp-illus-stroke {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  fill: none;
+}
+
+.lp-illus-stroke--accent {
+  stroke: var(--accent);
+}
+
+/* Value in motion. Structural connectors are solid and still — they say what
+ * is bound to what. A `.lp-illus-flow` line carries capital somewhere, so it
+ * is dashed and it marches in the direction the path is drawn. One dash
+ * period (4 + 4 units) per 1.6s: slow enough to read as a current rather
+ * than a barber pole, and it does not compete with the reveal cascade.
+ *
+ * The reduced-motion block below neutralises this (duration 0s, one
+ * iteration) along with every other looping animation under .lp-shell. */
+.lp-illus-flow {
+  stroke-dasharray: 4 4;
+  animation: lp-illus-flow 1.6s linear infinite;
+}
+
+@keyframes lp-illus-flow {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Belt and braces — useReducedMotion() in the JS layer is the primary
+   * gate, but if a `motion.*` slips through we still want to neutralise
+   * indefinitely-looping CSS animations on landing-scoped elements.
+   * Note: transition-duration is NOT killed here. Hover/focus transitions
+   * are feedback, not motion — users requesting reduced motion still want
+   * to see a focus ring move into place. */
+  .lp-shell *,
+  .lp-shell *::before,
+  .lp-shell *::after {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Mobile responsiveness ---------------------------------------------------
+ * Wroblewski + Levey: the page must work at 360 / 768 / 1024+. Group the
+ * mobile-only overrides at the bottom so the desktop layout above stays
+ * easy to scan. */
+
+/* Tablet & narrower ------------------------------------------------------- */
+@media (width <= 720px) {
+  /* Section padding halves so the page isn't 20% empty padding per
+   * viewport on a phone. */
+  .lp-section {
+    padding: var(--space-12) var(--space-4);
+  }
+
+  .lp-hero,
+  .lp-closing {
+    padding-top: var(--space-12);
+    padding-bottom: var(--space-12);
+  }
+
+  /* Hide secondary nav links — they're still in the footer. Brand,
+   * theme toggle, and primary CTA stay. */
+  .lp-nav { padding: var(--space-3) var(--space-4); }
+  .lp-nav-secondary { display: none; }
+
+  /* Footer wraps; bump tap targets to 44px (WCAG 2.5.5). */
+  .lp-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .lp-footer-links {
+    gap: var(--space-2) var(--space-5);
+    row-gap: var(--space-3);
+  }
+
+  .lp-footer-link {
+    padding: var(--space-2) 0;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* Phone ------------------------------------------------------------------- */
+@media (width <= 540px) {
+  /* Drop sticky behaviour — 64px of permanent nav at top of a 360×640
+   * viewport eats too much real estate. */
+  .lp-nav { position: static; }
+
+  /* Stack CTA buttons full-width so each is unambiguously its own target. */
+  .lp-cta-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .lp-cta-row > * {
+    width: 100%;
+  }
+}

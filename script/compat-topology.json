@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "externalLibraries": {
+    "AgreementLib": [
+      "CommitmentLifecycleLib",
+      "MovementLib"
+    ],
+    "CommitmentLifecycleLib": [
+      "LedgerOpsLib"
+    ],
+    "CommitmentManager": [
+      "AgreementLib",
+      "CommitmentLifecycleLib",
+      "LedgerOpsLib",
+      "MovementLib",
+      "MutualLib"
+    ],
+    "MutualLib": [
+      "CommitmentLifecycleLib"
+    ]
+  },
+  "delegatecall": [
+    {
+      "caller": "CommitmentManager",
+      "targets": [
+        "AgreementLib",
+        "CommitmentLifecycleLib",
+        "LedgerOpsLib",
+        "MovementLib",
+        "MutualLib"
+      ],
+      "reason": "Solidity external-library dispatch against CommitmentManagerStorage"
+    },
+    {
+      "caller": "Multicallable",
+      "inheritedBy": [
+        "MeshFactory",
+        "VaultFactory"
+      ],
+      "targets": [
+        "self"
+      ],
+      "reason": "batched calls preserve the original caller"
+    }
+  ],
+  "erc1967Proxies": [
+    {
+      "implementation": "CommitmentManager",
+      "deployer": "DeployCommitmentManager"
+    },
+    {
+      "implementation": "CommitmentsGovernor",
+      "deployer": "GovernorFactory"
+    },
+    {
+      "implementation": "CommitmentsRewardsCoordinator",
+      "deployer": "RewardsCoordinatorFactory"
+    },
+    {
+      "implementation": "CommitmentsVault",
+      "deployer": "VaultFactory"
+    },
+    {
+      "implementation": "ERC8004IdentityRegistryDev",
+      "deployer": "Simulate"
+    },
+    {
+      "implementation": "MerkleSnapshot",
+      "deployer": "RewardsCoordinatorFactory"
+    },
+    {
+      "implementation": "OperatorRegistry",
+      "deployer": "DeployOperatorRegistry"
+    },
+    {
+      "implementation": "OperatorServiceRegistry",
+      "deployer": "DeployOperatorServiceRegistry"
+    }
+  ],
+  "minimalClones": [
+    {
+      "deployer": "GovernorFactory",
+      "implementations": [
+        "CommitmentsTimelock"
+      ],
+      "deterministic": false
+    },
+    {
+      "deployer": "MeshFactory",
+      "implementations": [
+        "FanInNode",
+        "FanOutNode",
+        "TokenWeighting"
+      ],
+      "deterministic": true
+    }
+  ],
+  "factoryOrder": [
+    {
+      "factory": "RewardsCoordinatorFactory",
+      "order": [
+        "MerkleSnapshot",
+        "CommitmentsRewardsCoordinator"
+      ]
+    },
+    {
+      "factory": "GovernorFactory",
+      "order": [
+        "TokenWeightingVotesShim",
+        "CommitmentsTimelock",
+        "CommitmentsGovernor"
+      ]
+    }
+  ]
+}

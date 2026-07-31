@@ -1,0 +1,21 @@
+packages:
+  - frontend
+  - indexer
+
+# This repo is developed on macOS but also built/tested inside a linux/arm64
+# devcontainer that bind-mounts the host's node_modules. pnpm platform-filters
+# the optional native deps (e.g. rollup's @rollup/rollup-<os>-<cpu> binary), so
+# a tree installed on one OS is missing the other OS's binary — which is why
+# vitest/vite previously failed in the container with
+# "Cannot find module @rollup/rollup-linux-arm64-gnu".
+# Listing both architectures makes `pnpm install` fetch binaries for both, so
+# the shared node_modules works on the host AND in the container.
+supportedArchitectures:
+  os:
+    - darwin
+    - linux
+  cpu:
+    - arm64
+  libc:
+    - glibc
+    - musl

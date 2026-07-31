@@ -1,0 +1,10 @@
+# Halmos configuration (verification/README.md). Run with:
+#   FOUNDRY_PROFILE=halmos halmos
+[global]
+# The halmos foundry profile builds into an isolated dir (foundry.toml) so
+# halmos never enumerates stale default-profile artifacts — sharing `out/`
+# crashes its invariant-target pass on the Foundry-only conformance suite.
+forge-build-out = "out-halmos"
+# Pinned for determinism across dev (linux-arm64, where yices — the 0.3.x
+# default — ships no binary) and CI.
+solver = "z3"

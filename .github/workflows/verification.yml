@@ -1,0 +1,134 @@
+# Formal verification for the final repository layout.
+#
+#   halmos   → every PR (bounded symbolic execution of verification/halmos/)
+#   certora  → PRs that touch covered contracts or the specs; full cloud proof
+#              when CERTORAKEY is configured, local compile+CVL-typecheck fallback
+#              (still catches spec/scene drift) when it isn't
+#   medusa   → nightly coverage-guided campaign on the conformance handlers
+#
+# All jobs run on x86-64 runners, so the arm64 workarounds documented in
+# verification/README.md (yices wheel, medusa source build) don't apply here.
+
+name: Formal Verification
+
+on:
+  pull_request:
+  schedule:
+    - cron: "30 3 * * *" # nightly medusa campaign
+  workflow_dispatch:
+
+jobs:
+  halmos:
+    name: halmos (symbolic, per PR)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Init public Solidity submodules
+        run: >-
+          git submodule update --init --recursive
+          lib/forge-std
+          lib/openzeppelin-contracts
+          lib/openzeppelin-contracts-upgradeable
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Install halmos
+        run: pipx install halmos==0.3.3
+      - name: Run symbolic harnesses
+        run: halmos -v
+        env:
+          FOUNDRY_PROFILE: halmos
+
+  certora:
+    name: certora (prover, covered contracts)
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect covered-contract changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            covered:
+              - 'src/core/**'
+              - 'src/backing/**'
+              - 'src/distributions/**'
+              - 'src/extensions/**'
+              - 'src/periphery/**'
+              - 'src/shared/**'
+              - 'test/manager/conformance/**'
+              - 'test/vault/**'
+              - 'verification/certora/**'
+              - 'foundry.toml'
+              - 'justfile'
+              - '.github/workflows/verification.yml'
+      - name: Init public Solidity submodules
+        if: steps.changes.outputs.covered == 'true' || github.event_name == 'workflow_dispatch'
+        run: >-
+          git submodule update --init --recursive
+          lib/forge-std
+          lib/openzeppelin-contracts
+          lib/openzeppelin-contracts-upgradeable
+      - name: Install certora-cli + solc
+        if: steps.changes.outputs.covered == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          pipx install certora-cli==8.16.2
+          curl -sL -o /usr/local/bin/solc0.8.27 \
+            https://github.com/ethereum/solidity/releases/download/v0.8.27/solc-static-linux
+          chmod +x /usr/local/bin/solc0.8.27
+      - name: Run prover (cloud when CERTORAKEY is set, local typecheck otherwise)
+        if: steps.changes.outputs.covered == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          CERTORAKEY: ${{ secrets.CERTORAKEY }}
+        run: |
+          set -euo pipefail
+          for conf in verification/certora/confs/*.conf; do
+            if [ -n "${CERTORAKEY:-}" ]; then
+              echo "::group::certoraRun $conf (cloud)"
+              certoraRun "$conf" --wait_for_results
+              echo "::endgroup::"
+            else
+              echo "::warning::CERTORAKEY not configured — running local typecheck only for $conf"
+              certoraRun "$conf" --compilation_steps_only
+            fi
+          done
+
+  medusa:
+    name: medusa (nightly campaign)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Init public Solidity submodules
+        run: >-
+          git submodule update --init --recursive
+          lib/forge-std
+          lib/openzeppelin-contracts
+          lib/openzeppelin-contracts-upgradeable
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Install medusa + crytic-compile
+        run: |
+          pipx install crytic-compile
+          curl -sL -o medusa.tar.gz \
+            https://github.com/crytic/medusa/releases/download/v1.5.1/medusa-linux-x64.tar.gz
+          tar xzf medusa.tar.gz && sudo mv medusa /usr/local/bin/ && rm medusa.tar.gz
+          medusa --version
+      - name: Restore fuzzing corpus
+        uses: actions/cache@v4
+        with:
+          path: verification/medusa/corpus
+          key: medusa-corpus-${{ github.run_id }}
+          restore-keys: medusa-corpus-
+      - name: Run campaign (4h)
+        run: medusa fuzz --config verification/medusa/medusa.json --timeout 14400
+        env:
+          FOUNDRY_PROFILE: medusa

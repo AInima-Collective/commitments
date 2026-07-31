@@ -1,0 +1,59 @@
+# Optional local IPFS node for the development loop.
+#
+# `just dev-up` must keep working with this stopped. Without a daemon the pin
+# endpoint falls back to inlining metadata as a `data:application/json;base64,…`
+# URI, which is self-contained and needs no network — that path is the reason
+# the offline dev loop works at all, and making it depend on Docker would be a
+# worse regression than the problem this file solves.
+#
+# What running it buys:
+#
+#   * Room. The contract caps `metadataURI` at 512 bytes, and an inline `data:`
+#     URI has to fit the entire document inside that. After the 29-byte prefix
+#     and base64's 4/3 inflation that leaves about 360 bytes of JSON: a title, a
+#     couple of sentences, and a few tags, with nothing to spare. An `ipfs://`
+#     URI is ~66 bytes no matter how long the document is.
+#   * The real path. `data:` skips the network entirely, so it exercises none of
+#     what production does — scheme allowlist, gateway rewrite, fetch, hash
+#     verification over fetched bytes. Pointing the indexer at a local gateway
+#     runs all of it.
+#
+# Usage:
+#
+#   docker compose up -d ipfs
+#   # indexer:  IPFS_API_URL=http://127.0.0.1:5001 IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/
+#   # frontend: VITE_IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/
+#
+# Note the gateway is plain HTTP. That is fine and deliberate: the fetcher's
+# allowlist rejects `http://` *URIs*, but an `ipfs://` URI is rewritten through
+# the configured gateway and the rewritten URL is fetched directly, without a
+# second scheme check. The same holds for the frontend's `rewriteIpfsURI`.
+
+services:
+  ipfs:
+    image: ipfs/kubo:v0.32.1
+    container_name: commitments-ipfs
+    restart: unless-stopped
+    ports:
+      # HTTP API — what POST /metadata/pin talks to. Bound to loopback: the
+      # Kubo API is unauthenticated and can rewrite node config, so exposing it
+      # on 0.0.0.0 hands the machine to anything that can reach the port.
+      - "127.0.0.1:5001:5001"
+      # Read-only gateway — what the indexer and the browser fetch through.
+      - "127.0.0.1:8080:8080"
+      # libp2p swarm. Public so content can actually be retrieved from peers.
+      - "4001:4001"
+      - "4001:4001/udp"
+    volumes:
+      - ipfs-data:/data/ipfs
+    environment:
+      # Bind inside the container; the port mappings above do the restricting.
+      IPFS_PROFILE: server
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ipfs-data:

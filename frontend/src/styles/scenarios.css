@@ -1,0 +1,86 @@
+/* Admin Scenarios picker — sidebar + detail layout.
+ * No new color values; visual treatment mirrors `ds-doc-sidebar*`. */
+
+.ds-scenarios-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (width <= 800px) {
+  .ds-scenarios-shell {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+}
+
+.ds-scenarios-sidebar {
+  position: sticky;
+  top: var(--space-3);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-right: var(--border-width) solid var(--border);
+  padding-right: var(--space-3);
+  max-height: calc(100vh - var(--space-12));
+  overflow-y: auto;
+}
+
+@media (width <= 800px) {
+  .ds-scenarios-sidebar {
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--border);
+    padding-right: 0;
+    padding-bottom: var(--space-3);
+  }
+}
+
+.ds-scenarios-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ds-scenarios-group-label {
+  padding: 0 var(--space-2);
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.ds-scenarios-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.ds-scenarios-link:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.ds-scenarios-link[aria-current='true'] {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ds-scenarios-detail {
+  min-width: 0;
+}

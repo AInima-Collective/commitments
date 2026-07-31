@@ -1,0 +1,106 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+script = "script"
+solc_version = "0.8.27"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+evm_version = "cancun"
+# Read-only access to the seed's metadata manifest. `Simulate.s.sol` cannot POST
+# to IPFS (it is Solidity) and `metadataURI` is immutable once written, so
+# payloads are pinned BEFORE the seed by `script/pin-metadata.mjs`, which writes
+# the `{ uri, json }` pairs here for the script to read back. Scoped to that one
+# generated file rather than the directory: nothing else in the seed reads from
+# disk, and a broad grant is how a script ends up quietly depending on a file
+# nobody knew was an input.
+fs_permissions = [{ access = "read", path = "./script/metadata-manifest.json" }]
+
+[profile.default.fuzz]
+runs = 256
+
+# Formal-verification profiles (verification/README.md). Same src/out/libs as
+# default so imports resolve identically; only the test dir moves, so the main
+# suite never compiles or runs the symbolic/fuzz harnesses. The manager-size
+# compiler restriction (see bottom of file) is re-declared per profile because
+# additional_compiler_profiles/compilation_restrictions do not fall back to the
+# default profile — without it the manager exceeds EIP-170 (Medusa's geth EVM
+# enforces deploy size).
+[profile.halmos]
+test = "verification/halmos"
+# Isolated build dir: halmos scans every artifact under `out`, so sharing the
+# default profile's dir leaks Foundry-only contracts (e.g. the conformance
+# invariant suite) into its enumeration — which crashes halmos 0.3.3's
+# invariant-target pass and floods the log with artifact-parse warnings.
+out = "out-halmos"
+# Halmos does not auto-deploy/link external libraries (bytecode placeholders →
+# setUp failure). Pin the five DELEGATECALL libs at fixed addresses at compile
+# time; the harnesses vm.etch the deployed code there in setUp. Addresses are
+# arbitrary reserved slots, mirrored in verification/halmos/HalmosBase.sol.
+libraries = [
+    "src/core/manager/libraries/LedgerOpsLib.sol:LedgerOpsLib:0x00000000000000000000000000000000000f1001",
+    "src/core/manager/libraries/CommitmentLifecycleLib.sol:CommitmentLifecycleLib:0x00000000000000000000000000000000000f1002",
+    "src/core/manager/libraries/MovementLib.sol:MovementLib:0x00000000000000000000000000000000000f1003",
+    "src/extensions/agreements/AgreementLib.sol:AgreementLib:0x00000000000000000000000000000000000f1004",
+    "src/extensions/mutuals/MutualLib.sol:MutualLib:0x00000000000000000000000000000000000f1005",
+]
+
+[[profile.halmos.additional_compiler_profiles]]
+name = "manager-size"
+optimizer_runs = 1
+
+[[profile.halmos.compilation_restrictions]]
+paths = "src/core/manager/CommitmentManager.sol"
+optimizer_runs = 1
+
+[profile.medusa]
+test = "verification/medusa"
+
+[[profile.medusa.additional_compiler_profiles]]
+name = "manager-size"
+optimizer_runs = 1
+
+[[profile.medusa.compilation_restrictions]]
+paths = "src/core/manager/CommitmentManager.sol"
+optimizer_runs = 1
+
+# RPC endpoints — resolved from env at `forge script`/`forge verify` time.
+# Sepolia (chainId 11155111): supply SEPOLIA_RPC_URL (Alchemy/Infura/public).
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
+
+# Etherscan verification keys, keyed by `--chain`/network name. ETHERSCAN_API_KEY
+# is an Etherscan v2 multichain key; `chain = 11155111` scopes it to Sepolia.
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
+
+[fmt]
+line_length = 120
+# Vendored third-party sources stay byte-identical to their upstream (see
+# src/vendor/erc8004/README.md) — formatting them would break provenance checks.
+ignore = ["src/vendor/erc8004/*.sol"]
+
+# `forge doc` emits an mdBook-style tree under `out` (out/src/SUMMARY.md +
+# out/src/<path>/<Contract>.sol/contract.<Name>.md). The frontend doc loader
+# walks the same tree; script/forge-doc-flatten.mjs prunes/rewrites it so the
+# pages live under docs/protocol/reference/contracts/<Name>.md.
+[doc]
+out = "docs/protocol/reference/contracts/_book"
+title = "Commitments Contracts"
+ignore = ["src/**/*Storage.sol"]
+
+# CommitmentManager is a dispatch shell at the EIP-170 (24,576-byte) ceiling: its
+# runtime is dominated by DELEGATECALLs into the external libraries (which stay at
+# optimizer_runs=200), so its OWN opcodes should be optimized for size, not runtime
+# gas. Compiling it at optimizer_runs=1 buys the deploy-size headroom the agreements
+# surface needs with negligible effect on protocol gas, and leaves every other
+# contract at 200. Removing this makes the manager exceed EIP-170.
+[[profile.default.additional_compiler_profiles]]
+name = "manager-size"
+optimizer_runs = 1
+
+[[profile.default.compilation_restrictions]]
+paths = "src/core/manager/CommitmentManager.sol"
+optimizer_runs = 1

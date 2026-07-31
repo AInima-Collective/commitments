@@ -1,0 +1,18 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "ignoreFiles": [
+    "src/styles/tokens.css",
+    "src/theme.css",
+    "node_modules/**",
+    "dist/**"
+  ],
+  "rules": {
+    "color-no-hex": [true, {
+      "message": "Hex color literals are not permitted outside src/styles/tokens.css. Reference a token via var(--*). Locked in Phase 28 (LCK-01)."
+    }],
+    "selector-class-pattern": ["^([a-z][a-z0-9]*)(-[a-z0-9]+)*(--([a-z][a-z0-9]*)(-[a-z0-9]+)*)?$", {
+      "message": "Expected kebab-case class with an optional BEM --modifier (e.g. ds-btn--primary). The design system uses BEM modifiers throughout."
+    }],
+    "no-descending-specificity": null
+  }
+}

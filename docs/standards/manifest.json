@@ -1,0 +1,420 @@
+{
+  "schemaVersion": 1,
+  "standards": [
+    {
+      "id": "ERC-COMMITMENTS",
+      "title": "Commitments Core",
+      "spec": "docs/standards/ERC-COMMITMENTS.md",
+      "status": "draft",
+      "dependencies": [
+        { "id": "ERC-20", "external": true }
+      ],
+      "interfaces": [
+        "src/core/interfaces/ICommitmentManager.sol",
+        "src/core/interfaces/IBackingAdapter.sol",
+        "src/core/interfaces/IDistributionStrategy.sol"
+      ],
+      "implementations": [
+        "src/core/manager/CommitmentManager.sol",
+        "src/backing/ERC20StaticAdapter.sol",
+        "src/backing/ERC4626Adapter.sol",
+        "src/distributions/CounterpartyPremiumStream.sol",
+        "src/distributions/FlatFeeAtCreate.sol",
+        "src/distributions/IndexAppreciationYield.sol"
+      ],
+      "conformanceTests": [
+        "test/manager/conformance/PartitionInvariant.t.sol",
+        "test/manager/conformance/PauseBudget.t.sol"
+      ],
+      "selectors": [
+        { "artifact": "ICommitmentManager", "selection": "remainder" },
+        { "artifact": "IBackingAdapter", "selection": "all" },
+        { "artifact": "IDistributionStrategy", "selection": "all" }
+      ]
+    },
+    {
+      "id": "ERC-COMMITMENTS-AGREEMENTS",
+      "title": "Agreements",
+      "spec": "docs/standards/ERC-COMMITMENTS-AGREEMENTS.md",
+      "status": "draft",
+      "dependencies": [
+        { "id": "ERC-COMMITMENTS" }
+      ],
+      "interfaces": [
+        "src/core/interfaces/ICommitmentManager.sol"
+      ],
+      "implementations": [
+        "src/core/manager/CommitmentManager.sol",
+        "src/extensions/agreements/AgreementLib.sol"
+      ],
+      "conformanceTests": [
+        "test/manager/Agreement.t.sol"
+      ],
+      "selectors": [
+        {
+          "artifact": "ICommitmentManager",
+          "selection": "names",
+          "functions": [
+            "acceptAgreement",
+            "agreementOf",
+            "agreementOfProposal",
+            "cancelAgreementProposal",
+            "forfeitAgreement",
+            "getAgreementPair",
+            "getAgreementSettlement",
+            "proposeAgreement",
+            "releaseAgreement",
+            "requestAgreementUnbond",
+            "settleAgreement"
+          ],
+          "events": [
+            "AgreementAccepted",
+            "AgreementForfeited",
+            "AgreementPartialForfeit",
+            "AgreementProposalCancelled",
+            "AgreementProposalExpiredCancelled",
+            "AgreementProposed",
+            "AgreementProposedTerms",
+            "AgreementReleased",
+            "AgreementSettled",
+            "AgreementUnbondRequested"
+          ],
+          "errors": [
+            "AgreementBothResolved",
+            "AgreementNotFound",
+            "AlreadyAccepted",
+            "InsufficientCommitmentAmount",
+            "NotAcceptor",
+            "NotProposer",
+            "ProposalDurationTooLong",
+            "ProposalExpired",
+            "ProposalNotFound",
+            "SettlementCapExceeded",
+            "SettlementCapZero",
+            "UseAgreementPath"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ERC-COMMITMENTS-MUTUALS",
+      "title": "Mutuals",
+      "spec": "docs/standards/ERC-COMMITMENTS-MUTUALS.md",
+      "status": "draft",
+      "dependencies": [
+        { "id": "ERC-COMMITMENTS" }
+      ],
+      "interfaces": [
+        "src/core/interfaces/ICommitmentManager.sol",
+        "src/extensions/mutuals/interfaces/IBandValuationAdapter.sol",
+        "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol"
+      ],
+      "implementations": [
+        "src/core/manager/CommitmentManager.sol",
+        "src/extensions/mutuals/MutualLib.sol",
+        "src/extensions/mutuals/ClaimRouter.sol",
+        "src/extensions/mutuals/LinkedMutualPolicy.sol",
+        "src/extensions/mutuals/MutualRegistry.sol",
+        "src/extensions/mutuals/OptimisticMutualArbiter.sol",
+        "src/extensions/mutuals/PremiumScheduler.sol"
+      ],
+      "conformanceTests": [
+        "test/manager/Mutual.t.sol",
+        "test/manager/conformance/HeterogeneousPremium.t.sol",
+        "test/manager/conformance/PremiumIndex.t.sol",
+        "test/mutual/Mutual.t.sol",
+        "test/mutual/PremiumPolicy.t.sol"
+      ],
+      "selectors": [
+        {
+          "artifact": "ICommitmentManager",
+          "selection": "names",
+          "functions": [
+            "activateMutual",
+            "cancelMutualLoss",
+            "cancelStaleMutualLoss",
+            "claimMemberPremium",
+            "claimMembersPremium",
+            "configureHeterogeneous",
+            "createMutual",
+            "executeMutualLoss",
+            "fundMutualPremium",
+            "getMembership",
+            "getMutual",
+            "getMutualJuniorPool",
+            "getMutualLossProposal",
+            "getMutualPremiumState",
+            "initiateMutualLoss",
+            "joinMutual",
+            "pendingMemberLoss",
+            "pendingMemberPremium",
+            "reclaimPremium",
+            "releaseMutualMember",
+            "remark",
+            "requestMutualExit",
+            "settleAndClaim",
+            "settleMemberLoss",
+            "settleMembers"
+          ],
+          "events": [
+            "MemberExitRequested",
+            "MemberJoined",
+            "MemberPremiumClaimed",
+            "MemberReleased",
+            "MemberRemarked",
+            "MemberSettled",
+            "MutualActivated",
+            "MutualCreated",
+            "MutualHeterogeneousConfigured",
+            "MutualJuniorDrawn",
+            "MutualJuniorFunded",
+            "MutualJuniorSwept",
+            "MutualLossCancelled",
+            "MutualLossExecuted",
+            "MutualLossInitiated",
+            "MutualLossShortfall",
+            "MutualPremiumFunded",
+            "MutualPremiumSwept",
+            "MutualTerminated",
+            "PremiumReclaimed"
+          ],
+          "errors": [
+            "CommitmentInMutual",
+            "DeallocationWindowActive",
+            "DeallocationWindowTooShort",
+            "ExitNotRequested",
+            "HeterogeneousPremiumUnsupported",
+            "InsufficientMutualJunior",
+            "InsufficientMutualPremium",
+            "InvalidCreditedValue",
+            "InvalidHeteroConfig",
+            "InvalidValuationAttestation",
+            "MemberStrategyForbidden",
+            "MemberUnsettled",
+            "MutualAlreadyActive",
+            "MutualAlreadyConfigured",
+            "MutualArbiterMismatch",
+            "MutualBeneficiaryMismatch",
+            "MutualChallengeWindowActive",
+            "MutualChallengeWindowTooShort",
+            "MutualIsTerminal",
+            "MutualLossPending",
+            "MutualNotActive",
+            "MutualNotFound",
+            "NoActiveCover",
+            "NoMutualLossPending",
+            "NotHeterogeneous",
+            "NotMutualArbiter",
+            "NotMutualMember",
+            "NotValuationAuthority",
+            "NumeraireMismatch",
+            "PremiumRateDecreased",
+            "PremiumStreamUnderfunded",
+            "ReinitTooSoon",
+            "RewardRateOverflow",
+            "StreamDurationOutOfBounds",
+            "TotalSharesOverflow",
+            "ValuationAuthorityIsArbiter"
+          ]
+        },
+        { "artifact": "IBandValuationAdapter", "selection": "all" },
+        { "artifact": "ILinkedMutualPolicy", "selection": "all" }
+      ]
+    },
+    {
+      "id": "ERC-COMMITMENTS-MESH",
+      "title": "Mesh",
+      "spec": "docs/standards/ERC-COMMITMENTS-MESH.md",
+      "status": "draft",
+      "dependencies": [],
+      "interfaces": [
+        "src/extensions/mesh/interfaces/IFanIn.sol",
+        "src/extensions/mesh/interfaces/IFanOut.sol",
+        "src/extensions/mesh/interfaces/IFlowQuery.sol",
+        "src/extensions/mesh/interfaces/IFlowQueryPath.sol",
+        "src/extensions/mesh/interfaces/IMeshFactory.sol",
+        "src/extensions/mesh/interfaces/ITokenWeighting.sol"
+      ],
+      "implementations": [
+        "src/extensions/mesh/FanInNode.sol",
+        "src/extensions/mesh/FanOutNode.sol",
+        "src/extensions/mesh/MeshFactory.sol",
+        "src/extensions/mesh/TokenWeighting.sol"
+      ],
+      "conformanceTests": [
+        "test/mesh/conformance/FlowQueryPathConformance.t.sol",
+        "test/mesh/MeshBackingInvariant.t.sol"
+      ],
+      "selectors": [
+        { "artifact": "IFanIn", "selection": "all" },
+        { "artifact": "IFanOut", "selection": "all" },
+        { "artifact": "IFlowQuery", "selection": "all" },
+        { "artifact": "IFlowQueryPath", "selection": "all" },
+        { "artifact": "IMeshFactory", "selection": "all" },
+        { "artifact": "ITokenWeighting", "selection": "all" }
+      ]
+    },
+    {
+      "id": "ERC-COMMITMENTS-SERVICES",
+      "title": "Operator Services",
+      "spec": "docs/standards/ERC-COMMITMENTS-SERVICES.md",
+      "status": "draft",
+      "dependencies": [
+        { "id": "ERC-COMMITMENTS" },
+        { "id": "EIP-712", "external": true },
+        { "id": "ERC-1271", "external": true },
+        { "id": "ERC-1822", "external": true },
+        { "id": "ERC-1967", "external": true }
+      ],
+      "interfaces": [
+        "src/extensions/services/interfaces/IOperatorRegistry.sol",
+        "src/extensions/services/interfaces/IOperatorServiceRegistry.sol",
+        "src/extensions/services/interfaces/IServiceHandler.sol",
+        "src/extensions/services/interfaces/IServiceManager.sol",
+        "src/shared/interfaces/IVotingPowerSource.sol"
+      ],
+      "implementations": [
+        "src/extensions/services/operator-registry/OperatorRegistry.sol",
+        "src/extensions/services/service-registry/OperatorServiceRegistry.sol",
+        "src/extensions/services/distributions/OperatorCommissionCoupon.sol"
+      ],
+      "conformanceTests": [
+        "test/registry/conformance/OperatorRegistryInvariant.t.sol",
+        "test/services/conformance/ServiceManagerInvariant.t.sol"
+      ],
+      "selectors": [
+        { "artifact": "IOperatorRegistry", "selection": "all" },
+        { "artifact": "IOperatorServiceRegistry", "selection": "all" },
+        { "artifact": "IServiceHandler", "selection": "all" },
+        { "artifact": "IServiceManager", "selection": "all" },
+        { "artifact": "IVotingPowerSource", "selection": "all" }
+      ]
+    },
+    {
+      "id": "ERC-COMMITMENTS-REWARDS",
+      "title": "Merkle Rewards",
+      "spec": "docs/standards/ERC-COMMITMENTS-REWARDS.md",
+      "status": "draft",
+      "dependencies": [
+        { "id": "ERC-1822", "external": true },
+        { "id": "ERC-1967", "external": true }
+      ],
+      "interfaces": [
+        "src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol",
+        "src/extensions/rewards/interfaces/IMerkleSnapshot.sol"
+      ],
+      "implementations": [
+        "src/extensions/rewards/CommitmentsRewardsCoordinator.sol",
+        "src/extensions/rewards/MerkleSnapshot.sol",
+        "src/extensions/rewards/MerkleSnapshotAdapter.sol",
+        "src/extensions/rewards/RewardsCoordinatorFactory.sol"
+      ],
+      "conformanceTests": [
+        "test/conformance/RewardsCoordinatorInvariants.t.sol"
+      ],
+      "selectors": [
+        { "artifact": "ICommitmentsRewardsCoordinator", "selection": "all" },
+        { "artifact": "IMerkleSnapshot", "selection": "all" }
+      ]
+    }
+  ],
+  "supplementalSelectorGroups": [
+    {
+      "title": "Shared arbitration capability",
+      "selectors": [
+        { "artifact": "IArbiter", "selection": "all" }
+      ]
+    }
+  ],
+  "publicReference": {
+    "include": [
+      { "source": "src/backing/ERC20StaticAdapter.sol", "declarations": ["ERC20StaticAdapter"] },
+      { "source": "src/backing/ERC4626Adapter.sol", "declarations": ["ERC4626Adapter"] },
+      { "source": "src/core/interfaces/IBackingAdapter.sol", "declarations": ["IBackingAdapter"] },
+      { "source": "src/core/interfaces/ICommitmentManager.sol", "declarations": ["ICommitmentManager"] },
+      { "source": "src/core/interfaces/IDistributionStrategy.sol", "declarations": ["BaseContext", "ClaimContext", "CreatedContext", "DistributeContext", "ForfeitContext", "IDistributionStrategy", "LifecycleContext", "MovementKind", "StrategyBinding", "TokenMovement"] },
+      { "source": "src/core/manager/CommitmentManager.sol", "declarations": ["CommitmentManager"] },
+      { "source": "src/core/manager/libraries/PauseLib.sol", "declarations": ["PauseLib"] },
+      { "source": "src/distributions/CounterpartyPremiumStream.sol", "declarations": ["CounterpartyPremiumStream"] },
+      { "source": "src/distributions/FlatFeeAtCreate.sol", "declarations": ["FlatFeeAtCreate"] },
+      { "source": "src/distributions/IndexAppreciationYield.sol", "declarations": ["IndexAppreciationYield"] },
+      { "source": "src/extensions/mesh/FanInNode.sol", "declarations": ["FanInNode"] },
+      { "source": "src/extensions/mesh/FanOutNode.sol", "declarations": ["FanOutNode"] },
+      { "source": "src/extensions/mesh/MeshFactory.sol", "declarations": ["MeshFactory"] },
+      { "source": "src/extensions/mesh/TokenWeighting.sol", "declarations": ["TokenWeighting"] },
+      { "source": "src/extensions/mesh/interfaces/IFanIn.sol", "declarations": ["IFanIn"] },
+      { "source": "src/extensions/mesh/interfaces/IFanOut.sol", "declarations": ["FanOutLien", "IFanOut", "Outflow", "UserInfo"] },
+      { "source": "src/extensions/mesh/interfaces/IFlowQuery.sol", "declarations": ["AvailableDenom", "ConsumerInfo", "FlowNodeTypes", "IFlowQuery", "ProviderInfo", "StakeInfo"] },
+      { "source": "src/extensions/mesh/interfaces/IFlowQueryPath.sol", "declarations": ["DenomLink", "IFlowQueryPath"] },
+      { "source": "src/extensions/mesh/interfaces/IMeshFactory.sol", "declarations": ["IMeshFactory"] },
+      { "source": "src/extensions/mesh/interfaces/ITokenWeighting.sol", "declarations": ["ITokenWeighting"] },
+      { "source": "src/extensions/mutuals/ClaimRouter.sol", "declarations": ["ClaimRouter"] },
+      { "source": "src/extensions/mutuals/LinkedMutualPolicy.sol", "declarations": ["LinkedMutualPolicy"] },
+      { "source": "src/extensions/mutuals/MutualRegistry.sol", "declarations": ["MutualRegistry"] },
+      { "source": "src/extensions/mutuals/OptimisticMutualArbiter.sol", "declarations": ["OptimisticMutualArbiter"] },
+      { "source": "src/extensions/mutuals/PremiumScheduler.sol", "declarations": ["PremiumScheduler"] },
+      { "source": "src/extensions/mutuals/interfaces/IBandValuationAdapter.sol", "declarations": ["IBandValuationAdapter"] },
+      { "source": "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol", "declarations": ["ILinkedMutualPolicy"] },
+      { "source": "src/extensions/rewards/CommitmentsRewardsCoordinator.sol", "declarations": ["CommitmentsRewardsCoordinator"] },
+      { "source": "src/extensions/rewards/MerkleSnapshot.sol", "declarations": ["MerkleSnapshot"] },
+      { "source": "src/extensions/rewards/MerkleSnapshotAdapter.sol", "declarations": ["MerkleSnapshotAdapter"] },
+      { "source": "src/extensions/rewards/RewardsCoordinatorFactory.sol", "declarations": ["RewardsCoordinatorFactory"] },
+      { "source": "src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol", "declarations": ["ICommitmentsRewardsCoordinator"] },
+      { "source": "src/extensions/rewards/interfaces/IMerkleSnapshot.sol", "declarations": ["IMerkleSnapshot"] },
+      { "source": "src/extensions/services/distributions/OperatorCommissionCoupon.sol", "declarations": ["OperatorCommissionCoupon"] },
+      { "source": "src/extensions/services/interfaces/IOperatorRegistry.sol", "declarations": ["IOperatorRegistry"] },
+      { "source": "src/extensions/services/interfaces/IOperatorServiceRegistry.sol", "declarations": ["IOperatorServiceRegistry"] },
+      { "source": "src/extensions/services/interfaces/IServiceHandler.sol", "declarations": ["IServiceHandler"] },
+      { "source": "src/extensions/services/interfaces/IServiceManager.sol", "declarations": ["IServiceManager"] },
+      { "source": "src/extensions/services/operator-registry/OperatorRegistry.sol", "declarations": ["OperatorRegistry"] },
+      { "source": "src/extensions/services/service-registry/OperatorServiceRegistry.sol", "declarations": ["OperatorServiceRegistry"] },
+      { "source": "src/periphery/agents/ERC8004IdentityRegistryDev.sol", "declarations": ["ERC8004IdentityRegistryDev"] },
+      { "source": "src/periphery/arbiters/AttestationArbiter.sol", "declarations": ["AttestationArbiter"] },
+      { "source": "src/periphery/arbiters/ManualArbiter.sol", "declarations": ["ManualArbiter"] },
+      { "source": "src/periphery/arbiters/OptimisticInsuranceArbiter.sol", "declarations": ["OptimisticInsuranceArbiter"] },
+      { "source": "src/periphery/governance/CommitmentsGovernor.sol", "declarations": ["CommitmentsGovernor"] },
+      { "source": "src/periphery/governance/CommitmentsTimelock.sol", "declarations": ["CommitmentsTimelock"] },
+      { "source": "src/periphery/governance/GovernorFactory.sol", "declarations": ["GovernorFactory"] },
+      { "source": "src/periphery/governance/TokenWeightingVotesShim.sol", "declarations": ["TokenWeightingVotesShim"] },
+      { "source": "src/periphery/vaults/CommitmentsVault.sol", "declarations": ["CommitmentsVault"] },
+      { "source": "src/periphery/vaults/ForfeitDonationBeneficiary.sol", "declarations": ["ForfeitDonationBeneficiary"] },
+      { "source": "src/periphery/vaults/VaultCoverConduit.sol", "declarations": ["VaultCoverConduit"] },
+      { "source": "src/periphery/vaults/VaultFactory.sol", "declarations": ["VaultFactory"] },
+      { "source": "src/periphery/vaults/interfaces/ICommitmentsVault.sol", "declarations": ["ICommitmentsVault"] },
+      { "source": "src/periphery/vaults/interfaces/IYieldStrategy.sol", "declarations": ["IYieldStrategy"] },
+      { "source": "src/periphery/vaults/strategies/IdleStrategy.sol", "declarations": ["IdleStrategy"] },
+      { "source": "src/periphery/vaults/strategies/PremiumSkimStrategy.sol", "declarations": ["PremiumSkimStrategy"] },
+      { "source": "src/shared/arbitration/ArbiterCapabilities.sol", "declarations": ["ArbiterCapabilities"] },
+      { "source": "src/shared/arbitration/interfaces/IArbiter.sol", "declarations": ["IArbiter"] },
+      { "source": "src/shared/interfaces/IEntity.sol", "declarations": ["IEntity"] },
+      { "source": "src/shared/interfaces/IVotingPowerSource.sol", "declarations": ["IVotingPowerSource"] }
+    ],
+    "exclude": [
+      { "source": "src/core/manager/libraries/CommitmentLifecycleLib.sol", "declarations": ["CommitmentLifecycleLib", "IOperatorRegistryHooks"], "reason": "manager-internal lifecycle and hook declarations" },
+      { "source": "src/core/manager/libraries/ExposureLib.sol", "declarations": ["ExposureLib"], "reason": "manager-internal accounting library" },
+      { "source": "src/core/manager/libraries/LedgerLib.sol", "declarations": ["LedgerLib"], "reason": "manager-internal accounting library" },
+      { "source": "src/core/manager/libraries/LedgerOpsLib.sol", "declarations": ["LedgerOpsLib"], "reason": "manager-internal accounting library" },
+      { "source": "src/core/manager/libraries/MovementLib.sol", "declarations": ["IHookRunner", "MovementLib", "MovementSite"], "reason": "manager-internal movement and self-call declarations" },
+      { "source": "src/core/manager/storage/CommitmentManagerStorage.sol", "declarations": ["CommitmentManagerStorage"], "reason": "namespaced storage library" },
+      { "source": "src/extensions/agreements/AgreementLib.sol", "declarations": ["AgreementLib"], "reason": "manager-linked implementation library" },
+      { "source": "src/extensions/mesh/libraries/FlowPathLib.sol", "declarations": ["FlowPathLib"], "reason": "mesh-internal path helper" },
+      { "source": "src/extensions/mutuals/MutualLib.sol", "declarations": ["MutualLib"], "reason": "manager-linked implementation library" },
+      { "source": "src/extensions/rewards/storage/CommitmentsRewardsCoordinatorStorage.sol", "declarations": ["CommitmentsRewardsCoordinatorStorage"], "reason": "namespaced storage library" },
+      { "source": "src/extensions/rewards/storage/MerkleSnapshotStorage.sol", "declarations": ["MerkleSnapshotStorage"], "reason": "namespaced storage library" },
+      { "source": "src/extensions/services/operator-registry/OperatorRegistryStorage.sol", "declarations": ["OperatorRegistryStorage"], "reason": "namespaced storage library" },
+      { "source": "src/extensions/services/service-registry/OperatorServiceRegistry.sol", "declarations": ["IOperatorEligibility"], "reason": "service-registry helper interface" },
+      { "source": "src/extensions/services/service-registry/OperatorServiceRegistryStorage.sol", "declarations": ["OperatorServiceRegistryStorage"], "reason": "namespaced storage library" },
+      { "source": "src/extensions/services/service-registry/ServiceEnvelopeVerifier.sol", "declarations": ["ServiceEnvelopeVerifier"], "reason": "internal verification helper" },
+      { "source": "src/periphery/vaults/storage/CommitmentsVaultStorage.sol", "declarations": ["CommitmentsVaultStorage"], "reason": "namespaced storage library" },
+      { "source": "src/shared/factories/Factory.sol", "declarations": ["Factory"], "reason": "shared implementation helper" },
+      { "source": "src/shared/factories/FactoryStorage.sol", "declarations": ["FactoryStorage"], "reason": "namespaced storage library" },
+      { "source": "src/shared/registries/AddressSetSwapLib.sol", "declarations": ["AddressSetSwapLib"], "reason": "shared implementation helper" },
+      { "source": "src/shared/registries/MembershipBase.sol", "declarations": ["MembershipBase"], "reason": "shared implementation helper" },
+      { "source": "src/shared/registries/Registry.sol", "declarations": ["Registry"], "reason": "shared implementation helper" },
+      { "source": "src/shared/registries/RegistryStorage.sol", "declarations": ["RegistryStorage"], "reason": "namespaced storage library" },
+      { "source": "src/shared/utilities/Multicallable.sol", "declarations": ["Multicallable"], "reason": "shared implementation helper" },
+      { "source": "src/vendor/erc8004/IdentityRegistryUpgradeable.sol", "declarations": ["IdentityRegistryUpgradeable"], "reason": "vendored declaration" },
+      { "source": "src/vendor/erc8004/interfaces/IERC8004IdentityRegistry.sol", "declarations": ["IERC8004IdentityRegistry"], "reason": "vendored declaration" }
+    ]
+  }
+}

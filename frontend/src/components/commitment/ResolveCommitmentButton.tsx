@@ -1,0 +1,58 @@
+import { useState } from 'react'
+import { type Address } from 'viem'
+import { type CommitmentWithStatus } from '../../utils/commitments'
+import { ResolveCommitmentModal } from './ResolveCommitmentModal'
+
+interface ResolveCommitmentButtonProps {
+  commitment: CommitmentWithStatus
+  managerAddress: Address
+  vaultAddress: Address | undefined
+  connectedAddress: Address | undefined
+  isConnected: boolean
+  onActed?: () => void
+  /** Trigger label. Defaults to "Resolve"; staking surfaces pass "Undelegate". */
+  label?: string
+}
+
+/**
+ * Single primary action button for each commitment row. Click opens the
+ * `<ResolveCommitmentModal>` which shows every action the connected viewer
+ * can take. The button itself is always enabled — even spectators can open
+ * the modal in read-only mode to see *why* they can't act.
+ */
+export function ResolveCommitmentButton({
+  commitment,
+  managerAddress,
+  vaultAddress,
+  connectedAddress,
+  isConnected,
+  onActed,
+  label = 'Resolve',
+}: ResolveCommitmentButtonProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        type="button"
+        className="ds-btn ds-btn--sm"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen(true)
+        }}
+      >
+        {label}
+      </button>
+      <ResolveCommitmentModal
+        open={open}
+        onClose={() => setOpen(false)}
+        commitment={commitment}
+        managerAddress={managerAddress}
+        vaultAddress={vaultAddress}
+        connectedAddress={connectedAddress}
+        isConnected={isConnected}
+        onActed={onActed}
+      />
+    </>
+  )
+}

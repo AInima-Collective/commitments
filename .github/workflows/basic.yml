@@ -1,0 +1,39 @@
+# Foundry build + test for the Commitments Solidity protocol.
+# Replaces the legacy CosmWasm/Rust CI — the protocol moved to Foundry + a
+# pnpm workspace. No private deploy key is needed here: the only submodules are
+# the public lib/* ones (OZ + forge-std).
+
+on: [pull_request]
+
+name: Basic Checks
+
+jobs:
+  foundry:
+    name: forge build + test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Init public Solidity submodules
+        run: >-
+          git submodule update --init --recursive
+          lib/forge-std
+          lib/openzeppelin-contracts
+          lib/openzeppelin-contracts-upgradeable
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Show forge version
+        run: forge --version
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Run tests
+        run: forge test -vvv
+        env:
+          FOUNDRY_PROFILE: default

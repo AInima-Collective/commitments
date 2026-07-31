@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none" role="img" aria-label="Commitments">
+  <title>Commitments</title>
+  <!--
+    Mirrors the chosen BrandMark geometry ('held') in src/components/ui/BrandMark.tsx.
+    Monochrome by design: the palette has no brand hue, so the mark is ink on
+    paper and inverts with the OS colour scheme. If the chosen mark changes,
+    update this file to match — it is the one copy React does not own.
+  -->
+  <style>
+    .k { stroke: #0a0a0a; stroke-width: 2; }
+    .f { fill: #0a0a0a; }
+    @media (prefers-color-scheme: dark) {
+      .k { stroke: #ededed; }
+      .f { fill: #ededed; }
+    }
+  </style>
+  <path class="k" d="M11 4 H5 V28 H11"/>
+  <path class="k" d="M21 4 H27 V28 H21"/>
+  <rect class="f" x="13.5" y="10" width="5" height="12"/>
+</svg>

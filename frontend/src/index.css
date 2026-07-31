@@ -1,0 +1,50 @@
+/* Design system tokens + primitives — single source of truth. */
+@import url("./styles/tokens.css");
+
+/* Docs route prose. */
+@import url("./styles/docs.css");
+
+/* Admin > Scenarios picker layout. */
+@import url("./styles/scenarios.css");
+
+/* App-wide base reset (the design system primitives also reset their own
+ * inner box-sizing inside .ds-root; this layer covers everything outside). */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100vh;
+}
+
+/* Default focus ring uses the accent token. */
+*:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+button {
+  font-family: inherit;
+}

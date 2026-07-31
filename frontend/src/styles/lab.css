@@ -1,0 +1,489 @@
+/* Design lab (/app/lab) — the surface for choosing a visual direction.
+ *
+ * Everything here references var(--*) only; the candidate values themselves
+ * live in tokens.css (the one file where hex is permitted).
+ *
+ * The trick this page leans on: [data-theme] / [data-palette] / [data-type] in
+ * tokens.css are plain attribute selectors, not :root-scoped. So a preview
+ * panel carrying `data-theme="light" data-palette="bone"` resolves the whole
+ * bone-light token set for its own subtree, regardless of what the surrounding
+ * page is set to. That is what lets one page show all four palettes in both
+ * themes simultaneously, live, with no duplicated colour definitions.
+ */
+
+.lab-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+/* ── Sticky control bar ───────────────────────────────────────────────────── */
+
+/* 56px matches .ds-app-sidebar's sticky offset — it is the height of the
+ * shell's own sticky topnav (z-index 30), so the bar parks directly beneath it
+ * instead of scrolling underneath it. */
+.lab-bar {
+  position: sticky;
+  top: 56px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  margin-bottom: calc(-1 * var(--space-4));
+}
+
+.lab-bar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.lab-bar-label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--text-subtle);
+  flex-shrink: 0;
+}
+
+.lab-bar-spacer { margin-left: auto; }
+
+/* ── Segmented picker ─────────────────────────────────────────────────────── */
+
+.lab-picker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg);
+  padding: 2px;
+  gap: 2px;
+}
+
+.lab-picker-option {
+  background: transparent;
+  border: 0;
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.lab-picker-option:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.lab-picker-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.lab-picker-option[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+/* ── Section scaffolding ──────────────────────────────────────────────────── */
+
+/* Clears the shell topnav (56px) plus the sticky lab bar beneath it, so an
+ * in-page jump doesn't land the heading behind the controls. */
+.lab-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  scroll-margin-top: 150px;
+}
+
+.lab-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 76ch;
+}
+
+.lab-section-note {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--text-lg);
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.lab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.lab-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+}
+
+/* Marks come in groups of four; a narrower track keeps each group on one row
+ * so the direction reads as a set rather than a ragged wrap. */
+.lab-grid--marks {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+/* ── Selectable option card ───────────────────────────────────────────────── */
+
+.lab-option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0;
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition);
+  overflow: hidden;
+}
+
+.lab-option:hover { border-color: var(--border-strong); }
+
+.lab-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Selection reads as a doubled edge rather than a colour change — there is no
+ * spare hue in this palette to signal "chosen" with. */
+.lab-option[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.lab-option-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.lab-option-name {
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.lab-option-flag {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+/* Option cards are <button>s, so every block inside them is a <span> that has
+ * to be blockified by hand — a button's content model is phrasing content
+ * only, and nesting <p>/<div>/<dl> there is invalid markup that React will
+ * happily render and the browser will silently reparent. */
+.lab-option-note {
+  display: block;
+  padding: 0 var(--space-4) var(--space-4);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── Palette preview ──────────────────────────────────────────────────────── */
+
+/* Each half carries its own [data-theme] so it paints its own token set. */
+.lab-palette-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: var(--border-width) solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.lab-palette-half {
+  background: var(--bg);
+  color: var(--text);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.lab-palette-half + .lab-palette-half {
+  border-left: var(--border-width) solid var(--border-strong);
+}
+
+.lab-ramp {
+  display: flex;
+  height: 22px;
+  border: var(--border-width) solid var(--border-strong);
+}
+
+.lab-ramp-step { flex: 1; }
+.lab-ramp-step--bg { background: var(--bg); }
+.lab-ramp-step--surface { background: var(--surface); }
+.lab-ramp-step--surface-2 { background: var(--surface-2); }
+.lab-ramp-step--surface-3 { background: var(--surface-3); }
+.lab-ramp-step--border { background: var(--border-strong); }
+.lab-ramp-step--muted { background: var(--text-muted); }
+.lab-ramp-step--text { background: var(--text); }
+
+/* The semantic triad, shown small — it is the only hue left in the system and
+ * should be judged at the size it actually appears. */
+.lab-semantics {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.lab-semantic-chip {
+  width: 100%;
+  height: 8px;
+}
+.lab-semantic-chip--success { background: var(--success); }
+.lab-semantic-chip--warn { background: var(--warn); }
+.lab-semantic-chip--error { background: var(--error); }
+
+.lab-mini {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.lab-mini-btn {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: var(--border-width) solid var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: var(--space-1) var(--space-2);
+}
+
+.lab-mini-btn--ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.lab-mini-text {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-theme-tag {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+/* ── Type specimen ────────────────────────────────────────────────────────── */
+
+.lab-specimen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+  background: var(--surface);
+}
+
+.lab-specimen-display {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+  font-size: calc(2.25rem * var(--display-scale));
+  line-height: 1.06;
+  color: var(--text);
+  margin: 0;
+}
+
+.lab-specimen-italic {
+  display: block;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: calc(var(--text-lg) * var(--display-scale));
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.lab-specimen-data {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  border-top: var(--border-width) solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.lab-specimen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lab-specimen-term {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.lab-specimen-value { color: var(--text); }
+
+.lab-specimen-meta {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* ── Mark sheet ───────────────────────────────────────────────────────────── */
+
+.lab-mark {
+  align-items: stretch;
+}
+
+.lab-mark-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+  background: var(--surface-2);
+  border-top: var(--border-width) solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
+  color: var(--text);
+}
+
+/* Real rendered sizes, smallest first — the 12px instance is the one that has
+ * to survive, because that is the topnav. */
+.lab-mark-scale {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  color: var(--text);
+}
+
+.lab-mark-scale-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.lab-mark-scale-label {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Marks in context — the actual nav lockup, at the actual size. */
+.lab-lockups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0;
+  border: var(--border-width) solid var(--border);
+}
+
+.lab-lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border-right: var(--border-width) solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.lab-lockup:hover { background: var(--surface-2); }
+
+.lab-lockup:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.lab-lockup[aria-pressed='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.lab-lockup-id {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--text-subtle);
+}
+
+/* ── Applied preview ──────────────────────────────────────────────────────── */
+
+.lab-applied {
+  border: var(--border-width) solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.lab-applied-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+@media (width >= 900px) {
+  .lab-applied-split { grid-template-columns: 1fr 1fr; }
+}
+
+.lab-applied-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+@media (width <= 720px) {
+  .lab-palette-split { grid-template-columns: 1fr; }
+
+  .lab-palette-half + .lab-palette-half {
+    border-left: 0;
+    border-top: var(--border-width) solid var(--border-strong);
+  }
+}
