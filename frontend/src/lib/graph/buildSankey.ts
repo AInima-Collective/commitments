@@ -68,6 +68,14 @@ export type BuildSankeyOptions = {
   // against the prototype's signature and reports a baffling
   // "Type 'Object' is not assignable to type 'number'".
   exactValue?: (token: Address, raw: bigint) => number | null
+  /**
+   * Allocation mode only: name each commitment. When present, the terminal
+   * column is one node PER commitment (kind 'commitment', `meta.commitmentId`
+   * set) instead of aggregated counterparty addresses — the personal dashboard
+   * has metadata-derived names and a detail page to link to, so an address
+   * column would waste both. Absent, the counterparty aggregation stands.
+   */
+  commitmentLabelFor?: (row: ProtocolCommitmentRow) => string
 }
 
 /** Statuses that carry live forfeiture exposure. */
@@ -97,7 +105,16 @@ export function buildSankey(
   rows: ProtocolCommitmentRow[],
   opts: BuildSankeyOptions,
 ): SankeyPayload {
-  const { metaFor, priceForSymbol, weight, scope, mode = 'flow', freeByToken, exactValue } = opts
+  const {
+    metaFor,
+    priceForSymbol,
+    weight,
+    scope,
+    mode = 'flow',
+    freeByToken,
+    exactValue,
+    commitmentLabelFor,
+  } = opts
 
   const nodes = new Map<string, SankeyNode>()
   // Keyed by `${sourceId}\u0000${targetId}` then by token for the per-token roll-up.
@@ -105,9 +122,15 @@ export function buildSankey(
   const linkOrder: string[] = []
   const missingPrices = new Set<string>()
 
-  const addNode = (kind: SankeyNodeKind, key: string, label: string, stage: number): string => {
+  const addNode = (
+    kind: SankeyNodeKind,
+    key: string,
+    label: string,
+    stage: number,
+    meta?: SankeyNode['meta'],
+  ): string => {
     const id = nodeId(kind, key)
-    if (!nodes.has(id)) nodes.set(id, { id, label, kind, stage })
+    if (!nodes.has(id)) nodes.set(id, { id, label, kind, stage, ...(meta ? { meta } : {}) })
     return id
   }
 
@@ -146,20 +169,36 @@ export function buildSankey(
     const value = valueOfRaw(row.token, rawWeight, meta)
     if (value === null) continue
 
-    const tokenNode = addNode('token', row.token, meta.symbol, 0)
-    const cpNode = addNode('counterparty', row.counterparty, shortLabel(row.counterparty), 2)
+    const tokenMeta = { token: row.token.toLowerCase(), symbol: meta.symbol }
+    const tokenNode = addNode('token', row.token, meta.symbol, 0, tokenMeta)
 
     if (mode === 'allocation') {
-      // token → encumbered(token) → counterparty. The middle node is keyed by
-      // token so each backing asset keeps its own split.
+      // token → encumbered(token) → commitment | counterparty. The middle node
+      // is keyed by token so each backing asset keeps its own split.
       // Labelled with the token, not just "encumbered". The middle column has
       // one pair of nodes PER token, so an account holding two backing assets
       // got four nodes reading free/encumbered/free/encumbered with no way to
       // tell which belonged to which ribbon.
-      const encNode = addNode('encumbered', `${row.token}:encumbered`, `${meta.symbol} committed`, 1)
+      const encNode = addNode(
+        'encumbered',
+        `${row.token}:encumbered`,
+        `${meta.symbol} committed`,
+        1,
+        tokenMeta,
+      )
+      // With a label resolver, the terminal node IS the commitment — named
+      // from its metadata and linkable. Without one, fall back to the
+      // aggregated counterparty address.
+      const targetNode = commitmentLabelFor
+        ? addNode('commitment', `c${row.id.toString()}`, commitmentLabelFor(row), 2, {
+            ...tokenMeta,
+            commitmentId: row.id.toString(),
+          })
+        : addNode('counterparty', row.counterparty, shortLabel(row.counterparty), 2)
       accumulate(linkAcc, linkOrder, tokenNode, encNode, row.token, meta, rawWeight, value)
-      accumulate(linkAcc, linkOrder, encNode, cpNode, row.token, meta, rawWeight, value)
+      accumulate(linkAcc, linkOrder, encNode, targetNode, row.token, meta, rawWeight, value)
     } else {
+      const cpNode = addNode('counterparty', row.counterparty, shortLabel(row.counterparty), 2)
       const arbiterNode = addNode('arbiter', row.arbiter, shortLabel(row.arbiter), 1)
       accumulate(linkAcc, linkOrder, tokenNode, arbiterNode, row.token, meta, rawWeight, value)
       accumulate(linkAcc, linkOrder, arbiterNode, cpNode, row.token, meta, rawWeight, value)
@@ -180,8 +219,9 @@ export function buildSankey(
       const value = valueOfRaw(token, freeRaw, meta)
       if (value === null) continue
 
-      const tokenNode = addNode('token', token, meta.symbol, 0)
-      const freeNode = addNode('free', `${token}:free`, `${meta.symbol} idle`, 1)
+      const tokenMeta = { token: token.toLowerCase(), symbol: meta.symbol }
+      const tokenNode = addNode('token', token, meta.symbol, 0, tokenMeta)
+      const freeNode = addNode('free', `${token}:free`, `${meta.symbol} idle`, 1, tokenMeta)
       accumulate(linkAcc, linkOrder, tokenNode, freeNode, token, meta, freeRaw, value)
     }
   }

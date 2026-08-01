@@ -132,6 +132,22 @@
   --graph-label-hover:                #0a0a0a;
   --graph-label-edge-default:         #525252;
   --graph-dim-bg:                     #ebebeb;
+
+  /* === Flow categoricals ===
+   * Per-asset lane colours for the allocation Sankey — the one surface where
+   * identity has to survive along a ribbon, so value-grading alone can't do
+   * the job. Muted to sit inside the mono system but held at OKLCH C ≥ 0.10
+   * (below that a hue reads as gray and stops identifying anything).
+   * Validated (dataviz six checks) against #ffffff and #131313 — the same
+   * steps pass both modes, so the two theme blocks intentionally match.
+   * Assigned to tokens in fixed slot order, never cycled; overflow beyond six
+   * assets falls back to --graph-node-fill-default. */
+  --viz-flow-1: #3a6ea8;
+  --viz-flow-2: #c2632f;
+  --viz-flow-3: #2f8a62;
+  --viz-flow-4: #8a5aa8;
+  --viz-flow-5: #9a7a1f;
+  --viz-flow-6: #b04a5a;
 }
 
 [data-theme='dark'] {
@@ -193,6 +209,16 @@
   --graph-label-hover:                #ffffff;
   --graph-label-edge-default:         #a3a3a3;
   --graph-dim-bg:                     #242424;
+
+  /* === Flow categoricals ===
+   * Same steps as the light block — the validated slots pass on both surfaces
+   * (see the light-theme note), so the modes deliberately share values. */
+  --viz-flow-1: #3a6ea8;
+  --viz-flow-2: #c2632f;
+  --viz-flow-3: #2f8a62;
+  --viz-flow-4: #8a5aa8;
+  --viz-flow-5: #9a7a1f;
+  --viz-flow-6: #b04a5a;
 }
 
 /* ============================================================================

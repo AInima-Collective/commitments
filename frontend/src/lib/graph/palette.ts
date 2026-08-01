@@ -42,6 +42,13 @@ export type GraphPalette = {
   }
   /** Dim/dehighlight color when hovering a different node. */
   dim: string
+  /**
+   * Fixed-order categorical slots for per-asset flow lanes (allocation
+   * Sankey). Assign by slot in order, never cycle — consumers past the last
+   * slot fall back to `nodes.fillDefault`. Validated against both theme
+   * surfaces; see the `--viz-flow-*` block in tokens.css.
+   */
+  flow: string[]
 }
 
 /**
@@ -110,6 +117,14 @@ export function getGraphPalette(): GraphPalette {
       edgeDefault: r('--graph-label-edge-default'),
     },
     dim: r('--graph-dim-bg'),
+    flow: [
+      r('--viz-flow-1'),
+      r('--viz-flow-2'),
+      r('--viz-flow-3'),
+      r('--viz-flow-4'),
+      r('--viz-flow-5'),
+      r('--viz-flow-6'),
+    ],
   }
 }
 

@@ -169,6 +169,10 @@ export type SankeyNodeKind =
   // idle capital and at-risk capital are the whole point of that view.
   | 'free'
   | 'encumbered'
+  // Allocation-mode terminal column when the caller supplies commitment labels:
+  // one node PER commitment, named from its metadata, clickable through to the
+  // commitment page. Distinct from 'counterparty', which aggregates.
+  | 'commitment'
 
 export type SankeyNode = {
   id: string
@@ -176,6 +180,15 @@ export type SankeyNode = {
   kind: SankeyNodeKind
   /** Column index, left→right (0-based). */
   stage: number
+  /** Kind-specific payload for rich rendering. Optional on every kind. */
+  meta?: {
+    /** Lowercased token address — set on 'token' / 'free' / 'encumbered'. */
+    token?: string
+    /** Display symbol for that token — drives the icon on the backing column. */
+    symbol?: string
+    /** Commitment id — set on 'commitment', drives click-through. */
+    commitmentId?: string
+  }
 }
 
 /** Per-token contribution to a link — keeps full-precision raw amounts for tooltips. */

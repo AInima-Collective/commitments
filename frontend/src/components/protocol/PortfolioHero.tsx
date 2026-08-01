@@ -21,6 +21,13 @@ export interface PortfolioHeroProps {
   isLoading?: boolean
   /** Optional pause notice slot — Dashboard renders a `<Notice/>` when deposits are paused. */
   notice?: ReactNode
+  /**
+   * Value-over-time chart slot, rendered between the headline and the stat
+   * grid — the DeFi-standard order (chart up top, stats below). Keeping it a
+   * slot keeps the hero presentational: the page owns data fetching, and the
+   * chart's right edge stays anchored to the headline figure by construction.
+   */
+  chart?: ReactNode
   /** Right-aligned aside slot for a small chart (e.g. <YieldSparkline/>) under the action row. */
   aside?: ReactNode
   /** Footnote slot under the headline — used to flag fallback-source pricing. */
@@ -56,6 +63,7 @@ export function PortfolioHero({
   lossesUsd,
   isLoading,
   notice,
+  chart,
   aside,
   priceNote,
   primaryAction,
@@ -109,6 +117,8 @@ export function PortfolioHero({
       </header>
 
       {notice}
+
+      {chart}
 
       {showAllocation && (
         <AllocationBar

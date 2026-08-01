@@ -8,13 +8,13 @@ import {
   type SankeyScope,
   type SankeyWeight,
 } from '../../lib/graph/buildSankey'
-import { getGraphPalette } from '../../lib/graph/palette'
-import type { LaidOutSankeyLink, SankeyNodeKind } from '../../lib/graph/types'
+import { getGraphPalette, resolveTokenColor } from '../../lib/graph/palette'
+import type { LaidOutSankeyLink, LaidOutSankeyNode, SankeyNodeKind } from '../../lib/graph/types'
 import { formatTokenAmount } from '../../lib/format'
 import type { ProtocolCommitmentRow } from '../../hooks/useProtocolEntityList'
 import { useAssetPrices } from '../../hooks/useAssetPrices'
 import { useTokenMetaMap } from '../../hooks/useTokenMeta'
-import { Notice, ViewToggle } from '../ui'
+import { Notice, TokenIcon, ViewToggle } from '../ui'
 import { useTheme } from '../ui/useTheme'
 
 /**
@@ -42,6 +42,25 @@ const STAGE_TITLES: Record<SankeyMode, string[]> = {
   allocation: ['Backing', 'Allocation', 'Promised to'],
 }
 
+/** Terminal-column title when the third column is commitments, not addresses. */
+const COMMITMENT_STAGE_TITLES = ['Backing', 'Allocation', 'Commitment']
+
+/**
+ * Terminal-column label budget. Commitment labels are clamped upstream at 96
+ * chars — fine for a table cell, but at 10px SVG text a 96-char label would
+ * run all the way back across the plot. ~40 chars fits the right third of the
+ * viewBox; the full text stays available in the node tooltip.
+ */
+const MAX_NODE_LABEL_CHARS = 40
+
+function clampLabel(label: string): string {
+  if (label.length <= MAX_NODE_LABEL_CHARS) return label
+  return `${label.slice(0, MAX_NODE_LABEL_CHARS - 1).trimEnd()}…`
+}
+
+/** Icon box for the backing-column token logos. */
+const TOKEN_ICON_PX = 14
+
 type Props = {
   commitments: ProtocolCommitmentRow[]
   isLoading?: boolean
@@ -68,6 +87,21 @@ type Props = {
    * feed only knows `USDC`.
    */
   exactValue?: (token: Address, raw: bigint) => number | null
+  /**
+   * Allocation mode: name each commitment (metadata title, derived label, or
+   * id — the caller runs `commitmentLabel`). Turns the terminal column into
+   * one node per commitment instead of aggregated counterparty addresses.
+   */
+  commitmentLabelFor?: (row: ProtocolCommitmentRow) => string
+  /** Open a commitment's detail page. Makes commitment nodes clickable. */
+  onOpenCommitment?: (id: bigint) => void
+  /**
+   * Icon symbol for a backing token (lowercased address), when the caller
+   * knows better than the token's own symbol. An ERC-4626 share is the case:
+   * `cvUSDC` has no brand mark, its underlying `USDC` does — the same
+   * resolution the assets table uses.
+   */
+  iconSymbolFor?: (token: string) => string | undefined
 }
 
 /**
@@ -89,11 +123,18 @@ export function CommitmentsSankey({
   hideWeightToggle,
   emptyLabel,
   exactValue,
+  commitmentLabelFor,
+  onOpenCommitment,
+  iconSymbolFor,
 }: Props) {
   const { theme } = useTheme()
   // Re-resolve the palette when the theme changes (CSS-cascade re-read).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- theme drives CSS-cascade re-resolve, see frontend/docs/eslint-disable-rationale.md §Pattern-5
   const palette = useMemo(() => getGraphPalette(), [theme])
+  // Card surface, for the label halo — node labels can cross ribbons, and a
+  // paint-order stroke in the surface colour is what keeps them readable there.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- theme drives CSS-cascade re-resolve, see frontend/docs/eslint-disable-rationale.md §Pattern-5
+  const surface = useMemo(() => resolveTokenColor('--surface'), [theme])
 
   const [weight, setWeight] = useState<SankeyWeight>('amount')
   const [scope, setScope] = useState<SankeyScope>('live')
@@ -128,9 +169,35 @@ export function CommitmentsSankey({
         mode,
         freeByToken,
         exactValue,
+        commitmentLabelFor,
       }),
-    [commitments, metaFor, getPrice, weight, scope, mode, freeByToken, exactValue],
+    [commitments, metaFor, getPrice, weight, scope, mode, freeByToken, exactValue, commitmentLabelFor],
   )
+
+  // ── Per-asset lane colours ────────────────────────────────────────────────
+  // One categorical slot per backing token so a flow can be followed by hue
+  // from asset to commitment. Slots are assigned in address order — a stable
+  // property of the token itself — so the mapping cannot repaint when a
+  // commitment is added or a filter changes the visible set. Overflow past the
+  // last slot falls back to the neutral fill rather than cycling.
+  const tokenColor = useMemo(() => {
+    const addrs = payload.nodes
+      .filter((n) => n.kind === 'token' && n.meta?.token)
+      .map((n) => n.meta!.token!)
+      .sort()
+    const map = new Map<string, string>()
+    addrs.forEach((addr, i) => {
+      map.set(addr, i < palette.flow.length ? palette.flow[i] : palette.nodes.fillDefault)
+    })
+    return map
+  }, [payload, palette])
+
+  // Hover emphasis: the hovered ribbon (or a hovered commitment node's
+  // incoming ribbons) comes forward, everything else recedes.
+  const [hover, setHover] = useState<{ nodeId?: string; links: Set<string> } | null>(null)
+
+  // Human labels for tooltip text — link endpoints are node ids.
+  const labelById = useMemo(() => new Map(payload.nodes.map((n) => [n.id, n.label])), [payload])
 
   // Tallest column decides the plot height — that column is what has to fit.
   const height = useMemo(() => {
@@ -234,7 +301,7 @@ export function CommitmentsSankey({
           style={{ display: 'block', minWidth: 480, height: 'auto', maxHeight: 440 }}
         >
           {/* Stage headers */}
-          {STAGE_TITLES[mode].map((title, i, all) => {
+          {(mode === 'allocation' && commitmentLabelFor ? COMMITMENT_STAGE_TITLES : STAGE_TITLES[mode]).map((title, i, all) => {
             const x = i === 0 ? 0 : i === all.length - 1 ? WIDTH : WIDTH / 2
             const anchor = i === 0 ? 'start' : i === all.length - 1 ? 'end' : 'middle'
             return (
@@ -255,34 +322,50 @@ export function CommitmentsSankey({
           <g transform="translate(0, 24)">
             {/* Links */}
             <g fill="none">
-              {layout.links.map((l) => (
-                <SankeyRibbon key={`${l.source}->${l.target}`} link={l} palette={palette} />
-              ))}
+              {layout.links.map((l) => {
+                const key = `${l.source}->${l.target}`
+                return (
+                  <SankeyRibbon
+                    key={key}
+                    link={l}
+                    palette={palette}
+                    laneColor={laneColorFor(l, tokenColor)}
+                    labelOf={(id) => labelById.get(id) ?? stripKind(id)}
+                    emphasis={hover === null ? 'rest' : hover.links.has(key) ? 'raised' : 'dimmed'}
+                    onHover={(entering) => setHover(entering ? { links: new Set([key]) } : null)}
+                  />
+                )
+              })}
             </g>
 
             {/* Nodes */}
             {layout.nodes.map((n) => (
-              <g key={n.id}>
-                <rect
-                  x={n.x}
-                  y={n.y0}
-                  width={NODE_WIDTH}
-                  height={Math.max(1, n.y1 - n.y0)}
-                  fill={nodeColor(n.kind, palette)}
-                >
-                  <title>{n.label}</title>
-                </rect>
-                <text
-                  x={n.stage === 2 ? n.x - 4 : n.x + NODE_WIDTH + 4}
-                  y={(n.y0 + n.y1) / 2}
-                  textAnchor={n.stage === 2 ? 'end' : 'start'}
-                  dominantBaseline="middle"
-                  fontSize={10}
-                  fill={palette.labels.default}
-                >
-                  {n.label}
-                </text>
-              </g>
+              <SankeyNodeGlyph
+                key={n.id}
+                node={n}
+                palette={palette}
+                surface={surface}
+                laneColor={n.meta?.token ? tokenColor.get(n.meta.token) : undefined}
+                iconSymbol={
+                  n.meta?.token ? (iconSymbolFor?.(n.meta.token) ?? n.meta.symbol) : n.meta?.symbol
+                }
+                hovered={hover?.nodeId === n.id}
+                onOpenCommitment={onOpenCommitment}
+                onHover={(entering) =>
+                  setHover(
+                    entering
+                      ? {
+                          nodeId: n.id,
+                          links: new Set(
+                            layout.links
+                              .filter((l) => l.source === n.id || l.target === n.id)
+                              .map((l) => `${l.source}->${l.target}`),
+                          ),
+                        }
+                      : null,
+                  )
+                }
+              />
             ))}
           </g>
         </svg>
@@ -291,38 +374,177 @@ export function CommitmentsSankey({
   )
 }
 
+/**
+ * The lane colour for a ribbon — the categorical slot of the token whose
+ * capital it carries. Allocation-mode links are per-token by construction
+ * (both middle nodes are token-keyed), so the dominant token IS the token.
+ */
+function laneColorFor(
+  link: LaidOutSankeyLink,
+  tokenColor: Map<string, string>,
+): string | undefined {
+  const dominant = link.tokens[0]
+  return dominant ? tokenColor.get(dominant.token.toLowerCase()) : undefined
+}
+
 function SankeyRibbon({
   link,
   palette,
+  laneColor,
+  labelOf,
+  emphasis,
+  onHover,
 }: {
   link: LaidOutSankeyLink
   palette: ReturnType<typeof getGraphPalette>
+  laneColor: string | undefined
+  labelOf: (id: string) => string
+  emphasis: 'rest' | 'raised' | 'dimmed'
+  onHover: (entering: boolean) => void
 }) {
-  // Colour by where the ribbon LANDS when that says something, otherwise by
-  // where it comes from. In allocation mode every ribbon leaves the same token
-  // node, so colouring by source painted the whole diagram one grey and the
-  // question it exists to answer — how much of this is working — could not be
-  // read off it. The palette is deliberately near-monochrome, so the signal is
-  // weight rather than hue: idle capital recedes, committed capital holds.
+  // Hue follows the backing asset (the lane colour) so a flow can be tracked
+  // from token to commitment by colour alone; weight still separates idle from
+  // working capital — free ribbons recede, committed ribbons hold. Without a
+  // lane colour (flow mode, palette exhausted) fall back to the old
+  // target-kind grays.
   const idle = link.targetKind === 'free'
-  const kind = link.targetKind === 'free' || link.targetKind === 'encumbered'
+  const fallbackKind = link.targetKind === 'free' || link.targetKind === 'encumbered'
     ? link.targetKind
     : link.sourceKind
+  const stroke = laneColor ?? nodeColor(fallbackKind, palette)
+  const restOpacity = idle ? 0.18 : 0.45
+  const opacity = emphasis === 'raised' ? Math.max(0.7, restOpacity) : emphasis === 'dimmed' ? 0.08 : restOpacity
   return (
     <path
       d={link.path}
-      stroke={nodeColor(kind, palette)}
-      strokeOpacity={idle ? 0.18 : 0.45}
+      stroke={stroke}
+      strokeOpacity={opacity}
       strokeWidth={link.width}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
     >
-      <title>{tooltipFor(link)}</title>
+      <title>{tooltipFor(link, labelOf)}</title>
     </path>
   )
 }
 
+/**
+ * One node bar + label. Token nodes carry the asset's logo; commitment nodes
+ * are links into the commitment's own page.
+ */
+function SankeyNodeGlyph({
+  node: n,
+  palette,
+  surface,
+  laneColor,
+  iconSymbol,
+  hovered,
+  onOpenCommitment,
+  onHover,
+}: {
+  node: LaidOutSankeyNode
+  palette: ReturnType<typeof getGraphPalette>
+  surface: string
+  laneColor: string | undefined
+  iconSymbol: string | undefined
+  hovered: boolean
+  onOpenCommitment?: (id: bigint) => void
+  onHover: (entering: boolean) => void
+}) {
+  // Free bars keep the quiet neutral even though the token is known — the
+  // idle half must not compete with the committed half for attention.
+  const fill = n.kind === 'free' ? nodeColor(n.kind, palette) : (laneColor ?? nodeColor(n.kind, palette))
+  const clickable = n.kind === 'commitment' && n.meta?.commitmentId !== undefined && !!onOpenCommitment
+  const open = () => {
+    if (clickable) onOpenCommitment!(BigInt(n.meta!.commitmentId!))
+  }
+  const labelX = n.stage === 2 ? n.x - 4 : n.x + NODE_WIDTH + 4
+  const midY = (n.y0 + n.y1) / 2
+  const showIcon = n.kind === 'token' && !!iconSymbol
+  return (
+    <g
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      onClick={clickable ? open : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                open()
+              }
+            }
+          : undefined
+      }
+      role={clickable ? 'link' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-label={clickable ? `Open commitment: ${n.label}` : undefined}
+      style={clickable ? { cursor: 'pointer' } : undefined}
+    >
+      <rect
+        x={n.x}
+        y={n.y0}
+        width={NODE_WIDTH}
+        height={Math.max(1, n.y1 - n.y0)}
+        fill={fill}
+        stroke={hovered && clickable ? palette.nodes.strokeHover : undefined}
+      >
+        <title>{clickable ? `${n.label}\nClick to open this commitment` : n.label}</title>
+      </rect>
+      {showIcon && (
+        // A pixel of slack on every side + visible overflow: foreignObject
+        // clips at its box by default, and the icon is an inline element that
+        // sits on a text baseline inside it — together those shaved the bottom
+        // of the circle. The flex wrapper (line-height 0) centres the icon
+        // geometrically instead of typographically.
+        <foreignObject
+          x={labelX - 1}
+          y={midY - TOKEN_ICON_PX / 2 - 1}
+          width={TOKEN_ICON_PX + 2}
+          height={TOKEN_ICON_PX + 2}
+          style={{ pointerEvents: 'none', overflow: 'visible' }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              width: '100%',
+              height: '100%',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 0,
+            }}
+          >
+            <TokenIcon symbol={iconSymbol!} size="sm" />
+          </div>
+        </foreignObject>
+      )}
+      <text
+        x={showIcon ? labelX + TOKEN_ICON_PX + 4 : labelX}
+        y={midY}
+        textAnchor={n.stage === 2 ? 'end' : 'start'}
+        dominantBaseline="middle"
+        fontSize={10}
+        fill={palette.labels.default}
+        // The halo: labels regularly sit on top of ribbons, and a stroke in
+        // the surface colour painted UNDER the glyphs keeps them readable on
+        // any lane colour in either theme.
+        stroke={surface}
+        strokeWidth={3}
+        style={{
+          paintOrder: 'stroke',
+          ...(hovered && clickable ? { textDecoration: 'underline' } : {}),
+        }}
+      >
+        {clampLabel(n.label)}
+        {clickable ? ' ↗' : ''}
+      </text>
+    </g>
+  )
+}
+
 /** Full-precision tooltip text (design-system rule 4). */
-function tooltipFor(link: LaidOutSankeyLink): string {
-  const head = `${stripKind(link.source)} → ${stripKind(link.target)}`
+function tooltipFor(link: LaidOutSankeyLink, labelOf: (id: string) => string): string {
+  const head = `${labelOf(link.source)} → ${labelOf(link.target)}`
   const usd = `≈ $${link.value.toLocaleString('en-US', { maximumFractionDigits: 2 })} · ${link.count} commitment${link.count === 1 ? '' : 's'}`
   const perToken = link.tokens
     .map((t) => {
@@ -354,6 +576,8 @@ function nodeColor(kind: SankeyNodeKind, palette: ReturnType<typeof getGraphPale
     case 'free':
       return palette.nodes.fillDefault
     case 'encumbered':
+      return palette.nodes.commitment
+    case 'commitment':
       return palette.nodes.commitment
     case 'status':
       return palette.nodes.fillDefault

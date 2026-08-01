@@ -799,8 +799,13 @@ export default function Dashboard() {
       <SectionNav items={navItems} aria-label="Dashboard sections" />
 
       <section id="portfolio" className="ds-dashboard-section ds-stack ds-stack-4">
+        {/* One portfolio card: headline number, then the chart that explains
+          * it, then the stat breakdown — the DeFi-standard order. A single
+          * title avoids the old "your portfolio" / "Portfolio" doubling; the
+          * chart's right edge is anchored to the headline figure by
+          * construction (see PortfolioChart's anchoring note). */}
         <PortfolioHero
-          eyebrow={isOwnDashboard ? "your portfolio" : "viewing"}
+          title={isOwnDashboard ? "Portfolio" : "Viewing portfolio"}
           totalUsd={portfolioUsd.total}
           freeUsd={portfolioUsd.free}
           encumberedUsd={portfolioUsd.encumbered}
@@ -822,6 +827,14 @@ export default function Dashboard() {
             ) : undefined
           }
           aside={vaultAddress ? <HeroSparklineAside vaultAddress={vaultAddress} /> : undefined}
+          chart={
+            <PortfolioChart
+              address={viewAddress}
+              ledgerByToken={ledgerByToken}
+              candidates={candidates}
+              getPrice={getPrice}
+            />
+          }
           primaryAction={
             <button
               type="button"
@@ -843,23 +856,6 @@ export default function Dashboard() {
               : undefined
           }
         />
-
-        {/* The hero states the portfolio as a single number; the chart states
-          * how it got there. Same section so the two read as one unit — the
-          * chart's right edge is anchored to the hero's figure by construction
-          * (see PortfolioChart's anchoring note). */}
-        <section className="ds-card ds-stack ds-stack-3" aria-label="Portfolio value over time">
-          <div className="ds-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
-            <h2 className="ds-section-title">Value over time</h2>
-            <span className="ds-text-xs ds-subtle">FREE + ENCUMBERED</span>
-          </div>
-          <PortfolioChart
-            address={viewAddress}
-            ledgerByToken={ledgerByToken}
-            candidates={candidates}
-            getPrice={getPrice}
-          />
-        </section>
       </section>
 
       {pending.length > 0 && (
