@@ -11,6 +11,7 @@ import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
+import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 
 /// @title OptimisticInsuranceArbiter
 /// @notice Reality.eth-style optimistic claim resolution for insurance
@@ -218,8 +219,8 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         address treasury_
     ) {
         if (answerTimeout_ == 0) revert ZeroAnswerTimeout();
-        if (winnerShareBps_ > 10_000) revert InvalidWinnerShareBps();
-        if (winnerShareBps_ < 10_000 && treasury_ == address(0)) revert TreasuryRequired();
+        if (winnerShareBps_ > BPS_DENOMINATOR) revert InvalidWinnerShareBps();
+        if (winnerShareBps_ < BPS_DENOMINATOR && treasury_ == address(0)) revert TreasuryRequired();
         manager = ICommitmentManager(manager_);
         bondToken = IERC20(bondToken_);
         minBond = minBond_;
@@ -304,7 +305,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         ICommitmentManager.Commitment memory cm = manager.getCommitment(commitmentId);
         if (cm.arbiter != address(this)) revert WrongArbiter(address(this), cm.arbiter);
         if (cm.released || cm.forfeited) revert CommitmentNotActive(commitmentId);
-        if (amountBps == 0 || amountBps > 10_000) revert InvalidAmountBps(amountBps);
+        if (amountBps == 0 || amountBps > BPS_DENOMINATOR) revert InvalidAmountBps(amountBps);
         if (amountBps > cm.maxPenaltyBps) revert AmountAboveCommitmentMax(cm.maxPenaltyBps, amountBps);
         if (cm.challengeWindow < answerTimeout) revert ChallengeWindowTooShort(answerTimeout, cm.challengeWindow);
 
@@ -352,7 +353,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 required = uint256(top.bond) * 2;
         if (required < minBond) required = minBond;
         if (bond < required) revert BondNotDoubled(required, bond);
-        if (counterAmountBps > 10_000) revert InvalidAmountBps(counterAmountBps);
+        if (counterAmountBps > BPS_DENOMINATOR) revert InvalidAmountBps(counterAmountBps);
 
         // counterAmountBps == 0 is a valid "no payout" assertion (the hold is
         // re-initiated at 0 bps — still an active proposal, still blocking
@@ -550,9 +551,9 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
     {
         floor = minBond;
         if (bondBps == 0) return floor;
-        uint256 claimUnits = (cm.amount * amountBps) / 10_000;
-        uint256 claimValue = (claimUnits * IBackingAdapter(cm.adapter).indexNow(cm.token)) / 1e18;
-        uint256 scaled = (claimValue * bondBps) / 10_000;
+        uint256 claimUnits = (cm.amount * amountBps) / BPS_DENOMINATOR;
+        uint256 claimValue = (claimUnits * IBackingAdapter(cm.adapter).indexNow(cm.token)) / WAD;
+        uint256 scaled = (claimValue * bondBps) / BPS_DENOMINATOR;
         if (scaled > floor) floor = scaled;
     }
 
@@ -602,7 +603,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 treasuryPayout;
         if (forfeitPool > 0) {
             if (lastWinner != address(0)) {
-                winnerPayout = (forfeitPool * winnerShareBps) / 10_000;
+                winnerPayout = (forfeitPool * winnerShareBps) / BPS_DENOMINATOR;
                 treasuryPayout = forfeitPool - winnerPayout;
             } else {
                 // Nobody asserted the winning answer. All forfeits to

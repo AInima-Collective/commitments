@@ -19,15 +19,6 @@ join through the manager's `joinMutual`; the mutual arbiter activates once capac
 
 
 ## Constants
-### BPS
-Basis-points denominator (100% == 10_000 bps); the scale `utilizationBps` reports against.
-
-
-```solidity
-uint256 private constant BPS = 10_000
-```
-
-
 ### manager
 
 ```solidity

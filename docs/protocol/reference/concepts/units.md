@@ -15,7 +15,7 @@ Agreement legs may use different tokens. Each directional settlement cap is deno
 
 ## Basis points
 
-10,000 basis points equals 100 percent. Fields ending in Bps use this scale, including maxPenaltyBps, portionBps, weightBps, minMaxPenaltyBps, feeBps, and mutual valuation or haircut parameters.
+10,000 basis points equals 100 percent. Fields ending in Bps use this scale, including maxPenaltyBps, portionBps, weightBps, minMaxPenaltyBps, feeBps, and mutual valuation or haircut parameters. Executable generic basis-point arithmetic imports the canonical `BPS_DENOMINATOR` from `src/shared/Constants.sol`.
 
 Exposure is calculated with floor rounding:
 
@@ -27,7 +27,7 @@ Rounding is conservative and the implementation uses before-and-after exposure d
 
 ## Adapter index
 
-IBackingAdapter reports indexNow and denomination metadata. ERC20StaticAdapter uses a fixed 1e18 index. ERC4626Adapter reports the ERC-4626 conversion for 1e18 share units.
+IBackingAdapter reports indexNow and denomination metadata. ERC20StaticAdapter uses the shared `WAD` value as its fixed 1e18 index. ERC4626Adapter reports the ERC-4626 conversion for `WAD` share units.
 
 An adapter does not move tokens. Distribution strategies use its index according to their own binding rules.
 
@@ -35,11 +35,14 @@ An adapter does not move tokens. Distribution strategies use its index according
 
 | Surface | Scale |
 |---|---|
+| Generic 18-decimal fixed point (`WAD`) | 1e18 |
 | Mutual cumulative loss Lambda | 1e18 |
 | Mutual premium-per-cover Pi | 1e27 |
 | Mesh and policy percentages | basis points, 10,000 |
 
-Premium and loss calculations use floor rounding plus explicit remainder or reserve accounting where the standard requires it.
+Generic 18-decimal arithmetic imports `WAD` from `src/shared/Constants.sol`. Mutual cumulative loss deliberately retains the domain-specific name `LAMBDA_ONE` even though it has the same numeric representation: that name makes the fully-attributed-loss invariant explicit. Premium and loss calculations use floor rounding plus explicit remainder or reserve accounting where the standard requires it.
+
+Run `just units-check` to reject new executable raw scale literals. The check ignores documentation and tests and carries an explicit rationale for every permitted source-level definition.
 
 ## Time
 

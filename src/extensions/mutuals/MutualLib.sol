@@ -13,6 +13,7 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title MutualLib
 /// @notice The shared-loss-index ("Mutual" / Mutual) primitive — a manager-level
@@ -56,8 +57,6 @@ library MutualLib {
     uint64 internal constant MAX_STREAM_DURATION = 365 days;
     /// @dev `totalShares` is uint128; reject joins that would overflow the denominator at join time.
     uint128 internal constant MAX_TOTAL_SHARES = type(uint128).max;
-    /// @dev Basis-points denominator for the heterogeneous band / haircut / junior-split arithmetic.
-    uint256 internal constant BPS = 10_000;
 
     // =========================================================================
     // Mutual lifecycle
@@ -127,9 +126,9 @@ library MutualLib {
         if (g.bandAdapter != address(0)) revert ICM.MutualAlreadyConfigured(); // immutable after first config
 
         if (cfg.bandAdapter == address(0)) revert ICM.InvalidHeteroConfig();
-        if (cfg.valuationCeilBps > BPS) revert ICM.InvalidHeteroConfig(); // no inflation above adapter value
+        if (cfg.valuationCeilBps > BPS_DENOMINATOR) revert ICM.InvalidHeteroConfig(); // no inflation above adapter value
         if (cfg.valuationFloorBps > cfg.valuationCeilBps) revert ICM.InvalidHeteroConfig();
-        if (cfg.juniorBps > BPS) revert ICM.InvalidHeteroConfig();
+        if (cfg.juniorBps > BPS_DENOMINATOR) revert ICM.InvalidHeteroConfig();
         if (cfg.collaterals.length != cfg.haircutBps.length) revert ICM.InvalidHeteroConfig();
 
         g.bandAdapter = cfg.bandAdapter;
@@ -139,7 +138,7 @@ library MutualLib {
 
         uint256 n = cfg.collaterals.length;
         for (uint256 i; i < n; i++) {
-            if (cfg.haircutBps[i] > BPS) revert ICM.InvalidHeteroConfig();
+            if (cfg.haircutBps[i] > BPS_DENOMINATOR) revert ICM.InvalidHeteroConfig();
             s.mutualHaircutBps[mutualId][cfg.collaterals[i]] = cfg.haircutBps[i];
         }
 
@@ -485,7 +484,7 @@ library MutualLib {
                 uint256 haircut = s.mutualHaircutBps[mutualId][c.token];
                 uint256 pool = s.mutualJuniorPool[mutualId];
                 if (haircut != 0 && pool != 0) {
-                    uint256 draw = (haircut * owed) / BPS;
+                    uint256 draw = (haircut * owed) / BPS_DENOMINATOR;
                     if (draw > pool) draw = pool; // clamp ⇒ mutualJuniorToFree can never revert here
                     if (draw != 0) {
                         // numeraire top-up to the beneficiary (the junior pool is funded in numeraire).
@@ -655,7 +654,7 @@ library MutualLib {
         // fixed fraction of the MEASURED receipt to the junior shortfall absorber. The premium stream and
         // the funding-time solvency guard see ONLY the premium remainder — the junior share is subordinate
         // capital that never earns `Pi` and never enters the stream solvency accounting (INV-P13).
-        uint256 juniorShare = g.juniorBps == 0 ? 0 : (received * uint256(g.juniorBps)) / BPS;
+        uint256 juniorShare = g.juniorBps == 0 ? 0 : (received * uint256(g.juniorBps)) / BPS_DENOMINATOR;
         uint256 premiumPortion = received - juniorShare;
 
         _pokePremium(g);
@@ -873,13 +872,13 @@ library MutualLib {
         uint256 ei
     ) private view returns (uint128) {
         uint256 raw = IBandValuationAdapter(g.bandAdapter).value(token, ei);
-        uint256 lo = (raw * uint256(g.valuationFloorBps)) / BPS;
-        uint256 hi = (raw * uint256(g.valuationCeilBps)) / BPS;
+        uint256 lo = (raw * uint256(g.valuationFloorBps)) / BPS_DENOMINATOR;
+        uint256 hi = (raw * uint256(g.valuationCeilBps)) / BPS_DENOMINATOR;
         uint256 banded = raw;
         if (banded > hi) banded = hi; // ceilBps <= 1e4 ⇒ this binds, capping at ceilBps*raw/1e4
         if (banded < lo) banded = lo;
         uint256 haircut = s.mutualHaircutBps[mutualId][token];
-        uint256 weighted = (banded * (BPS - haircut)) / BPS;
+        uint256 weighted = (banded * (BPS_DENOMINATOR - haircut)) / BPS_DENOMINATOR;
         if (weighted > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
         // Safe: the guard above rejects anything above MAX_TOTAL_SHARES == type(uint128).max.
         // forge-lint: disable-next-line(unsafe-typecast)

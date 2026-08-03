@@ -8,6 +8,7 @@ import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {CommitmentLifecycleLib} from "src/core/manager/libraries/CommitmentLifecycleLib.sol";
 import {MovementLib, HOOK_DISTRIBUTE} from "src/core/manager/libraries/MovementLib.sol";
 import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title AgreementLib
 /// @notice External delegatecall library hosting the agreements extension
@@ -109,7 +110,7 @@ library AgreementLib {
     function _validateLeg(ICM.LegTerms calldata leg) private pure {
         if (leg.token == address(0) || leg.adapter == address(0)) revert ICM.ZeroAddress();
         if (leg.amount == 0) revert ICM.ZeroAmount();
-        if (leg.maxPenaltyBps > 10_000) revert ICM.PenaltyExceedsMax();
+        if (leg.maxPenaltyBps > BPS_DENOMINATOR) revert ICM.PenaltyExceedsMax();
         if (leg.strategies.length > MAX_STRATEGIES) revert ICM.TooManyStrategies();
     }
 

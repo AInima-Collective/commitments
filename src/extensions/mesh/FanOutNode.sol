@@ -18,6 +18,7 @@ import {
 import {IFlowQueryPath, DenomLink} from "src/extensions/mesh/interfaces/IFlowQueryPath.sol";
 import {FlowPathLib} from "src/extensions/mesh/libraries/FlowPathLib.sol";
 import {IEntity} from "src/shared/interfaces/IEntity.sol";
+import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 
 /// @title FanOutNode
 /// @notice Distributes one provider's committed stake to multiple consumers via configurable outflows.
@@ -48,9 +49,6 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
     // ============================================================
     // CONSTANTS
     // ============================================================
-
-    /// @dev Precision multiplier for reward per share accumulator
-    uint256 private constant PRECISION = 1e18;
 
     /// @notice defensive cap on distinct reward tokens per stakeDenom.
     ///         Mirrors TokenWeighting; bounds iteration cost in stake/releaseStake.
@@ -89,7 +87,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
     /// @notice Whether an address is a known consumer (has been added via setOutflows)
     mapping(address => bool) internal _isKnownConsumer;
 
-    /// @notice Reward accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by PRECISION)
+    /// @notice Reward accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by WAD)
     mapping(bytes32 => mapping(address => uint256)) public rewardsPerShare;
 
     /// @notice Reward debt: staker -> stakeDenom -> rewardToken -> debt at last claim
@@ -250,7 +248,9 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
         provider = provider_;
         manager = manager_;
         // Default: no input penalty restriction (10_000 bps = 100% = no limit beyond outflow validation).
-        inputMaxPenaltyBps = 10_000;
+        // BPS_DENOMINATOR is the compile-time constant 10_000, which fits uint16.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        inputMaxPenaltyBps = uint16(BPS_DENOMINATOR);
         emit Initialized(provider_, manager_);
     }
 
@@ -289,7 +289,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
                 if (outflows[j].consumer == outflows[i].consumer) revert DuplicateConsumer();
             }
         }
-        if (totalBps > 10_000) revert InvalidPortionSum();
+        if (totalBps > BPS_DENOMINATOR) revert InvalidPortionSum();
 
         // Get current locked amount
         UserInfo storage uInfo = _userInfo[msg.sender][denom];
@@ -301,8 +301,8 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
 
         for (uint256 i = 0; i < outflows.length; i++) {
             Outflow calldata out = outflows[i];
-            uint256 lienAmount = locked * out.portionBps / 10_000;
-            uint256 exposure = lienAmount * out.maxPenaltyBps / 10_000; // bps
+            uint256 lienAmount = locked * out.portionBps / BPS_DENOMINATOR;
+            uint256 exposure = lienAmount * out.maxPenaltyBps / BPS_DENOMINATOR; // bps
             newTotalForfeitable += exposure;
             if (lienAmount > newMaxLien) newMaxLien = lienAmount;
 
@@ -323,8 +323,8 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
             Outflow calldata out = outflows[i];
             _outflows[msg.sender][denom].push(out);
 
-            uint256 lienAmount = locked * out.portionBps / 10_000;
-            uint256 exposure = lienAmount * out.maxPenaltyBps / 10_000; // bps
+            uint256 lienAmount = locked * out.portionBps / BPS_DENOMINATOR;
+            uint256 exposure = lienAmount * out.maxPenaltyBps / BPS_DENOMINATOR; // bps
             _liens[msg.sender][denom][out.consumer] = FanOutLien({amount: lienAmount, exposure: exposure});
         }
 
@@ -363,7 +363,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
             uint256 rps = rewardsPerShare[denom][rt];
             uint256 debt = rewardDebt[msg.sender][denom][rt];
             if (rps > debt) {
-                pendingRewards[msg.sender][denom][rt] += oldLocked * (rps - debt) / PRECISION;
+                pendingRewards[msg.sender][denom][rt] += oldLocked * (rps - debt) / WAD;
             }
             rewardDebt[msg.sender][denom][rt] = rps;
         }
@@ -386,8 +386,8 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
             for (uint256 i = 0; i < existingOutflows.length; i++) {
                 Outflow storage out = existingOutflows[i];
                 FanOutLien storage lien = _liens[msg.sender][denom][out.consumer];
-                uint256 lienAmount = lien.amount + amount * out.portionBps / 10_000;
-                uint256 exposure = lienAmount * out.maxPenaltyBps / 10_000; // bps
+                uint256 lienAmount = lien.amount + amount * out.portionBps / BPS_DENOMINATOR;
+                uint256 exposure = lienAmount * out.maxPenaltyBps / BPS_DENOMINATOR; // bps
                 newTotalForfeitable += exposure;
                 if (lienAmount > newMaxLien) newMaxLien = lienAmount;
 
@@ -426,7 +426,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
             lien.amount -= amount;
             // exposure is `lien.amount * maxPenaltyBps 10_000`. Recompute against the
             // post-decrement amount; clamp to oldExposure as defense-in-depth.
-            uint256 newExposure = lien.amount * _getOutflowPenalty(staker, denom, msg.sender) / 10_000;
+            uint256 newExposure = lien.amount * _getOutflowPenalty(staker, denom, msg.sender) / BPS_DENOMINATOR;
             if (newExposure > oldExposure) newExposure = oldExposure;
             lien.exposure = newExposure;
             exposureReduction = oldExposure - newExposure;
@@ -469,7 +469,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
             uint256 currentRps = rewardsPerShare[denom][rt];
             uint256 debt = rewardDebt[staker][denom][rt];
             if (currentRps > debt) {
-                pendingRewards[staker][denom][rt] += uInfo.locked * (currentRps - debt) / PRECISION;
+                pendingRewards[staker][denom][rt] += uInfo.locked * (currentRps - debt) / WAD;
             }
             rewardDebt[staker][denom][rt] = currentRps;
         }
@@ -513,7 +513,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
         uint256 shareLimit,
         uint16 maxPenaltyBps
     ) external nonReentrant onlyProvider {
-        if (shareLimit > PRECISION) revert InvalidShareLimit();
+        if (shareLimit > WAD) revert InvalidShareLimit();
         if (maxPenaltyBps > inputMaxPenaltyBps) revert PenaltyExceedsInput();
 
         address staker = msg.sender;
@@ -751,7 +751,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
         if (ts == 0) revert ZeroTotalStake();
 
         // Update per-share accumulator
-        uint256 increment = rewardAmount * PRECISION / ts;
+        uint256 increment = rewardAmount * WAD / ts;
         if (increment == 0) revert RewardTooSmall();
         rewardsPerShare[stakeDenom][rewardToken] += increment;
 
@@ -777,7 +777,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
 
         uint256 pending = 0;
         if (currentRps > debt) {
-            pending = stakerLocked * (currentRps - debt) / PRECISION;
+            pending = stakerLocked * (currentRps - debt) / WAD;
         }
 
         // Include rewards accumulated during releaseStake
@@ -979,7 +979,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
     /// @param locked The staker's total locked amount for the denom
     /// @param newTotalForfeitable The proposed new totalForfeitable value
     function _validateExposureAllocation(uint256 locked, uint256 newTotalForfeitable) internal view {
-        uint256 limit = locked * inputMaxPenaltyBps / 10_000;
+        uint256 limit = locked * inputMaxPenaltyBps / BPS_DENOMINATOR;
         if (newTotalForfeitable > limit) revert ExposureAllocationExceeded();
     }
 
@@ -992,8 +992,8 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
         returns (uint256 exposure)
     {
         uint16 pen = _caps[staker][denom][consumer].maxPenaltyBps;
-        exposure = fill * pen / 10_000;
-        uint256 portionBps = pool > 0 ? fill * 10_000 / pool : 0;
+        exposure = fill * pen / BPS_DENOMINATOR;
+        uint256 portionBps = pool > 0 ? fill * BPS_DENOMINATOR / pool : 0;
         _outflows[staker][denom].push(Outflow({consumer: consumer, maxPenaltyBps: pen, portionBps: portionBps}));
         _liens[staker][denom][consumer] = FanOutLien({amount: fill, exposure: exposure});
     }
@@ -1013,7 +1013,7 @@ contract FanOutNode is IFanOut, IFlowQueryPath, IEntity, ReentrancyGuard {
         if (!cap.set) return 0;
 
         uint256 eff = cap.absoluteLimit;
-        uint256 byShare = pool * cap.shareLimit / PRECISION;
+        uint256 byShare = pool * cap.shareLimit / WAD;
         if (byShare < eff) eff = byShare;
 
         ConsumerCapacity storage cc = _capacity[consumer][denom];

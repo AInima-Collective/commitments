@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 import {IYieldStrategy} from "src/periphery/vaults/interfaces/IYieldStrategy.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title PremiumSkimStrategy
 /// @notice Abstract `IYieldStrategy` base that skims a configured share of NEW realized gains and
@@ -105,7 +106,7 @@ abstract contract PremiumSkimStrategy is IYieldStrategy, ReentrancyGuardTransien
         {
             revert ZeroAddress();
         }
-        if (skimBps_ > 10_000 || operatorFeeBps_ > 10_000) revert BpsExceedsMax();
+        if (skimBps_ > BPS_DENOMINATOR || operatorFeeBps_ > BPS_DENOMINATOR) revert BpsExceedsMax();
         asset = asset_;
         vault = vault_;
         operator = operator_;
@@ -167,8 +168,8 @@ abstract contract PremiumSkimStrategy is IYieldStrategy, ReentrancyGuardTransien
         uint256 charged = chargedGains;
         if (gains <= charged) return (0, 0, 0);
         newGains = gains - charged;
-        uint256 fee = (newGains * skimBps) / 10_000;
-        operatorFee = (fee * operatorFeeBps) / 10_000;
+        uint256 fee = (newGains * skimBps) / BPS_DENOMINATOR;
+        operatorFee = (fee * operatorFeeBps) / BPS_DENOMINATOR;
         premiumShare = fee - operatorFee;
     }
 

@@ -9,6 +9,7 @@ import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
 import {LedgerOpsLib} from "src/core/manager/libraries/LedgerOpsLib.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {PauseLib} from "src/core/manager/libraries/PauseLib.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
@@ -32,9 +33,6 @@ interface IOperatorRegistryHooks {
 /// @dev `msg.sender`, `address(this)`, and event sourcing are preserved under delegatecall, so
 ///      auth checks and registry calls behave exactly as if they lived on the manager.
 library CommitmentLifecycleLib {
-    /// @dev Basis-points denominator (100% == 10_000 bps); the scale for `maxPenaltyBps`/`penaltyBps`.
-    uint256 internal constant BPS = 10_000;
-
     // =========================================================================
     // Create (ERC §C.1)
     // =========================================================================
@@ -195,7 +193,7 @@ library CommitmentLifecycleLib {
         if (params.counterparty == address(0)) revert ICM.ZeroCounterparty();
         if (params.token == address(0) || params.adapter == address(0)) revert ICM.ZeroAddress();
         if (params.amount == 0) revert ICM.ZeroAmount();
-        if (params.maxPenaltyBps > BPS) revert ICM.PenaltyExceedsMax();
+        if (params.maxPenaltyBps > BPS_DENOMINATOR) revert ICM.PenaltyExceedsMax();
         if (params.challengeWindow < minChallengeWindow) revert ICM.ChallengeWindowTooShort();
         if (params.expiresAt != 0 && params.expiresAt <= block.timestamp) revert ICM.InvalidExpiry();
         if (params.strategies.length > maxStrategies) revert ICM.TooManyStrategies();

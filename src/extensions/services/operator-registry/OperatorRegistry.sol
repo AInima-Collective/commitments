@@ -18,6 +18,7 @@ import {ITokenWeighting} from "src/extensions/mesh/interfaces/ITokenWeighting.so
 import {Multicallable} from "src/shared/utilities/Multicallable.sol";
 import {MembershipBase} from "src/shared/registries/MembershipBase.sol";
 import {AddressSetSwapLib} from "src/shared/registries/AddressSetSwapLib.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title OperatorRegistry
 /// @notice operator directory backed by committed stake.
@@ -92,7 +93,7 @@ contract OperatorRegistry is
     ) external initializer {
         if (requiredArbiter_ == address(0)) revert ZeroArbiter();
         if (requiredToken_ == address(0)) revert ZeroToken();
-        if (minMaxPenaltyBps_ > 10_000) revert PenaltyExceedsMax();
+        if (minMaxPenaltyBps_ > BPS_DENOMINATOR) revert PenaltyExceedsMax();
 
         __AccessControl_init();
         // EIP-712 domain for the signature-delegated register/delegate paths.
@@ -679,7 +680,7 @@ contract OperatorRegistry is
 
     /// @inheritdoc IOperatorRegistry
     function tightenPolicy(uint16 newFloor) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newFloor > 10_000) revert PenaltyExceedsMax();
+        if (newFloor > BPS_DENOMINATOR) revert PenaltyExceedsMax();
         OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
         uint16 old = s.minMaxPenaltyBps;
         if (newFloor <= old) revert PolicyNotTightening(old, newFloor);

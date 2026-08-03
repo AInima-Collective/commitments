@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
+import {WAD} from "src/shared/Constants.sol";
 
 /// @title ERC4626Adapter
 /// @notice Backing adapter for any ERC-4626 vault share (ERC-COMMITMENTS §B.4). The index is
@@ -15,7 +16,7 @@ import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
 contract ERC4626Adapter is IBackingAdapter {
     /// @inheritdoc IBackingAdapter
     function indexNow(address token) external view returns (uint256) {
-        return IERC4626(token).convertToAssets(1e18);
+        return IERC4626(token).convertToAssets(WAD);
     }
 
     /// @inheritdoc IBackingAdapter

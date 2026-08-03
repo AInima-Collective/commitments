@@ -5,6 +5,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol";
+import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 
 /// @title PremiumScheduler
 /// @notice The pricing brain for a Mutual's premium stream. Off the audited custody
@@ -25,10 +26,6 @@ import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutu
 ///      The premium is the integral of `notional * rate / year` over `duration` seconds at a flat
 ///      rate; it funds the Synthetix stream the core runs for exactly that `duration`.
 contract PremiumScheduler is Ownable2Step {
-    /// @notice WAD scaling (1e18) — utilization and rate fixed-point base.
-    uint256 internal constant WAD = 1e18;
-    /// @notice Basis-point scaling (1e4) — leverage cap denominator.
-    uint256 internal constant BPS = 1e4;
     /// @notice Seconds in a 365-day year — annualization base for the rate.
     uint256 internal constant SECONDS_PER_YEAR = 365 days;
 
@@ -154,7 +151,7 @@ contract PremiumScheduler is Ownable2Step {
         uint256 sold = _activeNotionalSold(mutualId);
 
         // MCR / leverage cap — bounds notional-sold against live cover (core stays policy-free).
-        uint256 cap = Math.mulDiv(c.maxLeverageBps, activeCover, BPS);
+        uint256 cap = Math.mulDiv(c.maxLeverageBps, activeCover, BPS_DENOMINATOR);
         uint256 wouldBeSold = sold + notional;
         if (wouldBeSold > cap) revert LeverageCapExceeded(wouldBeSold, cap);
 

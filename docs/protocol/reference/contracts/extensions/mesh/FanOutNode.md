@@ -29,15 +29,6 @@ bytes32 internal constant FACTORY_TYPE_ID = keccak256("commitments.mesh.fan_out"
 ```
 
 
-### PRECISION
-Precision multiplier for reward per share accumulator
-
-
-```solidity
-uint256 private constant PRECISION = 1e18
-```
-
-
 ### MAX_REWARD_TOKENS
 defensive cap on distinct reward tokens per stakeDenom.
 Mirrors TokenWeighting; bounds iteration cost in stake/releaseStake.
@@ -134,7 +125,7 @@ mapping(address => bool) internal _isKnownConsumer
 
 
 ### rewardsPerShare
-Reward accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by PRECISION)
+Reward accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by WAD)
 
 
 ```solidity

@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title MutualRegistry
 /// @notice Product wrapper for the Mutual (Position A). Creates a `Mutual` in
@@ -23,9 +24,6 @@ contract MutualRegistry {
         string perilURI; // off-chain peril descriptor
         bytes32 perilHash;
     }
-
-    /// @dev Basis-points denominator (100% == 10_000 bps); the scale `utilizationBps` reports against.
-    uint256 private constant BPS = 10_000;
 
     ICommitmentManager public immutable manager;
     /// @notice Deployer-recorded admin, allowed to wire the cover policy once.
@@ -162,6 +160,6 @@ contract MutualRegistry {
         if (policy != address(0)) {
             activeNotionalSold = ILinkedMutualPolicy(policy).getActiveNotionalSold(mutualId);
         }
-        utilizationBps = activeCover == 0 ? 0 : (activeNotionalSold * BPS) / activeCover;
+        utilizationBps = activeCover == 0 ? 0 : (activeNotionalSold * BPS_DENOMINATOR) / activeCover;
     }
 }

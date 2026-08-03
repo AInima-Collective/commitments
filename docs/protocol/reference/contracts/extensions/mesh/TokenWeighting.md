@@ -31,24 +31,6 @@ bytes32 internal constant FACTORY_TYPE_ID = keccak256("commitments.mesh.token_we
 ```
 
 
-### PRECISION
-Precision multiplier for reward per share accumulator
-
-
-```solidity
-uint256 private constant PRECISION = 1e18
-```
-
-
-### BPS
-Basis points denominator for weight calculations
-
-
-```solidity
-uint256 private constant BPS = 10000
-```
-
-
 ### REWARDER_ROLE
 role gate for distributeRewards.
 
@@ -194,7 +176,7 @@ mapping(bytes32 => uint256) public totalStake
 
 
 ### rewardsPerShare
-Reward per share accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by PRECISION)
+Reward per share accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by WAD)
 
 
 ```solidity

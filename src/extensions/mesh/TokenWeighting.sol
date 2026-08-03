@@ -21,6 +21,7 @@ import {IFlowQueryPath, DenomLink} from "src/extensions/mesh/interfaces/IFlowQue
 import {FlowPathLib} from "src/extensions/mesh/libraries/FlowPathLib.sol";
 import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 import {IEntity} from "src/shared/interfaces/IEntity.sol";
+import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 
 /// @title TokenWeighting
 /// @notice Sink node that normalizes multi-asset stake into unified governance-compatible voting power.
@@ -53,12 +54,6 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     // ============================================================
     // CONSTANTS
     // ============================================================
-
-    /// @dev Precision multiplier for reward per share accumulator
-    uint256 private constant PRECISION = 1e18;
-
-    /// @dev Basis points denominator for weight calculations
-    uint256 private constant BPS = 10000;
 
     /// @notice role gate for distributeRewards.
     bytes32 public constant REWARDER_ROLE = keccak256("REWARDER_ROLE");
@@ -129,7 +124,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
 
     // ---- Reward accumulator ----
 
-    /// @dev Reward per share accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by PRECISION)
+    /// @dev Reward per share accumulator: stakeDenom -> rewardToken -> accumulated per-share (scaled by WAD)
     mapping(bytes32 => mapping(address => uint256)) public rewardsPerShare;
 
     /// @dev Reward debt: staker -> stakeDenom -> rewardToken -> debt at last claim/stake
@@ -310,7 +305,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             uint256 rps = rewardsPerShare[denom][rt];
             uint256 debt = rewardDebt[staker][denom][rt];
             if (rps > debt) {
-                pendingRewards[staker][denom][rt] += oldStake * (rps - debt) / PRECISION;
+                pendingRewards[staker][denom][rt] += oldStake * (rps - debt) / WAD;
             }
             rewardDebt[staker][denom][rt] = rps;
         }
@@ -336,7 +331,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             uint256 rps = rewardsPerShare[denom][rt];
             uint256 debt = rewardDebt[staker][denom][rt];
             if (rps > debt) {
-                pendingRewards[staker][denom][rt] += current * (rps - debt) / PRECISION;
+                pendingRewards[staker][denom][rt] += current * (rps - debt) / WAD;
             }
             rewardDebt[staker][denom][rt] = rps;
         }
@@ -373,7 +368,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             if (stakeAt == 0) continue;
             uint256 wAt = _weightHistory[denom].upperLookup(blockNumber);
             if (wAt == 0) continue;
-            power += stakeAt * wAt / BPS;
+            power += stakeAt * wAt / BPS_DENOMINATOR;
         }
     }
 
@@ -394,7 +389,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             if (totalAt == 0) continue;
             uint256 wAt = _weightHistory[denom].upperLookup(blockNumber);
             if (wAt == 0) continue;
-            power += totalAt * wAt / BPS;
+            power += totalAt * wAt / BPS_DENOMINATOR;
         }
     }
 
@@ -416,7 +411,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
         if (ts == 0) revert ZeroTotalStake();
 
         // Update per-share accumulator
-        uint256 increment = rewardAmount * PRECISION / ts;
+        uint256 increment = rewardAmount * WAD / ts;
         if (increment == 0) revert RewardTooSmall();
         rewardsPerShare[stakeDenom][rewardToken] += increment;
 
@@ -442,7 +437,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
 
         uint256 pending = 0;
         if (currentRps > debt) {
-            pending = stakerStake * (currentRps - debt) / PRECISION;
+            pending = stakerStake * (currentRps - debt) / WAD;
         }
 
         // drain banked pending from prior stake/release events.
@@ -566,7 +561,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             bytes32 denom = _denoms[i];
             uint256 w = weights[denom];
             if (w > 0) {
-                power += currentStake[staker][denom] * w / BPS;
+                power += currentStake[staker][denom] * w / BPS_DENOMINATOR;
             }
         }
     }
@@ -579,7 +574,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             bytes32 denom = _denoms[i];
             uint256 w = weights[denom];
             if (w > 0) {
-                power += totalStake[denom] * w / BPS;
+                power += totalStake[denom] * w / BPS_DENOMINATOR;
             }
         }
     }

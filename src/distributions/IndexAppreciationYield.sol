@@ -14,6 +14,7 @@ import {
     ForfeitContext
 } from "src/core/interfaces/IDistributionStrategy.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
+import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 
 /// @title IndexAppreciationYield
 /// @notice The normative-optional premium strategy of ERC-COMMITMENTS (Reference Strategy
@@ -79,7 +80,7 @@ contract IndexAppreciationYield is IDistributionStrategy {
     ///      v1 compatibility-refusal mechanism.
     function onCommitmentCreated(CreatedContext calldata ctx) external onlyManager {
         uint16 yieldShareBps = abi.decode(ctx.strategyParams, (uint16));
-        if (yieldShareBps > 10_000) revert YieldBpsExceedsMax();
+        if (yieldShareBps > BPS_DENOMINATOR) revert YieldBpsExceedsMax();
 
         Position storage pos = _positions[ctx.base.commitmentId];
         if (pos.bound) revert AlreadyBound();
@@ -203,7 +204,7 @@ contract IndexAppreciationYield is IDistributionStrategy {
         // yieldUnits. yieldUnits > 0 implies encumbered > 0 and yieldShareBps > 0, and the
         // consumed delta is provably <= nowIndex - lastIndex (min() is belt-and-braces).
         uint256 consumed =
-            Math.mulDiv(yieldUnits * 10_000, nowIndex, encumbered * pos.yieldShareBps, Math.Rounding.Ceil);
+            Math.mulDiv(yieldUnits * BPS_DENOMINATOR, nowIndex, encumbered * pos.yieldShareBps, Math.Rounding.Ceil);
         pos.lastIndex = Math.min(pos.lastIndex + consumed, nowIndex);
 
         pos.owed += yieldUnits;
@@ -222,10 +223,11 @@ contract IndexAppreciationYield is IDistributionStrategy {
         if (nowIndex <= lastIndex || pos.yieldShareBps == 0 || encumbered == 0) return (0, nowIndex);
 
         // counterpartyYield = encumbered × (nowIndex − lastIndex) × yieldShareBps / (1e18 × 10_000)
-        uint256 counterpartyYield = Math.mulDiv(encumbered * pos.yieldShareBps, nowIndex - lastIndex, 1e18 * 10_000);
+        uint256 counterpartyYield =
+            Math.mulDiv(encumbered * pos.yieldShareBps, nowIndex - lastIndex, WAD * BPS_DENOMINATOR);
         if (counterpartyYield == 0) return (0, nowIndex);
 
-        yieldUnits = Math.mulDiv(counterpartyYield, 1e18, nowIndex);
+        yieldUnits = Math.mulDiv(counterpartyYield, WAD, nowIndex);
         if (yieldUnits > encumbered) yieldUnits = encumbered; // INV-4 re-enforces independently
     }
 }

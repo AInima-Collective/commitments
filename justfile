@@ -50,6 +50,11 @@ docs-gen:
 docs-check:
     node script/check-docs.mjs
 
+# Reject executable generic scale literals outside the canonical shared definitions
+# and the explicitly documented domain-specific allowlist.
+units-check:
+    node script/check-unit-constants.mjs
+
 # Regenerate the selector/topic0/interface-id appendix from the compiled ABIs.
 # Run after any interface change (needs `forge build` output under out/).
 selectors:

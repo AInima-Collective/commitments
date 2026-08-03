@@ -30,24 +30,6 @@ rate; it funds the Synthetix stream the core runs for exactly that `duration`.
 
 
 ## Constants
-### WAD
-WAD scaling (1e18) — utilization and rate fixed-point base.
-
-
-```solidity
-uint256 internal constant WAD = 1e18
-```
-
-
-### BPS
-Basis-point scaling (1e4) — leverage cap denominator.
-
-
-```solidity
-uint256 internal constant BPS = 1e4
-```
-
-
 ### SECONDS_PER_YEAR
 Seconds in a 365-day year — annualization base for the rate.
 

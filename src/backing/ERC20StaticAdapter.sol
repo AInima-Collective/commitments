@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
+import {WAD} from "src/shared/Constants.sol";
 
 /// @title ERC20StaticAdapter
 /// @notice Backing adapter for plain ERC-20 tokens with no internal appreciation
@@ -11,7 +12,7 @@ import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
 contract ERC20StaticAdapter is IBackingAdapter {
     /// @inheritdoc IBackingAdapter
     function indexNow(address) external pure returns (uint256) {
-        return 1e18;
+        return WAD;
     }
 
     /// @inheritdoc IBackingAdapter
