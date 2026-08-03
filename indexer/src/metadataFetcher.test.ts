@@ -217,7 +217,12 @@ test('rejects every non-public IPv4 and IPv6 resolver result before fetch', asyn
     { address: '169.254.169.254', family: 4 },
     { address: '172.16.0.1', family: 4 },
     { address: '192.168.1.1', family: 4 },
+    { address: '192.0.2.1', family: 4 },
+    { address: '198.18.0.1', family: 4 },
+    { address: '198.51.100.1', family: 4 },
+    { address: '203.0.113.1', family: 4 },
     { address: '224.0.0.1', family: 4 },
+    { address: '240.0.0.1', family: 4 },
     { address: '255.255.255.255', family: 4 },
     { address: '::', family: 6 },
     { address: '::1', family: 6 },
@@ -412,14 +417,35 @@ test('IPFS stays beneath a parsed trusted HTTPS gateway origin and path', async 
   )
 })
 
-test('rejects insecure or malformed IPFS gateway and path inputs before fetch', async () => {
+test('explicit trusted HTTP loopback IPFS gateway is allowed and remains pinned', async () => {
+  let calledUrl = ''
+  let pinned: ResolvedAddress | null = null
+  const transport: MetadataTransport = async (request) => {
+    pinned = request.address
+    calledUrl = request.url.href
+    return {
+      response: new Response('{}'),
+      release: async () => undefined,
+    }
+  }
+  const result = await fetchMetadata('ipfs://bafyLOCAL/folder/meta.json', ZERO, mockFetchOk('{}'), {
+    ipfsGateway: 'http://127.0.0.1:8080/ipfs/',
+    resolveHostname: async () => [{ address: '127.0.0.1', family: 4 }],
+    transport,
+  })
+  assert.equal(result.status, 'ok')
+  assert.equal(calledUrl, 'http://127.0.0.1:8080/ipfs/bafyLOCAL/folder/meta.json')
+  assert.deepEqual(pinned, { address: '127.0.0.1', family: 4 })
+})
+
+test('rejects malformed IPFS gateway and escaping path inputs before fetch', async () => {
   let called = false
   const fetchImpl = (async () => {
     called = true
     return new Response('{}')
   }) as unknown as typeof fetch
   const cases: Array<[string, string]> = [
-    ['ipfs://bafyCID/file', 'http://127.0.0.1:8080/ipfs/'],
+    ['ipfs://bafyCID/file', 'ftp://127.0.0.1:2121/ipfs/'],
     ['ipfs://bafyCID/file', 'https://user:pass@gateway.example/ipfs/'],
     ['ipfs://bafyCID/%2e%2e/secret', 'https://gateway.example/ipfs/'],
     ['ipfs://evil.example\\@gateway.example/file', 'https://gateway.example/ipfs/'],

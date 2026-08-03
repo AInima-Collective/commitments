@@ -11,7 +11,7 @@
  *  - 5-second timeout via AbortController
  *  - 256 KiB body size cap via streaming read (prevents memory exhaustion)
  *  - One-shot fetch per event, no retry loop
- *  - IPFS gateway: trusted HTTPS IPFS_GATEWAY, default https://ipfs.io/ipfs/
+ *  - IPFS gateway: trusted operator IPFS_GATEWAY, default https://ipfs.io/ipfs/
  *  - Hash verified on RAW bytes (pre-parse); keccak256(utf8_bytes_fetched) vs on-chain hash
  *  - Parsed JSON → metadataContent; parse failure → metadataContentRaw (raw text)
  *
@@ -287,7 +287,9 @@ function resolveUri(uri: string, gatewayOverride?: string): ResolvedTarget | nul
 }
 
 /**
- * Resolve an ipfs:// URI beneath an operator-selected HTTPS gateway path.
+ * Resolve an ipfs:// URI beneath an operator-selected gateway path. HTTPS is
+ * preferred and used by default; explicit HTTP gateways are allowed because
+ * their origin is operator authority (for example, loopback Kubo in dev).
  * User-controlled input is decoded segment-by-segment and reconstructed, so it
  * cannot replace the configured origin or escape the configured path using
  * dot segments, encoded separators, credentials, queries, or fragments.
@@ -328,7 +330,7 @@ function resolveIpfsUri(uri: string, gatewayOverride?: string): ResolvedTarget |
     return null
   }
   if (
-    gateway.protocol !== 'https:' ||
+    (gateway.protocol !== 'https:' && gateway.protocol !== 'http:') ||
     !gateway.hostname ||
     gateway.username ||
     gateway.password ||

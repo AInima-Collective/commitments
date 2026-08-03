@@ -37,10 +37,11 @@ This prevents DNS rebinding and redirects from turning metadata ingestion into
 access to loopback, private, link-local, multicast, or reserved services.
 
 `ipfs://` is resolved only through the parsed origin and base path of the
-operator's `IPFS_GATEWAY` (default `https://ipfs.io/ipfs/`). Overrides must use
-HTTPS. The on-chain CID/path cannot replace that configured origin or traverse
-above its base path. A trusted operator gateway may itself resolve privately;
-that is an explicit configuration trust decision, not one controlled on chain.
+operator's `IPFS_GATEWAY` (default `https://ipfs.io/ipfs/`). HTTPS is preferred,
+but an explicitly configured HTTP gateway is supported for loopback/private
+deployments. The on-chain CID/path cannot replace that configured origin or
+traverse above its base path. A trusted operator gateway may itself resolve
+privately; that is a configuration trust decision, not one controlled on chain.
 
 ## Metadata pinning (`POST /metadata/pin`)
 

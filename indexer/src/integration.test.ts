@@ -123,9 +123,9 @@ test('ipfs:// URI resolved through IPFS_GATEWAY env', async () => {
     await fetchMetadata('ipfs://bafyTEST/m.json', ZERO, mock, TEST_DEPS)
     assert.equal(observedUrl, 'https://test-gateway.example/ipfs/bafyTEST/m.json')
 
-    // A plain-http gateway is not trusted for server-side metadata resolution.
-    // Local operators can put Kubo behind HTTPS or leave IPFS_GATEWAY unset and
-    // use the default public gateway.
+    // A plain-http local gateway is allowed only because its complete origin
+    // comes from operator configuration, not the on-chain URI. Direct http://
+    // metadata remains rejected below.
     process.env.IPFS_GATEWAY = 'http://127.0.0.1:8080/ipfs/'
     const payload = '{"schemaVersion":"commitment.v1","title":"Locally pinned"}'
     const localMock = (async (url: string) => {
@@ -134,9 +134,11 @@ test('ipfs:// URI resolved through IPFS_GATEWAY env', async () => {
     }) as unknown as typeof fetch
     const hash = keccak256(new TextEncoder().encode(payload))
     observedUrl = ''
-    const r = await fetchMetadata('ipfs://bafyLOCAL', hash, localMock, TEST_DEPS)
-    assert.equal(observedUrl, '')
-    assert.equal(r.status, 'unreachable')
+    const r = await fetchMetadata('ipfs://bafyLOCAL', hash, localMock, {
+      resolveHostname: async () => [{ address: '127.0.0.1', family: 4 }],
+    })
+    assert.equal(observedUrl, 'http://127.0.0.1:8080/ipfs/bafyLOCAL')
+    assert.equal(r.status, 'ok')
   } finally {
     if (prev === undefined) delete process.env.IPFS_GATEWAY
     else process.env.IPFS_GATEWAY = prev

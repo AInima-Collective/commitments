@@ -184,10 +184,16 @@ ws-typecheck:
 
 # Run the indexer in dev mode (pglite, port 65422). Requires contracts to be
 # deployed via `just anvil-seed` first so `broadcast/` has addresses.
-# Server-side IPFS_GATEWAY overrides must use HTTPS. The local Kubo gateway is
-# intentionally browser-only; the indexer uses the public HTTPS default unless
-# an operator supplies another trusted HTTPS gateway.
+# The seed pins to the local node, so those CIDs are not necessarily
+# retrievable from the public gateway the fetcher otherwise defaults to. Probe
+# the conventional local gateway and trust it explicitly when it answers.
 indexer-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "${IPFS_GATEWAY:-}" ] && curl -sf -m 2 -o /dev/null http://127.0.0.1:8080/ipfs/bafkqaaa 2>/dev/null; then
+        export IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/
+        echo "ipfs: local gateway detected, using trusted IPFS_GATEWAY=$IPFS_GATEWAY"
+    fi
     pnpm --filter @commitments/indexer dev
 
 indexer-typecheck:
@@ -235,12 +241,12 @@ ipfs-up:
         sleep 1
     done
     echo ""
-    echo "ipfs: ready. Export the API for indexer pinning if needed:"
+    echo "ipfs: ready. Export these before starting the indexer and frontend:"
     echo "  export IPFS_API_URL=http://127.0.0.1:5001"
-    echo "  export VITE_IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/"
+    echo "  export IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/"
     echo ""
-    echo "The loopback HTTP gateway is for the browser only. Server-side"
-    echo "IPFS_GATEWAY overrides must be trusted HTTPS URLs."
+    echo "IPFS_GATEWAY is trusted operator configuration for the indexer, and"
+    echo "'just dev-up' copies it into frontend/.env.local as VITE_IPFS_GATEWAY."
 
 ipfs-down:
     docker compose down ipfs
