@@ -504,9 +504,8 @@ interface ICommitmentManager {
     error NoActiveForfeitProposal();
     error ChallengeWindowActive();
     error ChallengeWindowTooShort();
-    /// @notice The manager-wide creation floor may be reset to its one-day default with zero,
-    ///         but a non-zero configured value cannot be shorter than the protocol floor.
-    error MinChallengeWindowBelowFloor(uint64 requested, uint64 minimum);
+    /// @notice A non-zero manager-wide creation floor cannot be shorter than the protocol floor.
+    error MinChallengeWindowBelowFloor();
     error CommitmentHasNoExpiry();
     error CommitmentNotExpired();
     error InvalidExpiry();

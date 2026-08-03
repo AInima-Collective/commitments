@@ -230,7 +230,7 @@ contract CreateCommitmentTest is LifecycleTestBase {
 
     function test_create_shippingManagerCannotUseChallengeWindowBelowOneDay() public {
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(ICM.MinChallengeWindowBelowFloor.selector, uint64(1), uint64(1 days)));
+        vm.expectRevert(ICM.MinChallengeWindowBelowFloor.selector);
         manager.setMinChallengeWindow(1);
 
         ICM.CommitmentParams memory p = _params(100e18, 1000);

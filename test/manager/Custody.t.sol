@@ -360,9 +360,7 @@ contract CustodyTest is Test {
 
     function test_setMinChallengeWindow_rejectsNonZeroValueBelowProtocolFloor() public {
         vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(ICM.MinChallengeWindowBelowFloor.selector, uint64(86_399), uint64(1 days))
-        );
+        vm.expectRevert(ICM.MinChallengeWindowBelowFloor.selector);
         manager.setMinChallengeWindow(86_399);
         assertEq(manager.MIN_CHALLENGE_WINDOW(), 1 days, "failed update leaves default active");
     }

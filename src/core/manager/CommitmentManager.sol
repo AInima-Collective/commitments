@@ -847,7 +847,7 @@ contract CommitmentManager is
     ///         non-zero values must be at least one day.
     function setMinChallengeWindow(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newValue != 0 && newValue < DEFAULT_MIN_CHALLENGE_WINDOW) {
-            revert ICM.MinChallengeWindowBelowFloor(newValue, DEFAULT_MIN_CHALLENGE_WINDOW);
+            revert ICM.MinChallengeWindowBelowFloor();
         }
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
         emit ICM.MinChallengeWindowUpdated(s.minChallengeWindow, newValue);

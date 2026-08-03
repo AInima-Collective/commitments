@@ -3413,14 +3413,7 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'InvalidValuationAttestation' },
   { type: 'error', inputs: [], name: 'MemberStrategyForbidden' },
   { type: 'error', inputs: [], name: 'MemberUnsettled' },
-  {
-    type: 'error',
-    inputs: [
-      { name: 'requested', internalType: 'uint64', type: 'uint64' },
-      { name: 'minimum', internalType: 'uint64', type: 'uint64' },
-    ],
-    name: 'MinChallengeWindowBelowFloor',
-  },
+  { type: 'error', inputs: [], name: 'MinChallengeWindowBelowFloor' },
   { type: 'error', inputs: [], name: 'MovementBlockedByForfeit' },
   {
     type: 'error',

@@ -92,7 +92,7 @@ The SHOULD-level values above are baselines, not arbitrary numbers. The threat e
 
 Implementations choosing to deviate from a SHOULD baseline are conformant but assume responsibility for re-validating these threat trade-offs in their deployment context.
 
-**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `setMinChallengeWindow(0)` restores the one-day floor, values greater than or equal to one day are accepted, and shorter non-zero values revert with `MinChallengeWindowBelowFloor(requested, minimum)`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
+**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `setMinChallengeWindow(0)` restores the one-day floor, values greater than or equal to one day are accepted, and shorter non-zero values revert with `MinChallengeWindowBelowFloor()`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
 
 #### 0.4 Conformance levels
 
@@ -626,7 +626,7 @@ error ForfeitPending();
 error NoActiveForfeitProposal();
 error ChallengeWindowActive();
 error ChallengeWindowTooShort();
-error MinChallengeWindowBelowFloor(uint64 requested, uint64 minimum);
+error MinChallengeWindowBelowFloor();
 error CommitmentHasNoExpiry();
 error CommitmentNotExpired();
 error InvalidExpiry();
