@@ -145,25 +145,63 @@ UI control caching/invalidation.
 ## Config
 
 `ponder.config.ts` resolves deployment addresses by parsing the latest
-`../broadcast/**/<chainId>/run-latest.json` Foundry run. Override via:
+`../broadcast/**/<chainId>/run-latest.json` Foundry run when `DEPLOYMENTS_JSON`
+is unset. To use an explicit deployment manifest instead:
 
 ```bash
 DEPLOYMENTS_JSON=/path/to/deployments.json pnpm --filter @commitments/indexer dev
 ```
 
-where the JSON is of shape:
+When set, `DEPLOYMENTS_JSON` is authoritative. An empty value, missing or
+unreadable path, malformed JSON, schema error, or chain mismatch stops startup
+immediately; the loader never falls back to local broadcast artifacts.
+
+Schema v1 is a strict contract. A minimal manifest is checked in at
+[`fixtures/deployments.v1.example.json`](fixtures/deployments.v1.example.json):
 
 ```json
 {
-  "commitmentManager": "0x…",
-  "commitmentsVault": "0x…",
-  "operatorRegistry": "0x…",
-  "stakeRegistry": "0x…",
-  "meshFactory": "0x…",
+  "schemaVersion": 1,
+  "chainId": 31337,
+  "commitmentManagers": ["0x0000000000000000000000000000000000000001"],
+  "vaultFactory": "0x0000000000000000000000000000000000000002",
+  "operatorRegistries": ["0x0000000000000000000000000000000000000003"],
+  "stakeRegistry": "0x0000000000000000000000000000000000000004",
+  "meshFactory": "0x0000000000000000000000000000000000000005",
+  "flatFeeStrategies": [],
+  "agentIdentityRegistries": [],
   "startBlock": 0
 }
 ```
 
+`chainId` must match `DEPLOY_ENV`: `31337` for `LOCAL`, `11155111` for
+`SEPOLIA`, or `1` for `PROD`. `startBlock` is a required non-negative integer.
+The manager and operator-registry arrays must each contain at least one non-zero
+EVM address. `vaultFactory`, `stakeRegistry` (the operator service registry),
+and `meshFactory` are also required non-zero addresses. Vault instances are
+discovered from `VaultFactory.VaultDeployed`, so a vault address does not belong
+in this manifest.
+
+Optional subsystems are represented by `tokenWeighting`, `governorFactory`,
+`mutualRegistry`, `optimisticMutualArbiter`, `linkedMutualPolicy`,
+`skimmingStrategy`, and `vaultCoverConduit`. Each must be a non-zero address when
+present. `flatFeeStrategies` and `agentIdentityRegistries` are optional address
+arrays and default to `[]` when omitted.
+
+Legacy `commitmentManager`, `operatorRegistry`, and `commitmentsVault` keys are
+not accepted in schema v1. Migrate the first two to their plural array forms and
+replace `commitmentsVault` with the actual `vaultFactory` address. Unknown fields
+are rejected so address-key typos cannot silently disable indexing.
+
+The example fixture is also suitable for config-only tooling from a clean tree:
+
+```bash
+DEPLOYMENTS_JSON=fixtures/deployments.v1.example.json \
+  pnpm --filter @commitments/indexer codegen
+```
+
 ## Production (Ethereum mainnet)
 
-Set `DEPLOY_ENV=PROD`, `PONDER_RPC_URL_1`, and `PONDER_WS_URL_1`. The config switches to Ethereum mainnet automatically. Deploy addresses still come from `loadDeployments(1)` — point `DEPLOYMENTS_JSON` at your mainnet deployment summary.
+Set `DEPLOY_ENV=PROD`, `PONDER_RPC_URL_1`, and `PONDER_WS_URL_1`. The config
+switches to Ethereum mainnet automatically. Point `DEPLOYMENTS_JSON` at a schema
+v1 mainnet manifest whose `chainId` is `1`.

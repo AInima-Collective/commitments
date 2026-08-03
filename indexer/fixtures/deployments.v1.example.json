@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "chainId": 31337,
+  "commitmentManagers": [
+    "0x0000000000000000000000000000000000000001"
+  ],
+  "vaultFactory": "0x0000000000000000000000000000000000000002",
+  "operatorRegistries": [
+    "0x0000000000000000000000000000000000000003"
+  ],
+  "stakeRegistry": "0x0000000000000000000000000000000000000004",
+  "meshFactory": "0x0000000000000000000000000000000000000005",
+  "flatFeeStrategies": [],
+  "agentIdentityRegistries": [],
+  "startBlock": 0
+}

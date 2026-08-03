@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Hex } from 'viem'
+import { isAddress, zeroAddress, type Hex } from 'viem'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -29,7 +29,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
  * from `VaultFactory.VaultDeployed` (Ponder `factory()` helper), so we only
  * resolve the factory address here.
  */
-export type CommitmentsDeployments = {
+export const DEPLOYMENT_MANIFEST_SCHEMA_VERSION = 1 as const
+
+export type DeploymentManifestV1 = {
+  schemaVersion: typeof DEPLOYMENT_MANIFEST_SCHEMA_VERSION
+  chainId: number
   commitmentManagers: Hex[]
   vaultFactory: Hex
   operatorRegistries: Hex[]
@@ -70,8 +74,114 @@ export type CommitmentsDeployments = {
   // instead of reading the broadcast. Array-shaped like the managers/registries
   // for forward-compat; empty when the seed predates the agent-bond milestone.
   agentIdentityRegistries: Hex[]
-  // Block from which to start indexing. Defaults to 0 locally.
+  // Required block from which to start indexing (0 for the local fixture).
   startBlock: number
+}
+
+export type CommitmentsDeployments = DeploymentManifestV1
+
+const REQUIRED_ADDRESS_FIELDS = ['vaultFactory', 'stakeRegistry', 'meshFactory'] as const
+const REQUIRED_ADDRESS_ARRAY_FIELDS = ['commitmentManagers', 'operatorRegistries'] as const
+const OPTIONAL_ADDRESS_FIELDS = [
+  'tokenWeighting',
+  'governorFactory',
+  'mutualRegistry',
+  'optimisticMutualArbiter',
+  'linkedMutualPolicy',
+  'skimmingStrategy',
+  'vaultCoverConduit',
+] as const
+const OPTIONAL_ADDRESS_ARRAY_FIELDS = ['flatFeeStrategies', 'agentIdentityRegistries'] as const
+const MANIFEST_FIELDS = new Set([
+  'schemaVersion',
+  'chainId',
+  'startBlock',
+  ...REQUIRED_ADDRESS_FIELDS,
+  ...REQUIRED_ADDRESS_ARRAY_FIELDS,
+  ...OPTIONAL_ADDRESS_FIELDS,
+  ...OPTIONAL_ADDRESS_ARRAY_FIELDS,
+])
+const LEGACY_MANIFEST_FIELDS = new Map([
+  ['commitmentManager', 'commitmentManagers: ["0x…"]'],
+  ['operatorRegistry', 'operatorRegistries: ["0x…"]'],
+  ['commitmentsVault', 'vaultFactory: "0x…"'],
+])
+
+type JsonObject = Record<string, unknown>
+
+function manifestError(message: string): never {
+  throw new Error(`Invalid deployment manifest: ${message}`)
+}
+
+function parseAddress(value: unknown, field: string): Hex {
+  if (typeof value !== 'string' || !isAddress(value) || value.toLowerCase() === zeroAddress) {
+    manifestError(`${field} must be a non-zero EVM address`)
+  }
+  return value as Hex
+}
+
+function parseAddressArray(value: unknown, field: string, required: boolean): Hex[] {
+  if (value === undefined && !required) return []
+  if (!Array.isArray(value)) manifestError(`${field} must be an array of EVM addresses`)
+  if (required && value.length === 0) manifestError(`${field} must contain at least one address`)
+  return value.map((address, index) => parseAddress(address, `${field}[${index}]`))
+}
+
+/**
+ * Validate and normalize the versioned deployment manifest consumed by Ponder.
+ *
+ * Schema v1 is intentionally strict: legacy singular keys and unknown fields are
+ * rejected so a typo cannot silently disable indexing for a deployed subsystem.
+ */
+export function parseDeploymentManifest(value: unknown, expectedChainId: number): DeploymentManifestV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    manifestError('the top-level value must be a JSON object')
+  }
+  const raw = value as JsonObject
+
+  for (const [legacy, replacement] of LEGACY_MANIFEST_FIELDS) {
+    if (legacy in raw) {
+      manifestError(`legacy field "${legacy}" is not supported in schema v1; use ${replacement}`)
+    }
+  }
+  for (const field of Object.keys(raw)) {
+    if (!MANIFEST_FIELDS.has(field)) manifestError(`unknown field "${field}"`)
+  }
+
+  if (raw.schemaVersion !== DEPLOYMENT_MANIFEST_SCHEMA_VERSION) {
+    manifestError(`schemaVersion must be ${DEPLOYMENT_MANIFEST_SCHEMA_VERSION}`)
+  }
+  if (!Number.isSafeInteger(raw.chainId) || (raw.chainId as number) <= 0) {
+    manifestError('chainId must be a positive safe integer')
+  }
+  if (raw.chainId !== expectedChainId) {
+    manifestError(`chainId ${raw.chainId} does not match the expected chain ${expectedChainId}`)
+  }
+  if (!Number.isSafeInteger(raw.startBlock) || (raw.startBlock as number) < 0) {
+    manifestError('startBlock must be a non-negative safe integer')
+  }
+
+  const manifest: DeploymentManifestV1 = {
+    schemaVersion: DEPLOYMENT_MANIFEST_SCHEMA_VERSION,
+    chainId: raw.chainId as number,
+    startBlock: raw.startBlock as number,
+    commitmentManagers: parseAddressArray(raw.commitmentManagers, 'commitmentManagers', true),
+    operatorRegistries: parseAddressArray(raw.operatorRegistries, 'operatorRegistries', true),
+    vaultFactory: parseAddress(raw.vaultFactory, 'vaultFactory'),
+    stakeRegistry: parseAddress(raw.stakeRegistry, 'stakeRegistry'),
+    meshFactory: parseAddress(raw.meshFactory, 'meshFactory'),
+    flatFeeStrategies: parseAddressArray(raw.flatFeeStrategies, 'flatFeeStrategies', false),
+    agentIdentityRegistries: parseAddressArray(
+      raw.agentIdentityRegistries,
+      'agentIdentityRegistries',
+      false,
+    ),
+  }
+
+  for (const field of OPTIONAL_ADDRESS_FIELDS) {
+    if (raw[field] !== undefined) manifest[field] = parseAddress(raw[field], field)
+  }
+  return manifest
 }
 
 type DeploymentsKey =
@@ -205,7 +315,11 @@ function parseBroadcast(chainId: number): CommitmentsDeployments {
   // For each impl, prefer the matching proxy (events emit under the proxy's address).
   const resolveProxy = (impl: Hex): Hex => implToProxy.get(impl.toLowerCase()) ?? impl
 
-  const found: Partial<CommitmentsDeployments> = { startBlock: 0 }
+  const found: Partial<CommitmentsDeployments> = {
+    schemaVersion: DEPLOYMENT_MANIFEST_SCHEMA_VERSION,
+    chainId,
+    startBlock: 0,
+  }
   for (const [key, impl] of singleImpls.entries()) {
     ;(found as Record<string, unknown>)[key] = resolveProxy(impl)
   }
@@ -239,29 +353,36 @@ function parseBroadcast(chainId: number): CommitmentsDeployments {
     throw new Error('No MeshFactory deployment found — run forge script script/Simulate.s.sol first')
   }
 
-  return found as CommitmentsDeployments
+  return parseDeploymentManifest(found, chainId)
 }
 
 export function loadDeployments(chainId: number): CommitmentsDeployments {
   const override = process.env.DEPLOYMENTS_JSON
-  if (override && existsSync(override)) {
-    const raw = JSON.parse(readFileSync(override, 'utf-8')) as Partial<CommitmentsDeployments> & {
-      // Back-compat: older override JSON files may still use the singular keys.
-      commitmentManager?: Hex
-      operatorRegistry?: Hex
+  if (override !== undefined) {
+    if (override.trim() === '') throw new Error('DEPLOYMENTS_JSON is set but empty')
+    const manifestPath = resolve(override)
+    let source: string
+    try {
+      source = readFileSync(manifestPath, 'utf-8')
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to read DEPLOYMENTS_JSON at ${manifestPath}: ${reason}`)
     }
-    const commitmentManagers =
-      raw.commitmentManagers ?? (raw.commitmentManager ? [raw.commitmentManager] : [])
-    const operatorRegistries =
-      raw.operatorRegistries ?? (raw.operatorRegistry ? [raw.operatorRegistry] : [])
-    return {
-      ...raw,
-      commitmentManagers,
-      operatorRegistries,
-      flatFeeStrategies: raw.flatFeeStrategies ?? [],
-      agentIdentityRegistries: raw.agentIdentityRegistries ?? [],
-      startBlock: raw.startBlock ?? 0,
-    } as CommitmentsDeployments
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(source)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to parse DEPLOYMENTS_JSON at ${manifestPath}: ${reason}`)
+    }
+
+    try {
+      return parseDeploymentManifest(parsed, chainId)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(`DEPLOYMENTS_JSON at ${manifestPath} is invalid: ${reason}`)
+    }
   }
   return parseBroadcast(chainId)
 }
