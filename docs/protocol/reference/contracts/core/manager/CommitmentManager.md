@@ -41,7 +41,7 @@ bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE")
 
 ### DEFAULT_MIN_CHALLENGE_WINDOW
 ERC §0.3 — MUST-level floor on challenge windows. Lazy default when storage is 0;
-testnet deployments may admin-lower via `setMinChallengeWindow`.
+`setMinChallengeWindow` may raise this floor but can never lower it.
 
 
 ```solidity
@@ -1096,8 +1096,8 @@ function setUnbondingPeriod(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROL
 
 ### setMinChallengeWindow
 
-Update the minimum challenge window. Passing 0 restores the 1-day default.
-Lowering below 1 day is intended for testnets only.
+Update the minimum challenge window. Passing 0 restores the 1-day default;
+non-zero values must be at least one day.
 
 
 ```solidity

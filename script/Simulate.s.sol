@@ -72,7 +72,7 @@ import {SkimmingMockStrategy} from "../test/helpers/SkimmingMockStrategy.sol";
 ///      DEPOSIT_AMOUNT      — tokens per depositor in whole units (default: 10000)
 ///      MIN_OPERATOR_STAKE  — minimum operator stake in whole units (default: 500)
 ///      UNBONDING_PERIOD    — manager unbonding seconds (default: 60)
-///      CHALLENGE_WINDOW    — forfeit challenge seconds (default: 60)
+///      CHALLENGE_WINDOW    — forfeit challenge seconds (default/minimum: 86400)
 ///
 ///      Anvil defaults:
 ///        RPC_URL = http://127.0.0.1:8545
@@ -306,16 +306,15 @@ contract Simulate is Script {
         // vault shares (15 decimals: USDC's 6 + the vault's decimals offset of 9), so
         // the floor is expressed in share units (~1 cvUSDC ≈ 1 USDC at par NAV).
         minOperatorStake = vm.envOr("MIN_OPERATOR_STAKE", uint256(500)) * 1e15;
-        // Dev defaults are short on purpose — long enough to observe the
-        // intermediate UI state (unbonding badge, challenge countdown) but
-        // short enough to test full lifecycles without time-warping. Override
-        // with UNBONDING_PERIOD / CHALLENGE_WINDOW when seeding a long-lived
-        // demo network.
+        // Keep local unbonding short enough to exercise its full lifecycle. The
+        // forfeit challenge window remains conformant with the shipping manager's
+        // hard one-day floor; override it only with a value at least as large.
         unbondingPeriod = uint64(vm.envOr("UNBONDING_PERIOD", uint256(60)));
-        challengeWindow = uint64(vm.envOr("CHALLENGE_WINDOW", uint256(60)));
+        challengeWindow = uint64(vm.envOr("CHALLENGE_WINDOW", uint256(1 days)));
 
         require(numOperators <= numDepositors, "Simulate: need at least as many depositors as operators");
         require(numCommitments >= 1, "Simulate: NUM_COMMITMENTS must be >= 1");
+        require(challengeWindow >= 1 days, "Simulate: CHALLENGE_WINDOW must be >= 86400");
 
         console.log("");
         console.log("=== Simulation Config (v2 direct-custody manager) ===");
@@ -405,13 +404,6 @@ contract Simulate is Script {
         ERC1967Proxy cmProxy = new ERC1967Proxy(address(cmImpl), cmInit);
         manager = CommitmentManager(address(cmProxy));
         console.log("CommitmentManager:  ", address(manager));
-
-        // Lower MIN_CHALLENGE_WINDOW for the dev seed so CHALLENGE_WINDOW=60
-        // (the testnet default) is accepted. Production deploys leave this
-        // alone so the audit's same-block-forfeit-griefing mitigation stands.
-        if (challengeWindow < manager.MIN_CHALLENGE_WINDOW()) {
-            manager.setMinChallengeWindow(challengeWindow);
-        }
 
         // 4. Backing adapters — stateless singletons. ERC20StaticAdapter prices
         //    plain tokens at a constant 1e18 index; ERC4626Adapter prices vault
@@ -1993,7 +1985,7 @@ contract Simulate is Script {
     ///      (86_400s = 1 day) by default.
     function _seedRewardsCoordinator() internal {
         // Deploy implementations + factory under admin's broadcast.
-        // Floor = 60s for dev convenience (matches existing challenge-window pattern).
+        // Floor = 60s only for this explicitly non-shipping rewards seed.
         vm.startBroadcast(admin.key);
         MerkleSnapshot snapImpl = new MerkleSnapshot();
         CommitmentsRewardsCoordinator coordImpl = new CommitmentsRewardsCoordinator();

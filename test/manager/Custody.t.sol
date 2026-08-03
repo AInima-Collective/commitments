@@ -346,11 +346,30 @@ contract CustodyTest is Test {
         manager.setUnbondingPeriod(0);
     }
 
-    function test_setMinChallengeWindow_lazyDefault() public {
+    function test_setMinChallengeWindow_acceptsProtocolFloor() public {
         vm.prank(admin);
-        manager.setMinChallengeWindow(2 hours);
-        assertEq(manager.MIN_CHALLENGE_WINDOW(), 2 hours);
+        manager.setMinChallengeWindow(1 days);
+        assertEq(manager.MIN_CHALLENGE_WINDOW(), 1 days);
+    }
 
+    function test_setMinChallengeWindow_acceptsValueAboveProtocolFloor() public {
+        vm.prank(admin);
+        manager.setMinChallengeWindow(2 days);
+        assertEq(manager.MIN_CHALLENGE_WINDOW(), 2 days);
+    }
+
+    function test_setMinChallengeWindow_rejectsNonZeroValueBelowProtocolFloor() public {
+        vm.prank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(ICM.MinChallengeWindowBelowFloor.selector, uint64(86_399), uint64(1 days))
+        );
+        manager.setMinChallengeWindow(86_399);
+        assertEq(manager.MIN_CHALLENGE_WINDOW(), 1 days, "failed update leaves default active");
+    }
+
+    function test_setMinChallengeWindow_zeroRestoresLazyDefault() public {
+        vm.prank(admin);
+        manager.setMinChallengeWindow(2 days);
         vm.prank(admin);
         manager.setMinChallengeWindow(0);
         assertEq(manager.MIN_CHALLENGE_WINDOW(), 86_400, "0 restores default");

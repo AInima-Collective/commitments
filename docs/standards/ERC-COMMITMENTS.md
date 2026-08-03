@@ -92,7 +92,7 @@ The SHOULD-level values above are baselines, not arbitrary numbers. The threat e
 
 Implementations choosing to deviate from a SHOULD baseline are conformant but assume responsibility for re-validating these threat trade-offs in their deployment context.
 
-**`MIN_CHALLENGE_WINDOW` is a floor, not a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. An admin-mutable enforced minimum that accepts values below the floor (the reference implementation ships `setMinChallengeWindow` under `DEFAULT_ADMIN_ROLE`, intended for testnets, with **no on-chain floor check**) is a deviation from this MUST: a compromised or malicious admin can re-enable near-flash-forfeit for all commitments created after the change. Deployments using such a setter MUST restrict it to non-production environments, SHOULD enforce `newValue >= 86_400` in production builds (e.g. behind an immutable deployment flag), and SHOULD route the change through the §0.6 staged-activation pattern rather than an immediate-effect setter. Note that lowering the enforced minimum never affects existing commitments — `challengeWindow` is locked per commitment at creation (§0.6) — the exposure is to future creations whose committers assume the documented floor.
+**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `setMinChallengeWindow(0)` restores the one-day floor, values greater than or equal to one day are accepted, and shorter non-zero values revert with `MinChallengeWindowBelowFloor(requested, minimum)`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
 
 #### 0.4 Conformance levels
 
@@ -626,6 +626,7 @@ error ForfeitPending();
 error NoActiveForfeitProposal();
 error ChallengeWindowActive();
 error ChallengeWindowTooShort();
+error MinChallengeWindowBelowFloor(uint64 requested, uint64 minimum);
 error CommitmentHasNoExpiry();
 error CommitmentNotExpired();
 error InvalidExpiry();
@@ -1147,7 +1148,7 @@ Rebasing tokens break INV-1 structurally and MUST be rejected (§A.2). Fee-on-tr
 
 ### Challenge window timing
 
-`challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected. Implementers MAY raise the floor for higher-stakes deployments; they MUST NOT expose a production path that lowers the enforced floor below `MIN_CHALLENGE_WINDOW` (see §0.3 — the reference implementation's `setMinChallengeWindow` performs no floor check and is testnet tooling, not a conformant production surface).
+`challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected. Implementers MAY raise the floor for higher-stakes deployments; they MUST NOT expose a production path that lowers the enforced floor below `MIN_CHALLENGE_WINDOW`. The reference implementation's `setMinChallengeWindow` accepts zero only as a sentinel restoring the one-day floor and rejects shorter non-zero values.
 
 ### Stale forfeit proposals
 

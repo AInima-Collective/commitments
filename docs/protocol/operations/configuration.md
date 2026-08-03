@@ -13,7 +13,7 @@ The initializer sets the admin, committer unbonding period, and lifetime forfeit
 
 After OperatorRegistry is deployed, call setOperatorRegistry once from the manager admin. The manager checks the registry binding. forceSetOperatorRegistry is an emergency admin surface and should require an explicit incident or migration plan.
 
-Other admin parameters include minChallengeWindow and hookGasCap. Pause and unpause use separate roles. A pause stops forfeiture execution under the documented pause budget; it does not move custody or erase proposals.
+Other admin parameters include minChallengeWindow and hookGasCap. `setMinChallengeWindow(0)` restores the one-day protocol floor; a non-zero value may raise that floor but values below one day revert. Pause and unpause use separate roles. A pause stops forfeiture execution under the documented pause budget; it does not move custody or erase proposals.
 
 ## OperatorRegistry
 

@@ -228,6 +228,23 @@ contract CreateCommitmentTest is LifecycleTestBase {
         manager.createCommitment(p);
     }
 
+    function test_create_shippingManagerCannotUseChallengeWindowBelowOneDay() public {
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(ICM.MinChallengeWindowBelowFloor.selector, uint64(1), uint64(1 days)));
+        manager.setMinChallengeWindow(1);
+
+        ICM.CommitmentParams memory p = _params(100e18, 1000);
+        p.challengeWindow = 1 days - 1;
+        vm.prank(alice);
+        vm.expectRevert(ICM.ChallengeWindowTooShort.selector);
+        manager.createCommitment(p);
+
+        p.challengeWindow = 1 days;
+        vm.prank(alice);
+        uint256 id = manager.createCommitment(p);
+        assertEq(manager.getCommitment(id).challengeWindow, 1 days, "one-day floor remains creatable");
+    }
+
     function test_create_exposureAllocation_capitalEfficiency() public {
         // 1100 deposited? No — alice has 1000. Commitment A: 600 @ 50% → 300 forfeitable.
         _create(600e18, 5000);

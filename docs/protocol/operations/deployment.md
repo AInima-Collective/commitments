@@ -57,10 +57,10 @@ Each script documents its required and optional environment variables. Use the p
 - confirm every proxy implementation slot and initializer result;
 - confirm each DEFAULT_ADMIN_ROLE, PAUSER_ROLE, and UNPAUSER_ROLE recipient;
 - compare linked manager bytecode with the expected build and library addresses;
-- verify configured challenge, unbonding, pause-budget, threshold, quorum, and activation-delay values;
+- verify the configured challenge floor is at least one day, then verify unbonding, pause-budget, threshold, quorum, and activation-delay values;
 - transfer or renounce deployer privileges only under an approved governance plan;
 - preserve the Foundry broadcast record and a machine-readable deployment manifest.
 
 ## Local rehearsal
 
-Run the deployment without broadcast against Anvil first, then execute the relevant integration tests. script/Simulate.s.sol provides a larger local composition used by the frontend and integration workflow; it is not a production deployment manifest.
+Run the deployment without broadcast against Anvil first, then execute the relevant integration tests. script/Simulate.s.sol provides a larger local composition used by the frontend and integration workflow; it is not a production deployment manifest. Its `CHALLENGE_WINDOW` override must still satisfy the shipping manager's one-day minimum.

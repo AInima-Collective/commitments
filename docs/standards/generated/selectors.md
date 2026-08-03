@@ -131,6 +131,7 @@ the standards that specify them.
 | `0xd36c8500` | `InvalidExpiry()` |
 | `0x756688fe` | `InvalidNonce()` |
 | `0x8baa579f` | `InvalidSignature()` |
+| `0x81bbfab2` | `MinChallengeWindowBelowFloor(uint64,uint64)` |
 | `0xb9fa98b9` | `MovementBlockedByForfeit()` |
 | `0x1f1b0045` | `MovementEscrowRecipientNotStrategy(address,address)` |
 | `0x0653fa01` | `MovementExceedsCommitment(uint256,uint256)` |

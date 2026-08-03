@@ -45,7 +45,7 @@ contract CommitmentManager is
     bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 
     /// @dev ERC §0.3 — MUST-level floor on challenge windows. Lazy default when storage is 0;
-    ///      testnet deployments may admin-lower via `setMinChallengeWindow`.
+    ///      `setMinChallengeWindow` may raise this floor but can never lower it.
     uint64 internal constant DEFAULT_MIN_CHALLENGE_WINDOW = 86_400; // 1 day
     /// @dev ERC §0.3 — MUST-level cap on bound strategies per commitment.
     uint256 public constant MAX_STRATEGIES = 8;
@@ -843,9 +843,12 @@ contract CommitmentManager is
         s.unbondingPeriod = newValue;
     }
 
-    /// @notice Update the minimum challenge window. Passing 0 restores the 1-day default.
-    ///         Lowering below 1 day is intended for testnets only.
+    /// @notice Update the minimum challenge window. Passing 0 restores the 1-day default;
+    ///         non-zero values must be at least one day.
     function setMinChallengeWindow(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newValue != 0 && newValue < DEFAULT_MIN_CHALLENGE_WINDOW) {
+            revert ICM.MinChallengeWindowBelowFloor(newValue, DEFAULT_MIN_CHALLENGE_WINDOW);
+        }
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
         emit ICM.MinChallengeWindowUpdated(s.minChallengeWindow, newValue);
         s.minChallengeWindow = newValue;
