@@ -1383,7 +1383,7 @@ Version: viem@2.21.45`
             onClick={() => push({
               tone: 'danger',
               title: 'Transaction reverted',
-              message: 'ForfeitWindowTooShort — challenge window must be ≥ 1h.',
+              message: 'ChallengeWindowTooShort — challenge window must be ≥ 1 day.',
             })}
           >
             Trigger error
@@ -1436,7 +1436,7 @@ Version: viem@2.21.45`
           message={
             <>
               The contract rejected <code>proposeAgreement</code> with{' '}
-              <code>ForfeitWindowTooShort</code>. The challenge window must be at least 1 hour.
+              <code>ChallengeWindowTooShort</code>. The challenge window must be at least 1 day.
             </>
           }
           meta={[
