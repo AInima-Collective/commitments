@@ -67,8 +67,8 @@ The producer hashes those exact bytes, posts the result on-chain as `contentHash
 
 Metadata URIs MUST use one of these schemes:
 
-- `ipfs://CID[/path]` — content-addressed. Rewritten to `${IPFS_GATEWAY}CID[/path]` by the indexer (default `https://ipfs.io/ipfs/`, override with `IPFS_GATEWAY` env var). Preferred for production.
-- `https://...` — hosted. Passed through as-is. Acceptable when the producer controls the host or trusts it.
+- `ipfs://CID[/path]` — content-addressed. Rewritten beneath the parsed origin and base path of a trusted HTTPS `IPFS_GATEWAY` selected by the operator (default `https://ipfs.io/ipfs/`). The CID/path cannot replace that origin or traverse above its base path. Preferred for production.
+- `https://...` — hosted. Accepted only without URL credentials, after every DNS answer is classified as public, and with redirects disabled. Acceptable when the producer controls the host or trusts it.
 - `data:application/json,<urlencoded>` — RFC 2397 inline JSON. Self-contained, no fetch. Intended for tests, demo seeds, and scripted simulations where the URI carries its own content.
 - `data:application/json;base64,<base64>` — RFC 2397 base64-encoded JSON. Same intent as above; use when the payload contains characters awkward to percent-encode.
 

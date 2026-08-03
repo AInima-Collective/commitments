@@ -27,6 +27,21 @@ Endpoints:
 - `GET /graphql` — Ponder's auto-generated GraphQL over the full schema
 - `GET /sql/*` — Ponder's SQL-over-HTTP (used by `@ponder/client`)
 
+## Metadata fetch network policy
+
+On-chain metadata URIs are untrusted input. Direct `https://` fetches resolve
+all A/AAAA answers and reject the request if any address is not globally
+routable unicast. The selected validated address is pinned into the HTTP
+connection, redirects are disabled, and credentials in URLs are rejected.
+This prevents DNS rebinding and redirects from turning metadata ingestion into
+access to loopback, private, link-local, multicast, or reserved services.
+
+`ipfs://` is resolved only through the parsed origin and base path of the
+operator's `IPFS_GATEWAY` (default `https://ipfs.io/ipfs/`). Overrides must use
+HTTPS. The on-chain CID/path cannot replace that configured origin or traverse
+above its base path. A trusted operator gateway may itself resolve privately;
+that is an explicit configuration trust decision, not one controlled on chain.
+
 ## Metadata pinning (`POST /metadata/pin`)
 
 Server-side companion to the read-side metadata fetcher (`src/metadataFetcher.ts`).

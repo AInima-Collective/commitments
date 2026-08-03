@@ -152,9 +152,15 @@ importers:
       hono:
         specifier: ^4.5.0
         version: 4.12.14
+      ipaddr.js:
+        specifier: ^2.4.0
+        version: 2.4.0
       ponder:
         specifier: ^0.15.16
         version: 0.15.18(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(hono@4.12.14)(lightningcss@1.32.0)(typescript@5.6.3)(viem@2.48.4(typescript@5.6.3))
+      undici:
+        specifier: ^7.25.0
+        version: 7.25.0
       viem:
         specifier: ^2.48.1
         version: 2.48.4(typescript@5.6.3)
@@ -2835,6 +2841,10 @@ packages:
   internmap@2.0.3:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
+
+  ipaddr.js@2.4.0:
+    resolution: {integrity: sha512-9VGk3HGanVE6JoZXHiCpnGy5X0jYDnN4EA4lntFPj+1vIWlFhIylq2CrrCOJH9EAhc5CYhq18F2Av2tgoAPsYQ==}
+    engines: {node: '>= 10'}
 
   is-alphabetical@2.0.1:
     resolution: {integrity: sha512-FWyyY60MeTNyeSRpkM2Iry0G9hpr7/9kD40mD/cGQEuilcZYS4okz8SN2Q6rLCJ8gbCt6fN+rC+6tMGS99LaxQ==}
@@ -6873,6 +6883,8 @@ snapshots:
   internmap@1.0.1: {}
 
   internmap@2.0.3: {}
+
+  ipaddr.js@2.4.0: {}
 
   is-alphabetical@2.0.1: {}
 

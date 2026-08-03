@@ -11,10 +11,13 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fetchMetadata } from './metadataFetcher.ts'
+import { fetchMetadata, type MetadataFetchDependencies } from './metadataFetcher.ts'
 import { keccak256 } from 'viem'
 
 const ZERO = ('0x' + '0'.repeat(64)) as `0x${string}`
+const TEST_DEPS: MetadataFetchDependencies = {
+  resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+}
 
 function mockFetch(body: string, status = 200): typeof fetch {
   return (async () => new Response(new TextEncoder().encode(body), { status })) as unknown as typeof fetch
@@ -28,7 +31,7 @@ test('canonical commitment.v1 payload round-trips ok with matching hash', async 
     tags: ['data', 'sla'],
   })
   const hash = keccak256(new TextEncoder().encode(payload))
-  const r = await fetchMetadata('https://host.example/c.json', hash, mockFetch(payload))
+  const r = await fetchMetadata('https://host.example/c.json', hash, mockFetch(payload), TEST_DEPS)
   assert.equal(r.status, 'ok')
   assert.equal((r.content as any).schemaVersion, 'commitment.v1')
   assert.equal((r.content as any).title, 'Weekly data delivery')
@@ -45,7 +48,7 @@ test('canonical agreement.v1 payload round-trips ok', async () => {
     proposerContact: 'alice.eth',
   })
   const hash = keccak256(new TextEncoder().encode(payload))
-  const r = await fetchMetadata('https://host.example/e.json', hash, mockFetch(payload))
+  const r = await fetchMetadata('https://host.example/e.json', hash, mockFetch(payload), TEST_DEPS)
   assert.equal(r.status, 'ok')
   assert.equal((r.content as any).schemaVersion, 'agreement.v1')
   assert.equal((r.content as any).proposerContact, 'alice.eth')
@@ -62,7 +65,7 @@ test('canonical operator.v1 payload round-trips ok', async () => {
     social: { github: 'node-alpha', email: 'ops@alpha.example' },
   })
   const hash = keccak256(new TextEncoder().encode(payload))
-  const r = await fetchMetadata('https://host.example/o.json', hash, mockFetch(payload))
+  const r = await fetchMetadata('https://host.example/o.json', hash, mockFetch(payload), TEST_DEPS)
   assert.equal(r.status, 'ok')
   assert.equal((r.content as any).name, 'Node Alpha')
   assert.deepEqual((r.content as any).services, ['avs-1', 'avs-2'])
@@ -74,7 +77,12 @@ test('whitespace drift causes mismatch (producer responsibility)', async () => {
   const producerHash = keccak256(new TextEncoder().encode(producedBytes))
   // Some middleware re-serializes without whitespace and posts these bytes instead:
   const corruptedBytes = '{"schemaVersion":"commitment.v1","title":"x"}'
-  const r = await fetchMetadata('https://host.example/c.json', producerHash, mockFetch(corruptedBytes))
+  const r = await fetchMetadata(
+    'https://host.example/c.json',
+    producerHash,
+    mockFetch(corruptedBytes),
+    TEST_DEPS,
+  )
   assert.equal(r.status, 'mismatch',
     'bytes-sensitivity: any whitespace change breaks verification')
 })
@@ -86,7 +94,12 @@ test('unknown schemaVersion is ingested ok (forward-compat)', async () => {
     somethingNew: { nested: true },
   })
   const hash = keccak256(new TextEncoder().encode(payload))
-  const r = await fetchMetadata('https://host.example/future.json', hash, mockFetch(payload))
+  const r = await fetchMetadata(
+    'https://host.example/future.json',
+    hash,
+    mockFetch(payload),
+    TEST_DEPS,
+  )
   assert.equal(r.status, 'ok')
   assert.equal((r.content as any).schemaVersion, 'commitment.v99')
   assert.deepEqual((r.content as any).somethingNew, { nested: true })
@@ -107,14 +120,12 @@ test('ipfs:// URI resolved through IPFS_GATEWAY env', async () => {
     }) as unknown as typeof fetch
 
     process.env.IPFS_GATEWAY = 'https://test-gateway.example/ipfs/'
-    await fetchMetadata('ipfs://bafyTEST/m.json', ZERO, mock)
+    await fetchMetadata('ipfs://bafyTEST/m.json', ZERO, mock, TEST_DEPS)
     assert.equal(observedUrl, 'https://test-gateway.example/ipfs/bafyTEST/m.json')
 
-    // A plain-http local gateway, the docker-compose case. The allowlist
-    // rejects http:// *URIs*, but an ipfs:// URI is rewritten through the
-    // configured gateway and the rewritten URL is fetched directly, with no
-    // second scheme check. Asserted rather than assumed, because the whole
-    // local-IPFS setup in docker-compose.yml depends on it holding.
+    // A plain-http gateway is not trusted for server-side metadata resolution.
+    // Local operators can put Kubo behind HTTPS or leave IPFS_GATEWAY unset and
+    // use the default public gateway.
     process.env.IPFS_GATEWAY = 'http://127.0.0.1:8080/ipfs/'
     const payload = '{"schemaVersion":"commitment.v1","title":"Locally pinned"}'
     const localMock = (async (url: string) => {
@@ -122,9 +133,10 @@ test('ipfs:// URI resolved through IPFS_GATEWAY env', async () => {
       return new Response(new TextEncoder().encode(payload))
     }) as unknown as typeof fetch
     const hash = keccak256(new TextEncoder().encode(payload))
-    const r = await fetchMetadata('ipfs://bafyLOCAL', hash, localMock)
-    assert.equal(observedUrl, 'http://127.0.0.1:8080/ipfs/bafyLOCAL')
-    assert.equal(r.status, 'ok')
+    observedUrl = ''
+    const r = await fetchMetadata('ipfs://bafyLOCAL', hash, localMock, TEST_DEPS)
+    assert.equal(observedUrl, '')
+    assert.equal(r.status, 'unreachable')
   } finally {
     if (prev === undefined) delete process.env.IPFS_GATEWAY
     else process.env.IPFS_GATEWAY = prev
@@ -142,7 +154,7 @@ test('a bare http:// URI is still rejected outright', async () => {
 test('oversize payload (>256 KiB) returns unreachable before DB write', async () => {
   // Build >256KiB of valid JSON
   const big = '{"schemaVersion":"commitment.v1","title":"x","padding":"' + 'x'.repeat(260 * 1024) + '"}'
-  const r = await fetchMetadata('https://big.example/m', ZERO, mockFetch(big))
+  const r = await fetchMetadata('https://big.example/m', ZERO, mockFetch(big), TEST_DEPS)
   assert.equal(r.status, 'unreachable')
   assert.equal(r.content, null)
 })

@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "hono": "^4.5.0",
+    "ipaddr.js": "^2.4.0",
     "ponder": "^0.15.16",
+    "undici": "^7.25.0",
     "viem": "^2.48.1"
   },
   "devDependencies": {

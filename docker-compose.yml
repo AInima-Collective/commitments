@@ -13,21 +13,15 @@
 #     and base64's 4/3 inflation that leaves about 360 bytes of JSON: a title, a
 #     couple of sentences, and a few tags, with nothing to spare. An `ipfs://`
 #     URI is ~66 bytes no matter how long the document is.
-#   * The real path. `data:` skips the network entirely, so it exercises none of
-#     what production does — scheme allowlist, gateway rewrite, fetch, hash
-#     verification over fetched bytes. Pointing the indexer at a local gateway
-#     runs all of it.
+#   * Browser-local resolution. The frontend may use the loopback gateway to
+#     preview locally pinned content. The server-side indexer deliberately
+#     requires IPFS_GATEWAY to use HTTPS and otherwise uses its public default.
 #
 # Usage:
 #
 #   docker compose up -d ipfs
-#   # indexer:  IPFS_API_URL=http://127.0.0.1:5001 IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/
+#   # indexer:  IPFS_API_URL=http://127.0.0.1:5001
 #   # frontend: VITE_IPFS_GATEWAY=http://127.0.0.1:8080/ipfs/
-#
-# Note the gateway is plain HTTP. That is fine and deliberate: the fetcher's
-# allowlist rejects `http://` *URIs*, but an `ipfs://` URI is rewritten through
-# the configured gateway and the rewritten URL is fetched directly, without a
-# second scheme check. The same holds for the frontend's `rewriteIpfsURI`.
 
 services:
   ipfs:
