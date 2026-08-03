@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  foundry:
+    name: Forge build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout sources and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify pinned Solidity dependencies
+        run: |
+          git submodule status --recursive
+          git submodule foreach --quiet --recursive \
+            'test "$(git rev-parse HEAD)" = "$sha1"'
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Build contracts
+        run: forge build --sizes
+
+      - name: Test contracts
+        run: forge test -vvv
+        env:
+          FOUNDRY_PROFILE: default
+
+  workspace:
+    name: Workspace codegen + typecheck + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout sources and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      # pnpm/action-setup reads the exact pnpm version and integrity hash from
+      # the root package.json packageManager field.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Forge artifacts for ABI generation
+        run: forge build
+
+      - name: Generate frontend ABI bindings
+        run: pnpm generate
+
+      - name: Verify committed frontend ABI bindings
+        run: git diff --exit-code -- frontend/src/generated.ts
+
+      - name: Generate Ponder types from the checked-in deployment fixture
+        run: pnpm --filter @commitments/indexer codegen
+        env:
+          DEPLOYMENTS_JSON: fixtures/deployments.v1.example.json
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      - name: Test workspace
+        run: pnpm test
+
+  frontend-lint:
+    name: Frontend ESLint + Stylelint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run frontend ESLint
+        run: pnpm --filter @commitments/frontend lint
+
+      - name: Run frontend Stylelint
+        run: pnpm --filter @commitments/frontend lint:css
+
+  frontend-build:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout sources and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Forge artifacts for ABI generation
+        run: forge build
+
+      - name: Build production frontend
+        run: pnpm build
