@@ -30,6 +30,14 @@ jobs:
           git submodule foreach --quiet --recursive \
             'test "$(git rev-parse HEAD)" = "$sha1"'
 
+      - name: Setup Node for repository checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+
+      - name: Check canonical unit constants
+        run: node script/check-unit-constants.mjs
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:

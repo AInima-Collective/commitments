@@ -102,7 +102,7 @@ agent to show that its lane either fixes it or leaves exactly the same failure.
 | 11. One-day challenge floor | Resolved on `follow-up-work`; do not open. |
 | 12. Authoritative unbond maturity | Open as a coordinated storage, ABI, indexer, frontend, and documentation change. |
 | 13. Service-local quorum | Open as a checkpointed aggregation design; an unbounded operator loop is not acceptable. |
-| 14. BPS/WAD constants | In progress as the final mechanical implementation lane. |
+| 14. BPS/WAD constants | Resolved on `follow-up-work`; do not open. |
 
 The queue is an execution snapshot, not a substitute for the issue drafts.
 Update it when dependencies or repository behavior change.
