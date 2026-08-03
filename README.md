@@ -69,12 +69,16 @@ The shipped Solidity contracts define current behavior and ABI. Standards formal
 ### Build & test
 
 ```bash
-git clone --recursive https://github.com/AInima-Collective/commitments.git
+git clone --recurse-submodules https://github.com/AInima-Collective/commitments.git
 cd commitments
-forge install
 just build     # forge build
 just test      # forge test
 ```
+
+Foundry dependencies are committed as pinned git submodules, with revisions
+recorded in `foundry.lock`. For an existing clone, restore the exact dependency
+set with `git submodule update --init --recursive`; no floating `forge install`
+step is required.
 
 The suite is 1,000+ Foundry tests covering the manager ledger and commitment lifecycle, forfeit mechanics (including stale-proposal force-cancel), agreements, adapters and strategies, vault operations, mesh topology, services, mutual coverage, rewards, governance, gas benchmarks, and EIP-7201 storage-layout locks. A dedicated conformance suite (`test/manager/conformance/`) fuzzes the core ERC-Commitments invariants.
 
