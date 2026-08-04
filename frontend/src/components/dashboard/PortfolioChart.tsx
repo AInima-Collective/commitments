@@ -50,8 +50,7 @@ interface VaultValuation {
 }
 
 /**
- * PortfolioChart — free and encumbered balance stacked into total portfolio
- * value over time.
+ * PortfolioChart — total portfolio value over time.
  *
  * ── How the value is computed, and what that does and doesn't show ──────────
  *
@@ -127,7 +126,7 @@ export function PortfolioChart({ address, ledgerByToken, candidates, getPrice }:
   // clock — a wall-clock "now" would plant the trailing point in the wrong place.
   const nowSec = useDisplayNow()
 
-  const { free, encumbered, unpricedSymbols } = useMemo(
+  const { total, unpricedSymbols } = useMemo(
     () => buildSeries({ data, ledgerByToken, metaFor, vaultValuations, getPrice, candidates, nowSec }),
     [data, ledgerByToken, metaFor, vaultValuations, getPrice, candidates, nowSec],
   )
@@ -147,7 +146,7 @@ export function PortfolioChart({ address, ledgerByToken, candidates, getPrice }:
     )
   }
 
-  if (!isLoading && free.length < 2) {
+  if (!isLoading && total.length < 2) {
     return (
       <>
         {probes}
@@ -169,21 +168,16 @@ export function PortfolioChart({ address, ledgerByToken, candidates, getPrice }:
         </Notice>
       )}
       <TimeSeriesChart
-        ariaLabel="Portfolio value over time, split into free and encumbered balance"
-        series={[
-          { label: 'free', data: free, tone: 'success' },
-          { label: 'encumbered', data: encumbered, tone: 'warn' },
-        ]}
-        stacked
+        ariaLabel="Total portfolio value over time"
+        series={[{ label: 'total portfolio value', data: total, tone: 'accent' }]}
         tUnit="s"
-        size="lg"
+        size="md"
         formatValue={formatUsdAxis}
         defaultRange="1M"
-        ranges={['1W', '1M', 'ALL']}
+        ranges={['1W', '1M', '1Y']}
       />
       <p className="ds-text-xs ds-subtle" style={{ margin: 0 }}>
-        Balances are historical and vault share prices are historical, so yield
-        shows up as real growth. Token prices are today's, so market moves do not.
+        Historical balances are valued at today's token prices; vault yield is included.
       </p>
       {data?.truncated && (
         <Notice tone="info" size="sm">
@@ -209,7 +203,7 @@ interface BuildSeriesArgs {
 }
 
 /**
- * Fold every token's step series into two merged USD series.
+ * Fold every token's step series into one merged total-USD series.
  *
  * Balances are step functions — a value holds until the next movement — so the
  * merged timeline is the union of all tokens' timestamps, and each token
@@ -223,8 +217,8 @@ function buildSeries({
   getPrice,
   candidates,
   nowSec,
-}: BuildSeriesArgs): { free: TimeSeriesPoint[]; encumbered: TimeSeriesPoint[]; unpricedSymbols: string[] } {
-  if (!data || data.tokens.length === 0) return { free: [], encumbered: [], unpricedSymbols: [] }
+}: BuildSeriesArgs): { total: TimeSeriesPoint[]; unpricedSymbols: string[] } {
+  if (!data || data.tokens.length === 0) return { total: [], unpricedSymbols: [] }
 
   const isVaultShare = new Set(
     candidates.filter((c) => c.isVaultShare).map((c) => c.token.toLowerCase()),
@@ -290,10 +284,9 @@ function buildSeries({
   })
 
   const timeline = [...new Set(tracks.flatMap((tr) => tr.points.map((p) => p.t)))].sort((a, b) => a - b)
-  if (timeline.length === 0) return { free: [], encumbered: [], unpricedSymbols: [...unpriced] }
+  if (timeline.length === 0) return { total: [], unpricedSymbols: [...unpriced] }
 
-  const free: TimeSeriesPoint[] = []
-  const encumbered: TimeSeriesPoint[] = []
+  const total: TimeSeriesPoint[] = []
 
   // Tokens that returned null from `usdAt` at any instant. A token that cannot
   // be valued is excluded from the whole series, not just the instants where
@@ -328,20 +321,28 @@ function buildSeries({
         tr.cursor += 1
       }
     }
-    free.push({ t: at, v: sumSide((tr) => tr.currentFree, at) })
-    encumbered.push({ t: at, v: sumSide((tr) => tr.currentEncumbered, at) })
+    total.push({
+      t: at,
+      v:
+        sumSide((tr) => tr.currentFree, at) +
+        sumSide((tr) => tr.currentEncumbered, at),
+    })
   }
 
   // Close on the live values so the right edge matches the hero exactly.
   if (timeline[timeline.length - 1] < nowSec) {
-    free.push({ t: nowSec, v: sumSide((tr) => tr.liveFree, nowSec) })
-    encumbered.push({ t: nowSec, v: sumSide((tr) => tr.liveEncumbered, nowSec) })
+    total.push({
+      t: nowSec,
+      v:
+        sumSide((tr) => tr.liveFree, nowSec) +
+        sumSide((tr) => tr.liveEncumbered, nowSec),
+    })
   }
 
   // `unpriced` is the subset with a known asset but no USD quote; `unvalued`
   // also covers metadata that never resolved. Report the union once.
   for (const s of unpriced) unvalued.add(s)
-  return { free, encumbered, unpricedSymbols: [...unvalued].sort() }
+  return { total, unpricedSymbols: [...unvalued].sort() }
 }
 
 /**

@@ -31,7 +31,6 @@ import {
   TokenAmount,
   TokenIcon,
   UsdAmount,
-  YieldSparkline,
   useToasts,
   type SectionNavItem,
 } from "../components/ui";
@@ -64,7 +63,6 @@ import {
   type UnifiedRow,
 } from "../hooks/useUnifiedRows";
 import { useVaultActivity } from "../hooks/useVaultActivity";
-import { useVaultPeriodicHistory } from "../hooks/useVaultPeriodicHistory";
 import { useVaultPosition } from "../hooks/useVaultPosition";
 import { useViewAddress } from "../hooks/useViewAddress";
 import { sortByCommitmentUrgency } from "../lib/commitmentSort";
@@ -826,7 +824,6 @@ export default function Dashboard() {
               <span>Showing fallback prices — live feed unavailable.</span>
             ) : undefined
           }
-          aside={vaultAddress ? <HeroSparklineAside vaultAddress={vaultAddress} /> : undefined}
           chart={
             <PortfolioChart
               address={viewAddress}
@@ -1060,41 +1057,6 @@ export default function Dashboard() {
           />
         )}
       </Modal>
-    </div>
-  );
-}
-
-// ─── Section: Hero sparkline aside ───────────────────────────────────────
-
-function HeroSparklineAside({ vaultAddress }: { vaultAddress: `0x${string}` }) {
-  const { data } = useVaultPeriodicHistory({ vaultAddress, days: 30 });
-  const series = useMemo(() => {
-    const rows = data?.rows;
-    if (!rows || rows.length < 2) return [];
-    // rows are newest-first; sparkline expects time-ordered ascending.
-    const ordered = [...rows].reverse();
-    const base = Number(ordered[0].sharePrice);
-    if (!Number.isFinite(base) || base === 0) return [];
-    // Percent change from the window's first sample, NOT the raw share price.
-    // `sharePrice` is a 1e9-scaled integer (1e18 over the vault's 9-decimal
-    // share offset), so plotting it directly made `showRange` print
-    // "1052220741.00" as the min and max label. A ratio cancels the scale, so
-    // this needs no decimals bookkeeping, and "how much did it move" is what a
-    // 30-day trend line is for in the first place.
-    return ordered.map((r) => (Number(r.sharePrice) / base - 1) * 100);
-  }, [data]);
-  if (series.length < 2) return null;
-  return (
-    <div className="ds-stack ds-stack-1" style={{ alignItems: "flex-end" }}>
-      <span className="ds-text-xs ds-subtle">SHARE PRICE · 30D</span>
-      <YieldSparkline
-        values={series}
-        size="md"
-        tone="accent"
-        showRange
-        format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`}
-        ariaLabel="Vault share price change over 30 days"
-      />
     </div>
   );
 }

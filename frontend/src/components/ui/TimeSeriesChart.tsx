@@ -13,7 +13,7 @@ ensureChartSetup()
 
 export type TimeSeriesChartTone = ChartTone
 export type TimeSeriesChartSize = 'sm' | 'md' | 'lg'
-export type TimeSeriesChartRange = '1D' | '1W' | '1M' | 'ALL'
+export type TimeSeriesChartRange = '1D' | '1W' | '1M' | '1Y' | 'ALL'
 
 export interface TimeSeriesPoint {
   /** Unix seconds (or ms — chart uses ms internally; see `tUnit`). */
@@ -76,6 +76,7 @@ const RANGE_SECONDS: Record<TimeSeriesChartRange, number | null> = {
   '1D': 24 * 60 * 60,
   '1W': 7 * 24 * 60 * 60,
   '1M': 30 * 24 * 60 * 60,
+  '1Y': 365 * 24 * 60 * 60,
   ALL: null,
 }
 

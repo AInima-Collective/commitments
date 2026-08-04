@@ -28,8 +28,6 @@ export interface PortfolioHeroProps {
    * chart's right edge stays anchored to the headline figure by construction.
    */
   chart?: ReactNode
-  /** Right-aligned aside slot for a small chart (e.g. <YieldSparkline/>) under the action row. */
-  aside?: ReactNode
   /** Footnote slot under the headline — used to flag fallback-source pricing. */
   priceNote?: ReactNode
   /** Primary CTA — typically a "Deposit" link. Optional. */
@@ -64,7 +62,6 @@ export function PortfolioHero({
   isLoading,
   notice,
   chart,
-  aside,
   priceNote,
   primaryAction,
   claimAllAction,
@@ -112,7 +109,6 @@ export function PortfolioHero({
               {primaryAction}
             </div>
           )}
-          {aside && <div>{aside}</div>}
         </div>
       </header>
 
