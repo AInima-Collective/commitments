@@ -100,7 +100,7 @@ export default function Vault() {
   const apy = useVaultApy(vaultAddress)
   const risk = useVaultRiskMetrics({ managerAddress, viewAddress })
   // The commitments tab shares the same table component as the Dashboard and
-  // Commitments pages (indexer-backed unified rows). It's scoped to THIS vault:
+  // Commitment surfaces use indexer-backed unified rows. This view is scoped to THIS vault:
   // a commitment's backing `token` is the vault-share address (cvUSDC/cvWETH),
   // which equals this page's vault address, so filter the viewer's commitment
   // rows down to those backed by this vault. Without it every vault page renders
@@ -426,8 +426,8 @@ export default function Vault() {
                 shares locked by your active commitments — release a commitment to unlock
               </span>
             </div>
-            <Link to="/app/commitments" className="ds-text-sm">
-              view all your commitments →
+            <Link to="/app/explorer" className="ds-text-sm">
+              explore all commitments →
             </Link>
           </header>
           <CommitmentsTable

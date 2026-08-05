@@ -3,9 +3,8 @@ import { type UnifiedRow } from '../hooks/useUnifiedRows'
 import { metadataSearchText, metadataTags } from './commitmentMetadata'
 
 /**
- * Shared commitment-table filter vocabulary. Both the Commitments page and the
- * Dashboard's "Your commitments" section drive their FilterBar + row filtering
- * through these, so the two surfaces stay consistent and can't drift apart.
+ * Shared commitment-table filter vocabulary. Commitment surfaces drive their
+ * FilterBar + row filtering through these so semantics stay consistent.
  */
 export type DirectionFilter = 'all' | 'one-way' | 'paired'
 export type RoleFilter = 'all' | 'committer' | 'counterparty'

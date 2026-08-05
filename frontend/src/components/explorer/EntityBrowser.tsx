@@ -259,7 +259,11 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         rows={sortedRows}
         isLoading={isLoading}
         getRowKey={(r) => r.id.toString()}
-        onRowClick={(r) => navigate(`/app/commitments/${r.id}`)}
+        onRowClick={(r) =>
+          navigate(`/app/commitments/${r.id}`, {
+            state: { commitmentOrigin: 'explorer' },
+          })
+        }
         sort={sort}
         onSortChange={setSort}
         emptyState={
@@ -384,7 +388,11 @@ function AgreementsTable({ filterAddress }: { filterAddress?: string | null }) {
       rows={filtered}
       isLoading={isLoading}
       getRowKey={(r) => r.id.toString()}
-      onRowClick={(r) => navigate(`/app/commitments/${r.commitmentIdA}`)}
+      onRowClick={(r) =>
+        navigate(`/app/commitments/${r.commitmentIdA}`, {
+          state: { commitmentOrigin: 'explorer' },
+        })
+      }
       emptyState={
         filterAddress ? (
           <EmptyState title="NO AGREEMENTS" description="This address is not party to any agreement." />

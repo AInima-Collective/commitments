@@ -698,7 +698,7 @@ export default function DesignRecipes() {
               <header className="ds-stack ds-stack-2">
                 <h2>Canonical commitment row</h2>
                 <p className="ds-muted ds-text-sm" style={{ maxWidth: '70ch' }}>
-                  The row shape used by the Commitments page. Combines{' '}
+                  The row shape used by commitment surfaces. Combines{' '}
                   <code>AddressDisplay</code>, <code>TokenAmount</code>, and{' '}
                   <code>CommitmentStatusBadge</code> in a single flex/grid line. ID
                   column is monospace-muted so eye finds the protocol primitive
@@ -783,8 +783,8 @@ export default function DesignRecipes() {
               <header className="ds-stack ds-stack-2">
                 <h2>Unified list — toggle + filter + table</h2>
                 <p className="ds-muted ds-text-sm" style={{ maxWidth: '70ch' }}>
-                  The canonical shape of the new Commitments page (§ 2 of the
-                  restructure plan). Page owns three pieces of state — view,
+                  The canonical shape of a unified commitment list (§ 2 of the
+                  restructure plan). The surface owns three pieces of state — view,
                   filters, sort — and each primitive consumes them in a controlled
                   fashion. Toggle to <code>graph</code> swaps the rendering surface
                   while filter + sort persist, so both views narrow to the same

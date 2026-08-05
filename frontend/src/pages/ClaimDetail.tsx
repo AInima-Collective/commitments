@@ -250,7 +250,7 @@ export default function ClaimDetail() {
 function BackLink() {
   return (
     <div className="ds-text-xs ds-subtle">
-      <Link to="/app/commitments">← back to commitments</Link>
+      <Link to="/app/explorer">← back to explorer</Link>
     </div>
   )
 }

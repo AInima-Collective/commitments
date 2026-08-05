@@ -109,7 +109,9 @@ export default function Explorer() {
     const trimmed = search.trim()
     if (!trimmed) return
     if (/^\d+$/.test(trimmed)) {
-      navigate(`/app/commitments/${trimmed}`)
+      navigate(`/app/commitments/${trimmed}`, {
+        state: { commitmentOrigin: 'explorer' },
+      })
       setSearchError(null)
       return
     }

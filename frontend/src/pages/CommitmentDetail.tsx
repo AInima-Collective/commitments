@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { useAccount, useChainId } from 'wagmi'
 import { ProposeClaimAction } from '../components/claim/ProposeClaimAction'
 import { CommitmentDetailContent } from '../components/commitment/CommitmentDetailContent'
@@ -25,7 +25,8 @@ import { commitmentLabel } from '../lib/commitmentLabel'
  */
 export default function CommitmentDetail() {
   const { id: idParam } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const location = useLocation()
+  const origin = commitmentOrigin(location.state)
   const chainId = useChainId()
   const viewAddress = useViewAddress()
   const { address: connectedAddress, isConnected } = useAccount()
@@ -94,7 +95,7 @@ export default function CommitmentDetail() {
   const label = row ? commitmentLabel(row, labelContext) : null
 
   if (idParam && id === null) {
-    return <Navigate to="/app/commitments" replace />
+    return <Navigate to="/app/explorer" replace />
   }
 
   if (!managerAddress) {
@@ -111,7 +112,7 @@ export default function CommitmentDetail() {
   if (!indexed.indexerOnline) {
     return (
       <div className="ds-page">
-        <BackLink />
+        <BackLink origin={origin} />
         <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
         <Notice tone="warn" title="Details unavailable">
           Commitment details are temporarily unavailable — please retry shortly.
@@ -123,7 +124,7 @@ export default function CommitmentDetail() {
   if (indexed.notFound) {
     return (
       <div className="ds-page">
-        <BackLink />
+        <BackLink origin={origin} />
         <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
         <Notice tone="warn" title="Commitment not found">
           No commitment with id <code>#{id?.toString()}</code> exists in the indexer. It may be
@@ -136,7 +137,7 @@ export default function CommitmentDetail() {
   if (indexed.error) {
     return (
       <div className="ds-page">
-        <BackLink />
+        <BackLink origin={origin} />
         <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
         <Notice
           tone="danger"
@@ -157,7 +158,7 @@ export default function CommitmentDetail() {
     // First load — render the chrome so the URL feels responsive.
     return (
       <div className="ds-page">
-        <BackLink />
+        <BackLink origin={origin} />
         <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
         <p className="ds-subtle">Loading commitment…</p>
       </div>
@@ -203,7 +204,7 @@ export default function CommitmentDetail() {
 
   return (
     <div className="ds-page">
-      <BackLink />
+      <BackLink origin={origin} />
       <PageHeader
         eyebrow={
           <span className="ds-row ds-row-2" style={{ alignItems: 'center' }}>
@@ -282,7 +283,6 @@ export default function CommitmentDetail() {
             challengeElapsed={challengeElapsed}
             unbondTotalSecs={unbondTotalSecs}
             unbondElapsed={unbondElapsed}
-            onSelectTag={(tag) => navigate(`/app/commitments?tag=${encodeURIComponent(tag)}`)}
             onRefetchMetadata={indexed.refetch}
           />
         </div>
@@ -316,10 +316,21 @@ export default function CommitmentDetail() {
   )
 }
 
-function BackLink() {
+type CommitmentOrigin = 'dashboard' | 'explorer'
+
+function commitmentOrigin(state: unknown): CommitmentOrigin | undefined {
+  if (!state || typeof state !== 'object' || !('commitmentOrigin' in state)) return undefined
+  const origin = state.commitmentOrigin
+  return origin === 'dashboard' || origin === 'explorer' ? origin : undefined
+}
+
+function BackLink({ origin }: { origin: CommitmentOrigin | undefined }) {
+  const to = origin === 'dashboard' ? '/app' : '/app/explorer'
+  const label = origin === 'dashboard' ? 'Dashboard' : 'Explorer'
+
   return (
-    <Link to="/app/commitments" className="ds-text-sm ds-subtle" style={{ alignSelf: 'flex-start' }}>
-      ← All commitments
+    <Link to={to} className="ds-text-sm ds-subtle" style={{ alignSelf: 'flex-start' }}>
+      ← {label}
     </Link>
   )
 }

@@ -2415,7 +2415,7 @@ const columns: DataTableColumn<Row>[] = [
   { id: 'status',       header: 'status',       render: (r) => <CommitmentStatusBadge status={r.status} /> },
 ]
 
-// "What needs attention" surfaces (Dashboard preview, Commitments page)
+// "What needs attention" surfaces (Dashboard preview, commitment lists)
 // default to the canonical urgency sort:
 //   FORFEIT_PENDING (0) → ACTIVE (1) → terminal (2), then id DESC tiebreak.
 // Use sortByCommitmentUrgency from lib/commitmentSort so every surface

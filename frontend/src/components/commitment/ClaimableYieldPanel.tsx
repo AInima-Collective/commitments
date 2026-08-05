@@ -116,6 +116,7 @@ export function ClaimableYieldPanel({
         render: (row) => (
           <Link
             to={`/app/commitments/${row.commitmentId.toString()}`}
+            state={{ commitmentOrigin: 'dashboard' }}
             className="ds-mono-num"
             style={{ color: 'var(--text-muted)' }}
             onClick={(e) => e.stopPropagation()}

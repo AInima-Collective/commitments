@@ -144,12 +144,14 @@ export default function Dashboard() {
   const assetSymbol = position.assetSymbol;
 
   // Drawer is proposal-only; commitment rows deep-link to /commitments/:id so
-  // the URL is shareable and matches the commitments-page navigation.
+  // the URL is shareable. The route state lets the detail page return here.
   const [detailRow, setDetailRow] = useState<UnifiedProposalRowEntry | null>(null);
   const openRow = useCallback(
     (r: UnifiedRow) => {
       if (r.kind === "commitment") {
-        navigate(`/app/commitments/${r.id.toString()}`);
+        navigate(`/app/commitments/${r.id.toString()}`, {
+          state: { commitmentOrigin: "dashboard" },
+        });
       } else {
         setDetailRow(r);
       }
@@ -248,7 +250,7 @@ export default function Dashboard() {
   // style) so a connected user funds a position without navigating away. Opened
   // from the hero (no preselected token → chooser) or from a specific asset row.
   // Create-commitment modal — opened from the page header so users can lock new
-  // stake without leaving the dashboard (mirrors the Commitments page action).
+  // stake without leaving the dashboard.
   const [createOpen, setCreateOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositOption, setDepositOption] = useState<BackingOption | null>(null);
@@ -1337,8 +1339,7 @@ function YourCommitments({
 }) {
   // v2: each row's amount is denominated in its own backing token.
   const tokenMeta = useTokenMetaMap(rows.map((r) => r.token));
-  // Direction / Status / Role filters mirror the Commitments page (shared
-  // vocabulary in lib/commitmentFilters) so the two surfaces stay consistent.
+  // Direction / Status / Role filters use the shared commitment vocabulary.
   const [direction, setDirection] = useState<DirectionFilter>("all");
   const [statuses, setStatuses] = useState<string[]>([]);
   const [role, setRole] = useState<RoleFilter>("all");
@@ -1363,7 +1364,7 @@ function YourCommitments({
     <section className="ds-section">
       <div className="ds-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 className="ds-section-title">Your commitments</h2>
-        <Link to="/app/commitments" className="ds-btn ds-btn--sm ds-btn--ghost">
+        <Link to="/app/explorer" className="ds-btn ds-btn--sm ds-btn--ghost">
           open full view →
         </Link>
       </div>
@@ -1517,7 +1518,7 @@ function WelcomeCard({ assetSymbol }: { assetSymbol: string | undefined }) {
       status: "later",
       title: "Create your first commitment",
       body: "Pledge shares to a counterparty under terms you set as arbiter. The Resolve modal handles release, forfeit, and yield distribution.",
-      cta: { label: "Go to commitments", to: "/app/commitments" },
+      cta: { label: "Explore commitments", to: "/app/explorer" },
     },
   ];
   return (

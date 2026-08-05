@@ -7,7 +7,6 @@ import Dashboard from './pages/Dashboard'
 import Vault from './pages/Vault'
 import Vaults from './pages/Vaults'
 import ClaimDetail from './pages/ClaimDetail'
-import Commitments from './pages/Commitments'
 import CommitmentDetail from './pages/CommitmentDetail'
 import Arbitration from './pages/Arbitration'
 // /marketplace is the risk-coverage marketplace (the former /mutuals list,
@@ -51,7 +50,10 @@ export const router = createBrowserRouter([
       // Backing was folded into the dashboard's "Your assets" section (deposit +
       // withdraw modals). Redirect old links/bookmarks to the dashboard.
       { path: 'backing', element: <Navigate to="/app" replace /> },
-      { path: 'commitments', element: <ErrorPanel panelName="Commitments"><Commitments /></ErrorPanel> },
+      // The protocol-wide Explorer supersedes the former commitments list.
+      // Keep the exact route as a redirect for bookmarks while preserving the
+      // shareable /commitments/:id detail URLs below.
+      { path: 'commitments', element: <Navigate to="/app/explorer" replace /> },
       { path: 'commitments/:id', element: <ErrorPanel panelName="Commitment"><CommitmentDetail /></ErrorPanel> },
       { path: 'arbitration', element: <ErrorPanel panelName="Arbitration"><Arbitration /></ErrorPanel> },
       { path: 'claims/:id', element: <ErrorPanel panelName="Claim"><ClaimDetail /></ErrorPanel> },

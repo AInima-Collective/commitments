@@ -41,7 +41,7 @@ export interface CommitmentsTableProps {
   /** When set, renders a per-row Resolve action (commitment rows only) that
    *  opens the resolve modal. */
   resolveContext?: CommitmentsResolveContext
-  /** Controlled sort (Commitments page). Enables sortable headers when paired
+  /** Controlled sort. Enables sortable headers when paired
    *  with `onSortChange`. */
   sort?: DataTableSort
   onSortChange?: (sort: DataTableSort) => void
@@ -55,7 +55,7 @@ export interface CommitmentsTableProps {
 }
 
 /**
- * Shared commitments table used by the Dashboard, Commitments page, and Vault
+ * Shared commitments table used by the Dashboard and Vault
  * page. Columns: Commitment, Dir, Status, Role, Counterparty, Arbiter,
  * [Yield], Amount, [Resolve]. The parent owns filtering/sorting/slicing of
  * `rows`; this component only renders.

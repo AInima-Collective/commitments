@@ -5139,38 +5139,6 @@ button.ds-tag:focus-visible {
  * already paints the danger border.
  * ============================================================ */
 
-/* === Tabs (Commitments page) =================================
- * Underline-style tab strip used by Commitments.tsx three-tab nav.
- * `aria-selected="true"` swaps muted text → primary text + accent
- * underline. Tabs are <button> elements; styling carries no padding-x
- * (each tab owns its label whitespace).
- *
- * Scoped under `.ds-tab-strip` so the existing legacy `.ds-tabs >
- * .ds-tab` rules above (lines 552-569) keep working untouched —
- * pages opt into this minimal-underline variant by wrapping their
- * tabs in `.ds-tab-strip`.
- * ============================================================= */
-.ds-tab-strip {
-  display: flex;
-  gap: var(--space-4);
-  border-bottom: var(--border-width) solid var(--border);
-  margin: 0 0 var(--space-6) 0;
-}
-.ds-tab-strip > .ds-tab {
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  padding: var(--space-2) 0;
-  background: transparent;
-  border: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.ds-tab-strip > .ds-tab[aria-selected="true"] {
-  color: var(--text);
-  border-bottom: 2px solid var(--accent);
-  margin-bottom: -1px;
-}
-
 /* === Cause directory listbox ================================
  * Compound input dropdown used by `<CauseDirectory>` (donate
  * mode recipient picker). Sits absolute-positioned beneath the
