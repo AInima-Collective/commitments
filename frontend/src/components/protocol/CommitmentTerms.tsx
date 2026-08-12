@@ -15,7 +15,7 @@ export interface CommitmentTermsProps {
   termsLabel?: string
   /** Normalized tags from `metadataTags(row)`. */
   tags?: readonly string[]
-  /** Off-chain `trustGraphAttestationId`. */
+  /** Off-chain `trustgraphsAttestationId`. */
   attestationId?: string
   /** Classification from `metadataTrust(row)`. Gates whether anything renders. */
   trust: MetadataTrust
@@ -133,7 +133,7 @@ export function CommitmentTerms({
 
       {attestationId && (
         <span className="ds-text-xs ds-subtle">
-          Trust-graph attestation: <code>{attestationId}</code>
+          Trustgraphs attestation: <code>{attestationId}</code>
         </span>
       )}
     </section>

@@ -41,8 +41,8 @@
  *  - Say what a breach is and who decides, because that is what a
  *    counterparty and an arbiter open the row to find out.
  *  - Tags describe the commitment, not the seed. `demo` is not a tag.
- *  - **No `trustGraphAttestationId`.** The field is documented and rendered,
- *    but nothing in this repo issues trust-graph attestations, so every value
+ *  - **No `trustgraphsAttestationId`.** The field is documented and rendered,
+ *    but nothing in this repo issues trustgraphs attestations, so every value
  *    here would be invented. A demo corpus full of plausible-looking
  *    attestation ids that reference nothing is worse than an empty field: it
  *    teaches a reader to trust a pointer that goes nowhere. Populate it when

@@ -70,7 +70,7 @@ const SCHEMA_FIELDS: Record<MetadataSchema, FieldDef[]> = {
     { key: 'description', label: 'DESCRIPTION', multiline: true, placeholder: 'Longer prose — markdown allowed' },
     { key: 'termsURI', label: 'TERMS URI', placeholder: 'ipfs://… or https://…' },
     { key: 'tags', label: 'TAGS', kind: 'tags' },
-    { key: 'trustGraphAttestationId', label: 'TRUST GRAPH ATTESTATION ID', placeholder: 'attestation reference' },
+    { key: 'trustgraphsAttestationId', label: 'TRUSTGRAPHS ATTESTATION ID', placeholder: 'attestation reference' },
   ],
   'agreement.v1': [
     { key: 'title', label: 'TITLE', required: true, placeholder: 'Cross-operator SLA bridge' },

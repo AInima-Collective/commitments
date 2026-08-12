@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { commitmentLabel, type CommitmentLabelContext } from '../commitmentLabel'
-import { metadataTags, metadataTrust, metadataSearchText } from '../commitmentMetadata'
+import {
+  metadataAttestationId,
+  metadataSearchText,
+  metadataTags,
+  metadataTrust,
+} from '../commitmentMetadata'
 import type { UnifiedRow } from '../../hooks/useUnifiedRows'
 import {
   COMMITTER,
@@ -198,6 +203,14 @@ describe('metadataTags', () => {
 
   it('returns an empty array when tags is not an array', () => {
     expect(metadataTags(okMetadata({ tags: 'sla' }))).toEqual([])
+  })
+})
+
+describe('metadataAttestationId', () => {
+  it('reads the trustgraphs key', () => {
+    expect(metadataAttestationId(okMetadata({ trustgraphsAttestationId: 'attestation-id' }))).toBe(
+      'attestation-id',
+    )
   })
 })
 

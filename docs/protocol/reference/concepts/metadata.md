@@ -91,7 +91,7 @@ Note: `data:` URIs are subject to the contract's 512-byte URI length cap. After 
 | `description` | string | optional | Longer prose describing the commitment; markdown allowed |
 | `termsURI` | string | optional | Link to a fuller off-chain terms document (`ipfs://` or `https://`) |
 | `tags` | string[] | optional | Free-form labels for filtering and display |
-| `trustGraphAttestationId` | string | optional | Reference into a trust-graph attestation; consumers dereference this separately |
+| `trustgraphsAttestationId` | string | optional | Reference into a trustgraphs attestation; consumers dereference this separately. |
 
 Example payload (producers hash whatever bytes they actually post — this is documentation only):
 

@@ -127,9 +127,9 @@ export function metadataTermsURI(row: UnifiedRow): string | undefined {
   return asString(metadataContent(row)?.termsURI)
 }
 
-/** Off-chain `trustGraphAttestationId`. */
+/** Off-chain `trustgraphsAttestationId`. */
 export function metadataAttestationId(row: UnifiedRow): string | undefined {
-  return asString(metadataContent(row)?.trustGraphAttestationId)
+  return asString(metadataContent(row)?.trustgraphsAttestationId)
 }
 
 /**
