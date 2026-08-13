@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   DEPLOYMENT_MANIFEST_SCHEMA_VERSION,
   baseName,
+  creationInputMatchesArtifact,
   loadDeployments,
   parseDeploymentManifest,
 } from './loadDeployments.ts'
@@ -53,6 +54,22 @@ test('baseName strips a hyphenated profile qualifier (manager-size)', () => {
   assert.equal(baseName('OperatorRegistry.manager-size'), 'OperatorRegistry')
   assert.equal(baseName('ERC1967Proxy.manager-size'), 'ERC1967Proxy')
   assert.equal(baseName('CommitmentManager.manager-size'), 'CommitmentManager')
+})
+
+test('creation bytecode matching permits constructor arguments', () => {
+  assert.equal(creationInputMatchesArtifact('0x60016002deadbeef', '0x60016002'), true)
+  assert.equal(creationInputMatchesArtifact('0x60016003deadbeef', '0x60016002'), false)
+})
+
+test('creation bytecode matching ignores linked-library address slots', () => {
+  const placeholder = `0x6001${'__$1234567890123456789012345678901234$__'}6002`
+  const linked = `0x6001${'ab'.repeat(20)}6002c0ffee`
+  assert.equal(
+    creationInputMatchesArtifact(linked, placeholder, {
+      'src/Library.sol': { Library: [{ start: 2, length: 20 }] },
+    }),
+    true,
+  )
 })
 
 test('the checked-in v1 fixture is accepted by the runtime loader', () => {

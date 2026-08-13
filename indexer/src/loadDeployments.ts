@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
-import { resolve, join, dirname } from 'node:path'
+import { basename, resolve, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isAddress, zeroAddress, type Hex } from 'viem'
 
@@ -232,6 +232,7 @@ type BroadcastTx = {
   contractName: string | null
   contractAddress: Hex | null
   arguments?: string[] | null
+  transaction?: { input?: string | null } | null
 }
 
 type BroadcastFile = {
@@ -259,6 +260,118 @@ export function baseName(name: string): string {
   return name.replace(/\.[A-Za-z0-9_-]+$/, '')
 }
 
+type LinkReference = { start: number; length: number }
+type LinkReferences = Record<string, Record<string, LinkReference[]>>
+type FoundryArtifact = {
+  bytecode?: {
+    object?: string
+    linkReferences?: LinkReferences
+  }
+}
+type CreationMatcher = {
+  contractName: string
+  bytecode: string
+  linkReferences: LinkReferences
+}
+
+const KNOWN_CONTRACT_NAMES = new Set([
+  ...Object.keys(SINGLE_NAME_MAP),
+  ...Object.keys(MULTI_NAME_MAP),
+  'ERC1967Proxy',
+])
+
+function linkedByteRanges(linkReferences: LinkReferences): LinkReference[] {
+  return Object.values(linkReferences)
+    .flatMap((contracts) => Object.values(contracts))
+    .flat()
+    .sort((a, b) => a.start - b.start)
+}
+
+/**
+ * Match a Foundry CREATE input against artifact creation bytecode.
+ *
+ * Constructor arguments may follow the bytecode. Linked-library slots are
+ * ignored because the artifact contains placeholders while the broadcast has
+ * the concrete library addresses inserted by `forge script`.
+ */
+export function creationInputMatchesArtifact(
+  creationInput: string,
+  artifactBytecode: string,
+  linkReferences: LinkReferences = {},
+): boolean {
+  const input = creationInput.replace(/^0x/, '').toLowerCase()
+  const bytecode = artifactBytecode.replace(/^0x/, '').toLowerCase()
+  if (!bytecode || bytecode.length % 2 !== 0 || input.length < bytecode.length) return false
+
+  let cursor = 0
+  for (const reference of linkedByteRanges(linkReferences)) {
+    const start = reference.start * 2
+    const end = start + reference.length * 2
+    if (start < cursor || end > bytecode.length) return false
+    if (input.slice(cursor, start) !== bytecode.slice(cursor, start)) return false
+    cursor = end
+  }
+  return input.slice(cursor, bytecode.length) === bytecode.slice(cursor)
+}
+
+function artifactFiles(root: string): string[] {
+  const files: string[] = []
+  const pending = [root]
+  while (pending.length) {
+    const dir = pending.pop()!
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) pending.push(path)
+      else if (entry.isFile() && entry.name.endsWith('.json')) files.push(path)
+    }
+  }
+  return files
+}
+
+function loadCreationMatchers(artifactDir: string): CreationMatcher[] {
+  if (!existsSync(artifactDir)) return []
+
+  const matchers: CreationMatcher[] = []
+  const seen = new Set<string>()
+  for (const path of artifactFiles(artifactDir)) {
+    const filename = basename(path, '.json')
+    const contractName = baseName(filename)
+    if (!KNOWN_CONTRACT_NAMES.has(contractName)) continue
+
+    try {
+      const artifact = JSON.parse(readFileSync(path, 'utf8')) as FoundryArtifact
+      const bytecode = artifact.bytecode?.object
+      if (!bytecode || bytecode === '0x') continue
+      const signature = `${contractName}:${bytecode}`
+      if (seen.has(signature)) continue
+      seen.add(signature)
+      matchers.push({
+        contractName,
+        bytecode,
+        linkReferences: artifact.bytecode?.linkReferences ?? {},
+      })
+    } catch {
+      // A malformed unrelated/stale artifact should not make Ponder config fail.
+    }
+  }
+  return matchers
+}
+
+function recoverContractName(
+  creationInput: string | null | undefined,
+  matchers: CreationMatcher[],
+): string | undefined {
+  if (!creationInput) return undefined
+  const names = new Set(
+    matchers
+      .filter((matcher) =>
+        creationInputMatchesArtifact(creationInput, matcher.bytecode, matcher.linkReferences),
+      )
+      .map((matcher) => matcher.contractName),
+  )
+  return names.size === 1 ? names.values().next().value : undefined
+}
+
 function parseBroadcast(chainId: number): CommitmentsDeployments {
   const broadcastDir = resolve(__dirname, '../../broadcast')
   if (!existsSync(broadcastDir)) {
@@ -266,6 +379,7 @@ function parseBroadcast(chainId: number): CommitmentsDeployments {
   }
 
   const scripts = readdirSync(broadcastDir).filter((d) => d.endsWith('.s.sol'))
+  const creationMatchers = loadCreationMatchers(resolve(__dirname, '../../out'))
 
   // (impl address, ordered) — preserves CREATE order so multi-instance contracts
   // (CommitmentManager, OperatorRegistry) are paired with proxies in order.
@@ -290,8 +404,14 @@ function parseBroadcast(chainId: number): CommitmentsDeployments {
     if (!existsSync(runPath)) continue
     const doc = JSON.parse(readFileSync(runPath, 'utf-8')) as BroadcastFile
     for (const tx of doc.transactions ?? []) {
-      if (tx.transactionType !== 'CREATE' || !tx.contractName || !tx.contractAddress) continue
-      const name = baseName(tx.contractName)
+      if (tx.transactionType !== 'CREATE' || !tx.contractAddress) continue
+      // Foundry can emit `contractName: null` when additional compiler profiles
+      // produce more than one artifact for the same source. The raw CREATE input
+      // remains authoritative, so recover the name from the matching artifact.
+      const name = tx.contractName
+        ? baseName(tx.contractName)
+        : recoverContractName(tx.transaction?.input, creationMatchers)
+      if (!name) continue
       if (name === 'ERC1967Proxy') {
         const implArg = tx.arguments?.[0]
         if (implArg) implToProxy.set(implArg.toLowerCase(), tx.contractAddress)
