@@ -99,7 +99,7 @@ void ensureOffchainSchema()
 // — no per-column wiring needed. Query via GET /graphql with standard GraphQL.
 //
 // Example query:
-//   query { commitments { id depositor metadataURI metadataStatus metadataContent } }
+//   query { commitments { id committer metadataURI metadataStatus metadataContent } }
 //
 // Note: /graph/* and /account/* custom routes use db.select() (no explicit column
 // list), so they also return metadata columns. The /graph/agreements edge

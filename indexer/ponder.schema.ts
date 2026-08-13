@@ -25,6 +25,12 @@ export const commitment = onchainTable(
     status: t.text().notNull(), // 'active' | 'unbonding' | 'forfeitPending' | 'forfeited' | 'released' | 'expired'
     // Forfeit lifecycle
     forfeitPenaltyBps: t.integer(),
+    // Wall-clock start of the currently active/latest proposal. This is kept
+    // separately from the nominal end so commitment-scoped APIs can describe
+    // each repeated attempt without reconstructing it from vault activity.
+    forfeitInitiatedAt: t.bigint(),
+    // Nominal event-time end used for index ordering only. Live executability
+    // additionally applies manager lifetime pause credit.
     forfeitChallengeEnd: t.bigint(),
     forfeitSharesExecuted: t.bigint(),
     forfeitCounterparty: t.hex(),
@@ -119,15 +125,18 @@ export const commitment = onchainTable(
 export const forfeitEvent = onchainTable(
   'forfeit_event',
   (t) => ({
-    id: t.text().primaryKey(), // `${commitmentId}-${blockNumber}-${logIndex}`
+    id: t.text().primaryKey(), // `${manager}-${commitmentId}-${blockNumber}-${logIndex}`
     commitmentId: t.bigint().notNull(),
     kind: t.text().notNull(), // 'initiated' | 'executed' | 'cancelled' | 'cancelledStale'
     // Lifecycle-specific fields; null on transitions that don't carry them.
-    penaltyBps: t.integer(), // initiated only
-    challengeWindow: t.bigint(), // initiated only (seconds)
-    challengeEnd: t.bigint(), // initiated only (block.timestamp + challengeWindow)
+    penaltyBps: t.integer(),
+    challengeWindow: t.bigint(), // seconds, copied across an attempt when known
+    challengeEnd: t.bigint(), // nominal event-time end, before pause credit
+    // Proposal start copied onto every transition in an attempt. Unlike the
+    // event timestamp, this remains the initiation anchor on execute/cancel.
+    proposalInitiatedAt: t.bigint().notNull(),
     sharesToForfeit: t.bigint(), // executed only — raw backing-token units forfeited (ForfeitExecuted.unitsForfeited)
-    counterparty: t.hex(), // executed only
+    counterparty: t.hex(), // parent counterparty when known
     // Denormalized parent fields — keep the forfeit-ledger query single-table.
     committer: t.hex().notNull(),
     arbiter: t.hex().notNull(),
@@ -136,11 +145,13 @@ export const forfeitEvent = onchainTable(
     // `manager` column. Nullable for migration compatibility.
     manager: t.hex(),
     blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
     blockTimestamp: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
   (t) => ({
     commitmentIdx: index().on(t.commitmentId),
+    commitmentManagerIdx: index().on(t.manager, t.commitmentId),
     blockIdx: index().on(t.blockNumber),
     vaultIdx: index().on(t.vault),
     managerIdx: index().on(t.manager),

@@ -42,7 +42,7 @@ does not parse the URI or fetch the document.
 
 The court advertises only
 `INITIATE_FORFEIT | CANCEL_FORFEIT`. It cannot release commitments, arbitrate
-agreements or mutuals, or bypass the manager's challenge window.
+agreements or mutuals, or bypass the manager's pause-adjusted forfeit execution delay.
 
 ## Configure compatible commitments
 
@@ -81,7 +81,7 @@ opened.
    positive and no greater than the commitment's `maxPenaltyBps`. This opens the
    manager proposal and starts `appealWindow`.
 2. If nobody appeals, anyone may call `executeRuling(caseId)` after the manager
-   challenge window. Calling `manager.executeForfeit(commitmentId)` directly has
+   pause-adjusted forfeit execution delay. Calling `manager.executeForfeit(commitmentId)` directly has
    the same economic result.
 3. Before the appeal deadline, the committer, counterparty, primary controller,
    or appeal controller may call `appeal(caseId, appealHash)`. The court cancels
@@ -90,7 +90,7 @@ opened.
 4. By the human deadline, only the appeal controller may call
    `resolveAppeal`. A zero penalty dismisses the case and cancels the proposal. A
    positive penalty at or below `maxPenaltyBps` replaces the proposal and starts
-   another fresh manager challenge window.
+   another fresh manager forfeit execution delay.
 5. If the human deadline passes unanswered, anyone should call
    `lapseAppeal(caseId)`. This cancels the proposal and leaves the commitment
    active.

@@ -82,7 +82,7 @@ describe('buildCustomParams', () => {
   it('rejects a sub-24h challenge window', () => {
     expect(buildCustomParams({ ...goodInput, challengeWindowSecs: 3_600 })).toEqual({
       ok: false,
-      error: 'CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS',
+      error: 'FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS',
     })
   })
 

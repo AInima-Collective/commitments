@@ -36,7 +36,7 @@ contract MyArbiter {
         if (inFavorOfCommitter) {
             manager.releaseCommitment(commitmentId);
         } else {
-            manager.initiateForfeit(commitmentId, penaltyBps); // then executeForfeit after the window
+            manager.initiateForfeit(commitmentId, penaltyBps); // then executeForfeit after the pause-adjusted delay
         }
     }
 }
@@ -45,7 +45,9 @@ contract MyArbiter {
 Committers set `arbiter = address(myArbiter)`, giving the contract exclusive
 release/forfeit authority. Remember the two-phase forfeit: `initiateForfeit`
 starts the timer, and `executeForfeit` (permissionless) settles it after the
-challenge window.
+pause-adjusted forfeit execution delay. The stored `challengeWindow` does not
+itself expose a generic challenge method; any dispute belongs to the arbiter's
+decision process.
 
 ### Design considerations
 

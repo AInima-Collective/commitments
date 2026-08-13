@@ -965,7 +965,7 @@ export default function Dashboard() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Create commitment"
-        description="Pre-lock vault shares to an arbiter for a chosen counterparty. Two-phase forfeit window protects both sides."
+        description="Pre-lock vault shares to an arbiter for a chosen counterparty. Two-phase manager enforcement prevents instant forfeiture."
         size="lg"
       >
         {managerAddress ? (

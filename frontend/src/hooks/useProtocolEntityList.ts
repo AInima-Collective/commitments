@@ -26,6 +26,7 @@ const STATUS_WIRE_TO_DOMAIN: Record<string, CommitmentStatus> = {
 
 export interface ProtocolCommitmentRow {
   id: bigint
+  manager: Address
   committer: Address
   arbiter: Address
   counterparty: Address
@@ -41,6 +42,7 @@ export interface ProtocolCommitmentRow {
 
 interface CommitmentWire {
   id: string
+  manager: string
   committer: string
   arbiter: string
   counterparty: string
@@ -84,6 +86,7 @@ export function useProtocolCommitmentsList(options: {
       return (env.rows ?? []).map(
         (w): ProtocolCommitmentRow => ({
           id: BigInt(w.id),
+          manager: w.manager as Address,
           committer: w.committer as Address,
           arbiter: w.arbiter as Address,
           counterparty: w.counterparty as Address,

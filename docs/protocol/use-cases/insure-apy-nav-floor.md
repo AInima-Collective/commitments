@@ -18,7 +18,7 @@ The floor, observation window, data source, and penalty calculation belong in co
 - AttestationArbiter lets a configured service quorum sign InitiateForfeit after operators evaluate the policy off-chain.
 - OptimisticInsuranceArbiter lets a claimant propose a penalty with a bond and lets disputers counter it until the answer timeout.
 
-In both cases, CommitmentManager enforces the commitment maximum penalty and challenge window. The manager does not independently verify NAV or APY.
+In both cases, CommitmentManager enforces the commitment maximum penalty and pause-adjusted forfeit execution delay. The manager does not independently verify NAV or APY, and its delay does not itself provide a generic contest method.
 
 ## Payout
 

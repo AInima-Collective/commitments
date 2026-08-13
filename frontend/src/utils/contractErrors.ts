@@ -25,7 +25,7 @@ const FRIENDLY_REVERTS: Record<string, string> = {
   // Forfeit
   ForfeitPending: 'A forfeit proposal is already pending on this commitment.',
   NoActiveForfeitProposal: 'There is no active forfeit proposal to act on.',
-  ChallengeWindowActive: 'The challenge window has not elapsed yet.',
+  ChallengeWindowActive: 'The pause-adjusted forfeit execution delay has not elapsed yet.',
   PenaltyExceedsMax: 'The penalty exceeds this commitment’s maximum.',
   ForfeitureIsPaused: 'Forfeits are currently paused by governance.',
   // Mutual membership / exit

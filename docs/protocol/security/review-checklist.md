@@ -14,7 +14,7 @@ Use this checklist with the full test suite. Test names are navigation aids, not
 - Only free balance can be withdrawn.
 - Creation cannot exceed free balance or forfeitable-exposure allocation.
 - Release, expiry, unbond, and forfeit paths close once and update exposure exactly.
-- Forfeit execution respects challenge windows, pause state, pause budget, and penalty maximum.
+- Forfeit execution respects the pause-adjusted manager delay, pause state, lifetime pause-credit cap, and penalty maximum.
 - Beneficiary proceeds are pull payments in manager free balance.
 - Strategy bindings are immutable and movement validation prevents unauthorized token, recipient, or amount changes.
 - Failed lifecycle hooks do not roll back custody transitions and are recoverable.

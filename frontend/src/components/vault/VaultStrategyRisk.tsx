@@ -172,9 +172,9 @@ export function VaultStrategyRisk({
                 detail="Per-commitment delay between requesting an unbond and being able to finalize it, releasing the encumbered backing back to free balance."
               />
               <RiskRow
-                label="Forfeit challenge window"
+                label="Forfeit execution delay"
                 value={`≥ ${challengeLabel}`}
-                detail="Minimum delay between a forfeit proposal and execution. Gives the depositor and arbiter time to challenge or finalise a forfeiture event."
+                detail="Pause-adjusted minimum delay between proposal and execution. It permits arbiter cancellation but does not itself expose a generic committer challenge transaction."
               />
               <RiskRow
                 label="Inflation guard"

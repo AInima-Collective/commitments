@@ -1,8 +1,12 @@
 import { useMemo } from 'react'
 import { type Address } from 'viem'
+import {
+  useReadCommitmentManagerForfeitProposalTtl,
+  useReadCommitmentManagerPauseState,
+} from '../../generated'
 
 import { useArbiterCommitments, type ArbiterCommitment } from '../../hooks/useArbiterCommitments'
-import { useNowSeconds } from '../../hooks/useNow'
+import { useDisplayNow } from '../../hooks/useDisplayNow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { compareCommitmentUrgency } from '../../lib/commitmentSort'
 import {
@@ -18,6 +22,10 @@ import { useCommitmentLabelContext } from '../../hooks/useCommitmentLabelContext
 import { type UnifiedCommitmentRowEntry } from '../../hooks/useUnifiedRows'
 import { commitmentLabel } from '../../lib/commitmentLabel'
 import { metadataTags } from '../../lib/commitmentMetadata'
+import {
+  calculateForfeitEnforcement,
+  type ManagerPauseSnapshot,
+} from '../../lib/forfeitEnforcement'
 import { ResolveCommitmentButton } from '../commitment/ResolveCommitmentButton'
 import { ForfeitDetail } from '../commitment/ForfeitDetail'
 import { ForfeitTimeline } from './ForfeitTimeline'
@@ -38,15 +46,15 @@ interface BucketMeta {
 
 const BUCKET_META: Record<Bucket, BucketMeta> = {
   executable: {
-    title: 'Ready to execute',
+    title: 'Ready to execute or stale-cancel',
     description:
-      'The challenge window has closed — execute the forfeit, or cancel it if the dispute resolved.',
+      'Live manager state says execution or the independent stale-cancel backstop is available.',
     tone: 'danger',
   },
   pending: {
-    title: 'Awaiting challenge window',
+    title: 'Forfeit execution delay',
     description:
-      'A forfeit is live but cannot execute until its challenge window elapses. You can still cancel it.',
+      'A proposal is live but its pause-adjusted manager execution state is not ready. The arbiter can still cancel it.',
     tone: 'warn',
   },
   active: {
@@ -64,10 +72,23 @@ const BUCKET_META: Record<Bucket, BucketMeta> = {
 
 const BUCKET_ORDER: Bucket[] = ['executable', 'pending', 'active', 'other']
 
-function bucketFor(c: ArbiterCommitment, nowSec: bigint): Bucket {
+function bucketFor(
+  c: ArbiterCommitment,
+  nowSec: bigint,
+  pauseState: ManagerPauseSnapshot | undefined,
+  ttl: bigint | undefined,
+): Bucket {
   if (c.status === 'FORFEIT_PENDING') {
-    const closed = c.forfeitChallengeEnd !== undefined && nowSec >= c.forfeitChallengeEnd
-    return closed ? 'executable' : 'pending'
+    const enforcement = calculateForfeitEnforcement({
+      proposal: c.forfeitProposal,
+      challengeWindow: c.challengeWindow,
+      pauseState,
+      proposalTtl: ttl,
+      now: nowSec,
+    })
+    return enforcement.executionAvailable || enforcement.staleCancellationAvailable
+      ? 'executable'
+      : 'pending'
   }
   if (c.status === 'ACTIVE') return 'active'
   return 'other'
@@ -85,7 +106,28 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     managerAddress,
     viewAddress: connectedAddress,
   })
-  const nowSec = useNowSeconds()
+  const nowSec = BigInt(useDisplayNow())
+  const { data: pauseRaw } = useReadCommitmentManagerPauseState({
+    address: managerAddress,
+    query: { enabled: Boolean(managerAddress), refetchInterval: 15_000 },
+  })
+  const { data: ttl } = useReadCommitmentManagerForfeitProposalTtl({
+    address: managerAddress,
+    query: { enabled: Boolean(managerAddress) },
+  })
+  const pauseState = useMemo<ManagerPauseSnapshot | undefined>(
+    () =>
+      pauseRaw
+        ? {
+            paused: pauseRaw[0],
+            pausedAt: pauseRaw[1],
+            cumulativePaused: pauseRaw[2],
+            maxPauseDuration: pauseRaw[3],
+            creditable: pauseRaw[4],
+          }
+        : undefined,
+    [pauseRaw],
+  )
 
   const buckets = useMemo(() => {
     const grouped: Record<Bucket, ArbiterCommitment[]> = {
@@ -94,10 +136,10 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
       active: [],
       other: [],
     }
-    for (const c of commitments) grouped[bucketFor(c, nowSec)].push(c)
+    for (const c of commitments) grouped[bucketFor(c, nowSec, pauseState, ttl)].push(c)
     for (const key of BUCKET_ORDER) grouped[key].sort(compareCommitmentUrgency)
     return grouped
-  }, [commitments, nowSec])
+  }, [commitments, nowSec, pauseState, ttl])
 
   const needsAttention = buckets.executable.length + buckets.pending.length + buckets.active.length
 
@@ -150,8 +192,8 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
       <section className="ds-stat-grid" aria-label="Arbitration summary">
         <StatBlock value={commitments.length.toString()} label="Arbitrated commitments" />
         <StatBlock value={needsAttention.toString()} label="Need attention" tone={needsAttention > 0 ? 'accent' : 'neutral'} />
-        <StatBlock value={buckets.executable.length.toString()} label="Ready to execute" tone={buckets.executable.length > 0 ? 'negative' : 'neutral'} />
-        <StatBlock value={buckets.pending.length.toString()} label="In challenge window" />
+        <StatBlock value={buckets.executable.length.toString()} label="Ready for manager action" tone={buckets.executable.length > 0 ? 'negative' : 'neutral'} />
+        <StatBlock value={buckets.pending.length.toString()} label="In execution delay / paused" />
       </section>
 
       {error && (
@@ -200,6 +242,8 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
                       connectedAddress={connectedAddress}
                       isConnected={isConnected}
                       nowSec={nowSec}
+                      pauseState={pauseState}
+                      ttl={ttl}
                       onActed={refetch}
                     />
                   ))}
@@ -220,6 +264,8 @@ interface ArbiterQueueRowProps {
   connectedAddress: Address
   isConnected: boolean
   nowSec: bigint
+  pauseState: ManagerPauseSnapshot | undefined
+  ttl: bigint | undefined
   onActed: () => void
 }
 
@@ -230,6 +276,8 @@ function ArbiterQueueRow({
   connectedAddress,
   isConnected,
   nowSec,
+  pauseState,
+  ttl,
   onActed,
 }: ArbiterQueueRowProps) {
   const { decimals, symbol } = useTokenMeta(commitment.token)
@@ -242,10 +290,20 @@ function ArbiterQueueRow({
   })
   const label = commitmentLabel(unified, labelContext)
 
-  const showCountdown = bucket === 'pending' && commitment.forfeitChallengeEnd !== undefined
-  const totalSecs = Number(commitment.challengeWindow)
-  const remainingSecs = showCountdown
-    ? Math.max(0, Number(commitment.forfeitChallengeEnd! - nowSec))
+  const enforcement = calculateForfeitEnforcement({
+    proposal: commitment.forfeitProposal,
+    challengeWindow: commitment.challengeWindow,
+    pauseState,
+    proposalTtl: ttl,
+    now: nowSec,
+  })
+  const showCountdown = bucket === 'pending' && enforcement.state === 'PENDING'
+  const totalSecs =
+    commitment.forfeitProposal && enforcement.effectiveExecutionAt
+      ? Number(enforcement.effectiveExecutionAt - commitment.forfeitProposal.initiatedAt)
+      : Number(commitment.challengeWindow)
+  const remainingSecs = showCountdown && enforcement.effectiveExecutionAt
+    ? Math.max(0, Number(enforcement.effectiveExecutionAt - nowSec))
     : 0
   const elapsedSecs = Math.max(0, totalSecs - remainingSecs)
 
@@ -281,13 +339,13 @@ function ArbiterQueueRow({
       </div>
 
       {showCountdown && (
-        <Countdown label="challenge window" elapsed={elapsedSecs} total={totalSecs} tone="warn" />
+        <Countdown label="forfeit execution delay" elapsed={elapsedSecs} total={totalSecs} tone="warn" />
       )}
 
       <Disclosure label="Forfeiture detail & timeline">
         <div className="ds-stack ds-stack-3">
           <ForfeitDetail commitment={commitment} managerAddress={managerAddress} />
-          <ForfeitTimeline vaultAddress={commitment.vault} commitmentId={commitment.id} />
+          <ForfeitTimeline managerAddress={managerAddress} commitmentId={commitment.id} />
         </div>
       </Disclosure>
     </div>

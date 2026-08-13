@@ -17,6 +17,7 @@ import { findKnownAddress } from '../../config/contracts'
 import { useAgentIdentities } from '../../hooks/useAgentIdentities'
 import { type UnifiedCommitmentRowEntry } from '../../hooks/useUnifiedRows'
 import { type CommitmentLabel } from '../../lib/commitmentLabel'
+import { arbiterProfilePath } from '../../lib/arbitrationRoutes'
 import {
   metadataAttestationId,
   metadataDescription,
@@ -31,11 +32,6 @@ interface CommitmentDetailContentProps {
   /** Backing-token decimals. Currently unused in the body but kept on the
    *  props so callers needn't change; the deferred yield-claim UI will use it. */
   decimals: number
-  /** Seconds remaining in the forfeit challenge window — provided by parent
-   *  because it ticks against `useNowSeconds()` and we don't want a re-render
-   *  every second cascading through this body. */
-  challengeWindowSecs?: number
-  challengeElapsed?: number
   /** Total length of the unbonding period in seconds; only rendered when the
    *  row's status is UNBONDING. */
   unbondTotalSecs?: number
@@ -64,8 +60,6 @@ interface CommitmentDetailContentProps {
  */
 export function CommitmentDetailContent({
   row,
-  challengeWindowSecs,
-  challengeElapsed,
   unbondTotalSecs,
   unbondElapsed,
   onSelectTag,
@@ -119,17 +113,6 @@ export function CommitmentDetailContent({
 
       <LifecycleStepper steps={lifecycle} />
 
-      {row.status === 'FORFEIT_PENDING' &&
-        challengeElapsed !== undefined &&
-        challengeWindowSecs !== undefined && (
-          <Countdown
-            label="challenge window"
-            elapsed={challengeElapsed}
-            total={challengeWindowSecs}
-            tone="warn"
-          />
-        )}
-
       {row.status === 'UNBONDING' &&
         unbondElapsed !== undefined &&
         unbondTotalSecs !== undefined && (
@@ -164,7 +147,9 @@ export function CommitmentDetailContent({
           {youOnCounterparty && <span className="ds-badge ds-badge--solid">YOU</span>}
         </PartyRow>
         <PartyRow label="arbiter">
-          <OperatorIdentity address={row.arbiter} size="sm" badge={agentBadgeFor(row.arbiter)} />
+          <Link to={arbiterProfilePath(row.arbiter)}>
+            <OperatorIdentity address={row.arbiter} size="sm" badge={agentBadgeFor(row.arbiter)} />
+          </Link>
           {youOnArbiter && <span className="ds-badge ds-badge--solid">YOU</span>}
         </PartyRow>
         <PartyRow label="backing token">

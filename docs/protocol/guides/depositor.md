@@ -155,8 +155,10 @@ to your free balance (after any final strategy accrual), and you can withdraw th
 
 ### If forfeited
 
-The arbiter initiates a forfeit; after the challenge window elapses, **anyone**
-can execute it. The forfeited units are credited to the counterparty's free
+The arbiter initiates a forfeit; after the manager's pause-adjusted execution
+delay elapses, **anyone** can execute it while forfeiture is not paused. The
+delay is stored as `challengeWindow`, but it does not create a generic contest
+transaction. The forfeited units are credited to the counterparty's free
 balance (a pull payment), and the residual returns to your free balance.
 
 Example — 1000 units, `maxPenaltyBps = 5000` (50%), arbiter forfeits at 3000 (30%):

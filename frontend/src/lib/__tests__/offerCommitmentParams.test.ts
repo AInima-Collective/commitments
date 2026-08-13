@@ -214,7 +214,7 @@ describe('buildOfferCommitParams', () => {
       { ...baseDirect, negotiableFields: ['amount', 'challengeWindow'] },
       { ...goodInput, challengeWindowSecs: 3_600 },
     )
-    expect(out).toEqual({ ok: false, error: 'CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS' })
+    expect(out).toEqual({ ok: false, error: 'FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS' })
   })
 
   it('ignores a sub-24h input challenge window when not negotiable (fixed deal)', () => {

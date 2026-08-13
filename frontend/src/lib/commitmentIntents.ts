@@ -58,7 +58,7 @@ export function getCommitmentIntents(): IntentDescriptor[] {
     {
       id: 'custom',
       label: 'Advanced / custom',
-      blurb: 'Full control over every term: arbiter, penalty, challenge window, expiry, metadata, and strategies.',
+      blurb: 'Full control over every term: arbiter, penalty, forfeit execution delay, expiry, metadata, and strategies.',
       whitepaperRef: '§5',
       mode: 'custom',
     },

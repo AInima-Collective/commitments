@@ -19,7 +19,7 @@ The donation raises Vault A assets without minting new Vault A shares. No vault 
 
 ## Trust and configuration
 
-The two vaults must report the same underlying asset; the beneficiary constructor rejects a mismatch. The commitment arbiter and evidence policy determine when a loss can be initiated. The challenge window and maximum penalty bound that authority.
+The two vaults must report the same underlying asset; the beneficiary constructor rejects a mismatch. The commitment arbiter and evidence policy determine when a loss can be initiated. The manager's forfeit execution delay and maximum penalty bound that authority; the delay does not itself create a generic challenge transaction.
 
 The beneficiary is keyless and immutable. It sweeps all source-vault shares it holds, including direct transfers, into the target donation path.
 

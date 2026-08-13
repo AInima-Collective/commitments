@@ -8,6 +8,7 @@ import Vault from './pages/Vault'
 import Vaults from './pages/Vaults'
 import ClaimDetail from './pages/ClaimDetail'
 import CommitmentDetail from './pages/CommitmentDetail'
+import ArbiterDetail from './pages/ArbiterDetail'
 import Arbitration from './pages/Arbitration'
 // /marketplace is the risk-coverage marketplace (the former /mutuals list,
 // redesigned). Mutual is its detail surface.
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
       // shareable /commitments/:id detail URLs below.
       { path: 'commitments', element: <Navigate to="/app/explorer" replace /> },
       { path: 'commitments/:id', element: <ErrorPanel panelName="Commitment"><CommitmentDetail /></ErrorPanel> },
+      { path: 'arbiters/:address', element: <ErrorPanel panelName="Arbiter"><ArbiterDetail /></ErrorPanel> },
       { path: 'arbitration', element: <ErrorPanel panelName="Arbitration"><Arbitration /></ErrorPanel> },
       { path: 'claims/:id', element: <ErrorPanel panelName="Claim"><ClaimDetail /></ErrorPanel> },
       { path: 'marketplace', element: <ErrorPanel panelName="Marketplace"><Marketplace /></ErrorPanel> },

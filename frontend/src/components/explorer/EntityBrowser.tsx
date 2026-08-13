@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import {
   AddressDisplay,
@@ -15,6 +15,7 @@ import { useAgentIdentities, type AgentIdentityMap } from '../../hooks/useAgentI
 import { useBlockTimestamps } from '../../hooks/useBlockTimestamps'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
 import { useOperatorNames } from '../../hooks/useOperatorNames'
+import { useTokenMetaMap } from '../../hooks/useTokenMeta'
 import {
   useProtocolCommitmentsList,
   useProtocolAgreementsList,
@@ -22,6 +23,7 @@ import {
   type ProtocolAgreementRow,
 } from '../../hooks/useProtocolEntityList'
 import { formatDuration } from '../../lib/format'
+import { arbiterProfilePath } from '../../lib/arbitrationRoutes'
 
 const COMMITMENTS_LIMIT = 100
 
@@ -140,6 +142,7 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
   const blockNumbers = useMemo(() => filtered.map((r) => r.createdBlock), [filtered])
   const blockTimestamps = useBlockTimestamps(blockNumbers)
   const now = useDisplayNow()
+  const tokenMeta = useTokenMetaMap(filtered.map((row) => row.token))
   const capped = !filterAddress && rows.length === COMMITMENTS_LIMIT
 
   const columns = useMemo<DataTableColumn<ProtocolCommitmentRow>[]>(
@@ -179,12 +182,18 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         id: 'arbiter',
         header: 'arbiter',
         render: (r) => (
-          <OperatorIdentity
-            address={r.arbiter}
-            name={names.get(r.arbiter)}
-            size="sm"
-            badge={agentBadgeFor(agents, r.arbiter)}
-          />
+          <Link
+            to={arbiterProfilePath(r.arbiter)}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`View arbiter ${r.arbiter}`}
+          >
+            <OperatorIdentity
+              address={r.arbiter}
+              name={names.get(r.arbiter)}
+              size="sm"
+              badge={agentBadgeFor(agents, r.arbiter)}
+            />
+          </Link>
         ),
       },
       {
@@ -192,7 +201,10 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         header: 'amount',
         align: 'right',
         sortable: true,
-        render: (r) => <TokenAmount amount={r.amount} decimals={6} symbol="USDC" compact />,
+        render: (r) => {
+          const meta = tokenMeta.metaFor(r.token)
+          return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
+        },
       },
       {
         id: 'penalty',
@@ -228,7 +240,7 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         },
       },
     ],
-    [names, agents, blockTimestamps, now],
+    [names, agents, blockTimestamps, now, tokenMeta],
   )
 
   const [sort, setSort] = useState<{ columnId: string; direction: 'asc' | 'desc' } | undefined>()
@@ -258,9 +270,9 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         columns={columns}
         rows={sortedRows}
         isLoading={isLoading}
-        getRowKey={(r) => r.id.toString()}
+        getRowKey={(r) => `${r.manager}-${r.id.toString()}`}
         onRowClick={(r) =>
-          navigate(`/app/commitments/${r.id}`, {
+          navigate(`/app/commitments/${r.id}?manager=${r.manager}`, {
             state: { commitmentOrigin: 'explorer' },
           })
         }

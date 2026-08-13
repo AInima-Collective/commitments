@@ -6,13 +6,11 @@ import { hasIndexer, indexerFetch } from '../config/indexer'
 export type LeaderboardMetric = 'arbiter' | 'counterparty' | 'operator'
 
 /**
- * Common shape returned for arbiter / counterparty leaderboards. Conviction
- * is the natural ordering: Σ(amount × maxPenaltyBps / 10000) over all
- * commitments where the row's address fills the role.
+ * Common shape returned for arbiter / counterparty leaderboards. These rank by
+ * count; heterogeneous backing units are never added together.
  */
 export interface PartyLeaderboardRow {
   address: Address
-  totalConviction: bigint
   commitmentCount: number
   activeCount: number
 }
@@ -27,7 +25,6 @@ export interface OperatorLeaderboardRow {
 
 interface PartyWire {
   address: string
-  totalConviction: string
   commitmentCount: number
   activeCount: number
 }
@@ -82,7 +79,6 @@ export function useProtocolLeaderboards<M extends LeaderboardMetric>(
       const env = (await res.json()) as LeaderboardEnvelope<PartyWire>
       const rows: PartyLeaderboardRow[] = env.rows.map((r) => ({
         address: r.address as Address,
-        totalConviction: BigInt(r.totalConviction),
         commitmentCount: r.commitmentCount,
         activeCount: r.activeCount,
       }))

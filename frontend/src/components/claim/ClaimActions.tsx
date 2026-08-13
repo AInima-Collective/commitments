@@ -142,7 +142,7 @@ export function ClaimActions({
       {claim.state === 'Resolved' && (
         <NoBondAction
           label="FINALIZE CLAIM"
-          description="A ruling has landed. Calls manager.initiateForfeit with the winning amount; the manager's 1-day window then runs."
+          description="A ruling has landed. Calls manager.initiateForfeit with the winning amount; the manager's pause-adjusted forfeit execution delay then runs."
           disabled={false}
           functionName="finalizeClaim"
           arbiterAddress={arbiterAddress}
@@ -154,7 +154,7 @@ export function ClaimActions({
       {claim.state === 'Forfeiture' && (
         <NoBondAction
           label="EXECUTE CLAIM"
-          description="The manager-side challenge window has elapsed. Executes the forfeit and settles all bonds."
+          description="Attempts manager execution and bond settlement. It succeeds only when the live pause-adjusted execution delay has elapsed and manager forfeiture is not paused."
           disabled={false}
           functionName="executeClaim"
           arbiterAddress={arbiterAddress}

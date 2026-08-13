@@ -73,12 +73,12 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   'initiate-forfeit': {
     title: 'Initiate forfeit',
     helper:
-      'Opens a two-phase forfeit proposal. The challenge window must elapse before execution.',
+      'Opens a two-phase forfeit proposal. The pause-adjusted manager execution delay must elapse before execution.',
   },
   'execute-forfeit': {
     title: 'Execute forfeit',
     helper:
-      'Executes the active forfeit proposal once the challenge window has closed. Permissionless.',
+      'Executes the active proposal once its pause-adjusted manager delay has elapsed and execution is not paused. Permissionless.',
   },
   'cancel-forfeit': {
     title: 'Cancel forfeit',
@@ -87,7 +87,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   'cancel-stale-forfeit': {
     title: 'Cancel stale forfeit',
     helper:
-      'Force-cancels a forfeit proposal abandoned for 14 days past its challenge window.',
+      'Force-cancels a proposal after its pause-adjusted execution time plus the 14-day liveness TTL.',
   },
   'claim-yield': {
     title: 'Claim yield',

@@ -122,7 +122,7 @@ export function ForfeitArbitrationForm({
         <Tooltip
           tone="info"
           size="lg"
-          content="A forfeit happens in two steps: initiateForfeit opens a challenge window, and only after it elapses can executeForfeit actually penalize the stake. The delay gives the committer time to dispute or the DAO time to cancel."
+          content="A forfeit happens in two manager steps: initiateForfeit starts a pause-adjusted execution delay, and only after it elapses can executeForfeit penalize the stake. The arbiter or DAO can cancel; any committer dispute method belongs to the configured arbiter mechanism."
         >
           two-phase
         </Tooltip>
@@ -171,8 +171,8 @@ export function ForfeitArbitrationForm({
         required
         helper={
           op === 'initiateForfeit'
-            ? 'Initiates the two-phase forfeit. Challenge window must elapse before executeForfeit.'
-            : 'Cancels a pending forfeit before its challenge window ends.'
+            ? 'Initiates the two-phase forfeit. The pause-adjusted manager delay must elapse before executeForfeit.'
+            : 'Cancels a pending manager forfeit before execution.'
         }
       >
         <Select

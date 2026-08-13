@@ -1,15 +1,13 @@
 import { type Address } from 'viem'
-import { useCountdown } from '../../hooks/useCountdown'
 import { useForfeitProposal } from '../../hooks/useForfeitProposal'
-import { formatDuration } from '../../lib/format'
+import { FORFEIT_STATE_LABEL } from '../../lib/forfeitEnforcement'
 import { formatBps, type CommitmentWithStatus } from '../../utils/commitments'
 import {
   AddressDisplay,
   Notice,
   StatBlock,
 } from '../ui'
-import { CommitmentStatusBadge, type CommitmentStatus } from '../protocol'
-import type { ForfeitProposalState } from '../../utils/commitments'
+import { CommitmentStatusBadge } from '../protocol'
 
 interface ForfeitDetailProps {
   commitment: CommitmentWithStatus
@@ -21,21 +19,6 @@ function formatTimestamp(ts: bigint): string {
   return new Date(Number(ts) * 1000).toISOString().slice(0, 16).replace('T', ' ')
 }
 
-function forfeitStateToBadgeStatus(state: ForfeitProposalState): CommitmentStatus | null {
-  switch (state) {
-    case 'PENDING':
-      return 'FORFEIT_PENDING'
-    case 'EXECUTABLE':
-      return 'FORFEIT_PENDING'
-    case 'EXECUTED':
-      return 'FORFEITED'
-    case 'CANCELLED':
-      return 'RELEASED'
-    case 'NONE':
-      return null
-  }
-}
-
 /**
  * Read-only forfeit visualization. Mounted in the row expansion as situational
  * awareness; the actual forfeit actions (initiate / execute / cancel) live in
@@ -45,36 +28,16 @@ export function ForfeitDetail({
   commitment,
   managerAddress,
 }: ForfeitDetailProps) {
-  const { proposal, state, deadline } = useForfeitProposal({
+  const { proposal, state, enforcement } = useForfeitProposal({
     managerAddress,
     commitmentId: commitment.id,
     challengeWindowSecs: commitment.challengeWindow,
     enabled: true,
   })
 
-  const remainingMs = useCountdown(deadline)
+  const stateValue = <CommitmentStatusBadge status={commitment.status} />
 
-  const badgeStatus = forfeitStateToBadgeStatus(state)
-  const stateValue = badgeStatus ? (
-    <CommitmentStatusBadge status={badgeStatus} />
-  ) : (
-    <Notice tone="neutral" size="sm">NO FORFEIT PROPOSAL</Notice>
-  )
-
-  const remainingSecs = Math.max(0, Math.floor(remainingMs / 1000))
-  let challengeWindowValue: React.ReactNode
-  if (state === 'PENDING') {
-    challengeWindowValue =
-      remainingSecs > 0 ? formatDuration(remainingSecs) : 'CHALLENGE WINDOW CLOSING…'
-  } else if (state === 'EXECUTABLE') {
-    challengeWindowValue = <Notice tone="success" size="sm">CHALLENGE WINDOW CLOSED</Notice>
-  } else if (state === 'EXECUTED') {
-    challengeWindowValue = 'EXECUTED'
-  } else if (state === 'CANCELLED') {
-    challengeWindowValue = 'CANCELLED'
-  } else {
-    challengeWindowValue = '--'
-  }
+  const executionValue = FORFEIT_STATE_LABEL[state]
 
   const proposerValue = proposal
     ? <AddressDisplay address={commitment.arbiter} />
@@ -89,7 +52,7 @@ export function ForfeitDetail({
     >
       <div className="ds-stat-grid">
         <StatBlock label="STATE" value={stateValue} />
-        <StatBlock label="CHALLENGE WINDOW" value={challengeWindowValue} />
+        <StatBlock label="MANAGER ENFORCEMENT" value={executionValue} />
         <StatBlock label="PROPOSER" value={proposerValue} />
         <StatBlock label="SUBJECT" value={subjectValue} />
       </div>
@@ -98,6 +61,14 @@ export function ForfeitDetail({
         <div className="ds-stat-grid" style={{ marginTop: 12 }}>
           <StatBlock label="PENALTY" value={formatBps(proposal.penaltyBps)} />
           <StatBlock label="INITIATED" value={formatTimestamp(proposal.initiatedAt)} />
+          <StatBlock
+            label="EFFECTIVE EXECUTION"
+            value={
+              enforcement.effectiveExecutionAt
+                ? formatTimestamp(enforcement.effectiveExecutionAt)
+                : '--'
+            }
+          />
         </div>
       )}
 

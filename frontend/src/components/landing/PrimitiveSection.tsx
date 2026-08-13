@@ -28,8 +28,8 @@ const POINTS: Array<{ n: string; body: React.ReactNode }> = [
     body: (
       <span>
         <strong>Breaking it costs.</strong> The arbiter can seize the stake.
-        Every seizure waits out a challenge window of at least a day, so a
-        wrong call can be disputed.
+        Every seizure waits out a manager execution delay of at least a day.
+        Any dispute process comes from the chosen arbiter mechanism.
       </span>
     ),
   },

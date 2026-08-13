@@ -66,8 +66,11 @@ function windowDetail(
   if (r.kind === 'commitment' && r.status === 'FORFEIT_PENDING' && r.forfeitChallengeEnd !== undefined) {
     const remaining = Number(r.forfeitChallengeEnd) - now
     return {
-      text: remaining > 0 ? `${formatDuration(remaining)} left` : 'window closed',
-      title: `Challenge window closes in ${formatDuration(Math.max(0, remaining))}`,
+      text: remaining > 0 ? `≥ ${formatDuration(remaining)} nominal` : 'check live readiness',
+      title:
+        remaining > 0
+          ? `Nominal manager delay has at least ${formatDuration(remaining)} left; lifetime pause credit may extend it`
+          : 'The indexer nominal delay elapsed; open the commitment for live pause-adjusted readiness',
       color: 'var(--warn)',
     }
   }

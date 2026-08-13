@@ -401,14 +401,14 @@ export function OfferProposeMode({
         )}
       </div>
 
-      {/* Challenge window — locked by the offer unless made negotiable */}
+      {/* Forfeit execution delay — locked by the offer unless made negotiable */}
       {!cwNegotiable ? (
-        <Notice tone="neutral" size="sm" title="CHALLENGE WINDOW (LOCKED BY OFFER)">
+        <Notice tone="neutral" size="sm" title="FORFEIT EXECUTION DELAY (LOCKED BY OFFER)">
           {formatDuration(terms.challengeWindowSecs)}
         </Notice>
       ) : (
       <div className="ds-field">
-        <label className="ds-label">CHALLENGE WINDOW</label>
+        <label className="ds-label">FORFEIT EXECUTION DELAY</label>
         <div className="duration-picker">
           {CHALLENGE_PRESETS.map((p) => (
             <button
@@ -440,14 +440,14 @@ export function OfferProposeMode({
               placeholder="Seconds"
               min={1}
               style={{ width: 160 /* layout only */ }}
-              aria-label="Custom challenge window in seconds"
+              aria-label="Custom forfeit execution delay in seconds"
               suffix={<span>seconds</span>}
             />
           </div>
         )}
         <Notice tone="info" size="sm">= {formatDuration(challengeWindow)}</Notice>
         {!challengeWindowValid && (
-          <Notice tone="danger" size="sm">CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS</Notice>
+          <Notice tone="danger" size="sm">FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS</Notice>
         )}
       </div>
       )}

@@ -327,7 +327,8 @@ export default function Lab() {
               </div>
 
               <Notice tone="warn" title="Forfeit proposed">
-                The challenge window closes in 19h 44m. Either party may contest before then.
+                The forfeit execution delay has at least 19h 44m remaining. This timer does not
+                itself give either party a generic on-chain contest action.
               </Notice>
 
               <div className="lab-applied-row">

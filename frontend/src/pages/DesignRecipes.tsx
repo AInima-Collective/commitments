@@ -109,7 +109,7 @@ const SRC_RECIPE_FORFEIT_PREVIEW =
   `<div className="ds-card">
   <div className="ds-stat-grid">
     <StatBlock label="STATE" value={<CommitmentStatusBadge status="FORFEIT_PENDING" />} />
-    <StatBlock label="CHALLENGE WINDOW" value={formatDuration(remainingSecs)} />
+    <StatBlock label="FORFEIT EXECUTION DELAY" value={formatDuration(remainingSecs)} />
     <StatBlock label="PROPOSER" value={<AddressDisplay address={proposer} />} />
     <StatBlock label="SUBJECT" value={<AddressDisplay address={subject} />} />
   </div>
@@ -437,7 +437,7 @@ function RecipeForfeitPreview() {
     <div className="ds-card">
       <div className="ds-stat-grid">
         <StatBlock label="STATE" value={<CommitmentStatusBadge status="FORFEIT_PENDING" />} />
-        <StatBlock label="CHALLENGE WINDOW" value={formatDuration(remainingSecs)} />
+        <StatBlock label="FORFEIT EXECUTION DELAY" value={formatDuration(remainingSecs)} />
         <StatBlock label="PROPOSER" value={<AddressDisplay address={MOCK_ARBITER} />} />
         <StatBlock label="SUBJECT" value={<AddressDisplay address={MOCK_DEPOSITOR} />} />
       </div>
@@ -741,7 +741,7 @@ export default function DesignRecipes() {
                 <h2>Forfeit preview</h2>
                 <p className="ds-muted ds-text-sm" style={{ maxWidth: '70ch' }}>
                   The 4-tile + 2-tile <code>StatBlock</code> grid used inside{' '}
-                  <code>ForfeitDetail</code>. State / challenge-window countdown /
+                  <code>ForfeitDetail</code>. State / forfeit-execution-delay countdown /
                   proposer / subject in the primary grid; penalty + initiated
                   timestamp below as supporting metadata.
                 </p>

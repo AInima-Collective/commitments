@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { isAddress, type Address } from 'viem'
 import { useAccount, useChainId } from 'wagmi'
 import { ProposeClaimAction } from '../components/claim/ProposeClaimAction'
 import { CommitmentDetailContent } from '../components/commitment/CommitmentDetailContent'
 import { ResolveCommitmentModal } from '../components/commitment/ResolveCommitmentModal'
+import { ArbitrationPanel } from '../components/arbiter/ArbitrationPanel'
 import { CommitmentStatusBadge, CommitmentTitle, PageHeader } from '../components/protocol'
 import { Notice, TokenAmount } from '../components/ui'
 import { findOptimisticInsuranceArbiter } from '../config/arbiters'
@@ -26,12 +28,17 @@ import { commitmentLabel } from '../lib/commitmentLabel'
 export default function CommitmentDetail() {
   const { id: idParam } = useParams<{ id: string }>()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const origin = commitmentOrigin(location.state)
   const chainId = useChainId()
   const viewAddress = useViewAddress()
   const { address: connectedAddress, isConnected } = useAccount()
   const env = getContractAddresses(chainId)
-  const { commitmentManager: managerAddress, commitmentsVault: vaultAddress } = env
+  const configuredManager = env.commitmentManager
+  const managerQuery = searchParams.get('manager')
+  const managerAddress: Address | undefined =
+    managerQuery && isAddress(managerQuery) ? (managerQuery as Address) : configuredManager
+  const { commitmentsVault: vaultAddress } = env
 
   // Validate id param up front. BigInt() throws on non-numeric strings — bounce
   // those back to the listing rather than rendering a broken page.
@@ -44,7 +51,7 @@ export default function CommitmentDetail() {
     }
   }, [idParam])
 
-  const indexed = useIndexedCommitment(id ?? undefined, viewAddress)
+  const indexed = useIndexedCommitment(id ?? undefined, viewAddress, managerAddress)
   // v2: every commitment carries its own backing token. Amounts are denominated
   // in that token (raw ERC-20 or vault share), never the vault share globally.
   const { decimals, symbol } = useTokenMeta(indexed.row?.token)
@@ -165,16 +172,6 @@ export default function CommitmentDetail() {
     )
   }
 
-  const forfeitRemaining =
-    row.status === 'FORFEIT_PENDING' && row.forfeitChallengeEnd !== undefined
-      ? Number(row.forfeitChallengeEnd) - now
-      : undefined
-  const challengeWindowSecs = full?.challengeWindow ? Number(full.challengeWindow) : undefined
-  const challengeElapsed =
-    challengeWindowSecs !== undefined && forfeitRemaining !== undefined
-      ? Math.max(0, challengeWindowSecs - Math.max(0, forfeitRemaining))
-      : undefined
-
   // Unbond countdown — derived from the indexed timestamps so anonymous
   // visitors see the same window as the connected wallet.
   const unbondInitiatedAt = row.commitment.unbondInitiatedAt
@@ -279,8 +276,6 @@ export default function CommitmentDetail() {
             row={row}
             label={label}
             decimals={decimals}
-            challengeWindowSecs={challengeWindowSecs}
-            challengeElapsed={challengeElapsed}
             unbondTotalSecs={unbondTotalSecs}
             unbondElapsed={unbondElapsed}
             onRefetchMetadata={indexed.refetch}
@@ -292,6 +287,17 @@ export default function CommitmentDetail() {
           {expiresLabel && <span>{expiresLabel}</span>}
         </footer>
       </article>
+
+      <ArbitrationPanel
+        commitmentId={row.id}
+        arbiter={row.arbiter}
+        manager={row.manager ?? managerAddress}
+        amount={row.amount}
+        challengeWindow={full?.challengeWindow}
+        indexedPenaltyBps={row.commitment.forfeitPenaltyBps}
+        decimals={decimals}
+        symbol={symbol}
+      />
 
       {full && (
         <ResolveCommitmentModal

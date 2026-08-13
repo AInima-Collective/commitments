@@ -8,9 +8,8 @@ import { type CommitmentWithStatus } from '../utils/commitments'
 import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
 
 /**
- * Commitment enriched with its backing vault address — needed for the
- * forfeiture-ledger lookup (`/vaults/:vault/forfeit-ledger`), which is the
- * canonical timeline source for the selected commitment.
+ * Commitment enriched with its backing vault address for existing vault views.
+ * Per-commitment arbitration history is manager+id scoped and does not require it.
  */
 export interface ArbiterCommitment extends CommitmentWithStatus {
   /** Backing vault (denormalized by the indexer). Undefined on legacy rows. */

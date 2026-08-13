@@ -65,7 +65,7 @@ const TERM_PRESETS: TermPreset[] = [
     key: 'balanced',
     label: 'Balanced 7d',
     description:
-      '5% max penalty, 24h challenge window, 7d proposal expiry. Reasonable for most agreements.',
+      '5% max penalty, 24h forfeit execution delay, 7d proposal expiry. Reasonable for most agreements.',
     maxPenaltyBps: 500,
     challengeWindow: 86400,
     proposalDuration: 604800,
@@ -74,7 +74,7 @@ const TERM_PRESETS: TermPreset[] = [
     key: 'high-trust',
     label: 'High-trust 30d',
     description:
-      '10% max penalty, 3d challenge window, 30d proposal expiry. Higher stakes, slower disputes.',
+      '10% max penalty, 3d forfeit execution delay, 30d proposal expiry. Higher stakes, slower enforcement.',
     maxPenaltyBps: 1000,
     challengeWindow: 259200,
     proposalDuration: 2592000,
@@ -822,7 +822,7 @@ export function ProposeAgreementForm({
           </div>
 
           <div className="commitment-form-field">
-            <label className="commitment-form-label">CHALLENGE WINDOW</label>
+            <label className="commitment-form-label">FORFEIT EXECUTION DELAY</label>
             <div className="duration-picker">
               {CHALLENGE_WINDOW_PRESETS.map((preset) => (
                 <button
@@ -854,14 +854,14 @@ export function ProposeAgreementForm({
                   placeholder="Seconds"
                   min={1}
                   style={{ width: 160 /* layout only */ }}
-                  aria-label="Custom challenge window in seconds"
+                  aria-label="Custom forfeit execution delay in seconds"
                   suffix={<span>seconds</span>}
                 />
               </div>
             )}
             <Notice tone="info" size="sm">= {formatDuration(challengeWindow)}</Notice>
             {!challengeWindowValid && (
-              <Notice tone="danger" size="sm">CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS</Notice>
+              <Notice tone="danger" size="sm">FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS</Notice>
             )}
           </div>
 
@@ -1146,7 +1146,7 @@ function ReviewSummary({
         />
         <ReviewRow label="Preset" value={presetLabel} />
         <ReviewRow label="Max penalty" value={formatBps(maxPenaltyBps)} />
-        <ReviewRow label="Challenge window" value={formatDuration(challengeWindow)} />
+        <ReviewRow label="Forfeit execution delay" value={formatDuration(challengeWindow)} />
         <ReviewRow label="Proposal expires in" value={formatDuration(proposalDuration)} />
         <ReviewRow
           label="Settlement caps"

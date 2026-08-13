@@ -1327,10 +1327,10 @@ Version: viem@2.21.45`
               </>
             }
           >
-            Commitment <code>#0042</code> is now active. The depositor's shares are locked until the forfeit window expires.
+            Commitment <code>#0042</code> is now active. The committer's shares remain locked until a valid release or terminal outcome.
           </Notice>
-          <Notice tone="warn" title="Approaching forfeit window" onDismiss={() => {}}>
-            The challenge window for commitment <code>#0039</code> closes in 14 minutes. Cancel now if the off-chain condition resolved.
+          <Notice tone="warn" title="Forfeit execution delay nearly elapsed" onDismiss={() => {}}>
+            Commitment <code>#0039</code> may become executable in 14 minutes, subject to manager pause credit. The arbiter may still cancel if appropriate.
           </Notice>
           <Notice
             tone="danger"
@@ -1383,7 +1383,7 @@ Version: viem@2.21.45`
             onClick={() => push({
               tone: 'danger',
               title: 'Transaction reverted',
-              message: 'ChallengeWindowTooShort — challenge window must be ≥ 1 day.',
+              message: 'ChallengeWindowTooShort — forfeit execution delay must be ≥ 1 day.',
             })}
           >
             Trigger error
@@ -1436,7 +1436,7 @@ Version: viem@2.21.45`
           message={
             <>
               The contract rejected <code>proposeAgreement</code> with{' '}
-              <code>ChallengeWindowTooShort</code>. The challenge window must be at least 1 day.
+              <code>ChallengeWindowTooShort</code>. The forfeit execution delay must be at least 1 day.
             </>
           }
           meta={[
@@ -2356,8 +2356,8 @@ const SRC_MEDIA_ROW =
     as="li"
     tone="warn"
     leading={<span className="ds-glyph">!</span>}
-    title="Forfeit window open"
-    meta="closes in 3h · arbiter 0xdead…beef"
+    title="Forfeit execution delay active"
+    meta="nominally matures in 3h · arbiter 0xdead…beef"
     trailing={<button className="ds-btn ds-btn--sm">Review</button>}
   />
   <MediaRow
@@ -2553,7 +2553,7 @@ const SRC_OPERATORS =
 const SRC_COMMITMENTS =
   `<CommitmentStatusBadge status="FORFEIT_PENDING" />
 <LifecycleStepper steps={commitmentLifecycle('FORFEIT_PENDING')} />
-<Countdown label="challenge window" elapsed={3600 * 4} total={3600 * 24} tone="warn" />`
+<Countdown label="forfeit execution delay" elapsed={3600 * 4} total={3600 * 24} tone="warn" />`
 
 const SRC_COMMITMENT_NAMING =
   `// One call resolves the tier AND the security rule. Never read
@@ -2616,8 +2616,8 @@ const inView = useInView(ref, { once: true, margin: '-15%' })
              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />`
 
 const SRC_NOTIFICATIONS =
-  `<Notice tone="warn" title="Approaching forfeit window" onDismiss={dismiss}>
-  Challenge window closing in 14 minutes.
+  `<Notice tone="warn" title="Forfeit execution delay nearly elapsed" onDismiss={dismiss}>
+  Pause-adjusted execution may become available in 14 minutes.
 </Notice>
 push({ tone: 'success', title: 'Stake released', message: '8.00 ETH returned.' })`
 
@@ -4239,8 +4239,8 @@ export default function Design() {
               as="li"
               tone="warn"
               leading={<span className="ds-glyph">!</span>}
-              title="Forfeit window open"
-              meta="closes in 3h · arbiter 0xdead…beef"
+              title="Forfeit execution delay active"
+              meta="nominally matures in 3h · arbiter 0xdead…beef"
               trailing={<button className="ds-btn ds-btn--sm">Review</button>}
             />
             <MediaRow
@@ -4993,7 +4993,7 @@ export default function Design() {
           <SectionHeading
             id="commitments"
             title="Commitments"
-            lead="The protocol's core primitive: a depositor pre-locks vault shares, names an arbiter, and enters a two-phase forfeit window. The UI must answer at-a-glance: who's bound, what's at stake, what penalty range, where in the lifecycle, and how long until the next state transition."
+            lead="The protocol's core primitive: a committer pre-locks vault shares, names an arbiter, and accepts two-phase manager enforcement. The UI must answer at-a-glance: who's bound, what's at stake, what penalty range, where in the lifecycle, and how long until the next state transition."
           />
 
           {/* Status badges */}
@@ -5006,7 +5006,7 @@ export default function Design() {
             </div>
             <div className="ds-text-xs ds-subtle" style={{ maxWidth: '60ch' }}>
               PROPOSED applies to agreements pre-acceptance; simple commitments enter ACTIVE on
-              creation. FORFEIT_PENDING is the challenge-window intermediate. RELEASED, FORFEITED, and
+              creation. FORFEIT_PENDING is the manager-enforcement intermediate. RELEASED, FORFEITED, and
               EXPIRED are terminal. Precedence: forfeited → released → forfeit-pending → expired → active.
             </div>
           </div>
@@ -5042,8 +5042,8 @@ export default function Design() {
           <div className="ds-stack ds-stack-3">
             <div className="ds-label">window · countdown</div>
             <div className="ds-stack ds-stack-4">
-              <Countdown label="challenge window" elapsed={3600 * 4} total={3600 * 24} tone="warn" />
-              <Countdown label="challenge window · final hour" elapsed={3600 * 23} total={3600 * 24} tone="danger" />
+              <Countdown label="forfeit execution delay" elapsed={3600 * 4} total={3600 * 24} tone="warn" />
+              <Countdown label="forfeit execution delay · final hour" elapsed={3600 * 23} total={3600 * 24} tone="danger" />
               <Countdown label="expires in" elapsed={86400 * 14} total={86400 * 30} tone="info" />
               <Countdown label="self-release available" elapsed={86400 * 30} total={86400 * 30} tone="success" />
             </div>
@@ -5161,7 +5161,7 @@ export default function Design() {
                 </div>
                 <hr className="ds-divider" />
                 <LifecycleStepper steps={commitmentLifecycle('FORFEIT_PENDING')} />
-                <Countdown label="challenge window" elapsed={3600 * 18} total={3600 * 24} tone="warn" />
+                <Countdown label="forfeit execution delay" elapsed={3600 * 18} total={3600 * 24} tone="warn" />
                 <MetadataSummary
                   uri="ipfs://bafkreigh2akiscaildc3xwmamkdkzsxwt4kp4kk4f7klqpd4ufnfbazlta"
                   contentHash="0x47c8a4b1f3e9d2b5a8c6f0e1d3b7a9f2e8c4d6b1a5f9c3e7b2d4a6f8c1e9b3d5"

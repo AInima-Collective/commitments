@@ -149,10 +149,9 @@ app.get('/stats', async (c) => {
  * Top-N ranking for the Explorer leaderboards card. Each metric returns rows
  * sorted by the natural "size" measure for that role:
  *
- *   arbiter      → SUM(amount × maxPenaltyBps / 10000) over commitments where
- *                  `arbiter = address`. Tie-break by commitment count.
- *   counterparty → SUM(amount × maxPenaltyBps / 10000) over commitments where
- *                  `counterparty = address`. Tie-break by commitment count.
+ *   arbiter      → commitment count. Raw backing units are intentionally not
+ *                  summed across heterogeneous tokens.
+ *   counterparty → commitment count for the same reason.
  *   operator     → totalDelegatedStake from the operator dossier. Tie-break by
  *                  activeDelegationCount.
  *
@@ -168,15 +167,14 @@ app.get('/leaderboard', async (c) => {
     const rows = await db
       .select({
         address: schema.commitment.arbiter,
-        totalConviction: sql<string>`COALESCE(FLOOR(SUM(${schema.commitment.amount} * ${schema.commitment.maxPenaltyBps}) / 10000), 0)::text`,
         commitmentCount: sql<string>`COUNT(*)::text`,
         activeCount: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} = 'active')::text`,
       })
       .from(schema.commitment)
       .groupBy(schema.commitment.arbiter)
       .orderBy(
-        sql`FLOOR(SUM(${schema.commitment.amount} * ${schema.commitment.maxPenaltyBps}) / 10000) DESC`,
         sql`COUNT(*) DESC`,
+        schema.commitment.arbiter,
       )
       .limit(limit)
 
@@ -184,7 +182,6 @@ app.get('/leaderboard', async (c) => {
       metric,
       rows: rows.map((r) => ({
         address: r.address.toLowerCase(),
-        totalConviction: r.totalConviction,
         commitmentCount: Number(r.commitmentCount),
         activeCount: Number(r.activeCount),
       })),
@@ -195,15 +192,14 @@ app.get('/leaderboard', async (c) => {
     const rows = await db
       .select({
         address: schema.commitment.counterparty,
-        totalConviction: sql<string>`COALESCE(FLOOR(SUM(${schema.commitment.amount} * ${schema.commitment.maxPenaltyBps}) / 10000), 0)::text`,
         commitmentCount: sql<string>`COUNT(*)::text`,
         activeCount: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} = 'active')::text`,
       })
       .from(schema.commitment)
       .groupBy(schema.commitment.counterparty)
       .orderBy(
-        sql`FLOOR(SUM(${schema.commitment.amount} * ${schema.commitment.maxPenaltyBps}) / 10000) DESC`,
         sql`COUNT(*) DESC`,
+        schema.commitment.counterparty,
       )
       .limit(limit)
 
@@ -211,7 +207,6 @@ app.get('/leaderboard', async (c) => {
       metric,
       rows: rows.map((r) => ({
         address: r.address.toLowerCase(),
-        totalConviction: r.totalConviction,
         commitmentCount: Number(r.commitmentCount),
         activeCount: Number(r.activeCount),
       })),

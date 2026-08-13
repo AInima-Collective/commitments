@@ -1,5 +1,6 @@
 import { type Address } from 'viem'
 import { formatPercent } from '../lib/format'
+import type { ForfeitEnforcementState, ForfeitProposalSnapshot } from '../lib/forfeitEnforcement'
 
 // ─── Status Types ────────────────────────────────────────────────────────────
 
@@ -11,7 +12,7 @@ export type CommitmentStatus =
   | 'FORFEIT_PENDING'
   | 'EXPIRED'
 
-export type ForfeitProposalState = 'NONE' | 'PENDING' | 'EXECUTABLE' | 'EXECUTED' | 'CANCELLED'
+export type ForfeitProposalState = ForfeitEnforcementState
 
 // ─── Commitment Interface ─────────────────────────────────────────────────────
 
@@ -49,9 +50,12 @@ export interface CommitmentWithStatus {
   /** Distribution strategies bound to this commitment (`manager.strategiesOf(id)`). */
   strategies?: Address[]
   status: CommitmentStatus
+  /** Live manager proposal snapshot, including its lifetime pause-credit anchor. */
+  forfeitProposal?: ForfeitProposalSnapshot
   /**
-   * For FORFEIT_PENDING rows: the unix timestamp at which the challenge window
-   * closes (`forfeitProposal.initiatedAt + commitment.challengeWindow`).
+   * Nominal event-time end (`initiatedAt + challengeWindow`) used only as an
+   * index/list ordering approximation. It is not executable time: manager
+   * lifetime pause credit can move the effective deadline later.
    * Undefined for any other status.
    *
    * Used by the canonical urgency sort (`sortByCommitmentUrgency`) so the
@@ -101,23 +105,6 @@ export function deriveStatus(
 }
 
 // ─── Forfeit Proposal State Machine ─────────────────────────────────────────────
-
-/**
- * Map getForfeitProposal result to display state.
- *
- * Guards initiatedAt === 0n as "no proposal" (Pitfall 2: Solidity returns zero-value struct).
- */
-export function getForfeitState(
-  proposal: { initiatedAt: bigint; executed: boolean; cancelled: boolean } | undefined,
-  challengeWindowSecs: bigint,
-): ForfeitProposalState {
-  if (!proposal || proposal.initiatedAt === 0n) return 'NONE'
-  if (proposal.executed) return 'EXECUTED'
-  if (proposal.cancelled) return 'CANCELLED'
-  const deadline = proposal.initiatedAt + challengeWindowSecs
-  const nowSecs = BigInt(Math.floor(Date.now() / 1000))
-  return nowSecs < deadline ? 'PENDING' : 'EXECUTABLE'
-}
 
 // ─── BPS Formatting ───────────────────────────────────────────────────────────
 

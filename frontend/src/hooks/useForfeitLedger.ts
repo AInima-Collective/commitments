@@ -33,7 +33,7 @@ export interface ForfeitEvent {
   commitmentId: bigint
   /** Lifecycle transition this row captures. */
   forfeitKind: ForfeitEventKind
-  depositor: Address
+  committer: Address
   arbiter: Address
   counterparty: Address
   /** Set on `initiated`/`executed`/`cancelled` (snapshot from the commitment row). */
@@ -109,7 +109,7 @@ function parseEvent(e: LedgerEventWire): LedgerEvent | null {
       txHash,
       commitmentId: BigInt(p.commitmentId as string),
       forfeitKind: (p.forfeitKind as ForfeitEventKind) ?? 'initiated',
-      depositor: p.depositor as Address,
+      committer: p.committer as Address,
       arbiter: p.arbiter as Address,
       counterparty: p.counterparty as Address,
       penaltyBps: typeof p.penaltyBps === 'number' ? p.penaltyBps : null,

@@ -17,9 +17,10 @@ address — and only that address — can:
 - **Initiate** a forfeit (start the penalty process)
 - **Cancel** a pending forfeit (before it executes)
 
-Note that *executing* a forfeit is permissionless once the challenge window has
-elapsed — anyone can call it. The arbiter's authority is over *starting* and
-*stopping* enforcement, not the mechanical execution.
+Note that *executing* a forfeit is permissionless once the pause-adjusted
+manager execution delay has elapsed and manager forfeiture is not paused —
+anyone can call it. The arbiter's authority is over *starting* and *stopping*
+enforcement, not the mechanical execution.
 
 The protocol makes no assumptions about what an arbiter is:
 
@@ -98,7 +99,11 @@ the operator registry is notified via callback.
 
 ## Two-phase forfeit
 
-Forfeiture is deliberately two-step, with a mandatory challenge window between.
+Forfeiture is deliberately two-step, with a mandatory manager execution delay
+between. This delay is also called `challengeWindow` in the contract for
+compatibility, but it does not itself grant the committer a generic on-chain
+challenge method. Claims, disputes, or appeals belong to the selected arbiter's
+separate decision mechanism.
 
 ### Step 1 — initiate
 
@@ -109,23 +114,36 @@ manager.initiateForfeit(commitmentId, penaltyBps);
 - `penaltyBps` must be ≤ the commitment's `maxPenaltyBps`.
 - You can forfeit *less* than the maximum — the penalty is proportional to the
   severity you choose.
-- This starts the challenge-window timer. At most one proposal is active at a time.
+- This starts the forfeit execution-delay timer. At most one proposal is active at a time.
 
-### Step 2 — wait for the challenge window
+### Step 2 — wait for the pause-adjusted execution delay
 
-The window gives the committer (and observers) time to react. There is no
-zero-delay forfeit: `challengeWindow` is always ≥ `manager.MIN_CHALLENGE_WINDOW()`
-(1 day by default).
+There is no zero-delay forfeit: `challengeWindow` is always ≥
+`manager.MIN_CHALLENGE_WINDOW()` (1 day by default). During the delay, the
+arbiter may cancel. A committer's way to contest, if one exists, is defined by
+the arbiter mechanism or a published off-chain policy rather than by a generic
+manager transaction.
 
 ```solidity
 ICommitmentManager.Commitment memory c = manager.getCommitment(commitmentId);
 ICommitmentManager.ForfeitProposal memory p = manager.getForfeitProposal(commitmentId);
-// Executable once: p.initiatedAt + c.challengeWindow <= block.timestamp
+(bool paused,,,, uint64 creditable) = manager.pauseState();
+uint256 pauseOverlap = uint256(creditable) - uint256(p.cumulativePausedAtStart);
+uint256 effectiveExecutionAt = uint256(p.initiatedAt) + c.challengeWindow + pauseOverlap;
+// Executable once: !paused && effectiveExecutionAt <= block.timestamp
 ```
+
+The subtraction is valid for an authentic manager snapshot because lifetime
+pause credit is monotone. An integrator that observes `creditable <
+p.cumulativePausedAtStart` should report inconsistent/unavailable timing rather
+than wrap the value or invent a deadline. Lifetime credit is capped by
+`maxPauseDuration`; pauses credited before this proposal are excluded by the
+proposal snapshot.
 
 ### Step 3 — execute
 
-After the window elapses, **anyone** can execute:
+After the effective delay elapses, **anyone** can execute while manager
+forfeiture is not paused:
 
 ```solidity
 manager.executeForfeit(commitmentId);
@@ -146,7 +164,10 @@ manager.cancelForfeit(commitmentId);
 
 The commitment stays active; a new forfeit can be initiated later. If an arbiter
 *abandons* a proposal, anyone can clear it after its TTL via
-`cancelStaleForfeitProposal(commitmentId)`, which unblocks the committer's unbond.
+`cancelStaleForfeitProposal(commitmentId)`, which unblocks the committer's
+unbond. Its wall-clock threshold is `effectiveExecutionAt +
+FORFEIT_PROPOSAL_TTL`; stale cancellation can be available even while ordinary
+execution is manager-paused.
 
 ### Escalated primary and appeal controllers
 
@@ -178,7 +199,7 @@ manager.forfeitAgreement(agreementId, penaltyBps);
 Initiates forfeit proposals on **both** legs at the caller-supplied `penaltyBps`,
 which must not exceed either leg's `maxPenaltyBps` (the two legs may carry
 different maxima, so the tighter ceiling binds). Each still requires a separate
-`executeForfeit()` after its challenge window elapses.
+`executeForfeit()` after its pause-adjusted manager execution delay elapses.
 
 ### Settle a directional flow
 
@@ -212,9 +233,10 @@ yield field — payouts flow through the strategy, not the commitment struct.
 
 ## Best practices
 
-1. **Set appropriate challenge windows.** The 1-day floor is a minimum, not a
-   recommendation — longer windows give committers more room to dispute. Match
-   the window to how quickly your resolution evidence is contestable.
+1. **Set appropriate manager execution delays.** The 1-day `challengeWindow`
+   floor is a minimum, not a recommendation. Match the delay to how quickly
+   observers can discover a decision and use the arbiter-specific contest or
+   cancellation process.
 
 2. **Use proportional penalties.** Forfeit at the actual severity via `penaltyBps`,
    not always `maxPenaltyBps`. A minor breach shouldn't trigger the maximum.

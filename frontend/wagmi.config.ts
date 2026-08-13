@@ -7,6 +7,20 @@ export default defineConfig({
   plugins: [
     foundry({
       project: '..',
+      // Some repository size-analysis profiles write a second, categorized
+      // artifact tree under the shared `out/` directory. The normal Forge
+      // build writes the canonical top-level artifacts consumed here; ignore
+      // the categorized copies so contract names stay unique.
+      exclude: [
+        'arbiters/**',
+        'vaults/**',
+        'operator-registry/**',
+        'mesh/**',
+        'service-registry/**',
+        'mutuals/**',
+        'distributions/**',
+        'governance/**',
+      ],
       include: [
         'CommitmentsVault.json',
         'CommitmentManager.json',

@@ -1,14 +1,17 @@
 import { type Address } from 'viem'
-import { useForfeitLedger, type ForfeitEvent, type ForfeitEventKind } from '../../hooks/useForfeitLedger'
+import {
+  useCommitmentArbitration,
+  type ManagerForfeitEventKind,
+} from '../../hooks/useCommitmentArbitration'
 import { AddressDisplay, Notice, Skeleton } from '../ui'
 import { formatBps } from '../../utils/commitments'
 
 interface ForfeitTimelineProps {
-  vaultAddress: Address | undefined
+  managerAddress: Address
   commitmentId: bigint
 }
 
-const KIND_LABEL: Record<ForfeitEventKind, string> = {
+const KIND_LABEL: Record<ManagerForfeitEventKind, string> = {
   initiated: 'Forfeit initiated',
   executed: 'Forfeit executed',
   cancelled: 'Forfeit cancelled',
@@ -20,20 +23,16 @@ function formatTimestamp(ts: bigint): string {
 }
 
 /**
- * Per-commitment forfeiture lifecycle timeline. Reads the vault-scoped
- * `/vaults/:vault/forfeit-ledger` feed and filters down to forfeit events for
- * this commitment, newest first.
+ * Per-commitment timeline from the manager+id scoped API. It works for raw
+ * ERC-20 backing and cannot be truncated by unrelated vault activity.
  */
-export function ForfeitTimeline({ vaultAddress, commitmentId }: ForfeitTimelineProps) {
-  const { data, isLoading, error } = useForfeitLedger({ vaultAddress })
+export function ForfeitTimeline({ managerAddress, commitmentId }: ForfeitTimelineProps) {
+  const { data, isLoading, error, indexerOnline } = useCommitmentArbitration(
+    commitmentId,
+    managerAddress,
+  )
 
-  if (!vaultAddress) {
-    return (
-      <Notice tone="neutral" size="sm">
-        No backing vault recorded for this commitment — timeline unavailable.
-      </Notice>
-    )
-  }
+  if (!indexerOnline) return <Notice tone="warn" size="sm">Forfeit history indexer unavailable.</Notice>
 
   if (isLoading) {
     return <Skeleton height={48} />
@@ -47,9 +46,7 @@ export function ForfeitTimeline({ vaultAddress, commitmentId }: ForfeitTimelineP
     )
   }
 
-  const events = (data?.events ?? []).filter(
-    (e): e is ForfeitEvent => e.kind === 'forfeit' && e.commitmentId === commitmentId,
-  )
+  const events = data?.events ?? []
 
   if (events.length === 0) {
     return (
@@ -62,10 +59,10 @@ export function ForfeitTimeline({ vaultAddress, commitmentId }: ForfeitTimelineP
   return (
     <ol className="ds-stack ds-stack-2" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {events.map((e) => (
-        <li key={`${e.txHash}-${e.forfeitKind}`} className="ds-card ds-stack ds-stack-1">
+        <li key={`${e.transactionHash}-${e.kind}`} className="ds-card ds-stack ds-stack-1">
           <div className="ds-row ds-row-2" style={{ justifyContent: 'space-between' }}>
             <span className="ds-text-base" style={{ fontWeight: 500 }}>
-              {KIND_LABEL[e.forfeitKind]}
+              {KIND_LABEL[e.kind]}
             </span>
             <span className="ds-text-xs ds-muted ds-mono-num">{formatTimestamp(e.timestamp)}</span>
           </div>
@@ -73,9 +70,9 @@ export function ForfeitTimeline({ vaultAddress, commitmentId }: ForfeitTimelineP
             {e.penaltyBps !== null && (
               <span className="ds-text-xs ds-subtle">penalty {formatBps(e.penaltyBps)}</span>
             )}
-            {e.challengeEnd !== null && e.forfeitKind === 'initiated' && (
+            {e.nominalExecutionAt !== null && e.kind === 'initiated' && (
               <span className="ds-text-xs ds-subtle">
-                window closes {formatTimestamp(e.challengeEnd)}
+                nominal event-time delay end {formatTimestamp(e.nominalExecutionAt)}
               </span>
             )}
             <span className="ds-text-xs ds-subtle ds-row" style={{ gap: 'var(--space-1)' }}>

@@ -560,7 +560,7 @@ export function DelegateMode({
         <FieldLabel
           htmlFor="arbiter-select"
           hintLabel="What does the arbiter do?"
-          hint="The party trusted to decide if this commitment is broken. To penalize you they must initiate a two-phase forfeit and then wait out the challenge window before it can execute — so a forfeit is never instant or silent."
+          hint="The party trusted to decide if this commitment is broken. To penalize you they must initiate a two-phase forfeit and then wait out the manager's execution delay — so a forfeit is never instant or silent."
         >
           ARBITER
         </FieldLabel>
@@ -619,13 +619,13 @@ export function DelegateMode({
             />
           </div>
 
-          {/* Challenge Window */}
+          {/* Manager-side forfeit execution delay */}
           <div className="ds-field">
             <FieldLabel
-              hintLabel="What is the challenge window?"
-              hint="The delay between a forfeit being initiated and it executing. During this window the forfeit can still be cancelled or challenged — it must be at least 24 hours, which blocks same-block forfeit griefing."
+              hintLabel="What is the forfeit execution delay?"
+              hint="The minimum wait between forfeit initiation and execution. The arbiter may cancel during or after this timer, but the timer does not give the committer a generic on-chain challenge action. It must be at least 24 hours."
             >
-              CHALLENGE WINDOW
+              FORFEIT EXECUTION DELAY
             </FieldLabel>
             <div className="duration-picker">
               {DURATION_PRESETS.map((preset) => (
@@ -658,13 +658,13 @@ export function DelegateMode({
                   placeholder="Seconds"
                   min={1}
                   style={{ width: 160 /* layout only */ }}
-                  aria-label="Custom challenge window in seconds"
+                  aria-label="Custom forfeit execution delay in seconds"
                   suffix={<span>seconds</span>}
                 />
               </div>
             )}
             {!challengeWindowValid && (
-              <Notice tone="danger" size="sm">CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS</Notice>
+              <Notice tone="danger" size="sm">FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS</Notice>
             )}
           </div>
 

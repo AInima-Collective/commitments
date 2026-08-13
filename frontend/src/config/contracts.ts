@@ -10,6 +10,8 @@ interface ContractAddresses {
   fanOut: Address | undefined
   fanIn: Address | undefined
   defaultArbiter: Address | undefined
+  /** Curated ManualArbiter deployment (may differ from the Anvil demo EOA). */
+  manualArbiter: Address | undefined
   // v2 backing adapters + distribution strategies (token-agnostic singletons,
   // deployed by DeployAdaptersAndStrategies / Simulate). Undefined until
   // `just dev-up` writes them into .env.local.
@@ -89,6 +91,7 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
     fanOut: import.meta.env.VITE_FAN_OUT_ADDRESS as Address | undefined,
     fanIn: import.meta.env.VITE_FAN_IN_ADDRESS as Address | undefined,
     defaultArbiter: import.meta.env.VITE_DEFAULT_ARBITER_ADDRESS as Address | undefined,
+    manualArbiter: import.meta.env.VITE_MANUAL_ARBITER_ADDRESS as Address | undefined,
     erc20Adapter: import.meta.env.VITE_ERC20_ADAPTER_ADDRESS as Address | undefined,
     erc4626Adapter: import.meta.env.VITE_ERC4626_ADAPTER_ADDRESS as Address | undefined,
     usdcToken: import.meta.env.VITE_USDC_TOKEN_ADDRESS as Address | undefined,

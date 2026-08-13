@@ -64,14 +64,22 @@ export function commitmentReadContracts(manager: Address, id: bigint) {
 
 /** Narrow forfeit-proposal view consumed by status derivation. */
 interface ForfeitProposalView {
+  penaltyBps: number
   initiatedAt: bigint
   executed: boolean
   cancelled: boolean
+  cumulativePausedAtStart: bigint
 }
 
 function toForfeitProposal(sp: ForfeitProposalStruct | undefined): ForfeitProposalView | undefined {
   return sp && sp.initiatedAt !== undefined
-    ? { initiatedAt: sp.initiatedAt, executed: sp.executed, cancelled: sp.cancelled }
+    ? {
+        penaltyBps: Number(sp.penaltyBps),
+        initiatedAt: sp.initiatedAt,
+        executed: sp.executed,
+        cancelled: sp.cancelled,
+        cumulativePausedAtStart: sp.cumulativePausedAtStart,
+      }
     : undefined
 }
 
@@ -135,6 +143,7 @@ export function buildCommitmentWithStatus(args: {
     unbondInitiatedAt,
     strategies,
     status,
+    forfeitProposal,
     forfeitChallengeEnd,
   }
 }

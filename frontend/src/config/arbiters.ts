@@ -25,6 +25,113 @@ export interface ArbiterDescriptor {
   recommended?: boolean
 }
 
+export type ConfiguredArbiterMechanism =
+  | 'manual'
+  | 'optimistic-insurance'
+  | 'optimistic-mutual'
+
+/** Trusted chain-configuration classification; live capability bits never set this. */
+export interface ConfiguredArbiterProfile {
+  address: Address
+  displayName: string
+  mechanism: string
+  mechanismId: ConfiguredArbiterMechanism
+  decisionSummary: string
+  contestKind: 'known-mechanism' | 'published-policy' | 'no-generic-action'
+  contestSummary: string
+  expectedAddressForm?: 'EOA' | 'contract'
+}
+
+/** Curated `(chainId, address)` profile registry used before live introspection. */
+export function getConfiguredArbiterProfiles(chainId: number): ConfiguredArbiterProfile[] {
+  const env = getContractAddresses(chainId)
+  const profiles: ConfiguredArbiterProfile[] = []
+  const add = (entry: ConfiguredArbiterProfile | undefined) => {
+    if (!entry) return
+    if (!profiles.some((p) => p.address.toLowerCase() === entry.address.toLowerCase())) {
+      profiles.push(entry)
+    }
+  }
+
+  add(
+    env.manualArbiter
+      ? {
+          address: env.manualArbiter,
+          displayName: 'Manual arbiter',
+          mechanism: 'Owner-controlled manual arbitration',
+          mechanismId: 'manual',
+          decisionSummary:
+            'The configured contract owner reviews evidence and dispatches manager actions manually.',
+          contestKind: 'published-policy',
+          contestSummary:
+            'Follow the arbiter’s publisher-provided policy when present. The manager delay itself exposes no generic committer challenge method.',
+          expectedAddressForm: 'contract',
+        }
+      : undefined,
+  )
+  add(
+    env.defaultArbiter
+      ? {
+          address: env.defaultArbiter,
+          displayName: chainId === 31337 ? 'Demo arbiter' : 'Shared arbiter',
+          mechanism: chainId === 31337 ? 'Single-key manual arbitration' : 'Configured manual arbitration',
+          mechanismId: 'manual',
+          decisionSummary:
+            chainId === 31337
+              ? 'A configured development account decides and calls the manager directly.'
+              : 'A configured controller reviews evidence and dispatches manager actions.',
+          contestKind: 'no-generic-action',
+          contestSummary:
+            'Contact the configured arbiter under its published policy. The manager execution delay does not create a generic on-chain challenge transaction.',
+          expectedAddressForm: chainId === 31337 ? 'EOA' : undefined,
+        }
+      : undefined,
+  )
+  for (const optimistic of getOptimisticInsuranceArbiters(chainId)) {
+    add({
+      address: optimistic.address,
+      displayName: optimistic.label,
+      mechanism: 'Optimistic bonded claim game',
+      mechanismId: 'optimistic-insurance',
+      decisionSummary:
+        'A bonded claim proposes a penalty; counter-assertions re-price the outcome until the optimistic answer period finalizes.',
+      contestKind: 'known-mechanism',
+      contestSummary:
+        'Contest through the arbiter’s on-chain bonded claim process. The claim deadline is mechanism-specific and distinct from the manager execution delay.',
+      expectedAddressForm: 'contract',
+    })
+  }
+  const mutuals = [env.optimisticMutualArbiter, env.agentMutualArbiter]
+  for (const address of mutuals) {
+    add(
+      address
+        ? {
+            address,
+            displayName: 'Optimistic mutual arbiter',
+            mechanism: 'Optimistic mutual-loss declaration',
+            mechanismId: 'optimistic-mutual',
+            decisionSummary:
+              'A bonded loss declaration waits through the mutual’s mechanism-specific contest period before activation.',
+            contestKind: 'known-mechanism',
+            contestSummary:
+              'Use the mutual loss process shown on the relevant coverage page; it is separate from a commitment forfeit execution delay.',
+            expectedAddressForm: 'contract',
+          }
+        : undefined,
+    )
+  }
+  return profiles
+}
+
+export function findConfiguredArbiterProfile(
+  chainId: number,
+  address: string | undefined,
+): ConfiguredArbiterProfile | undefined {
+  if (!address) return undefined
+  const lower = address.toLowerCase()
+  return getConfiguredArbiterProfiles(chainId).find((profile) => profile.address.toLowerCase() === lower)
+}
+
 /**
  * Human label for an arbiter kind. Also the single source of truth that fixes
  * the raw-enum print on the marketplace offer detail page.

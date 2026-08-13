@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useChainId } from 'wagmi'
 import { isAddress, type Address } from 'viem'
 
@@ -33,8 +33,10 @@ import {
   type PartyLeaderboardRow,
 } from '../hooks/useProtocolLeaderboards'
 import { useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
+import { useTokenMetaMap } from '../hooks/useTokenMeta'
 import { deriveOperatorStatus } from '../utils/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
+import { arbiterProfilePath } from '../lib/arbitrationRoutes'
 
 type GraphMode = 'agreements' | 'operators' | 'flow'
 
@@ -288,10 +290,10 @@ function Leaderboards({
         <EntityCard
           tone="info"
           label="Top arbiters"
-          description="Ranked by total conviction (Σ amount × max-penalty) across commitments arbitrated."
+          description="Ranked by commitment count. Open an arbiter profile for token-grouped exposure."
           meta={arbiters.data ? `${arbiters.data.length} of ${arbiters.data.length}` : undefined}
         >
-          <PartyLeaderboardList rows={arbiters.data} />
+          <PartyLeaderboardList rows={arbiters.data} arbiterLinks />
         </EntityCard>
       ) : (
         <EntityCard
@@ -311,7 +313,13 @@ function Leaderboards({
   )
 }
 
-function PartyLeaderboardList({ rows }: { rows: PartyLeaderboardRow[] | undefined }) {
+function PartyLeaderboardList({
+  rows,
+  arbiterLinks = false,
+}: {
+  rows: PartyLeaderboardRow[] | undefined
+  arbiterLinks?: boolean
+}) {
   if (!rows || rows.length === 0) {
     return <EmptyState title="NO DATA" description="Indexer is loading or empty." />
   }
@@ -322,14 +330,22 @@ function PartyLeaderboardList({ rows }: { rows: PartyLeaderboardRow[] | undefine
           as="li"
           key={r.address}
           density="compact"
-          title={<AddressDisplay address={r.address} compact />}
+          title={
+            arbiterLinks ? (
+              <Link to={arbiterProfilePath(r.address)}>
+                <AddressDisplay address={r.address} compact />
+              </Link>
+            ) : (
+              <AddressDisplay address={r.address} compact />
+            )
+          }
           meta={
             <span className="ds-text-xs ds-subtle">
               {r.commitmentCount} commitment{r.commitmentCount === 1 ? '' : 's'}
             </span>
           }
           trailing={
-            <TokenAmount amount={r.totalConviction} decimals={6} symbol="USDC" compact />
+            <span className="ds-text-xs ds-subtle">{r.activeCount} active</span>
           }
         />
       ))}
@@ -376,13 +392,14 @@ function OperatorLeaderboardList({ rows }: { rows: OperatorLeaderboardRow[] | un
  */
 function RecentActivity() {
   const { rows, isLoading } = useProtocolCommitmentsList({ limit: 20 })
+  const tokenMeta = useTokenMetaMap(rows.map((row) => row.token))
   // useNowSeconds returns bigint; ActivityEvent.timestamp is number.
   const nowSecs = Number(useNowSeconds())
 
   const events = useMemo<ActivityEvent[]>(
     () =>
       rows.map((r, i) => ({
-        id: r.id.toString(),
+        id: `${r.manager}-${r.id.toString()}`,
         type: 'commitment-created',
         timestamp: nowSecs - i * 60,
         title: (
@@ -398,9 +415,12 @@ function RecentActivity() {
             <AddressDisplay address={r.counterparty} compact />
           </span>
         ),
-        trailing: <TokenAmount amount={r.amount} decimals={6} symbol="USDC" compact />,
+        trailing: (() => {
+          const meta = tokenMeta.metaFor(r.token)
+          return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
+        })(),
       })),
-    [rows, nowSecs],
+    [rows, nowSecs, tokenMeta],
   )
 
   return (

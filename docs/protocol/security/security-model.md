@@ -33,7 +33,8 @@ A commitment cannot allocate more forfeitable exposure than its encumbered amoun
 
 - commitment identifiers and sentinel values do not overlap;
 - release, expiry, unbond finalization, and forfeit execution are mutually consistent terminal paths;
-- forfeit and mutual-loss proposals use challenge windows and explicit cancellation;
+- manager forfeits use a pause-adjusted execution delay and arbiter cancellation;
+- mutual-loss proposals use their own challenge window and explicit veto path;
 - pause-aware clocks cannot gain unlimited extensions beyond the configured lifetime budget;
 - failed strategy hooks are recorded and can be retried without reverting the completed custody transition.
 

@@ -86,6 +86,9 @@ export function ResolveCommitmentModal({
       state: forfeit.state,
       initiatedAt: forfeit.proposal?.initiatedAt ?? 0n,
       deadline: forfeit.deadline,
+      executionAvailable: forfeit.enforcement.executionAvailable,
+      staleCancellationAvailable: forfeit.enforcement.staleCancellationAvailable,
+      staleCancelAt: forfeit.enforcement.staleCancelAt,
     },
     unbond: {
       unbondInitiatedAt: unbond.unbondInitiatedAt,
@@ -118,7 +121,13 @@ export function ResolveCommitmentModal({
     onClose()
   }
 
-  const challengeTotalSecs = Number(commitment.challengeWindow)
+  const executionDelayTotalSecs =
+    forfeit.proposal && forfeit.enforcement.effectiveExecutionAt
+      ? Number(forfeit.enforcement.effectiveExecutionAt - forfeit.proposal.initiatedAt)
+      : Number(commitment.challengeWindow)
+  const executionDelayElapsed = forfeit.proposal
+    ? Math.max(0, Math.min(executionDelayTotalSecs, Number(nowSec - forfeit.proposal.initiatedAt)))
+    : 0
 
   // Deallocation-window countdown state (mutual member exit).
   const exitRequested = membership.exitRequestedAt > 0n
@@ -176,7 +185,7 @@ export function ResolveCommitmentModal({
 
         <LifecycleStepper steps={commitmentLifecycle(commitment.status)} />
 
-        {commitment.status === 'FORFEIT_PENDING' && challengeTotalSecs > 0 && (
+        {commitment.status === 'FORFEIT_PENDING' && executionDelayTotalSecs > 0 && (
           <>
             <Notice tone="warn" size="sm" title="Forfeit initiated">
               The arbiter has started a two-phase forfeit. It can't execute until
@@ -184,18 +193,25 @@ export function ResolveCommitmentModal({
               <Tooltip
                 tone="warn"
                 size="md"
-                content="A mandatory delay (at least 24 hours) between a forfeit being initiated and it executing. Until it elapses the forfeit can still be cancelled or challenged."
+                content="The manager's pause-adjusted delay before execution. It permits the arbiter to cancel, but does not itself create a generic committer challenge transaction."
               >
-                challenge window
+                forfeit execution delay
               </Tooltip>{' '}
-              below elapses — and it can still be cancelled before then.
+              below elapses. The arbiter may cancel any time before execution.
             </Notice>
-            <Countdown
-              label="challenge window"
-              elapsed={0}
-              total={challengeTotalSecs}
-              tone="warn"
-            />
+            {forfeit.state === 'PENDING' && (
+              <Countdown
+                label="forfeit execution delay"
+                elapsed={executionDelayElapsed}
+                total={executionDelayTotalSecs}
+                tone="warn"
+              />
+            )}
+            {forfeit.state === 'PAUSED' && (
+              <Notice tone="warn" size="sm" title="Execution paused by the manager">
+                The effective delay has elapsed, but executeForfeit remains unavailable until the manager resumes forfeiture.
+              </Notice>
+            )}
           </>
         )}
 

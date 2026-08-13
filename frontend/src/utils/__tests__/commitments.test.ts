@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   deriveStatus,
-  getForfeitState,
   formatBps,
   STATUS_CONFIG,
   type CommitmentStatus,
 } from '../commitments'
 
-/** Seconds since epoch, matching the bigint clock deriveStatus/getForfeitState read. */
+/** Seconds since epoch, matching the bigint clock deriveStatus reads. */
 const nowSecs = (): bigint => BigInt(Math.floor(Date.now() / 1000))
 
 type CommitmentInput = Parameters<typeof deriveStatus>[0]
@@ -89,34 +88,6 @@ describe('deriveStatus', () => {
       expect(STATUS_CONFIG[s].className).toBeTruthy()
       expect(STATUS_CONFIG[s].ariaLabel).toBeTruthy()
     }
-  })
-})
-
-describe('getForfeitState', () => {
-  it('returns NONE for a missing proposal or a zero-initiatedAt struct', () => {
-    expect(getForfeitState(undefined, 86_400n)).toBe('NONE')
-    expect(getForfeitState({ initiatedAt: 0n, executed: false, cancelled: false }, 86_400n)).toBe(
-      'NONE',
-    )
-  })
-
-  it('returns EXECUTED / CANCELLED ahead of the window check', () => {
-    expect(
-      getForfeitState({ initiatedAt: 1_000n, executed: true, cancelled: false }, 86_400n),
-    ).toBe('EXECUTED')
-    expect(
-      getForfeitState({ initiatedAt: 1_000n, executed: false, cancelled: true }, 86_400n),
-    ).toBe('CANCELLED')
-  })
-
-  it('returns PENDING while inside the challenge window', () => {
-    const proposal = { initiatedAt: nowSecs(), executed: false, cancelled: false }
-    expect(getForfeitState(proposal, 86_400n)).toBe('PENDING')
-  })
-
-  it('returns EXECUTABLE once the challenge window has elapsed', () => {
-    const proposal = { initiatedAt: nowSecs() - 100_000n, executed: false, cancelled: false }
-    expect(getForfeitState(proposal, 86_400n)).toBe('EXECUTABLE')
   })
 })
 

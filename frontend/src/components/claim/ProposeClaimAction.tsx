@@ -188,7 +188,7 @@ function ProposeClaimBody({
       : status !== 'ACTIVE'
         ? `The commitment is ${status.toLowerCase().replace('_', '-')} — claims can only be opened against an active commitment.`
         : windowTooShort
-          ? `The commitment's challenge window (${challengeWindow?.toString()}s) is shorter than the arbiter's answer timeout (${(answerTimeout as bigint | undefined)?.toString()}s) — the arbiter rejects claims it could not resolve in time.`
+          ? `The commitment's forfeit execution delay (${challengeWindow?.toString()}s) is shorter than the arbiter's answer timeout (${(answerTimeout as bigint | undefined)?.toString()}s) — the arbiter rejects claims it could not resolve in time.`
           : insufficientBalance
             ? `Your ${bondSymbol} balance does not cover the bond.`
             : undefined
@@ -378,7 +378,7 @@ function ProposeClaimBody({
       <Notice tone="neutral" size="sm" title="WHAT HAPPENS NEXT">
         Proposing immediately opens a manager-side forfeit hold at the claimed size, so the committer cannot exit
         while the claim runs. If nobody disputes within the answer window, the claim finalizes and the forfeit
-        executes after the commitment's challenge window; each dispute doubles the bond at stake.
+        executes after the commitment's manager-side forfeit delay; each claim-process dispute doubles the bond at stake.
       </Notice>
     </div>
   )

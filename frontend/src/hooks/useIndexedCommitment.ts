@@ -99,6 +99,7 @@ export interface UseIndexedCommitmentReturn {
 export function useIndexedCommitment(
   id: bigint | undefined,
   viewAddress: Address | undefined,
+  managerAddress?: Address,
 ): UseIndexedCommitmentReturn {
   const [row, setRow] = useState<UnifiedCommitmentRow | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(hasIndexer && id !== undefined)
@@ -124,7 +125,11 @@ export function useIndexedCommitment(
     setNotFound(false)
     setError(null)
 
-    indexerFetch(`/commitments/${id.toString()}`)
+    indexerFetch(
+      `/commitments/${id.toString()}${
+        managerAddress ? `?manager=${encodeURIComponent(managerAddress.toLowerCase())}` : ''
+      }`,
+    )
       .then(async (r) => {
         if (r.status === 404) {
           if (!cancelled) {
@@ -196,7 +201,7 @@ export function useIndexedCommitment(
       cancelled = true
       if (retryTimer !== undefined) clearTimeout(retryTimer)
     }
-  }, [id, viewAddress, tick])
+  }, [id, viewAddress, managerAddress, tick])
 
   useEffect(() => {
     if (id === undefined) return

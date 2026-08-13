@@ -255,24 +255,27 @@ ponder.on('CommitmentManager:ForfeitInitiated', async ({ event, context }) => {
   await context.db.update(commitment, { id: commitmentId, manager: event.log.address }).set({
     status: 'forfeitPending',
     forfeitPenaltyBps: Number(penaltyBps),
+    forfeitInitiatedAt: event.block.timestamp,
     forfeitChallengeEnd: challengeEnd,
     updatedBlock: event.block.number,
   })
   if (c) {
     await context.db.insert(forfeitEvent).values({
-      id: `${commitmentId}-${event.block.number}-${event.log.logIndex}`,
+      id: `${event.log.address}-${commitmentId}-${event.block.number}-${event.log.logIndex}`,
       commitmentId,
       kind: 'initiated',
       penaltyBps: Number(penaltyBps),
       challengeWindow,
       challengeEnd,
+      proposalInitiatedAt: event.block.timestamp,
       sharesToForfeit: null,
-      counterparty: null,
+      counterparty: c.counterparty,
       committer: c.committer,
       arbiter: c.arbiter,
       vault: c.vault ?? null,
       manager: event.log.address,
       blockNumber: event.block.number,
+      logIndex: event.log.logIndex,
       blockTimestamp: event.block.timestamp,
       txHash: event.transaction.hash,
     })
@@ -310,12 +313,16 @@ ponder.on('CommitmentManager:ForfeitExecuted', async ({ event, context }) => {
     commitmentId,
   })
   await context.db.insert(forfeitEvent).values({
-    id: `${commitmentId}-${event.block.number}-${event.log.logIndex}`,
+    id: `${event.log.address}-${commitmentId}-${event.block.number}-${event.log.logIndex}`,
     commitmentId,
     kind: 'executed',
     penaltyBps: c.forfeitPenaltyBps ?? null,
-    challengeWindow: null,
+    challengeWindow:
+      c.forfeitChallengeEnd && c.forfeitInitiatedAt
+        ? c.forfeitChallengeEnd - c.forfeitInitiatedAt
+        : null,
     challengeEnd: c.forfeitChallengeEnd ?? null,
+    proposalInitiatedAt: c.forfeitInitiatedAt ?? event.block.timestamp,
     sharesToForfeit: unitsForfeited,
     counterparty,
     committer: c.committer,
@@ -323,6 +330,7 @@ ponder.on('CommitmentManager:ForfeitExecuted', async ({ event, context }) => {
     vault: c.vault ?? null,
     manager: event.log.address,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
@@ -339,23 +347,29 @@ ponder.on('CommitmentManager:ForfeitCancelled', async ({ event, context }) => {
   await context.db.update(commitment, { id: commitmentId, manager: event.log.address }).set({
     status: restoredStatus,
     forfeitPenaltyBps: null,
+    forfeitInitiatedAt: null,
     forfeitChallengeEnd: null,
     updatedBlock: event.block.number,
   })
   await context.db.insert(forfeitEvent).values({
-    id: `${commitmentId}-${event.block.number}-${event.log.logIndex}`,
+    id: `${event.log.address}-${commitmentId}-${event.block.number}-${event.log.logIndex}`,
     commitmentId,
     kind: 'cancelled',
     penaltyBps: c.forfeitPenaltyBps ?? null,
-    challengeWindow: null,
+    challengeWindow:
+      c.forfeitChallengeEnd && c.forfeitInitiatedAt
+        ? c.forfeitChallengeEnd - c.forfeitInitiatedAt
+        : null,
     challengeEnd: c.forfeitChallengeEnd ?? null,
+    proposalInitiatedAt: c.forfeitInitiatedAt ?? event.block.timestamp,
     sharesToForfeit: null,
-    counterparty: null,
+    counterparty: c.counterparty,
     committer: c.committer,
     arbiter: c.arbiter,
     vault: c.vault ?? null,
     manager: event.log.address,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
@@ -371,23 +385,29 @@ ponder.on('CommitmentManager:ForfeitCancelledStale', async ({ event, context }) 
   await context.db.update(commitment, { id: commitmentId, manager: event.log.address }).set({
     status: restoredStatus,
     forfeitPenaltyBps: null,
+    forfeitInitiatedAt: null,
     forfeitChallengeEnd: null,
     updatedBlock: event.block.number,
   })
   await context.db.insert(forfeitEvent).values({
-    id: `${commitmentId}-${event.block.number}-${event.log.logIndex}`,
+    id: `${event.log.address}-${commitmentId}-${event.block.number}-${event.log.logIndex}`,
     commitmentId,
     kind: 'cancelledStale',
     penaltyBps: c.forfeitPenaltyBps ?? null,
-    challengeWindow: null,
+    challengeWindow:
+      c.forfeitChallengeEnd && c.forfeitInitiatedAt
+        ? c.forfeitChallengeEnd - c.forfeitInitiatedAt
+        : null,
     challengeEnd: c.forfeitChallengeEnd ?? null,
+    proposalInitiatedAt: c.forfeitInitiatedAt ?? event.block.timestamp,
     sharesToForfeit: null,
-    counterparty: null,
+    counterparty: c.counterparty,
     committer: c.committer,
     arbiter: c.arbiter,
     vault: c.vault ?? null,
     manager: event.log.address,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })

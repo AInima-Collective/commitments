@@ -21,7 +21,7 @@ A normal close moves the remaining encumbered amount back to the committer free 
 
 ## Two-phase forfeit
 
-The arbiter calls initiateForfeit(commitmentId, penaltyBps). After the challenge window, anyone may call executeForfeit. The manager moves the penalized amount from the committer encumbered balance to the counterparty free balance and returns the residual to the committer free balance.
+The arbiter calls initiateForfeit(commitmentId, penaltyBps). After the manager's pause-adjusted forfeit execution delay, anyone may call executeForfeit while forfeiture is not paused. The contract field is named `challengeWindow`, but the timer does not itself grant the committer a generic on-chain challenge method. The manager moves the penalized amount from the committer encumbered balance to the counterparty free balance and returns the residual to the committer free balance.
 
 Forfeiture can be paused at the manager. cancelForfeit is arbiter-authorized, while stale proposals have a separate permissionless cleanup path. No vault burn or withdrawal queue participates in this flow.
 

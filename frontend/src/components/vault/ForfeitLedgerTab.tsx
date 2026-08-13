@@ -79,8 +79,8 @@ function eventDetail(
         <span className="ds-row" style={{ gap: 'var(--space-1)', flexWrap: 'wrap', alignItems: 'center' }}>
           <span className="ds-subtle">commitment</span>
           <span className="ds-mono-num">#{e.commitmentId.toString()}</span>
-          <span className="ds-subtle">depositor</span>
-          <AddressDisplay address={e.depositor} compact />
+          <span className="ds-subtle">committer</span>
+          <AddressDisplay address={e.committer} compact />
           <span className="ds-subtle">{transition} · {penalty}</span>
         </span>
       ),

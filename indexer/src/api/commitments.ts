@@ -1,7 +1,16 @@
 import { Hono } from 'hono'
-import { and, desc, eq, or, sql } from 'ponder'
+import { and, asc, desc, eq, gt, or, sql } from 'ponder'
 import { db } from 'ponder:api'
 import schema from 'ponder:schema'
+import { isAddress } from 'viem'
+
+import {
+  ArbitrationInputError,
+  deriveIndexedProposalStatus,
+  finalizeArbitrationPage,
+  parseArbitrationRequest,
+  serializeArbitrationEvent,
+} from './arbitration'
 
 const app = new Hono()
 
@@ -16,17 +25,17 @@ const app = new Hono()
  *       WHEN 'active'       THEN 1
  *       ELSE 2
  *     END,
- *     COALESCE(forfeitChallengeEnd, 9e18) ASC,
+ *     COALESCE(forfeitChallengeEnd, 9e18) ASC, -- nominal ordering hint only
  *     id DESC
  *
  * Rationale:
- *   - FORFEIT_PENDING rows sit at the top so depositors see what needs a counter-challenge first.
+ *   - FORFEIT_PENDING rows sit at the top so committers see manager enforcement first.
  *   - ACTIVE rows fall next; rows with imminent forfeitChallengeEnd float upward, so as more
  *     commitments enter forfeitPending the urgent ones surface naturally.
  *   - RELEASED / FORFEITED / EXPIRED end up at the bottom, newest first.
  *
  * Optional filters:
- *   ?address=0x... — depositor OR counterparty matches (case-insensitive on the column).
+ *   ?address=0x... — committer OR counterparty matches (case-insensitive on the column).
  *   ?arbiter=0x... — arbiter matches (case-insensitive). Powers the arbitration
  *                    queue UI ("commitments where I am the arbiter"). Combinable
  *                    with the other filters (AND-ed together).
@@ -92,6 +101,133 @@ app.get('/urgent', async (c) => {
 
   return c.json({
     rows: rows.map(serializeCommitment),
+  })
+})
+
+/** Recent manager-forfeit transitions for the public arbiter profile page. */
+app.get('/arbitration/activity', async (c) => {
+  const rawArbiter = c.req.query('arbiter')
+  if (!rawArbiter || !isAddress(rawArbiter)) {
+    return c.json({ error: 'invalid arbiter' }, 400)
+  }
+  const rawLimit = c.req.query('limit') ?? '50'
+  if (!/^[1-9]\d*$/.test(rawLimit)) return c.json({ error: 'invalid limit' }, 400)
+  const limit = Number(rawLimit)
+  if (!Number.isSafeInteger(limit) || limit > 100) {
+    return c.json({ error: 'limit must be between 1 and 100' }, 400)
+  }
+  const arbiter = rawArbiter.toLowerCase() as `0x${string}`
+  const rows = await db
+    .select()
+    .from(schema.forfeitEvent)
+    .where(eq(schema.forfeitEvent.arbiter, arbiter))
+    .orderBy(desc(schema.forfeitEvent.blockNumber), desc(schema.forfeitEvent.logIndex))
+    .limit(limit)
+
+  return c.json({
+    arbiter,
+    events: rows.map((row) => ({
+      ...serializeArbitrationEvent(row),
+      manager: row.manager,
+      commitmentId: row.commitmentId.toString(),
+    })),
+  })
+})
+
+/**
+ * GET /commitments/:id/arbitration?manager=0x...&limit=...&cursor=...
+ *
+ * Complete manager-side audit trail for exactly `(manager, commitmentId)`.
+ * Results are oldest-first and cursor-paginated by `(blockNumber, logIndex)`;
+ * no vault filter is involved, so raw ERC-20 backing and busy vaults behave
+ * identically. `nominalExecutionAt` is event-time context only. The frontend
+ * combines the live proposal with `pauseState.creditable` to calculate current
+ * pause-adjusted readiness.
+ */
+app.get('/:id/arbitration', async (c) => {
+  let request
+  try {
+    request = parseArbitrationRequest({
+      id: c.req.param('id'),
+      manager: c.req.query('manager'),
+      limit: c.req.query('limit'),
+      cursor: c.req.query('cursor'),
+    })
+  } catch (error) {
+    if (error instanceof ArbitrationInputError) {
+      return c.json({ error: error.message }, 400)
+    }
+    throw error
+  }
+
+  const identity = and(
+    eq(schema.commitment.id, request.commitmentId),
+    eq(schema.commitment.manager, request.manager),
+  )
+  const [commitmentRow] = await db.select().from(schema.commitment).where(identity).limit(1)
+  if (!commitmentRow) return c.json({ error: 'not found' }, 404)
+
+  const eventIdentity = and(
+    eq(schema.forfeitEvent.commitmentId, request.commitmentId),
+    eq(schema.forfeitEvent.manager, request.manager),
+  )
+  const afterCursor = request.cursor
+    ? or(
+        gt(schema.forfeitEvent.blockNumber, request.cursor.blockNumber),
+        and(
+          eq(schema.forfeitEvent.blockNumber, request.cursor.blockNumber),
+          gt(schema.forfeitEvent.logIndex, request.cursor.logIndex),
+        ),
+      )
+    : undefined
+  const eventWhere = afterCursor ? and(eventIdentity, afterCursor) : eventIdentity
+
+  const [pageRows, latestRows] = await Promise.all([
+    db
+      .select()
+      .from(schema.forfeitEvent)
+      .where(eventWhere)
+      .orderBy(asc(schema.forfeitEvent.blockNumber), asc(schema.forfeitEvent.logIndex))
+      .limit(request.limit + 1),
+    db
+      .select()
+      .from(schema.forfeitEvent)
+      .where(eventIdentity)
+      .orderBy(desc(schema.forfeitEvent.blockNumber), desc(schema.forfeitEvent.logIndex))
+      .limit(1),
+  ])
+
+  const page = finalizeArbitrationPage(pageRows, request.limit)
+  const rows = page.rows
+  const latest = latestRows[0]
+  const latestTerminal =
+    latest && ['executed', 'cancelled', 'cancelledStale'].includes(latest.kind)
+      ? latest.kind
+      : null
+  const proposalStatus = deriveIndexedProposalStatus(commitmentRow.status, latest?.kind)
+
+  return c.json({
+    manager: request.manager,
+    commitmentId: request.commitmentId.toString(),
+    summary: {
+      status: commitmentRow.status,
+      proposalStatus,
+      terminalOutcome: latestTerminal,
+      currentPenaltyBps: commitmentRow.forfeitPenaltyBps,
+      proposalInitiatedAt: commitmentRow.forfeitInitiatedAt?.toString() ?? null,
+      nominalExecutionAt: commitmentRow.forfeitChallengeEnd?.toString() ?? null,
+      pauseAdjustedExecutionAt: null,
+      readiness: 'live-manager-state-required',
+      amount: commitmentRow.amount.toString(),
+      token: commitmentRow.token,
+      committer: commitmentRow.committer,
+      counterparty: commitmentRow.counterparty,
+      arbiter: commitmentRow.arbiter,
+    },
+    events: rows.map(serializeArbitrationEvent),
+    page: {
+      nextCursor: page.nextCursor,
+    },
   })
 })
 
@@ -167,6 +303,7 @@ function serializeCommitment(c: typeof schema.commitment.$inferSelect) {
     id: c.id.toString(),
     amount: c.amount.toString(),
     forfeitChallengeEnd: c.forfeitChallengeEnd?.toString() ?? null,
+    forfeitInitiatedAt: c.forfeitInitiatedAt?.toString() ?? null,
     forfeitSharesExecuted: c.forfeitSharesExecuted?.toString() ?? null,
     unbondInitiatedAt: c.unbondInitiatedAt?.toString() ?? null,
     unbondMaturesAt: c.unbondMaturesAt?.toString() ?? null,

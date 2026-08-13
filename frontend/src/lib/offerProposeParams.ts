@@ -174,7 +174,7 @@ export function buildOfferProposeParams(
   let challengeWindowSecs = terms.challengeWindowSecs
   if (isAgreementNegotiable(terms, 'challengeWindow')) {
     if (input.challengeWindowSecs < 86_400) {
-      return { ok: false, error: 'CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS' }
+      return { ok: false, error: 'FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS' }
     }
     challengeWindowSecs = input.challengeWindowSecs
   }

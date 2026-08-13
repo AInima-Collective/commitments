@@ -3,8 +3,8 @@ import { type CommitmentWithStatus, type ForfeitProposalState } from './commitme
 
 /**
  * Forfeit window TTL constant — mirrors `FORFEIT_PROPOSAL_TTL` in
- * `CommitmentManager.sol`. After `initiatedAt + challengeWindow + 14 days`,
- * anyone can call `cancelStaleForfeitProposal`. Encoded here so the helper is
+ * `CommitmentManager.sol`. After the pause-adjusted effective execution time
+ * plus 14 days, anyone can call `cancelStaleForfeitProposal`. Encoded here so the helper is
  * pure (no chain reads). If the contract constant changes, update both places.
  */
 export const FORFEIT_PROPOSAL_TTL_SECONDS = 14n * 86_400n
@@ -51,8 +51,12 @@ export interface UnbondState {
 export interface ForfeitContext {
   state: ForfeitProposalState
   initiatedAt: bigint
-  /** Already-computed `initiatedAt + challengeWindow`. */
+  /** Pause-adjusted effective execution time. */
   deadline: bigint
+  /** Canonical live-manager readiness flags. Optional for legacy callers. */
+  executionAvailable?: boolean
+  staleCancellationAvailable?: boolean
+  staleCancelAt?: bigint
 }
 
 export interface AvailableActionsInput {
@@ -110,11 +114,13 @@ export function deriveViewerRole(
 
 /** True if a forfeit proposal is *currently* blocking other actions. */
 function forfeitBlocksMutations(forfeit: ForfeitContext): boolean {
-  return forfeit.state === 'PENDING' || forfeit.state === 'EXECUTABLE'
+  return ['PENDING', 'EXECUTABLE', 'PAUSED', 'STALE', 'INCONSISTENT', 'UNAVAILABLE'].includes(
+    forfeit.state,
+  )
 }
 
 function staleAt(forfeit: ForfeitContext): bigint {
-  return forfeit.deadline + FORFEIT_PROPOSAL_TTL_SECONDS
+  return forfeit.staleCancelAt ?? forfeit.deadline + FORFEIT_PROPOSAL_TTL_SECONDS
 }
 
 function formatRemaining(seconds: bigint): string {
@@ -142,7 +148,12 @@ export function getAvailableActions(input: AvailableActionsInput): ResolveAction
   const maturesAt = isUnbonding ? unbond.unbondInitiatedAt + unbond.unbondingPeriod : 0n
   const isUnbondMature = isUnbonding && nowSec >= maturesAt
   const blockedByForfeit = forfeitBlocksMutations(forfeit)
-  const forfeitIsStale = forfeit.state === 'EXECUTABLE' && nowSec >= staleAt(forfeit)
+  const forfeitIsStale =
+    forfeit.staleCancellationAvailable ??
+    ((forfeit.state === 'EXECUTABLE' || forfeit.state === 'STALE') && nowSec >= staleAt(forfeit))
+  const forfeitCanExecute =
+    forfeit.executionAvailable ??
+    (forfeit.state === 'EXECUTABLE' || forfeit.state === 'STALE')
   const writeGate = isConnected
     ? undefined
     : 'Connect a wallet to act'
@@ -284,13 +295,17 @@ export function getAvailableActions(input: AvailableActionsInput): ResolveAction
   }
 
   // Execute forfeit — anyone, post-window
-  if (forfeit.state === 'PENDING' || forfeit.state === 'EXECUTABLE') {
-    const reason = forfeit.state === 'PENDING'
-      ? `Challenge window closes in ${formatRemaining(forfeit.deadline - nowSec)}`
-      : writeGate
+  if (forfeitBlocksMutations(forfeit)) {
+    const reason = forfeitCanExecute
+      ? writeGate
+      : forfeit.state === 'PAUSED'
+        ? 'Execution is paused by the manager'
+        : forfeit.state === 'INCONSISTENT' || forfeit.state === 'UNAVAILABLE'
+          ? 'Pause-adjusted execution timing is unavailable'
+          : `Forfeit execution delay ends in ${formatRemaining(forfeit.deadline - nowSec)}`
     actions.push({
       kind: 'execute-forfeit',
-      enabled: forfeit.state === 'EXECUTABLE' && isConnected,
+      enabled: forfeitCanExecute && isConnected,
       reason,
       primary: 85,
     })
@@ -299,7 +314,7 @@ export function getAvailableActions(input: AvailableActionsInput): ResolveAction
   // Cancel forfeit — arbiter, while pending or executable
   if (
     viewerRole === 'arbiter' &&
-    (forfeit.state === 'PENDING' || forfeit.state === 'EXECUTABLE')
+    forfeitBlocksMutations(forfeit)
   ) {
     actions.push({
       kind: 'cancel-forfeit',
@@ -310,7 +325,7 @@ export function getAvailableActions(input: AvailableActionsInput): ResolveAction
   }
 
   // Cancel stale forfeit — anyone, after TTL
-  if (forfeit.state === 'EXECUTABLE') {
+  if (forfeitBlocksMutations(forfeit)) {
     const remaining = staleAt(forfeit) - nowSec
     actions.push({
       kind: 'cancel-stale-forfeit',

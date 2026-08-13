@@ -79,7 +79,7 @@ export function buildCustomParams(input: CustomCommitInput): BuildCustomResult {
     return { ok: false, error: 'MAX PENALTY MUST BE BETWEEN 0 AND 10000 BPS' }
   }
   if (input.challengeWindowSecs < 86_400) {
-    return { ok: false, error: 'CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS' }
+    return { ok: false, error: 'FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS' }
   }
 
   const expiresAt = input.expiryValue

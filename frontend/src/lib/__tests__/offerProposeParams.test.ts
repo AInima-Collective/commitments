@@ -116,7 +116,7 @@ describe('buildOfferProposeParams', () => {
         { ...reciprocal, negotiableFields: ['amount', 'challengeWindow'] },
         { ...goodInput, challengeWindowSecs: 3_600 },
       ),
-    ).toEqual({ ok: false, error: 'CHALLENGE WINDOW MUST BE AT LEAST 24 HOURS' })
+    ).toEqual({ ok: false, error: 'FORFEIT EXECUTION DELAY MUST BE AT LEAST 24 HOURS' })
   })
 
   it('ignores input challenge window / proposal duration when not negotiable (fixed deal)', () => {

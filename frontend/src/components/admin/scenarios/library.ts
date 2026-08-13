@@ -412,7 +412,7 @@ const happyPathForfeit: Scenario = {
   id: 'happy-path-forfeit',
   title: 'Forfeit flow: deposit → commit → initiate → +1d → execute',
   description:
-    'Depositor 0 deposits and creates a commitment. The Arbiter initiates a forfeit, time advances past the challenge window, and the forfeit executes.',
+    'Depositor 0 deposits and creates a commitment. The Arbiter initiates a forfeit, time advances past the forfeit execution delay, and the forfeit executes.',
   category: 'forfeiture',
   inputs: [
     ...COMMON_INPUTS,
@@ -479,7 +479,7 @@ const happyPathForfeit: Scenario = {
       },
       {
         kind: 'time',
-        label: 'Advance time +1 day +1s (past challenge window)',
+        label: 'Advance time +1 day +1s (past forfeit execution delay)',
         advance: ONE_DAY + 1,
       },
       {
@@ -507,7 +507,7 @@ const cancelledForfeit: Scenario = {
   id: 'cancelled-forfeit',
   title: 'Cancelled forfeit: arbiter initiates then withdraws within window',
   description:
-    'Depositor 0 deposits and commits. The Arbiter initiates a forfeit, then changes their mind and cancels before the challenge window ends.',
+    'Depositor 0 deposits and commits. The Arbiter initiates a forfeit, then changes their mind and cancels during the forfeit execution delay.',
   category: 'forfeiture',
   inputs: [...COMMON_INPUTS],
   build: (inputs) => {
@@ -564,7 +564,7 @@ const cancelledForfeit: Scenario = {
       },
       {
         kind: 'time',
-        label: 'Advance time +1 hour (still inside challenge window)',
+        label: 'Advance time +1 hour (inside forfeit execution delay)',
         advance: 3600,
       },
       {

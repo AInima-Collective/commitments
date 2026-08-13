@@ -75,7 +75,7 @@ function FreeformCommitmentForm(props: CreateCommitmentFormProps) {
         A commitment pledges stake you control to an agreement: it stays in custody
         (and keeps earning yield) while a designated arbiter can penalize you through
         a two-phase forfeit if you break the terms. Set the terms below — arbiter,
-        penalty, challenge window, expiry, and metadata are all under your control.
+        penalty, forfeit execution delay, expiry, and metadata are all under your control.
       </p>
 
       <CustomMode {...childProps} />

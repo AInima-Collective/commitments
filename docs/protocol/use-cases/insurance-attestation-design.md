@@ -25,7 +25,7 @@ Store the content-addressed policy in metadataURI and metadataHash where the man
 
 ## On-chain flow
 
-For a unilateral claim, the signed action may initiate forfeit with penaltyBps. The manager opens its normal challenge window and anyone executes after maturity. A signed cancellation can cancel the proposal before execution.
+For a unilateral claim, the signed action may initiate forfeit with penaltyBps. The manager starts its normal pause-adjusted forfeit execution delay and anyone executes after maturity while forfeiture is not paused. A signed cancellation can cancel the proposal before execution; the manager timer is not itself a generic challenge path.
 
 For bilateral or pooled coverage, the same arbiter also supports agreement forfeit, agreement settlement, mutual activation, mutual-loss initiation, and mutual-loss cancellation. The envelope binds the action-specific fields and an evidence hash.
 
