@@ -43,7 +43,9 @@ const app = new Hono()
  *   ?manager=0x... — restrict to commitments emitted by a specific CommitmentManager.
  *                    Useful for multi-manager deployments (e.g. USDC + WETH stacks).
  *   ?vault=0x... — restrict to commitments backed by a specific vault.
- *   ?limit=N (default 100, max 500).
+ *   ?limit=N (default 100, max 100).
+ *   ?offset=N (default 0). Responses include a total and nextOffset so callers
+ *              never have to imply complete coverage from a fixed row cap.
  */
 app.get('/urgent', async (c) => {
   const address = c.req.query('address')?.toLowerCase() as `0x${string}` | undefined
@@ -52,7 +54,9 @@ app.get('/urgent', async (c) => {
   const managerParam = c.req.query('manager')?.toLowerCase() as `0x${string}` | undefined
   const vaultParam = c.req.query('vault')?.toLowerCase() as `0x${string}` | undefined
   const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 500)
+  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 100)
+  const rawOffset = Number(c.req.query('offset') ?? 0)
+  const offset = Math.max(Number.isSafeInteger(rawOffset) ? rawOffset : 0, 0)
 
   const filters = [] as Array<ReturnType<typeof eq>>
   if (address) {
@@ -79,28 +83,57 @@ app.get('/urgent', async (c) => {
   const where =
     filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters)
 
-  const rows = await db
-    .select()
-    .from(schema.commitment)
-    .where(where)
-    .orderBy(
-      // status priority: forfeitPending → unbonding → active → everything else.
-      // Unbonding sits above active because the depositor is mid-flow; the
-      // matures-at countdown is the next thing they'll act on.
-      sql`CASE ${schema.commitment.status}
-            WHEN 'forfeitPending' THEN 0
-            WHEN 'unbonding'    THEN 1
-            WHEN 'active'       THEN 2
-            ELSE 3
-          END ASC`,
-      // among rows of equal priority, soonest deadline first; nulls sink
-      sql`COALESCE(${schema.commitment.forfeitChallengeEnd}, 9000000000000000000) ASC`,
-      desc(schema.commitment.id),
-    )
-    .limit(limit)
+  const [rows, aggregateRows] = await Promise.all([
+    db
+      .select()
+      .from(schema.commitment)
+      .where(where)
+      .orderBy(
+        // status priority: forfeitPending → unbonding → active → everything else.
+        // Unbonding sits above active because the depositor is mid-flow; the
+        // matures-at countdown is the next thing they'll act on.
+        sql`CASE ${schema.commitment.status}
+              WHEN 'forfeitPending' THEN 0
+              WHEN 'unbonding'    THEN 1
+              WHEN 'active'       THEN 2
+              ELSE 3
+            END ASC`,
+        // among rows of equal priority, soonest deadline first; nulls sink
+        sql`COALESCE(${schema.commitment.forfeitChallengeEnd}, 9000000000000000000) ASC`,
+        desc(schema.commitment.id),
+      )
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({
+        total: sql<string>`COUNT(*)::text`,
+        openProposals: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} = 'forfeitPending')::text`,
+        active: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} = 'active')::text`,
+        other: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} NOT IN ('forfeitPending', 'active'))::text`,
+      })
+      .from(schema.commitment)
+      .where(where),
+  ])
+  const aggregate = aggregateRows[0]
+  const total = Number(aggregate?.total ?? '0')
 
   return c.json({
     rows: rows.map(serializeCommitment),
+    counts: {
+      // A live proposal is the only generic manager state that merits review
+      // by the arbiter. Merely being able to decide an ACTIVE commitment does
+      // not make that commitment an alert.
+      needsAction: Number(aggregate?.openProposals ?? '0'),
+      openProposals: Number(aggregate?.openProposals ?? '0'),
+      active: Number(aggregate?.active ?? '0'),
+      other: Number(aggregate?.other ?? '0'),
+      total,
+    },
+    page: {
+      limit,
+      offset,
+      nextOffset: offset + rows.length < total ? offset + rows.length : null,
+    },
   })
 })
 

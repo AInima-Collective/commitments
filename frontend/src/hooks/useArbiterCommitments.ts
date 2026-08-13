@@ -50,8 +50,9 @@ interface UseArbiterCommitmentsParams {
   managerAddress: Address | undefined
   /** Connected wallet — the prospective arbiter. */
   viewAddress: Address | undefined
-  /** Cap to the indexer endpoint default (100 / max 500). */
+  /** Explicit page size; the endpoint never claims completeness from a cap. */
   limit?: number
+  offset?: number
 }
 
 interface UseArbiterCommitmentsReturn {
@@ -59,6 +60,14 @@ interface UseArbiterCommitmentsReturn {
   isLoading: boolean
   error: Error | null
   indexerOnline: boolean
+  counts: {
+    needsAction: number
+    openProposals: number
+    active: number
+    other: number
+    total: number
+  }
+  page: { limit: number; offset: number; nextOffset: number | null }
   refetch: () => void
 }
 
@@ -82,7 +91,8 @@ interface UseArbiterCommitmentsReturn {
 export function useArbiterCommitments({
   managerAddress,
   viewAddress,
-  limit = 500,
+  limit = 50,
+  offset = 0,
 }: UseArbiterCommitmentsParams): UseArbiterCommitmentsReturn {
   const enabled = hasIndexer && !!viewAddress && !!managerAddress
 
@@ -91,29 +101,41 @@ export function useArbiterCommitments({
     isLoading: isLoadingIds,
     error: idsError,
     refetch: refetchIds,
-  } = useQuery<ArbiterIdRow[]>({
+  } = useQuery<{
+    rows: ArbiterIdRow[]
+    counts: UseArbiterCommitmentsReturn['counts']
+    page: UseArbiterCommitmentsReturn['page']
+  }>({
     enabled,
-    queryKey: ['arbiter-commitments', viewAddress?.toLowerCase(), managerAddress?.toLowerCase(), limit],
+    queryKey: ['arbiter-commitments', viewAddress?.toLowerCase(), managerAddress?.toLowerCase(), limit, offset],
     queryFn: async () => {
       const lower = viewAddress!.toLowerCase()
       const res = await indexerFetch(
-        `/commitments/urgent?arbiter=${lower}&manager=${managerAddress!.toLowerCase()}&limit=${limit}`,
+        `/commitments/urgent?arbiter=${lower}&manager=${managerAddress!.toLowerCase()}&limit=${limit}&offset=${offset}`,
       )
       if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const payload = (await res.json()) as { rows?: UrgentRowWire[] }
-      return (payload.rows ?? []).map((r) => ({
-        id: BigInt(r.id),
-        vault: (r.vault ?? undefined) as Address | undefined,
-        metadataURI: r.metadataURI ?? undefined,
-        metadataHash: r.metadataHash ?? undefined,
-        metadataStatus: r.metadataStatus ?? undefined,
-        metadataContent: asMetadataObject(r.metadataContent),
-      }))
+      const payload = (await res.json()) as {
+        rows?: UrgentRowWire[]
+        counts?: UseArbiterCommitmentsReturn['counts']
+        page?: UseArbiterCommitmentsReturn['page']
+      }
+      return {
+        rows: (payload.rows ?? []).map((r) => ({
+          id: BigInt(r.id),
+          vault: (r.vault ?? undefined) as Address | undefined,
+          metadataURI: r.metadataURI ?? undefined,
+          metadataHash: r.metadataHash ?? undefined,
+          metadataStatus: r.metadataStatus ?? undefined,
+          metadataContent: asMetadataObject(r.metadataContent),
+        })),
+        counts: payload.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
+        page: payload.page ?? { limit, offset, nextOffset: null },
+      }
     },
     refetchInterval: 15_000,
   })
 
-  const ids = idRows ?? []
+  const ids = idRows?.rows ?? []
   const indexedById = new Map(ids.map((r) => [r.id.toString(), r]))
 
   const {
@@ -157,6 +179,8 @@ export function useArbiterCommitments({
     isLoading: isLoadingIds || (ids.length > 0 && isLoadingData),
     error: (idsError as Error | null) ?? null,
     indexerOnline: hasIndexer,
+    counts: idRows?.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
+    page: idRows?.page ?? { limit, offset, nextOffset: null },
     refetch,
   }
 }

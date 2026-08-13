@@ -8,6 +8,7 @@ import {
   getArbiterDescriptor,
   getArbiterOptions,
   getArbiterRegistry,
+  getConfiguredArbiterProfiles,
   getOptimisticInsuranceArbiters,
   resolveArbiterAddress,
 } from '../arbiters'
@@ -119,5 +120,32 @@ describe('getOptimisticInsuranceArbiters', () => {
     vi.stubEnv('VITE_DAI_OPTIMISTIC_ARBITER_ADDRESS', DAI_ARBITER)
     const optimistic = getArbiterRegistry(CHAIN).filter((a) => a.kind === 'optimistic')
     expect(optimistic.map((a) => a.address)).toEqual([USDC_ARBITER, DAI_ARBITER])
+  })
+})
+
+describe('trusted arbiter mechanism profiles', () => {
+  const ANVIL_ACCOUNT_1 = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as Address
+  const MANUAL_ARBITER = '0x1111111111111111111111111111111111111111' as Address
+  const OPTIMISTIC_ARBITER = '0x2222222222222222222222222222222222222222' as Address
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('keeps the Anvil demo EOA distinct from deployed Manual and optimistic mechanisms', () => {
+    vi.stubEnv('VITE_DEFAULT_ARBITER_ADDRESS', ANVIL_ACCOUNT_1)
+    vi.stubEnv('VITE_MANUAL_ARBITER_ADDRESS', MANUAL_ARBITER)
+    vi.stubEnv('VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS', OPTIMISTIC_ARBITER)
+
+    const profiles = getConfiguredArbiterProfiles(CHAIN)
+    expect(profiles.find((entry) => entry.address === ANVIL_ACCOUNT_1)).toEqual(
+      expect.objectContaining({ mechanismId: 'direct', expectedAddressForm: 'EOA' }),
+    )
+    expect(profiles.find((entry) => entry.address === MANUAL_ARBITER)).toEqual(
+      expect.objectContaining({ mechanismId: 'manual', expectedAddressForm: 'contract' }),
+    )
+    expect(profiles.find((entry) => entry.address === OPTIMISTIC_ARBITER)).toEqual(
+      expect.objectContaining({ mechanismId: 'optimistic-insurance', expectedAddressForm: 'contract' }),
+    )
   })
 })

@@ -43,6 +43,29 @@ interface ArbitrationPageWire {
   page: { nextCursor: string | null }
 }
 
+interface MechanismEventWire {
+  source: 'arbiter mechanism'
+  mechanism: string
+  arbiter: string
+  caseId: string
+  commitmentId: string | null
+  manager: string | null
+  kind: string
+  actor: string | null
+  phase: string
+  deadline: string | null
+  outcome: string | null
+  timestamp: string
+  blockNumber: string
+  logIndex: number
+  transactionHash: string
+}
+
+interface MechanismActivityPageWire {
+  events: MechanismEventWire[]
+  page: { limit: number; offset: number; total: number; nextOffset: number | null }
+}
+
 export interface ManagerForfeitEvent {
   kind: ManagerForfeitEventKind
   timestamp: bigint
@@ -60,11 +83,30 @@ export interface ManagerForfeitEvent {
   arbiter: Address
 }
 
+export interface MechanismArbitrationEvent {
+  source: 'arbiter mechanism'
+  mechanism: string
+  arbiter: Address
+  caseId: bigint
+  commitmentId: bigint | null
+  manager: Address | null
+  kind: string
+  actor: Address | null
+  phase: string
+  deadline: bigint | null
+  outcome: string | null
+  timestamp: bigint
+  blockNumber: bigint
+  logIndex: number
+  transactionHash: `0x${string}`
+}
+
 export interface CommitmentArbitrationHistory {
   manager: Address
   commitmentId: bigint
   summary: ArbitrationPageWire['summary']
   events: ManagerForfeitEvent[]
+  mechanismEvents: MechanismArbitrationEvent[]
 }
 
 export function parseManagerForfeitEvent(event: ArbitrationEventWire): ManagerForfeitEvent {
@@ -84,6 +126,58 @@ export function parseManagerForfeitEvent(event: ArbitrationEventWire): ManagerFo
     committer: event.committer as Address,
     arbiter: event.arbiter as Address,
   }
+}
+
+export function parseMechanismArbitrationEvent(event: MechanismEventWire): MechanismArbitrationEvent {
+  return {
+    source: event.source,
+    mechanism: event.mechanism,
+    arbiter: event.arbiter as Address,
+    caseId: BigInt(event.caseId),
+    commitmentId: event.commitmentId === null ? null : BigInt(event.commitmentId),
+    manager: event.manager as Address | null,
+    kind: event.kind,
+    actor: event.actor as Address | null,
+    phase: event.phase,
+    deadline: event.deadline === null ? null : BigInt(event.deadline),
+    outcome: event.outcome,
+    timestamp: BigInt(event.timestamp),
+    blockNumber: BigInt(event.blockNumber),
+    logIndex: event.logIndex,
+    transactionHash: event.transactionHash as `0x${string}`,
+  }
+}
+
+async function fetchCompleteMechanismHistory(
+  commitmentId: bigint,
+  manager: Address,
+): Promise<MechanismArbitrationEvent[]> {
+  let offset = 0
+  let hasMore = true
+  const events: MechanismArbitrationEvent[] = []
+  const seenOffsets = new Set<number>()
+  while (hasMore) {
+    const params = new URLSearchParams({
+      manager: manager.toLowerCase(),
+      commitmentId: commitmentId.toString(),
+      limit: '100',
+      offset: String(offset),
+    })
+    const response = await indexerFetch(`/protocol/mechanism-activity?${params.toString()}`)
+    if (!response.ok) throw new Error(`Mechanism activity error: ${response.status}`)
+    const page = (await response.json()) as MechanismActivityPageWire
+    events.push(...page.events.map(parseMechanismArbitrationEvent))
+    if (page.page.nextOffset === null) {
+      hasMore = false
+      continue
+    }
+    if (seenOffsets.has(page.page.nextOffset)) {
+      throw new Error('Indexer returned a repeated mechanism activity offset')
+    }
+    seenOffsets.add(page.page.nextOffset)
+    offset = page.page.nextOffset
+  }
+  return events
 }
 
 /** Fetch every page so the commitment panel is an audit trail, not a recent sample. */
@@ -113,11 +207,13 @@ async function fetchCompleteHistory(
   } while (cursor)
 
   if (!first) throw new Error('Indexer returned no arbitration page')
+  const mechanismEvents = await fetchCompleteMechanismHistory(commitmentId, manager)
   return {
     manager: first.manager as Address,
     commitmentId: BigInt(first.commitmentId),
     summary: first.summary,
     events,
+    mechanismEvents,
   }
 }
 

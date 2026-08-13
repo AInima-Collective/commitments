@@ -19,8 +19,16 @@ const KNOWN_CAPABILITY_MASK = ARBITER_CAPABILITIES.reduce(
   0n,
 )
 
+export type ArbiterReadStatus =
+  | 'success'
+  | 'not-applicable'
+  | 'not-declared'
+  | 'unsupported'
+  | 'unknown'
+  | 'failed'
+
 export interface IndependentRead<T> {
-  status: 'success' | 'error'
+  status: ArbiterReadStatus
   value?: T
   error?: string
 }
@@ -51,12 +59,19 @@ export interface ArbiterProfile {
   metadataURI?: string
   metadataTrust: 'publisher-provided' | 'absent' | 'unknown'
   mechanism: string
+  mechanismId?: ConfiguredArbiterProfile['mechanismId']
   mechanismVerification: 'curated deployment' | 'self-declared' | 'unrecognized'
   displayName: string
   decisionSummary: string
   contestKind: 'known-mechanism' | 'published-policy' | 'no-generic-action'
   contestSummary: string
   configured: boolean
+  fieldStatus: {
+    interfaceSupport: ArbiterReadStatus
+    reportedManager: ArbiterReadStatus
+    capabilities: ArbiterReadStatus
+    metadataURI: ArbiterReadStatus
+  }
   readFailures: string[]
 }
 
@@ -74,8 +89,10 @@ export function buildArbiterProfile(input: {
       ? introspection.interfaceSupport.value
         ? 'supported'
         : 'unsupported'
-      : addressForm === 'EOA'
+      : addressForm === 'EOA' || introspection.interfaceSupport.status === 'not-applicable'
         ? 'unsupported'
+        : ['not-declared', 'unsupported'].includes(introspection.interfaceSupport.status)
+          ? 'unsupported'
         : 'unknown'
   const reportedManager =
     introspection.reportedManager.status === 'success'
@@ -98,7 +115,7 @@ export function buildArbiterProfile(input: {
       ? introspection.metadataURI.value?.trim()
       : undefined
   const metadataTrust =
-    introspection.metadataURI.status === 'error'
+    ['failed', 'unknown'].includes(introspection.metadataURI.status)
       ? 'unknown'
       : metadataValue
         ? 'publisher-provided'
@@ -121,6 +138,10 @@ export function buildArbiterProfile(input: {
       : configured
         ? { contestKind: configured.contestKind, contestSummary: configured.contestSummary }
         : defaultContest
+  const expectedInterfaceWarning =
+    configured?.expectedAddressForm === 'contract' && interfaceSupport !== 'supported'
+      ? ['IArbiter interface declaration (expected by trusted configuration)']
+      : []
 
   return {
     address,
@@ -133,7 +154,16 @@ export function buildArbiterProfile(input: {
     unknownCapabilityBits,
     metadataURI: metadataValue || undefined,
     metadataTrust,
-    mechanism: configured?.mechanism ?? (addressForm === 'unknown' ? 'Unknown' : 'Custom / unrecognized'),
+    mechanism:
+      configured?.mechanism ??
+      (addressForm === 'EOA'
+        ? 'Direct-address arbitration'
+        : addressForm === 'contract' && interfaceSupport === 'unsupported'
+          ? 'Legacy / custom contract'
+          : addressForm === 'unknown'
+            ? 'Unknown'
+            : 'Custom / unrecognized'),
+    mechanismId: configured?.mechanismId,
     mechanismVerification: configured
       ? 'curated deployment'
       : interfaceSupport === 'supported'
@@ -152,15 +182,24 @@ export function buildArbiterProfile(input: {
     contestKind: configuredContest.contestKind,
     contestSummary: configuredContest.contestSummary,
     configured: Boolean(configured),
-    readFailures: Object.entries(introspection)
-      .filter(([, result]) => result.status === 'error')
-      .map(([name]) => name),
+    fieldStatus: {
+      interfaceSupport: introspection.interfaceSupport.status,
+      reportedManager: introspection.reportedManager.status,
+      capabilities: introspection.capabilities.status,
+      metadataURI: introspection.metadataURI.status,
+    },
+    readFailures: [
+      ...expectedInterfaceWarning,
+      ...Object.entries(introspection)
+        .filter(([, result]) => result.status === 'failed' || result.status === 'unknown')
+        .map(([name]) => name),
+    ],
   }
 }
 
 function classifyAddressForm(
   code: IndependentRead<`0x${string}` | undefined>,
 ): ArbiterProfile['addressForm'] {
-  if (code.status === 'error') return 'unknown'
+  if (code.status !== 'success') return 'unknown'
   return !code.value || code.value === '0x' ? 'EOA' : 'contract'
 }

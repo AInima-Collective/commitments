@@ -28,6 +28,9 @@ export {
   tokenWeightingAbi,
   mutualRegistryAbi,
   optimisticMutualArbiterAbi,
+  optimisticInsuranceArbiterAbi,
+  twoTierArbiterAbi,
+  attestationArbiterAbi,
   linkedMutualPolicyAbi,
   // Self-custody distribution strategy (§D.7): emits DistributionPaid /
   // Prefunded / CreditRefunded from its OWN address, not the manager, so it

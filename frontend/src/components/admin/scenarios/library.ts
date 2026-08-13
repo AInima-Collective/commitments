@@ -1,5 +1,10 @@
 import { decodeEventLog, erc20Abi, parseUnits, type Address, type Hash } from 'viem'
-import { commitmentManagerAbi, commitmentsVaultAbi } from '../../../generated'
+import {
+  commitmentManagerAbi,
+  commitmentsVaultAbi,
+  manualArbiterAbi,
+  twoTierArbiterAbi,
+} from '../../../generated'
 import type { DevActorId } from '../../../contexts/devWallet'
 import type { Scenario, ScenarioContext } from './types'
 
@@ -226,6 +231,25 @@ function captureProposalId(varName: string) {
   }
 }
 
+function captureTwoTierCaseId(varName: string) {
+  return (receipt: import('viem').TransactionReceipt, ctx: ScenarioContext) => {
+    const arbiter = ctx.twoTierArbiter
+    if (!arbiter) return
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== arbiter.toLowerCase()) continue
+      try {
+        const decoded = decodeEventLog({ abi: twoTierArbiterAbi, data: log.data, topics: log.topics })
+        if (decoded.eventName === 'RulingProposed') {
+          ctx.vars[varName] = (decoded.args as { caseId: bigint }).caseId
+          return
+        }
+      } catch {
+        // Not a TwoTierArbiter event.
+      }
+    }
+  }
+}
+
 const COMMON_INPUTS = [
   {
     key: 'amount',
@@ -279,7 +303,7 @@ const happyPathRelease: Scenario = {
   id: 'happy-path-release',
   title: 'Happy path: deposit → commit → release',
   description:
-    'Depositor 0 deposits, creates a commitment with the Arbiter, then the Arbiter releases it. Encumbrance returns to the depositor.',
+    'Depositor 0 deposits, creates a commitment with the deployed ManualArbiter, then its owner releases it through the arbiter API. Encumbrance returns to the depositor.',
   category: 'lifecycle',
   inputs: [...COMMON_INPUTS],
   build: (inputs) => {
@@ -294,15 +318,15 @@ const happyPathRelease: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Depositor 0: createCommitment(arbiter=Arbiter, counterparty=Depositor 1)',
-        description: 'Locks vault shares; arbiter is the canonical Arbiter actor.',
+        label: 'Depositor 0: createCommitment(arbiter=ManualArbiter, counterparty=Depositor 1)',
+        description: 'Locks vault shares; authority is delegated to the deployed ManualArbiter contract.',
         actor: 'depositor-0',
         run: (ctx) => {
           const wallet = ctx.walletFor('depositor-0')
           const params = buildCommitmentParams(
             ctx,
             inputs,
-            ctx.actor('arbiter').address,
+            requireAddress(ctx.manualArbiter, 'manual arbiter'),
             ctx.actor('depositor-1').address,
             ctx.vars.shares0 as bigint,
             'happy-path-release',
@@ -325,15 +349,15 @@ const happyPathRelease: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: releaseCommitment',
+        label: 'ManualArbiter owner: release',
         actor: 'arbiter',
         run: (ctx) => {
           const id = ctx.vars.commitmentId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
-            functionName: 'releaseCommitment',
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
+            functionName: 'release',
             args: [id],
             chain: wallet.chain,
             account: wallet.account!,
@@ -352,9 +376,9 @@ const EXTERNAL_ARBITER_ADDRESS =
 
 const arbitrationHandoff: Scenario = {
   id: 'arbitration-handoff',
-  title: 'Arbitration handoff: commit to an external arbiter, then resolve in the UI',
+  title: 'Direct-address / EOA handoff: commit, then resolve in the UI',
   description:
-    'Depositor 0 deposits and creates an active commitment whose arbiter is an external address (Anvil account #7, 0x3C44…293BC — not one of the preset dev actors). The scenario stops there, leaving the commitment live and pending. Load that address into MetaMask and switch to it to exercise the real arbitration UI (initiate / execute / cancel forfeit, or release) against this commitment.',
+    'Intentional minimal-profile example: Depositor 0 creates an active commitment whose arbiter is an EOA (Anvil account #7, 0x3C44…293BC). Contract introspection is not applicable. The scenario stops there so you can load that address into MetaMask and exercise the arbiter inbox directly.',
   category: 'forfeiture',
   inputs: [
     ...COMMON_INPUTS,
@@ -444,7 +468,7 @@ const happyPathForfeit: Scenario = {
           const params = buildCommitmentParams(
             ctx,
             inputs,
-            ctx.actor('arbiter').address,
+            requireAddress(ctx.manualArbiter, 'manual arbiter'),
             ctx.actor('depositor-1').address,
             ctx.vars.shares0 as bigint,
             'forfeit-target',
@@ -462,14 +486,14 @@ const happyPathForfeit: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: initiateForfeit',
+        label: 'ManualArbiter owner: initiateForfeit',
         actor: 'arbiter',
         run: (ctx) => {
           const id = ctx.vars.commitmentId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'initiateForfeit',
             args: [id, penaltyBps],
             chain: wallet.chain,
@@ -529,7 +553,7 @@ const cancelledForfeit: Scenario = {
           const params = buildCommitmentParams(
             ctx,
             inputs,
-            ctx.actor('arbiter').address,
+            requireAddress(ctx.manualArbiter, 'manual arbiter'),
             ctx.actor('depositor-1').address,
             ctx.vars.shares0 as bigint,
             'cancel-target',
@@ -547,14 +571,14 @@ const cancelledForfeit: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: initiateForfeit (1000 bps)',
+        label: 'ManualArbiter owner: initiateForfeit (1000 bps)',
         actor: 'arbiter',
         run: (ctx) => {
           const id = ctx.vars.commitmentId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'initiateForfeit',
             args: [id, 1000],
             chain: wallet.chain,
@@ -569,14 +593,14 @@ const cancelledForfeit: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: cancelForfeit',
+        label: 'ManualArbiter owner: cancelForfeit',
         actor: 'arbiter',
         run: (ctx) => {
           const id = ctx.vars.commitmentId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'cancelForfeit',
             args: [id],
             chain: wallet.chain,
@@ -620,7 +644,7 @@ const agreementHappyPath: Scenario = {
         run: (ctx) => {
           const wallet = ctx.walletFor('depositor-0')
           const params = {
-            arbiter: ctx.actor('arbiter').address,
+            arbiter: requireAddress(ctx.manualArbiter, 'manual arbiter'),
             acceptor: ctx.actor('depositor-1').address,
             proposerLeg: {
               token: requireAddress(ctx.vault, 'vault'),
@@ -700,14 +724,14 @@ const agreementHappyPath: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: releaseAgreement',
+        label: 'ManualArbiter owner: releaseAgreement',
         actor: 'arbiter',
         run: (ctx) => {
           const agreementId = ctx.vars.agreementId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'releaseAgreement',
             args: [agreementId],
             chain: wallet.chain,
@@ -751,7 +775,7 @@ const agreementForfeit: Scenario = {
         run: (ctx) => {
           const wallet = ctx.walletFor('depositor-0')
           const params = {
-            arbiter: ctx.actor('arbiter').address,
+            arbiter: requireAddress(ctx.manualArbiter, 'manual arbiter'),
             acceptor: ctx.actor('depositor-1').address,
             proposerLeg: {
               token: requireAddress(ctx.vault, 'vault'),
@@ -824,14 +848,14 @@ const agreementForfeit: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: forfeitAgreement',
+        label: 'ManualArbiter owner: forfeitAgreement',
         actor: 'arbiter',
         run: (ctx) => {
           const agreementId = ctx.vars.agreementId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'forfeitAgreement',
             // Forfeit at the full penalty ceiling for the demo scenario.
             args: [agreementId, maxPenaltyBps],
@@ -870,7 +894,7 @@ const unbondingHappyPath: Scenario = {
           const params = buildCommitmentParams(
             ctx,
             inputs,
-            ctx.actor('arbiter').address,
+            requireAddress(ctx.manualArbiter, 'manual arbiter'),
             ctx.actor('depositor-1').address,
             ctx.vars.shares0 as bigint,
             'unbonding-target',
@@ -990,7 +1014,7 @@ const yieldDistributeClaim: Scenario = {
           const params = buildCommitmentParams(
             ctx,
             inputs,
-            ctx.actor('arbiter').address,
+            requireAddress(ctx.manualArbiter, 'manual arbiter'),
             ctx.actor(counterparty).address,
             ctx.vars.sharesDepositor as bigint,
             'yield-distribute-claim',
@@ -1234,7 +1258,7 @@ const commitmentContribute: Scenario = {
           const params = buildCommitmentParams(
             ctx,
             inputs,
-            ctx.actor('arbiter').address,
+            requireAddress(ctx.manualArbiter, 'manual arbiter'),
             ctx.actor('depositor-2').address,
             initialStake,
             'commitment-contribute',
@@ -1369,7 +1393,7 @@ const agreementSettle: Scenario = {
         run: (ctx) => {
           const wallet = ctx.walletFor('depositor-0')
           const params = {
-            arbiter: ctx.actor('arbiter').address,
+            arbiter: requireAddress(ctx.manualArbiter, 'manual arbiter'),
             acceptor: ctx.actor('depositor-1').address,
             proposerLeg: {
               token: requireAddress(ctx.vault, 'vault'),
@@ -1447,7 +1471,7 @@ const agreementSettle: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: settleAgreement(P→A)',
+        label: 'ManualArbiter owner: settleAgreement(P→A)',
         description:
           'fromProposer = true. Moves encumbered shares from D0\'s leg to D1\'s leg. Cumulative P→A flow becomes settleP2A; remaining headroom = capP2A - settleP2A.',
         actor: 'arbiter',
@@ -1455,8 +1479,8 @@ const agreementSettle: Scenario = {
           const agreementId = ctx.vars.agreementId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'settleAgreement',
             args: [agreementId, true, settleP2A, ZERO_BYTES32 as `0x${string}`],
             chain: wallet.chain,
@@ -1466,7 +1490,7 @@ const agreementSettle: Scenario = {
       },
       {
         kind: 'tx',
-        label: 'Arbiter: settleAgreement(A→P)',
+        label: 'ManualArbiter owner: settleAgreement(A→P)',
         description:
           'fromProposer = false. Moves shares back from D1\'s leg to D0\'s leg. Independent cap; the P→A flow above does not consume A→P headroom.',
         actor: 'arbiter',
@@ -1474,8 +1498,8 @@ const agreementSettle: Scenario = {
           const agreementId = ctx.vars.agreementId as bigint
           const wallet = ctx.walletFor('arbiter')
           return wallet.writeContract({
-            address: requireAddress(ctx.manager, 'manager'),
-            abi: commitmentManagerAbi,
+            address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
+            abi: manualArbiterAbi,
             functionName: 'settleAgreement',
             args: [agreementId, false, settleA2P, ZERO_BYTES32 as `0x${string}`],
             chain: wallet.chain,
@@ -1487,11 +1511,167 @@ const agreementSettle: Scenario = {
   },
 }
 
+function twoTierScenario(appealed: boolean): Scenario {
+  return {
+    id: appealed ? 'two-tier-appealed' : 'two-tier-unappealed',
+    title: appealed
+      ? 'Two-tier: primary ruling → appeal → final ruling → execute'
+      : 'Two-tier: primary ruling → no appeal → execute',
+    description: appealed
+      ? 'Creates a commitment governed by the deployed TwoTierArbiter. The primary controller rules, the committer appeals, the appeal controller responds, and permissionless manager enforcement follows its own delay.'
+      : 'Creates a commitment governed by the deployed TwoTierArbiter. The primary ruling remains unappealed and is executed only after the separately configured manager execution delay.',
+    category: 'forfeiture',
+    inputs: [
+      ...COMMON_INPUTS,
+      {
+        key: 'penaltyBps',
+        label: appealed ? 'Primary penaltyBps' : 'PenaltyBps',
+        defaultValue: '1000',
+        placeholder: '1000',
+        hint: 'Must not exceed maxPenaltyBps.',
+      },
+      ...(appealed
+        ? [{
+            key: 'finalPenaltyBps',
+            label: 'Final appeal penaltyBps',
+            defaultValue: '500',
+            placeholder: '500',
+            hint: 'The appeal controller’s final ruling.',
+          }]
+        : []),
+    ],
+    build: (inputs) => {
+      const amount = parseUnits(inputs.amount ?? '100', DEFAULT_DECIMALS)
+      const primaryPenalty = Number(inputs.penaltyBps ?? '1000')
+      const finalPenalty = Number(inputs.finalPenaltyBps ?? '500')
+      const steps: import('./types').ScenarioStep[] = [
+        {
+          kind: 'tx',
+          label: 'Depositor 0: deposit',
+          actor: 'depositor-0',
+          run: (ctx) => depositAs(ctx, 'depositor-0', amount),
+          capture: captureSharesFromDeposit('depositor-0', 'twoTierShares'),
+        },
+        {
+          kind: 'tx',
+          label: 'Depositor 0: createCommitment(arbiter=TwoTierArbiter)',
+          actor: 'depositor-0',
+          run: (ctx) => {
+            const wallet = ctx.walletFor('depositor-0')
+            const params = buildCommitmentParams(
+              ctx,
+              inputs,
+              requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
+              ctx.actor('depositor-1').address,
+              ctx.vars.twoTierShares as bigint,
+              appealed ? 'two-tier-appealed' : 'two-tier-unappealed',
+            )
+            // Court windows are 1d each and the execution buffer is 1h, so
+            // the commitment must exceed the court's 25h minimum.
+            params.challengeWindow = BigInt(2 * ONE_DAY)
+            return wallet.writeContract({
+              address: requireAddress(ctx.manager, 'manager'),
+              abi: commitmentManagerAbi,
+              functionName: 'createCommitment',
+              args: [params],
+              chain: wallet.chain,
+              account: wallet.account!,
+            })
+          },
+          capture: captureCommitmentId('twoTierCommitmentId'),
+        },
+        {
+          kind: 'tx',
+          label: 'Primary controller: proposeRuling',
+          actor: 'arbiter',
+          run: (ctx) => {
+            const wallet = ctx.walletFor('arbiter')
+            return wallet.writeContract({
+              address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
+              abi: twoTierArbiterAbi,
+              functionName: 'proposeRuling',
+              args: [ctx.vars.twoTierCommitmentId as bigint, primaryPenalty, ZERO_BYTES32.replace(/0$/, '1') as `0x${string}`],
+              chain: wallet.chain,
+              account: wallet.account!,
+            })
+          },
+          capture: captureTwoTierCaseId('twoTierCaseId'),
+        },
+      ]
+      if (appealed) {
+        steps.push(
+          {
+            kind: 'tx',
+            label: 'Committer: appeal before appeal deadline',
+            actor: 'depositor-0',
+            run: (ctx) => {
+              const wallet = ctx.walletFor('depositor-0')
+              return wallet.writeContract({
+                address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
+                abi: twoTierArbiterAbi,
+                functionName: 'appeal',
+                args: [ctx.vars.twoTierCaseId as bigint, ZERO_BYTES32.replace(/0$/, '2') as `0x${string}`],
+                chain: wallet.chain,
+                account: wallet.account!,
+              })
+            },
+          },
+          {
+            kind: 'tx',
+            label: 'Appeal controller: resolveAppeal',
+            actor: 'admin',
+            run: (ctx) => {
+              const wallet = ctx.walletFor('admin')
+              return wallet.writeContract({
+                address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
+                abi: twoTierArbiterAbi,
+                functionName: 'resolveAppeal',
+                args: [ctx.vars.twoTierCaseId as bigint, finalPenalty, ZERO_BYTES32.replace(/0$/, '3') as `0x${string}`],
+                chain: wallet.chain,
+                account: wallet.account!,
+              })
+            },
+          },
+        )
+      }
+      steps.push(
+        {
+          kind: 'time',
+          label: 'Advance past manager execution delay (+2 days +1s)',
+          advance: 2 * ONE_DAY + 1,
+        },
+        {
+          kind: 'tx',
+          label: 'Anyone: executeRuling',
+          actor: 'admin',
+          run: (ctx) => {
+            const wallet = ctx.walletFor('admin')
+            return wallet.writeContract({
+              address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
+              abi: twoTierArbiterAbi,
+              functionName: 'executeRuling',
+              args: [ctx.vars.twoTierCaseId as bigint],
+              chain: wallet.chain,
+              account: wallet.account!,
+            })
+          },
+        },
+      )
+      return steps
+    },
+  }
+}
+
+const twoTierUnappealed = twoTierScenario(false)
+const twoTierAppealed = twoTierScenario(true)
+
 export const SCENARIOS: Scenario[] = [
   happyPathRelease,
   arbitrationHandoff,
   happyPathForfeit,
   cancelledForfeit,
+  twoTierUnappealed,
+  twoTierAppealed,
   unbondingHappyPath,
   agreementHappyPath,
   agreementForfeit,

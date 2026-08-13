@@ -61,10 +61,12 @@ export function useScenarioRunner(): ScenarioRunner {
   const publicClient = usePublicClient({ chainId })
   const wallet = useDevWallet()
   const time = useAnvilTime()
-  const { manager, vault, adapter, registry } = useMemo(() => {
+  const { manager, manualArbiter, twoTierArbiter, vault, adapter, registry } = useMemo(() => {
     const a = getContractAddresses(chainId)
     return {
       manager: a.commitmentManager,
+      manualArbiter: a.manualArbiter,
+      twoTierArbiter: a.twoTierArbiter,
       vault: a.commitmentsVault,
       adapter: a.erc4626Adapter,
       registry: a.operatorRegistry,
@@ -95,6 +97,8 @@ export function useScenarioRunner(): ScenarioRunner {
       console.info('[scenario] run', scenario.id, {
         inputs,
         manager,
+        manualArbiter,
+        twoTierArbiter,
         vault,
         registry,
         chainId,
@@ -116,9 +120,9 @@ export function useScenarioRunner(): ScenarioRunner {
         }))
         return
       }
-      if (!manager || !vault) {
+      if (!manager || !manualArbiter || !vault) {
         const err = new Error(
-          `Contract addresses missing (manager=${manager ?? 'unset'}, vault=${vault ?? 'unset'}). Run \`just dev-up\` to deploy + write frontend/.env.local, then restart the dev server.`,
+          `Contract addresses missing (manager=${manager ?? 'unset'}, manualArbiter=${manualArbiter ?? 'unset'}, vault=${vault ?? 'unset'}). Run \`just dev-up\` to deploy + write frontend/.env.local, then restart the dev server.`,
         )
         console.error('[scenario] aborted — missing addresses', err)
         setState((s) => ({
@@ -160,6 +164,8 @@ export function useScenarioRunner(): ScenarioRunner {
           return a
         },
         manager,
+        manualArbiter,
+        twoTierArbiter,
         vault,
         adapter,
         registry,
@@ -223,7 +229,7 @@ export function useScenarioRunner(): ScenarioRunner {
 
       setState((s) => ({ ...s, isRunning: false, activeIndex: null, vars: { ...vars } }))
     },
-    [publicClient, wallet, time, manager, vault, adapter, registry, chainId],
+    [publicClient, wallet, time, manager, manualArbiter, twoTierArbiter, vault, adapter, registry, chainId],
   )
 
   return { state, preview, run, reset }

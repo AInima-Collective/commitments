@@ -159,6 +159,59 @@ export const forfeitEvent = onchainTable(
   }),
 )
 
+/** Normalized current state for mechanism-owned claims, appeals, and attestations. */
+export const arbitrationCase = onchainTable(
+  'arbitration_case',
+  (t) => ({
+    id: t.text().primaryKey(), // `${arbiter}-${caseId}`
+    mechanism: t.text().notNull(),
+    arbiter: t.hex().notNull(),
+    caseId: t.bigint().notNull(),
+    commitmentId: t.bigint(),
+    manager: t.hex(),
+    phase: t.text().notNull(),
+    terminalOutcome: t.text(),
+    nextDeadline: t.bigint(),
+    openedAt: t.bigint().notNull(),
+    updatedAt: t.bigint().notNull(),
+    updatedBlock: t.bigint().notNull(),
+  }),
+  (t) => ({
+    arbiterIdx: index().on(t.arbiter),
+    commitmentIdx: index().on(t.manager, t.commitmentId),
+    mechanismIdx: index().on(t.mechanism),
+    phaseIdx: index().on(t.phase),
+  }),
+)
+
+/** Event-level mechanism history with an explicit arbiter-mechanism source. */
+export const arbitrationMechanismEvent = onchainTable(
+  'arbitration_mechanism_event',
+  (t) => ({
+    id: t.text().primaryKey(),
+    mechanism: t.text().notNull(),
+    arbiter: t.hex().notNull(),
+    caseId: t.bigint().notNull(),
+    commitmentId: t.bigint(),
+    manager: t.hex(),
+    kind: t.text().notNull(),
+    actor: t.hex(),
+    phase: t.text().notNull(),
+    deadline: t.bigint(),
+    outcome: t.text(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    blockTimestamp: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (t) => ({
+    arbiterIdx: index().on(t.arbiter),
+    caseIdx: index().on(t.arbiter, t.caseId),
+    commitmentIdx: index().on(t.manager, t.commitmentId),
+    blockIdx: index().on(t.blockNumber),
+  }),
+)
+
 /**
  * Agreement — two linked commitments. `commitmentIdA < commitmentIdB` is not
  * enforced; order is as emitted.

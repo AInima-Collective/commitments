@@ -74,6 +74,10 @@ export type DeploymentManifestV1 = {
   // instead of reading the broadcast. Array-shaped like the managers/registries
   // for forward-compat; empty when the seed predates the agent-bond milestone.
   agentIdentityRegistries: Hex[]
+  // Known mechanism contracts whose own case/activity events are indexed.
+  optimisticInsuranceArbiters: Hex[]
+  twoTierArbiters: Hex[]
+  attestationArbiters: Hex[]
   // Required block from which to start indexing (0 for the local fixture).
   startBlock: number
 }
@@ -91,7 +95,13 @@ const OPTIONAL_ADDRESS_FIELDS = [
   'skimmingStrategy',
   'vaultCoverConduit',
 ] as const
-const OPTIONAL_ADDRESS_ARRAY_FIELDS = ['flatFeeStrategies', 'agentIdentityRegistries'] as const
+const OPTIONAL_ADDRESS_ARRAY_FIELDS = [
+  'flatFeeStrategies',
+  'agentIdentityRegistries',
+  'optimisticInsuranceArbiters',
+  'twoTierArbiters',
+  'attestationArbiters',
+] as const
 const MANIFEST_FIELDS = new Set([
   'schemaVersion',
   'chainId',
@@ -176,6 +186,13 @@ export function parseDeploymentManifest(value: unknown, expectedChainId: number)
       'agentIdentityRegistries',
       false,
     ),
+    optimisticInsuranceArbiters: parseAddressArray(
+      raw.optimisticInsuranceArbiters,
+      'optimisticInsuranceArbiters',
+      false,
+    ),
+    twoTierArbiters: parseAddressArray(raw.twoTierArbiters, 'twoTierArbiters', false),
+    attestationArbiters: parseAddressArray(raw.attestationArbiters, 'attestationArbiters', false),
   }
 
   for (const field of OPTIONAL_ADDRESS_FIELDS) {
@@ -223,6 +240,9 @@ const MULTI_NAME_MAP = {
   OperatorRegistry: 'operatorRegistries',
   FlatFeeAtCreate: 'flatFeeStrategies',
   ERC8004IdentityRegistryDev: 'agentIdentityRegistries',
+  OptimisticInsuranceArbiter: 'optimisticInsuranceArbiters',
+  TwoTierArbiter: 'twoTierArbiters',
+  AttestationArbiter: 'attestationArbiters',
 } as const
 
 type MultiKey = (typeof MULTI_NAME_MAP)[keyof typeof MULTI_NAME_MAP]
@@ -389,6 +409,9 @@ function parseBroadcast(chainId: number): CommitmentsDeployments {
     ['operatorRegistries', []],
     ['flatFeeStrategies', []],
     ['agentIdentityRegistries', []],
+    ['optimisticInsuranceArbiters', []],
+    ['twoTierArbiters', []],
+    ['attestationArbiters', []],
   ])
   const implToProxy = new Map<string, Hex>()
   // Fallback discovery for the ERC-8004 dev registry: foundry sometimes emits
@@ -456,6 +479,9 @@ function parseBroadcast(chainId: number): CommitmentsDeployments {
   found.agentIdentityRegistries = namedAgentRegistries.length
     ? namedAgentRegistries
     : agentRegistriesByInitData
+  found.optimisticInsuranceArbiters = (multiImpls.get('optimisticInsuranceArbiters') ?? []).map(resolveProxy)
+  found.twoTierArbiters = (multiImpls.get('twoTierArbiters') ?? []).map(resolveProxy)
+  found.attestationArbiters = (multiImpls.get('attestationArbiters') ?? []).map(resolveProxy)
 
   if (!found.commitmentManagers.length) {
     throw new Error('No CommitmentManager deployment found — run forge script script/Simulate.s.sol first')

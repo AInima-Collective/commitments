@@ -1,9 +1,312 @@
 import { Hono } from 'hono'
-import { desc, eq, sql } from 'ponder'
+import { and, desc, eq, sql } from 'ponder'
 import { db } from 'ponder:api'
 import schema from 'ponder:schema'
+import { isAddress } from 'viem'
 
 const app = new Hono()
+
+function pagination(query: { limit?: string; offset?: string }, max = 100) {
+  const rawLimit = Number(query.limit ?? 50)
+  const rawOffset = Number(query.offset ?? 0)
+  return {
+    limit: Math.min(Math.max(Number.isSafeInteger(rawLimit) ? rawLimit : 50, 1), max),
+    offset: Math.max(Number.isSafeInteger(rawOffset) ? rawOffset : 0, 0),
+  }
+}
+
+function nextCaseAction(
+  mechanismPhase: string,
+  managerPhase: string,
+  terminalOutcome: string | null,
+): string | null {
+  if (terminalOutcome) return null
+  switch (mechanismPhase) {
+    case 'proposed':
+    case 'disputed':
+      return 'Dispute the assertion, or finalize it after the answer deadline'
+    case 'primary-ruling':
+      return 'Committer or counterparty may appeal before the appeal deadline'
+    case 'appealed':
+      return 'Appeal controller must rule before the human-response deadline'
+    case 'loss-proposed':
+      return 'The veto controller may veto before the mechanism deadline; otherwise settle afterward'
+    case 'ruled':
+    case 'manager-enforcement':
+    case 'human-ruling':
+      return 'Await or execute the separate CommitmentManager enforcement step'
+    default:
+      return managerPhase.includes('Execution delay') || managerPhase.includes('execution delay')
+        ? 'Await the manager execution time; the arbiter may cancel before execution'
+        : 'Await the next mechanism transition'
+  }
+}
+
+/** Paginated mechanism-owned activity with explicit source attribution. */
+app.get('/mechanism-activity', async (c) => {
+  const { limit, offset } = pagination({ limit: c.req.query('limit'), offset: c.req.query('offset') })
+  const rawArbiter = c.req.query('arbiter')
+  const rawManager = c.req.query('manager')
+  if (rawArbiter && !isAddress(rawArbiter)) return c.json({ error: 'invalid arbiter' }, 400)
+  if (rawManager && !isAddress(rawManager)) return c.json({ error: 'invalid manager' }, 400)
+  const arbiter = rawArbiter?.toLowerCase() as `0x${string}` | undefined
+  const manager = rawManager?.toLowerCase() as `0x${string}` | undefined
+  const rawCommitment = c.req.query('commitmentId')
+  if (rawCommitment !== undefined && !/^(0|[1-9]\d*)$/.test(rawCommitment)) {
+    return c.json({ error: 'invalid commitmentId' }, 400)
+  }
+  const commitmentId = rawCommitment && /^(0|[1-9]\d*)$/.test(rawCommitment)
+    ? BigInt(rawCommitment)
+    : undefined
+  const filters = [
+    arbiter ? eq(schema.arbitrationMechanismEvent.arbiter, arbiter) : undefined,
+    manager ? eq(schema.arbitrationMechanismEvent.manager, manager) : undefined,
+    commitmentId !== undefined ? eq(schema.arbitrationMechanismEvent.commitmentId, commitmentId) : undefined,
+  ].filter(Boolean) as Array<ReturnType<typeof eq>>
+  const where = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters)
+  const [rows, countRows] = await Promise.all([
+    db.select().from(schema.arbitrationMechanismEvent).where(where)
+      .orderBy(desc(schema.arbitrationMechanismEvent.blockNumber), desc(schema.arbitrationMechanismEvent.logIndex))
+      .limit(limit).offset(offset),
+    db.select({ count: sql<string>`COUNT(*)::text` }).from(schema.arbitrationMechanismEvent).where(where),
+  ])
+  const total = Number(countRows[0]?.count ?? '0')
+  return c.json({
+    events: rows.map((row) => ({
+      source: 'arbiter mechanism',
+      mechanism: row.mechanism,
+      arbiter: row.arbiter,
+      caseId: row.caseId.toString(),
+      commitmentId: row.commitmentId?.toString() ?? null,
+      manager: row.manager,
+      kind: row.kind,
+      actor: row.actor,
+      phase: row.phase,
+      deadline: row.deadline?.toString() ?? null,
+      outcome: row.outcome,
+      timestamp: row.blockTimestamp.toString(),
+      blockNumber: row.blockNumber.toString(),
+      logIndex: row.logIndex,
+      transactionHash: row.txHash,
+    })),
+    page: { limit, offset, total, nextOffset: offset + rows.length < total ? offset + rows.length : null },
+  })
+})
+
+/** Complete, paginated directory of every address named as an arbiter. */
+app.get('/arbiters', async (c) => {
+  const { limit, offset } = pagination({
+    limit: c.req.query('limit'),
+    offset: c.req.query('offset'),
+  })
+  const rawAddress = c.req.query('address')
+  if (rawAddress && !isAddress(rawAddress)) return c.json({ error: 'invalid address' }, 400)
+  const address = rawAddress?.toLowerCase() as `0x${string}` | undefined
+  const where = address ? eq(schema.commitment.arbiter, address) : undefined
+
+  const [rows, countRows, mechanismCounts] = await Promise.all([
+    db
+      .select({
+        address: schema.commitment.arbiter,
+        totalCommitments: sql<string>`COUNT(*)::text`,
+        activeCommitments: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} IN ('active', 'unbonding', 'forfeitPending'))::text`,
+        pendingManagerForfeits: sql<string>`COUNT(*) FILTER (WHERE ${schema.commitment.status} = 'forfeitPending')::text`,
+      })
+      .from(schema.commitment)
+      .where(where)
+      .groupBy(schema.commitment.arbiter)
+      .orderBy(sql`COUNT(*) DESC`, schema.commitment.arbiter)
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<string>`COUNT(DISTINCT ${schema.commitment.arbiter})::text` })
+      .from(schema.commitment)
+      .where(where),
+    db
+      .select({
+        arbiter: schema.arbitrationCase.arbiter,
+        openCount: sql<string>`COUNT(*) FILTER (WHERE ${schema.arbitrationCase.terminalOutcome} IS NULL)::text`,
+      })
+      .from(schema.arbitrationCase)
+      .groupBy(schema.arbitrationCase.arbiter),
+  ])
+  const casesByArbiter = new Map(mechanismCounts.map((row) => [row.arbiter.toLowerCase(), Number(row.openCount)]))
+  const total = Number(countRows[0]?.count ?? '0')
+  return c.json({
+    rows: rows.map((row) => ({
+      address: row.address,
+      totalCommitments: Number(row.totalCommitments),
+      activeCommitments: Number(row.activeCommitments),
+      pendingManagerForfeits: Number(row.pendingManagerForfeits),
+      openMechanismCases: casesByArbiter.get(row.address.toLowerCase()) ?? 0,
+    })),
+    page: {
+      limit,
+      offset,
+      total,
+      nextOffset: offset + rows.length < total ? offset + rows.length : null,
+    },
+  })
+})
+
+/**
+ * Paginated manager-forfeit attempts. Each initiated proposal is one case row;
+ * its latest matching transition supplies the current/terminal manager phase.
+ * The explicit source label prevents this first view from masquerading as a
+ * complete history for an arbiter-specific mechanism.
+ */
+app.get('/cases', async (c) => {
+  const { limit, offset } = pagination({
+    limit: c.req.query('limit'),
+    offset: c.req.query('offset'),
+  })
+  const rawArbiter = c.req.query('arbiter')
+  if (rawArbiter && !isAddress(rawArbiter)) return c.json({ error: 'invalid arbiter' }, 400)
+  const arbiter = rawArbiter?.toLowerCase() as `0x${string}` | undefined
+  const openOnly = c.req.query('open') === 'true'
+  const managerWhere = and(
+    eq(schema.forfeitEvent.kind, 'initiated'),
+    arbiter ? eq(schema.forfeitEvent.arbiter, arbiter) : undefined,
+  )
+  const mechanismWhere = arbiter ? eq(schema.arbitrationCase.arbiter, arbiter) : undefined
+  const [initiated, allForfeitEvents, mechanismCases, mutualEvents] = await Promise.all([
+    db
+      .select()
+      .from(schema.forfeitEvent)
+      .where(managerWhere)
+      .orderBy(desc(schema.forfeitEvent.blockNumber), desc(schema.forfeitEvent.logIndex)),
+    db
+      .select()
+      .from(schema.forfeitEvent)
+      .where(arbiter ? eq(schema.forfeitEvent.arbiter, arbiter) : undefined)
+      .orderBy(desc(schema.forfeitEvent.blockNumber), desc(schema.forfeitEvent.logIndex)),
+    db
+      .select()
+      .from(schema.arbitrationCase)
+      .where(mechanismWhere)
+      .orderBy(desc(schema.arbitrationCase.updatedBlock)),
+    db
+      .select()
+      .from(schema.mutualEvent)
+      .orderBy(desc(schema.mutualEvent.blockNumber)),
+  ])
+
+  const attemptLatest = new Map<string, (typeof allForfeitEvents)[number]>()
+  const commitmentLatest = new Map<string, (typeof allForfeitEvents)[number]>()
+  for (const event of allForfeitEvents) {
+    const base = `${event.manager?.toLowerCase()}-${event.commitmentId}`
+    const attempt = `${base}-${event.proposalInitiatedAt}`
+    if (!attemptLatest.has(attempt)) attemptLatest.set(attempt, event)
+    if (!commitmentLatest.has(base)) commitmentLatest.set(base, event)
+  }
+  const mutualLatest = new Map<string, (typeof mutualEvents)[number]>()
+  for (const event of mutualEvents) {
+    const key = `${event.manager.toLowerCase()}-${event.mutualId}`
+    if (!mutualLatest.has(key)) mutualLatest.set(key, event)
+  }
+  const mechanismCommitments = new Set(
+    mechanismCases
+      .filter((row) => row.manager && row.commitmentId !== null)
+      .map((row) => `${row.manager!.toLowerCase()}-${row.commitmentId}`),
+  )
+
+  const mechanismRows = mechanismCases.map((mechanismCase) => {
+    const base = `${mechanismCase.manager?.toLowerCase()}-${mechanismCase.commitmentId}`
+    const latestManager = commitmentLatest.get(base)
+    const latestMutual = mechanismCase.manager && mechanismCase.mechanism === 'optimistic-mutual'
+      ? mutualLatest.get(`${mechanismCase.manager.toLowerCase()}-${mechanismCase.caseId}`)
+      : undefined
+    const terminal = mechanismCase.terminalOutcome
+    return {
+      source: 'arbiter mechanism',
+      mechanismSource: 'arbiter mechanism',
+      managerSource: 'CommitmentManager',
+      mechanism: mechanismCase.mechanism,
+      caseId: mechanismCase.caseId.toString(),
+      commitmentId: mechanismCase.commitmentId?.toString() ?? null,
+      manager: mechanismCase.manager,
+      arbiter: mechanismCase.arbiter,
+      mechanismPhase: mechanismCase.phase,
+      managerPhase: latestManager
+        ? latestManager.kind === 'initiated' ? 'Execution delay' : latestManager.kind
+        : latestMutual
+          ? latestMutual.kind === 'lossInitiated' ? 'Mutual execution delay' : latestMutual.kind
+          : 'No manager proposal indexed',
+      nextDeadline: mechanismCase.nextDeadline?.toString() ?? null,
+      nextAction: nextCaseAction(
+        mechanismCase.phase,
+        latestManager
+          ? latestManager.kind === 'initiated' ? 'Execution delay' : latestManager.kind
+          : latestMutual
+            ? latestMutual.kind === 'lossInitiated' ? 'Mutual execution delay' : latestMutual.kind
+            : 'No manager proposal indexed',
+        terminal,
+      ),
+      terminalOutcome: terminal,
+      penaltyBps: latestManager?.penaltyBps ?? null,
+      proposalInitiatedAt: latestManager?.proposalInitiatedAt.toString() ?? null,
+      updatedAt: mechanismCase.updatedAt.toString(),
+      transactionHash: latestManager?.txHash ?? latestMutual?.txHash ?? null,
+    }
+  })
+
+  const managerRows = initiated
+    .filter((proposal) => !mechanismCommitments.has(`${proposal.manager?.toLowerCase()}-${proposal.commitmentId}`))
+    .map((proposal) => {
+      const base = `${proposal.manager?.toLowerCase()}-${proposal.commitmentId}`
+      const latest = attemptLatest.get(`${base}-${proposal.proposalInitiatedAt}`) ?? proposal
+      const terminalOutcome =
+        latest.kind === 'executed'
+          ? 'forfeited'
+          : latest.kind === 'cancelled'
+            ? 'cancelled by arbiter'
+            : latest.kind === 'cancelledStale'
+              ? 'stale-cancelled'
+              : null
+      return {
+        source: 'CommitmentManager',
+        mechanismSource: null,
+        managerSource: 'CommitmentManager',
+        mechanism: null,
+        caseId: null,
+        commitmentId: proposal.commitmentId.toString(),
+        manager: proposal.manager,
+        arbiter: proposal.arbiter,
+        mechanismPhase: 'Mechanism state not indexed for this manager proposal',
+        managerPhase:
+          latest.kind === 'initiated' ? 'Execution delay' : latest.kind,
+        nextDeadline:
+          latest.kind === 'initiated' ? proposal.challengeEnd?.toString() ?? null : null,
+        nextAction: latest.kind === 'initiated'
+          ? 'Anyone may execute after the manager delay; the arbiter may cancel before execution'
+          : null,
+        terminalOutcome,
+        penaltyBps: proposal.penaltyBps,
+        proposalInitiatedAt: proposal.proposalInitiatedAt.toString(),
+        updatedAt: latest.blockTimestamp.toString(),
+        transactionHash: latest.txHash,
+      }
+    })
+  const candidateRows = openOnly
+    ? [...mechanismRows, ...managerRows].filter((row) => row.terminalOutcome === null)
+    : [...mechanismRows, ...managerRows]
+  const allRows = candidateRows.sort((a, b) => {
+    const left = BigInt(a.updatedAt)
+    const right = BigInt(b.updatedAt)
+    return left === right ? 0 : left > right ? -1 : 1
+  })
+  const total = allRows.length
+  const rows = allRows.slice(offset, offset + limit)
+  return c.json({
+    rows,
+    page: {
+      limit,
+      offset,
+      total,
+      nextOffset: offset + rows.length < total ? offset + rows.length : null,
+    },
+  })
+})
 
 /**
  * GET /protocol/stats

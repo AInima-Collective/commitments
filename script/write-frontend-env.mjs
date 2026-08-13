@@ -97,6 +97,8 @@ const FRONTEND_CONTRACT_NAMES = new Set([
   'CommitmentsVault',
   'OperatorRegistry',
   'ManualArbiter',
+  'TwoTierArbiter',
+  'AttestationArbiter',
   'OperatorServiceRegistry',
   'MeshFactory',
   'ERC4626Adapter',
@@ -307,6 +309,12 @@ const lines = [
     : undefined,
   allImplsForName.ManualArbiter?.[1]
     ? `VITE_WETH_MANUAL_ARBITER_ADDRESS=${allImplsForName.ManualArbiter[1]}`
+    : undefined,
+  implForName.TwoTierArbiter
+    ? `VITE_TWO_TIER_ARBITER_ADDRESS=${implForName.TwoTierArbiter}`
+    : undefined,
+  implForName.AttestationArbiter
+    ? `VITE_ATTESTATION_ARBITER_ADDRESS=${implForName.AttestationArbiter}`
     : undefined,
   `VITE_STAKE_REGISTRY_ADDRESS=${proxyFor('OperatorServiceRegistry') ?? ''}`,
   meshByType.token_weighting ? `VITE_TOKEN_WEIGHTING_ADDRESS=${meshByType.token_weighting}` : undefined,

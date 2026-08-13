@@ -18,8 +18,12 @@ import {
   mutualRegistryAbi,
   operatorRegistryAbi,
   operatorServiceRegistryAbi,
+  optimisticInsuranceArbiterAbi,
+  optimisticMutualArbiterAbi,
   skimmingMockStrategyAbi,
+  attestationArbiterAbi,
   tokenWeightingAbi,
+  twoTierArbiterAbi,
   vaultCoverConduitAbi,
   vaultFactoryAbi,
 } from './abis.ts'
@@ -33,6 +37,7 @@ type AbiItem = {
 
 const abis: Record<string, readonly AbiItem[]> = {
   AgentIdentityRegistry: agentIdentityRegistryAbi,
+  AttestationArbiter: attestationArbiterAbi,
   CommitmentManager: commitmentManagerAbi,
   CommitmentsGovernor: commitmentsGovernorAbi,
   CommitmentsVault: commitmentsVaultAbi,
@@ -45,8 +50,11 @@ const abis: Record<string, readonly AbiItem[]> = {
   MutualRegistry: mutualRegistryAbi,
   OperatorRegistry: operatorRegistryAbi,
   OperatorServiceRegistry: operatorServiceRegistryAbi,
+  OptimisticInsuranceArbiter: optimisticInsuranceArbiterAbi,
+  OptimisticMutualArbiter: optimisticMutualArbiterAbi,
   SkimmingStrategy: skimmingMockStrategyAbi,
   TokenWeighting: tokenWeightingAbi,
+  TwoTierArbiter: twoTierArbiterAbi,
   VaultCoverConduit: vaultCoverConduitAbi,
   VaultFactory: vaultFactoryAbi,
 }

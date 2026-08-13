@@ -22,6 +22,9 @@ export interface ScenarioContext {
   actor: (id: DevActorId) => DevActor
   /** Deployed contract addresses (when configured in env). */
   manager: Address | undefined
+  /** Deployed ManualArbiter used by standard lifecycle scenarios. */
+  manualArbiter: Address | undefined
+  twoTierArbiter: Address | undefined
   vault: Address | undefined
   /** ERC-4626 pricing adapter for the vault share (v2 backing). */
   adapter: Address | undefined

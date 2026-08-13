@@ -46,24 +46,84 @@ async function independent<T>(read: () => Promise<T>): Promise<IndependentRead<T
   try {
     return { status: 'success', value: await read() }
   } catch (error) {
-    return { status: 'error', error: error instanceof Error ? error.message : String(error) }
+    return { status: 'failed', error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+function skipped<T>(status: IndependentRead<T>['status']): IndependentRead<T> {
+  return { status }
+}
+
+/**
+ * A selector revert on a contract that has not claimed ERC-165/IArbiter is a
+ * normal legacy-contract result. Transport/RPC failures remain verification
+ * failures because they say nothing about the implementation.
+ */
+function isContractRevert(error: string | undefined): boolean {
+  const message = error?.toLowerCase() ?? ''
+  return [
+    'execution reverted',
+    'contract function execution error',
+    'returned no data',
+    'function selector was not recognized',
+  ].some((needle) => message.includes(needle))
 }
 /** Every call is caught separately so one legacy/reverting selector cannot erase the profile. */
 export async function readArbiterIntrospection(
   client: PublicClient,
   address: Address,
 ): Promise<ArbiterIntrospection> {
-  const [code, interfaceSupport, reportedManager, capabilities, metadataURI] = await Promise.all([
-    independent(() => client.getCode({ address })),
-    independent(() =>
-      client.readContract({
-        address,
-        abi: I_ARBITER_ABI,
-        functionName: 'supportsInterface',
-        args: [I_ARBITER_INTERFACE_ID],
-      }),
-    ),
+  // Classification is intentionally first. Calling contract selectors on an
+  // EOA produces provider-dependent empty-data errors that are not evidence of
+  // partial introspection.
+  const code = await independent(() => client.getCode({ address }))
+  if (code.status !== 'success') {
+    return {
+      code,
+      interfaceSupport: skipped('unknown'),
+      reportedManager: skipped('unknown'),
+      capabilities: skipped('unknown'),
+      metadataURI: skipped('unknown'),
+    }
+  }
+  if (!code.value || code.value === '0x') {
+    return {
+      code,
+      interfaceSupport: skipped('not-applicable'),
+      reportedManager: skipped('not-applicable'),
+      capabilities: skipped('not-applicable'),
+      metadataURI: skipped('not-applicable'),
+    }
+  }
+
+  let interfaceSupport = await independent(() =>
+    client.readContract({
+      address,
+      abi: I_ARBITER_ABI,
+      functionName: 'supportsInterface',
+      args: [I_ARBITER_INTERFACE_ID],
+    }),
+  )
+  if (interfaceSupport.status === 'failed' && isContractRevert(interfaceSupport.error)) {
+    interfaceSupport = { status: 'not-declared' }
+  }
+  if (interfaceSupport.status === 'success' && interfaceSupport.value === false) {
+    interfaceSupport = { status: 'unsupported', value: false }
+  }
+  if (interfaceSupport.status !== 'success' || interfaceSupport.value !== true) {
+    const status = interfaceSupport.status === 'failed' ? 'unknown' : 'not-declared'
+    return {
+      code,
+      interfaceSupport,
+      reportedManager: skipped(status),
+      capabilities: skipped(status),
+      metadataURI: skipped(status),
+    }
+  }
+
+  // Once the contract positively claims IArbiter, every required selector is
+  // read independently so incomplete implementations stay partially useful.
+  const [reportedManager, capabilities, metadataURI] = await Promise.all([
     independent(() =>
       client.readContract({ address, abi: I_ARBITER_ABI, functionName: 'commitmentManager' }),
     ),

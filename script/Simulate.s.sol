@@ -18,6 +18,8 @@ import {IndexAppreciationYield} from "src/distributions/IndexAppreciationYield.s
 import {FlatFeeAtCreate} from "src/distributions/FlatFeeAtCreate.sol";
 import {OperatorRegistry} from "src/extensions/services/operator-registry/OperatorRegistry.sol";
 import {ManualArbiter} from "src/periphery/arbiters/ManualArbiter.sol";
+import {TwoTierArbiter} from "src/periphery/arbiters/TwoTierArbiter.sol";
+import {AttestationArbiter} from "src/periphery/arbiters/AttestationArbiter.sol";
 import {OptimisticInsuranceArbiter} from "src/periphery/arbiters/OptimisticInsuranceArbiter.sol";
 import {ERC8004IdentityRegistryDev} from "src/periphery/agents/ERC8004IdentityRegistryDev.sol";
 import {IERC8004IdentityRegistry} from "src/vendor/erc8004/interfaces/IERC8004IdentityRegistry.sol";
@@ -135,6 +137,8 @@ contract Simulate is Script {
     // gate is exercised by a real contract and forfeit demos go through the arbiter
     // API (arbiter.addr -> manualArbiter.initiateForfeit -> manager.initiateForfeit).
     ManualArbiter manualArbiter;
+    TwoTierArbiter twoTierArbiter;
+    AttestationArbiter attestationArbiter;
 
     // ─── Marketplace pattern reference contracts ──────────────────────────────
     OptimisticInsuranceArbiter optimisticArbiter; // §5.2/§5.3 reality.eth-style
@@ -425,6 +429,22 @@ contract Simulate is Script {
         //    -> manager.X.
         manualArbiter = new ManualArbiter(arbiter.addr, address(manager));
         console.log("ManualArbiter:      ", address(manualArbiter));
+
+        // Two-tier reference court: account #1 is the fast primary controller;
+        // account #0 is the final appeal controller. The 1h execution buffer
+        // makes the required manager delay 25h, visibly separate from both
+        // court deadlines.
+        twoTierArbiter = new TwoTierArbiter(
+            address(manager),
+            arbiter.addr,
+            admin.addr,
+            1 days,
+            1 days,
+            1 hours,
+            "ipfs://bafkreicourtdemopolicy000000000000000000000000000000000000",
+            keccak256("commitments.demo.two-tier-policy.v1")
+        );
+        console.log("TwoTierArbiter:     ", address(twoTierArbiter));
 
         // 7. OperatorRegistry — single registry for the single manager. v2
         //    acceptance policy (7-arg initialize): commitments presented to
@@ -1360,6 +1380,12 @@ contract Simulate is Script {
         console.log("OperatorServiceRegistry:", address(srProxy));
         console.log("  votingPowerSource ->", tokenWeightingNode);
 
+        // Reference quorum-attestation arbiter. It is configured even when no
+        // envelope has acted yet so the UI can display its operator-service
+        // controller and ordering model as a trusted mechanism deployment.
+        attestationArbiter = new AttestationArbiter(address(manager), address(stakeRegistry));
+        console.log("AttestationArbiter: ", address(attestationArbiter));
+
         vm.stopBroadcast();
         console.log("");
     }
@@ -1714,12 +1740,14 @@ contract Simulate is Script {
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     }
 
-    /// @dev Seeds an open optimistic-insurance claim so the §5.2/§5.3
+    /// @dev Seeds an open, disputed optimistic-insurance claim so the §5.2/§5.3
     ///      marketplace card has live state to render. Depositor 1 plays
     ///      the underwriter (the depositor whose backing can be forfeited);
     ///      depositor 2 plays the policyholder (the claimant). The claim's
-    ///      amount is 30% of the commitment max-penalty, low enough that a
-    ///      dispute is plausible.
+    ///      amount is 30% of the commitment max-penalty. The underwriter then
+    ///      posts the required doubled bond with a 10% counter-assertion. This
+    ///      leaves one commitment, one live claim, and the matching repriced
+    ///      manager proposal available for cross-surface development testing.
     function _seedOptimisticClaim() internal {
         if (depositors.length < 3) return;
         console.log("--- Seeding optimistic insurance claim ---");
@@ -1764,6 +1792,21 @@ contract Simulate is Script {
         );
         vm.stopBroadcast();
         console.log("  Open claim id %d (3000 bps), bond=%d USDC", claimId, uint256(bondAmount) / 1e6);
+
+        // 3. Underwriter disputes with the protocol-required doubled bond.
+        //    disputeClaim atomically cancels/re-opens the manager hold at the
+        //    counter-asserted 1000 bps, so all three UI layers have live state.
+        uint128 disputeBond = bondAmount * 2;
+        if (usdc.balanceOf(uw.addr) < disputeBond) {
+            vm.startBroadcast(admin.key);
+            usdc.mint(uw.addr, disputeBond);
+            vm.stopBroadcast();
+        }
+        vm.startBroadcast(uw.key);
+        usdc.approve(address(optimisticArbiter), type(uint256).max);
+        optimisticArbiter.disputeClaim(claimId, 1_000, keccak256("sim.evidence.underwriter"), disputeBond);
+        vm.stopBroadcast();
+        console.log("  Disputed claim id %d (1000 bps), bond=%d USDC", claimId, uint256(disputeBond) / 1e6);
 
         console.log("");
     }
@@ -2464,6 +2507,8 @@ contract Simulate is Script {
         console.log("IndexAppreciationYield:", address(indexYield));
         console.log("FlatFeeAtCreate:    ", address(flatFee));
         console.log("ManualArbiter:      ", address(manualArbiter));
+        console.log("TwoTierArbiter:     ", address(twoTierArbiter));
+        console.log("AttestationArbiter: ", address(attestationArbiter));
         console.log("  owner:            ", arbiter.addr);
         console.log("OperatorRegistry:   ", address(operatorRegistry));
         console.log("StakeRegistry:      ", address(stakeRegistry));
@@ -2532,6 +2577,8 @@ contract Simulate is Script {
         _logEnvLine("VITE_INDEX_YIELD_STRATEGY_ADDRESS", address(indexYield));
         _logEnvLine("VITE_FLAT_FEE_STRATEGY_ADDRESS", address(flatFee));
         _logEnvLine("VITE_MANUAL_ARBITER_ADDRESS", address(manualArbiter));
+        _logEnvLine("VITE_TWO_TIER_ARBITER_ADDRESS", address(twoTierArbiter));
+        _logEnvLine("VITE_ATTESTATION_ARBITER_ADDRESS", address(attestationArbiter));
         _logEnvLine("VITE_OPERATOR_REGISTRY_ADDRESS", address(operatorRegistry));
         _logEnvLine("VITE_STAKE_REGISTRY_ADDRESS", address(stakeRegistry));
         _logEnvLine("VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS", address(optimisticArbiter));

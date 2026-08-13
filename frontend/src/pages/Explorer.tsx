@@ -32,7 +32,7 @@ import {
   type OperatorLeaderboardRow,
   type PartyLeaderboardRow,
 } from '../hooks/useProtocolLeaderboards'
-import { useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
+import { useProtocolArbitersList, useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
 import { useTokenMetaMap } from '../hooks/useTokenMeta'
 import { deriveOperatorStatus } from '../utils/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
@@ -105,6 +105,12 @@ export default function Explorer() {
   const [search, setSearch] = useState('')
   const [searchError, setSearchError] = useState<string | null>(null)
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null)
+  const [searchedAddress, setSearchedAddress] = useState<string | null>(null)
+  const arbiterSearch = useProtocolArbitersList({
+    address: searchedAddress ?? undefined,
+    limit: 1,
+    enabled: searchedAddress !== null,
+  })
 
   const handleSearch = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -119,6 +125,7 @@ export default function Explorer() {
     }
     if (isAddress(trimmed)) {
       setSelectedAddress(trimmed.toLowerCase())
+      setSearchedAddress(trimmed.toLowerCase())
       setSearchError(null)
       return
     }
@@ -166,6 +173,20 @@ export default function Explorer() {
           </form>
         }
       />
+
+      {searchedAddress && !arbiterSearch.isLoading && arbiterSearch.rows.length > 0 && (
+        <Notice
+          tone="info"
+          title="Address is used as an arbiter"
+          actions={
+            <Link className="ds-btn ds-btn--sm" to={arbiterProfilePath(searchedAddress as Address)}>
+              View arbiter profile
+            </Link>
+          }
+        >
+          This result comes from the protocol-wide arbiter directory and does not depend on the address being a node in the selected graph mode.
+        </Notice>
+      )}
 
       <section className="ds-stat-grid" aria-label="Protocol summary">
         <StatBlock

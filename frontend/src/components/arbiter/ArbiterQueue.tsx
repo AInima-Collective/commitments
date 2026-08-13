@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { type Address } from 'viem'
 import {
   useReadCommitmentManagerForfeitProposalTtl,
@@ -26,6 +26,10 @@ import {
   calculateForfeitEnforcement,
   type ManagerPauseSnapshot,
 } from '../../lib/forfeitEnforcement'
+import {
+  bucketForArbiterInbox,
+  type ArbiterQueueBucket,
+} from '../../lib/arbiterInbox'
 import { ResolveCommitmentButton } from '../commitment/ResolveCommitmentButton'
 import { ForfeitDetail } from '../commitment/ForfeitDetail'
 import { ForfeitTimeline } from './ForfeitTimeline'
@@ -36,19 +40,17 @@ interface ArbiterQueueProps {
   isConnected: boolean
 }
 
-type Bucket = 'executable' | 'pending' | 'active' | 'other'
-
 interface BucketMeta {
   title: string
   description: string
   tone: 'danger' | 'warn' | 'info' | 'neutral'
 }
 
-const BUCKET_META: Record<Bucket, BucketMeta> = {
+const BUCKET_META: Record<ArbiterQueueBucket, BucketMeta> = {
   executable: {
-    title: 'Ready to execute or stale-cancel',
+    title: 'Permissionless manager actions',
     description:
-      'Live manager state says execution or the independent stale-cancel backstop is available.',
+      'Live manager state says mature execution or the stale-cancel backstop is available to anyone; these are not arbiter-only decisions.',
     tone: 'danger',
   },
   pending: {
@@ -58,41 +60,19 @@ const BUCKET_META: Record<Bucket, BucketMeta> = {
     tone: 'warn',
   },
   active: {
-    title: 'Active — actionable',
+    title: 'Active commitments',
     description:
-      'Commitments you can release or open a forfeit on.',
+      'No case or manager proposal is open. Authority exists, but availability of a decision does not by itself mean attention is required.',
     tone: 'info',
   },
   other: {
-    title: 'Other',
+    title: 'Closed / other commitments',
     description: 'Unbonding or already-closed commitments you arbitrate.',
     tone: 'neutral',
   },
 }
 
-const BUCKET_ORDER: Bucket[] = ['executable', 'pending', 'active', 'other']
-
-function bucketFor(
-  c: ArbiterCommitment,
-  nowSec: bigint,
-  pauseState: ManagerPauseSnapshot | undefined,
-  ttl: bigint | undefined,
-): Bucket {
-  if (c.status === 'FORFEIT_PENDING') {
-    const enforcement = calculateForfeitEnforcement({
-      proposal: c.forfeitProposal,
-      challengeWindow: c.challengeWindow,
-      pauseState,
-      proposalTtl: ttl,
-      now: nowSec,
-    })
-    return enforcement.executionAvailable || enforcement.staleCancellationAvailable
-      ? 'executable'
-      : 'pending'
-  }
-  if (c.status === 'ACTIVE') return 'active'
-  return 'other'
-}
+const BUCKET_ORDER: ArbiterQueueBucket[] = ['executable', 'pending', 'active', 'other']
 
 /**
  * ArbiterQueue — arbiter-centric triage surface. Lists every commitment where
@@ -102,9 +82,21 @@ function bucketFor(
  * reimplemented here.
  */
 export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: ArbiterQueueProps) {
-  const { commitments, isLoading, error, indexerOnline, refetch } = useArbiterCommitments({
+  const paginationScope = `${connectedAddress?.toLowerCase() ?? ''}-${managerAddress?.toLowerCase() ?? ''}`
+  const [pagination, setPagination] = useState({ scope: paginationScope, page: 0 })
+  const page = pagination.scope === paginationScope ? pagination.page : 0
+  const setPage = (update: (value: number) => number) => {
+    setPagination((current) => ({
+      scope: paginationScope,
+      page: update(current.scope === paginationScope ? current.page : 0),
+    }))
+  }
+  const pageSize = 50
+  const { commitments, counts, page: pageInfo, isLoading, error, indexerOnline, refetch } = useArbiterCommitments({
     managerAddress,
     viewAddress: connectedAddress,
+    limit: pageSize,
+    offset: page * pageSize,
   })
   const nowSec = BigInt(useDisplayNow())
   const { data: pauseRaw } = useReadCommitmentManagerPauseState({
@@ -130,24 +122,24 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
   )
 
   const buckets = useMemo(() => {
-    const grouped: Record<Bucket, ArbiterCommitment[]> = {
+    const grouped: Record<ArbiterQueueBucket, ArbiterCommitment[]> = {
       executable: [],
       pending: [],
       active: [],
       other: [],
     }
-    for (const c of commitments) grouped[bucketFor(c, nowSec, pauseState, ttl)].push(c)
+    for (const c of commitments) grouped[bucketForArbiterInbox(c, nowSec, pauseState, ttl)].push(c)
     for (const key of BUCKET_ORDER) grouped[key].sort(compareCommitmentUrgency)
     return grouped
   }, [commitments, nowSec, pauseState, ttl])
 
-  const needsAttention = buckets.executable.length + buckets.pending.length + buckets.active.length
+  const needsAttention = counts.needsAction
 
   const header = (
     <PageHeader
       eyebrow="role"
-      title="Arbitration"
-      lead="Commitments where your wallet is the designated arbiter. Initiate, cancel, or execute the two-phase forfeiture — or release a commitment outright."
+      title="Arbiter inbox"
+      lead="Your arbitration queue: commitments that name this wallet as arbiter. Proposal review is separated from permissionless manager execution and from commitments that are merely active."
     />
   )
 
@@ -190,10 +182,10 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
       {header}
 
       <section className="ds-stat-grid" aria-label="Arbitration summary">
-        <StatBlock value={commitments.length.toString()} label="Arbitrated commitments" />
-        <StatBlock value={needsAttention.toString()} label="Need attention" tone={needsAttention > 0 ? 'accent' : 'neutral'} />
-        <StatBlock value={buckets.executable.length.toString()} label="Ready for manager action" tone={buckets.executable.length > 0 ? 'negative' : 'neutral'} />
-        <StatBlock value={buckets.pending.length.toString()} label="In execution delay / paused" />
+        <StatBlock value={needsAttention.toString()} label="Needs action" tone={needsAttention > 0 ? 'accent' : 'neutral'} />
+        <StatBlock value={counts.openProposals.toString()} label="Open proposals" />
+        <StatBlock value={counts.active.toString()} label="Active commitments" />
+        <StatBlock value={counts.other.toString()} label="Closed / other" />
       </section>
 
       {error && (
@@ -251,6 +243,29 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
               </section>
             )
           })}
+          <nav className="ds-row ds-row-2" aria-label="Arbiter commitment pages" style={{ justifyContent: 'space-between' }}>
+            <button
+              type="button"
+              className="ds-btn ds-btn--sm"
+              disabled={page === 0 || isLoading}
+              onClick={() => setPage((value) => Math.max(0, value - 1))}
+            >
+              Previous
+            </button>
+            <span className="ds-text-xs ds-subtle">
+              {counts.total === 0
+                ? 'No commitments'
+                : `${pageInfo.offset + 1}–${pageInfo.offset + commitments.length} of ${counts.total}`}
+            </span>
+            <button
+              type="button"
+              className="ds-btn ds-btn--sm"
+              disabled={pageInfo.nextOffset === null || isLoading}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              Next
+            </button>
+          </nav>
         </div>
       )}
     </div>
@@ -259,7 +274,7 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
 
 interface ArbiterQueueRowProps {
   commitment: ArbiterCommitment
-  bucket: Bucket
+  bucket: ArbiterQueueBucket
   managerAddress: Address
   connectedAddress: Address
   isConnected: boolean

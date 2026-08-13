@@ -26,9 +26,12 @@ export interface ArbiterDescriptor {
 }
 
 export type ConfiguredArbiterMechanism =
+  | 'direct'
   | 'manual'
   | 'optimistic-insurance'
   | 'optimistic-mutual'
+  | 'attestation'
+  | 'two-tier'
 
 /** Trusted chain-configuration classification; live capability bits never set this. */
 export interface ConfiguredArbiterProfile {
@@ -75,7 +78,7 @@ export function getConfiguredArbiterProfiles(chainId: number): ConfiguredArbiter
           address: env.defaultArbiter,
           displayName: chainId === 31337 ? 'Demo arbiter' : 'Shared arbiter',
           mechanism: chainId === 31337 ? 'Single-key manual arbitration' : 'Configured manual arbitration',
-          mechanismId: 'manual',
+          mechanismId: chainId === 31337 ? 'direct' : 'manual',
           decisionSummary:
             chainId === 31337
               ? 'A configured development account decides and calls the manager directly.'
@@ -120,6 +123,38 @@ export function getConfiguredArbiterProfiles(chainId: number): ConfiguredArbiter
         : undefined,
     )
   }
+  add(
+    env.attestationArbiter
+      ? {
+          address: env.attestationArbiter,
+          displayName: 'Attestation arbiter',
+          mechanism: 'Operator-service attestations',
+          mechanismId: 'attestation',
+          decisionSummary:
+            'Anyone may relay an ordered action envelope after the configured operator-service quorum signs it.',
+          contestKind: 'known-mechanism',
+          contestSummary:
+            'Challenge the evidence and requested action under the operator service’s signing policy before quorum signs; the contract exposes no separate generic appeal transaction.',
+          expectedAddressForm: 'contract',
+        }
+      : undefined,
+  )
+  add(
+    env.twoTierArbiter
+      ? {
+          address: env.twoTierArbiter,
+          displayName: 'Two-tier arbitration court',
+          mechanism: 'Primary ruling with human appeal',
+          mechanismId: 'two-tier',
+          decisionSummary:
+            'A primary controller opens a ruling; an authorized party may appeal to the final controller before the appeal deadline.',
+          contestKind: 'known-mechanism',
+          contestSummary:
+            'The committer or counterparty may appeal a primary ruling during the on-chain appeal window. The appeal controller must answer before the separate human-response deadline.',
+          expectedAddressForm: 'contract',
+        }
+      : undefined,
+  )
   return profiles
 }
 

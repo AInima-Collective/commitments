@@ -12,5 +12,8 @@
   "meshFactory": "0x0000000000000000000000000000000000000005",
   "flatFeeStrategies": [],
   "agentIdentityRegistries": [],
+  "optimisticInsuranceArbiters": [],
+  "twoTierArbiters": [],
+  "attestationArbiters": [],
   "startBlock": 0
 }

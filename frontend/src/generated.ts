@@ -13211,6 +13211,761 @@ export const tokenWeightingVotesShimAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// TwoTierArbiter
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const twoTierArbiterAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: 'manager_', internalType: 'address', type: 'address' },
+      { name: 'primaryController_', internalType: 'address', type: 'address' },
+      { name: 'appealController_', internalType: 'address', type: 'address' },
+      { name: 'appealWindow_', internalType: 'uint64', type: 'uint64' },
+      { name: 'humanResponseWindow_', internalType: 'uint64', type: 'uint64' },
+      { name: 'executionBuffer_', internalType: 'uint64', type: 'uint64' },
+      { name: 'courtPolicyURI_', internalType: 'string', type: 'string' },
+      { name: 'courtPolicyHash_', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'activeCaseOf',
+    outputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      { name: 'appealHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'appeal',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'appealController',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'appealWindow',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'arbiterCapabilities',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'arbiterMetadataURI',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'commitmentManager',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'courtPolicyHash',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    name: 'executeRuling',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'executionBuffer',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    name: 'getCase',
+    outputs: [
+      {
+        name: 'courtCase',
+        internalType: 'struct TwoTierArbiter.Case',
+        type: 'tuple',
+        components: [
+          { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+          { name: 'primaryPenaltyBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'finalPenaltyBps', internalType: 'uint16', type: 'uint16' },
+          { name: 'openedAt', internalType: 'uint64', type: 'uint64' },
+          { name: 'appealDeadline', internalType: 'uint64', type: 'uint64' },
+          { name: 'appealedAt', internalType: 'uint64', type: 'uint64' },
+          { name: 'humanDeadline', internalType: 'uint64', type: 'uint64' },
+          {
+            name: 'state',
+            internalType: 'enum TwoTierArbiter.CaseState',
+            type: 'uint8',
+          },
+          {
+            name: 'primaryDecisionHash',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+          { name: 'appealHash', internalType: 'bytes32', type: 'bytes32' },
+          {
+            name: 'humanDecisionHash',
+            internalType: 'bytes32',
+            type: 'bytes32',
+          },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'humanResponseWindow',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    name: 'lapseAppeal',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'manager',
+    outputs: [
+      {
+        name: '',
+        internalType: 'contract ICommitmentManager',
+        type: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'nextCaseId',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'primaryController',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+      { name: 'penaltyBps', internalType: 'uint16', type: 'uint16' },
+      { name: 'decisionHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'proposeRuling',
+    outputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'requiredChallengeWindow',
+    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      { name: 'finalPenaltyBps', internalType: 'uint16', type: 'uint16' },
+      { name: 'decisionHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'resolveAppeal',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    name: 'syncCase',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      { name: 'reasonHash', internalType: 'bytes32', type: 'bytes32' },
+    ],
+    name: 'withdrawRuling',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'primaryPenaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'humanDeadline',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'AppealLapsed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'finalPenaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'ruledAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'humanDeadline',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'managerInitiatedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'decisionHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'AppealResolved',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'terminalState',
+        internalType: 'enum TwoTierArbiter.CaseState',
+        type: 'uint8',
+        indexed: false,
+      },
+      {
+        name: 'penaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'managerInitiatedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'synchronizedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'decisionHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+      {
+        name: 'appealHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'CaseSynchronized',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'primaryPenaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'appealedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'humanDeadline',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'managerInitiatedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'appealHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'RulingAppealed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'penaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'managerInitiatedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'executedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'decisionHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'RulingExecuted',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'penaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'openedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'appealDeadline',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'managerInitiatedAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'decisionHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'RulingProposed',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'caseId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'actor',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'penaltyBps',
+        internalType: 'uint16',
+        type: 'uint16',
+        indexed: false,
+      },
+      {
+        name: 'withdrawnAt',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'appealDeadline',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+      {
+        name: 'reasonHash',
+        internalType: 'bytes32',
+        type: 'bytes32',
+        indexed: false,
+      },
+    ],
+    name: 'RulingWithdrawn',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'deadline', internalType: 'uint64', type: 'uint64' },
+      { name: 'nowTs', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'AppealWindowElapsed',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CaseAlreadyActive',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'actual',
+        internalType: 'enum TwoTierArbiter.CaseState',
+        type: 'uint8',
+      },
+    ],
+    name: 'CaseNotLive',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'required', internalType: 'uint64', type: 'uint64' },
+      { name: 'actual', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'ChallengeWindowTooShort',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CommitmentNotActive',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CommitmentNotFound',
+  },
+  { type: 'error', inputs: [], name: 'ControllersMustDiffer' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'deadline', internalType: 'uint64', type: 'uint64' },
+      { name: 'nowTs', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'HumanResponseWindowActive',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'deadline', internalType: 'uint64', type: 'uint64' },
+      { name: 'nowTs', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'HumanResponseWindowElapsed',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'penaltyBps', internalType: 'uint16', type: 'uint16' }],
+    name: 'InvalidPenalty',
+  },
+  { type: 'error', inputs: [], name: 'InvalidPolicy' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'expected', internalType: 'uint16', type: 'uint16' },
+      { name: 'actual', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'ManagerPenaltyMismatch',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'ManagerProposalNotActive',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'NotAppealController',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'NotPrimaryController',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentMax', internalType: 'uint16', type: 'uint16' },
+      { name: 'penaltyBps', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'PenaltyAboveCommitmentMax',
+  },
+  { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'actual',
+        internalType: 'enum TwoTierArbiter.CaseState',
+        type: 'uint8',
+      },
+    ],
+    name: 'RulingNotExecutable',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      { name: 'activeCaseId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'StaleCase',
+  },
+  { type: 'error', inputs: [], name: 'TimingOverflow' },
+  {
+    type: 'error',
+    inputs: [{ name: 'caller', internalType: 'address', type: 'address' }],
+    name: 'UnauthorizedAppellant',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'caseId', internalType: 'uint256', type: 'uint256' }],
+    name: 'UnknownCase',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'expected', internalType: 'address', type: 'address' },
+      { name: 'actual', internalType: 'address', type: 'address' },
+    ],
+    name: 'WrongArbiter',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'caseId', internalType: 'uint256', type: 'uint256' },
+      {
+        name: 'expected',
+        internalType: 'enum TwoTierArbiter.CaseState',
+        type: 'uint8',
+      },
+      {
+        name: 'actual',
+        internalType: 'enum TwoTierArbiter.CaseState',
+        type: 'uint8',
+      },
+    ],
+    name: 'WrongCaseState',
+  },
+  { type: 'error', inputs: [], name: 'ZeroAddress' },
+  { type: 'error', inputs: [], name: 'ZeroHash' },
+  { type: 'error', inputs: [], name: 'ZeroWindow' },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // VaultCoverConduit
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -24114,6 +24869,352 @@ export const useWatchTokenWeightingVotesShimDelegateVotesChangedEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: tokenWeightingVotesShimAbi,
     eventName: 'DelegateVotesChanged',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__
+ */
+export const useReadTwoTierArbiter = /*#__PURE__*/ createUseReadContract({
+  abi: twoTierArbiterAbi,
+})
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"activeCaseOf"`
+ */
+export const useReadTwoTierArbiterActiveCaseOf =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'activeCaseOf',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"appealController"`
+ */
+export const useReadTwoTierArbiterAppealController =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'appealController',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"appealWindow"`
+ */
+export const useReadTwoTierArbiterAppealWindow =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'appealWindow',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"arbiterCapabilities"`
+ */
+export const useReadTwoTierArbiterArbiterCapabilities =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'arbiterCapabilities',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"arbiterMetadataURI"`
+ */
+export const useReadTwoTierArbiterArbiterMetadataUri =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'arbiterMetadataURI',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"commitmentManager"`
+ */
+export const useReadTwoTierArbiterCommitmentManager =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'commitmentManager',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"courtPolicyHash"`
+ */
+export const useReadTwoTierArbiterCourtPolicyHash =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'courtPolicyHash',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"executionBuffer"`
+ */
+export const useReadTwoTierArbiterExecutionBuffer =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'executionBuffer',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"getCase"`
+ */
+export const useReadTwoTierArbiterGetCase = /*#__PURE__*/ createUseReadContract(
+  { abi: twoTierArbiterAbi, functionName: 'getCase' },
+)
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"humanResponseWindow"`
+ */
+export const useReadTwoTierArbiterHumanResponseWindow =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'humanResponseWindow',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"manager"`
+ */
+export const useReadTwoTierArbiterManager = /*#__PURE__*/ createUseReadContract(
+  { abi: twoTierArbiterAbi, functionName: 'manager' },
+)
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"nextCaseId"`
+ */
+export const useReadTwoTierArbiterNextCaseId =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'nextCaseId',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"primaryController"`
+ */
+export const useReadTwoTierArbiterPrimaryController =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'primaryController',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"requiredChallengeWindow"`
+ */
+export const useReadTwoTierArbiterRequiredChallengeWindow =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'requiredChallengeWindow',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"supportsInterface"`
+ */
+export const useReadTwoTierArbiterSupportsInterface =
+  /*#__PURE__*/ createUseReadContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'supportsInterface',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__
+ */
+export const useWriteTwoTierArbiter = /*#__PURE__*/ createUseWriteContract({
+  abi: twoTierArbiterAbi,
+})
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"appeal"`
+ */
+export const useWriteTwoTierArbiterAppeal =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'appeal',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"executeRuling"`
+ */
+export const useWriteTwoTierArbiterExecuteRuling =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'executeRuling',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"lapseAppeal"`
+ */
+export const useWriteTwoTierArbiterLapseAppeal =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'lapseAppeal',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"proposeRuling"`
+ */
+export const useWriteTwoTierArbiterProposeRuling =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'proposeRuling',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"resolveAppeal"`
+ */
+export const useWriteTwoTierArbiterResolveAppeal =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'resolveAppeal',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"syncCase"`
+ */
+export const useWriteTwoTierArbiterSyncCase =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'syncCase',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"withdrawRuling"`
+ */
+export const useWriteTwoTierArbiterWithdrawRuling =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'withdrawRuling',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__
+ */
+export const useSimulateTwoTierArbiter =
+  /*#__PURE__*/ createUseSimulateContract({ abi: twoTierArbiterAbi })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"appeal"`
+ */
+export const useSimulateTwoTierArbiterAppeal =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'appeal',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"executeRuling"`
+ */
+export const useSimulateTwoTierArbiterExecuteRuling =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'executeRuling',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"lapseAppeal"`
+ */
+export const useSimulateTwoTierArbiterLapseAppeal =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'lapseAppeal',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"proposeRuling"`
+ */
+export const useSimulateTwoTierArbiterProposeRuling =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'proposeRuling',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"resolveAppeal"`
+ */
+export const useSimulateTwoTierArbiterResolveAppeal =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'resolveAppeal',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"syncCase"`
+ */
+export const useSimulateTwoTierArbiterSyncCase =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'syncCase',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `functionName` set to `"withdrawRuling"`
+ */
+export const useSimulateTwoTierArbiterWithdrawRuling =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: twoTierArbiterAbi,
+    functionName: 'withdrawRuling',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__
+ */
+export const useWatchTwoTierArbiterEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({ abi: twoTierArbiterAbi })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"AppealLapsed"`
+ */
+export const useWatchTwoTierArbiterAppealLapsedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'AppealLapsed',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"AppealResolved"`
+ */
+export const useWatchTwoTierArbiterAppealResolvedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'AppealResolved',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"CaseSynchronized"`
+ */
+export const useWatchTwoTierArbiterCaseSynchronizedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'CaseSynchronized',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"RulingAppealed"`
+ */
+export const useWatchTwoTierArbiterRulingAppealedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'RulingAppealed',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"RulingExecuted"`
+ */
+export const useWatchTwoTierArbiterRulingExecutedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'RulingExecuted',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"RulingProposed"`
+ */
+export const useWatchTwoTierArbiterRulingProposedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'RulingProposed',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link twoTierArbiterAbi}__ and `eventName` set to `"RulingWithdrawn"`
+ */
+export const useWatchTwoTierArbiterRulingWithdrawnEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: twoTierArbiterAbi,
+    eventName: 'RulingWithdrawn',
   })
 
 /**

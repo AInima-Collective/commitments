@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useChainId } from 'wagmi'
+import type { Address } from 'viem'
 
 import {
   AddressDisplay,
@@ -19,9 +21,17 @@ import { useTokenMetaMap } from '../../hooks/useTokenMeta'
 import {
   useProtocolCommitmentsList,
   useProtocolAgreementsList,
+  useProtocolArbitersList,
+  useProtocolCasesList,
   type ProtocolCommitmentRow,
   type ProtocolAgreementRow,
+  type ProtocolArbiterRow,
+  type ProtocolCaseRow,
+  type ProtocolEntityPage,
 } from '../../hooks/useProtocolEntityList'
+import { useArbiterProfile } from '../../hooks/useArbiterProfile'
+import { getContractAddresses } from '../../config/contracts'
+import { findConfiguredArbiterProfile } from '../../config/arbiters'
 import { formatDuration } from '../../lib/format'
 import { arbiterProfilePath } from '../../lib/arbitrationRoutes'
 
@@ -43,11 +53,13 @@ function agentBadgeFor(agents: AgentIdentityMap, address: string | undefined) {
   return a?.isAgent ? <AgentBadge agentId={a.agentId} /> : undefined
 }
 
-type EntityType = 'commitments' | 'agreements'
+type EntityType = 'commitments' | 'agreements' | 'arbiters' | 'cases'
 
 const TABS: { id: EntityType; label: string }[] = [
   { id: 'commitments', label: 'commitments' },
   { id: 'agreements', label: 'agreements' },
+  { id: 'arbiters', label: 'arbiters' },
+  { id: 'cases', label: 'cases' },
 ]
 
 /**
@@ -74,7 +86,7 @@ export function EntityBrowser({
     <section className="ds-stack ds-stack-3">
       <header className="ds-section-header">
         <h2 className="ds-section-title">Entity browser</h2>
-        <span className="ds-section-eyebrow">browse every commitment and agreement</span>
+        <span className="ds-section-eyebrow">protocol-wide entities and arbitration activity</span>
       </header>
 
       {filterAddress && (
@@ -112,8 +124,285 @@ export function EntityBrowser({
       <div role="tabpanel">
         {activeTab === 'commitments' && <CommitmentsTable filterAddress={filterAddress} />}
         {activeTab === 'agreements' && <AgreementsTable filterAddress={filterAddress} />}
+        {activeTab === 'arbiters' && <ArbitersTable filterAddress={filterAddress} />}
+        {activeTab === 'cases' && <CasesTable filterAddress={filterAddress} />}
       </div>
     </section>
+  )
+}
+
+function PaginationNav({
+  page,
+  loading,
+  onOffset,
+}: {
+  page: ProtocolEntityPage
+  loading: boolean
+  onOffset: (offset: number) => void
+}) {
+  const end = Math.min(page.total, page.offset + page.limit)
+  return (
+    <nav className="ds-row ds-row-2" aria-label="Table pages" style={{ justifyContent: 'space-between' }}>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={page.offset === 0 || loading}
+        onClick={() => onOffset(Math.max(0, page.offset - page.limit))}
+      >
+        Previous
+      </Button>
+      <span className="ds-text-xs ds-subtle">
+        {page.total === 0 ? 'No rows' : `${page.offset + 1}–${end} of ${page.total}`}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={page.nextOffset === null || loading}
+        onClick={() => page.nextOffset !== null && onOffset(page.nextOffset)}
+      >
+        Next
+      </Button>
+    </nav>
+  )
+}
+
+function ArbitersTable({ filterAddress }: { filterAddress?: string | null }) {
+  const [offset, setOffset] = useState(0)
+  const limit = 50
+  const { rows, page, isLoading } = useProtocolArbitersList({
+    limit,
+    offset,
+    address: filterAddress ?? undefined,
+  })
+  const columns = useMemo<DataTableColumn<ProtocolArbiterRow>[]>(
+    () => [
+      {
+        id: 'arbiter',
+        header: 'arbiter',
+        render: (row) => <ArbiterIdentityCell address={row.address} />,
+      },
+      {
+        id: 'form',
+        header: 'address form',
+        render: (row) => <ArbiterProfileField address={row.address} field="form" />,
+      },
+      {
+        id: 'mechanism',
+        header: 'recognized mechanism',
+        render: (row) => <ArbiterProfileField address={row.address} field="mechanism" />,
+      },
+      {
+        id: 'capabilities',
+        header: 'declared capabilities',
+        render: (row) => <ArbiterProfileField address={row.address} field="capabilities" />,
+      },
+      {
+        id: 'commitments',
+        header: 'commitments',
+        align: 'right',
+        render: (row) => `${row.activeCommitments} active / ${row.totalCommitments} total`,
+      },
+      {
+        id: 'manager',
+        header: 'pending manager forfeits',
+        align: 'right',
+        render: (row) => row.pendingManagerForfeits,
+      },
+      {
+        id: 'cases',
+        header: 'open mechanism cases',
+        align: 'right',
+        render: (row) => row.openMechanismCases,
+      },
+    ],
+    [],
+  )
+  return (
+    <div className="ds-stack ds-stack-2">
+      <DataTable
+        aria-label="Arbiters"
+        columns={columns}
+        rows={rows}
+        isLoading={isLoading}
+        getRowKey={(row) => row.address.toLowerCase()}
+        emptyState={<EmptyState title="NO ARBITERS" description="No indexed commitment names an arbiter yet." />}
+      />
+      <PaginationNav page={page} loading={isLoading} onOffset={setOffset} />
+    </div>
+  )
+}
+
+function ArbiterIdentityCell({ address }: { address: Address }) {
+  const chainId = useChainId()
+  const manager = getContractAddresses(chainId).commitmentManager
+  const { profile } = useArbiterProfile(address, manager)
+  return (
+    <Link to={arbiterProfilePath(address)} aria-label={`View arbiter ${address}`}>
+      <span className="ds-stack ds-stack-1">
+        <strong>{profile?.displayName ?? 'Arbiter'}</strong>
+        <AddressDisplay address={address} compact />
+      </span>
+    </Link>
+  )
+}
+
+function ArbiterProfileField({
+  address,
+  field,
+}: {
+  address: Address
+  field: 'form' | 'mechanism' | 'capabilities'
+}) {
+  const chainId = useChainId()
+  const manager = getContractAddresses(chainId).commitmentManager
+  const { profile, isLoading } = useArbiterProfile(address, manager)
+  if (isLoading || !profile) return <span className="ds-subtle">…</span>
+  if (field === 'form') return <span>{profile.addressForm}</span>
+  if (field === 'mechanism') {
+    return (
+      <span>
+        {profile.mechanism} <span className="ds-badge">{profile.mechanismVerification}</span>
+      </span>
+    )
+  }
+  if (profile.fieldStatus.capabilities === 'not-applicable') {
+    return <span className="ds-subtle">not applicable</span>
+  }
+  if (['not-declared', 'unsupported'].includes(profile.fieldStatus.capabilities)) {
+    return <span className="ds-subtle">not declared</span>
+  }
+  if (profile.declaredCapabilities.length === 0) return <span className="ds-subtle">none declared</span>
+  return <span>{profile.declaredCapabilities.map((item) => item.label).join(', ')}</span>
+}
+
+function CasesTable({ filterAddress }: { filterAddress?: string | null }) {
+  const chainId = useChainId()
+  const [offset, setOffset] = useState(0)
+  const [openOnly, setOpenOnly] = useState(false)
+  const limit = 50
+  const { rows, page, isLoading } = useProtocolCasesList({
+    limit,
+    offset,
+    arbiter: filterAddress as Address | undefined,
+    openOnly,
+  })
+  const columns = useMemo<DataTableColumn<ProtocolCaseRow>[]>(
+    () => [
+      {
+        id: 'case',
+        header: 'case / claim',
+        render: (row) => row.caseId ? (
+          row.mechanism === 'optimistic-insurance' ? (
+            <Link to={`/app/claims/${row.caseId}?arbiter=${row.arbiter}`}>Claim #{row.caseId}</Link>
+          ) : row.mechanism === 'optimistic-mutual' ? (
+            <Link to={`/app/marketplace/${row.caseId}`}>Mutual loss #{row.caseId}</Link>
+          ) : row.mechanism === 'two-tier' ? (
+            <Link to={`/app/arbitration/two-tier/${row.caseId}?arbiter=${row.arbiter}`}>Court case #{row.caseId}</Link>
+          ) : `Case #${row.caseId}`
+        ) : 'Manager proposal',
+      },
+      {
+        id: 'commitment',
+        header: 'commitment / manager',
+        render: (row) => (
+          row.commitmentId !== null && row.manager ? (
+            <span className="ds-stack ds-stack-1">
+              <Link to={`/app/commitments/${row.commitmentId}?manager=${row.manager}`}>
+                Commitment #{row.commitmentId.toString()}
+              </Link>
+              <AddressDisplay address={row.manager} compact />
+            </span>
+          ) : <span className="ds-subtle">Mechanism-scoped activity</span>
+        ),
+      },
+      {
+        id: 'arbiter',
+        header: 'arbiter / mechanism',
+        render: (row) => {
+          const configured = findConfiguredArbiterProfile(chainId, row.arbiter)
+          return (
+            <span className="ds-stack ds-stack-1">
+              <Link to={arbiterProfilePath(row.arbiter)}>
+                <AddressDisplay address={row.arbiter} compact />
+              </Link>
+              <span className="ds-text-xs ds-subtle">
+                {configured?.mechanism ?? 'Unrecognized mechanism'}
+              </span>
+            </span>
+          )
+        },
+      },
+      {
+        id: 'mechanismPhase',
+        header: 'mechanism phase',
+        render: (row) => (
+          <span className="ds-stack ds-stack-1">
+            <span>{row.mechanismPhase}</span>
+            {row.mechanismSource && <span className="ds-badge">source: {row.mechanismSource}</span>}
+          </span>
+        ),
+      },
+      {
+        id: 'managerPhase',
+        header: 'manager enforcement',
+        render: (row) => (
+          <span className="ds-stack ds-stack-1">
+            <span>{row.managerPhase}</span>
+            <span className="ds-badge">source: {row.managerSource}</span>
+          </span>
+        ),
+      },
+      {
+        id: 'next',
+        header: 'next deadline / action',
+        render: (row) => row.terminalOutcome ? (
+          <span className="ds-subtle">Case is terminal</span>
+        ) : (
+          <span className="ds-stack ds-stack-1">
+            <span>{row.nextDeadline
+              ? new Date(Number(row.nextDeadline) * 1_000).toLocaleString()
+              : 'No pending deadline'}</span>
+            {row.nextAction && <span className="ds-text-xs ds-subtle">{row.nextAction}</span>}
+          </span>
+        ),
+      },
+      {
+        id: 'outcome',
+        header: 'terminal outcome',
+        render: (row) => row.terminalOutcome ?? <span className="ds-subtle">Open</span>,
+      },
+    ],
+    [chainId],
+  )
+  return (
+    <div className="ds-stack ds-stack-2">
+      <Notice tone="info" size="sm" title="Source coverage">
+        Mechanism phases come from recognized arbiter contracts; enforcement phases come from the CommitmentManager. Manager-only rows explicitly say when no mechanism state is indexed.
+      </Notice>
+      <label className="ds-row ds-row-2 ds-text-sm" style={{ alignItems: 'center' }}>
+        <span>case status</span>
+        <select
+          aria-label="Case status filter"
+          value={openOnly ? 'open' : 'all'}
+          onChange={(event) => {
+            setOpenOnly(event.target.value === 'open')
+            setOffset(0)
+          }}
+        >
+          <option value="all">All cases</option>
+          <option value="open">Open only</option>
+        </select>
+      </label>
+      <DataTable
+        aria-label="Arbitration cases"
+        columns={columns}
+        rows={rows}
+        isLoading={isLoading}
+        getRowKey={(row) => `${row.source}-${row.arbiter}-${row.caseId ?? row.commitmentId}-${row.proposalInitiatedAt ?? row.updatedAt}`}
+        emptyState={<EmptyState title="NO CASES" description="No arbitration or manager-enforcement activity has occurred." />}
+      />
+      <PaginationNav page={page} loading={isLoading} onOffset={setOffset} />
+    </div>
   )
 }
 

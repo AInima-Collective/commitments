@@ -83,10 +83,16 @@ test('optional address arrays default to empty', () => {
   const manifest = fixtureCopy()
   delete manifest.flatFeeStrategies
   delete manifest.agentIdentityRegistries
+  delete manifest.optimisticInsuranceArbiters
+  delete manifest.twoTierArbiters
+  delete manifest.attestationArbiters
 
   const deployments = parseDeploymentManifest(manifest, 31337)
   assert.deepEqual(deployments.flatFeeStrategies, [])
   assert.deepEqual(deployments.agentIdentityRegistries, [])
+  assert.deepEqual(deployments.optimisticInsuranceArbiters, [])
+  assert.deepEqual(deployments.twoTierArbiters, [])
+  assert.deepEqual(deployments.attestationArbiters, [])
 })
 
 test('optional addresses and address arrays pass through', () => {
@@ -101,11 +107,15 @@ test('optional addresses and address arrays pass through', () => {
     vaultCoverConduit: '0x0000000000000000000000000000000000000016',
     flatFeeStrategies: ['0x0000000000000000000000000000000000000017'],
     agentIdentityRegistries: ['0x8004a169fb4a3325136eb29fa0ceb6d2e539a432'],
+    optimisticInsuranceArbiters: ['0x0000000000000000000000000000000000000018'],
+    twoTierArbiters: ['0x0000000000000000000000000000000000000019'],
+    attestationArbiters: ['0x0000000000000000000000000000000000000020'],
   })
 
   const deployments = parseDeploymentManifest(manifest, 31337)
   assert.deepEqual(deployments.flatFeeStrategies, manifest.flatFeeStrategies)
   assert.deepEqual(deployments.agentIdentityRegistries, manifest.agentIdentityRegistries)
+  assert.deepEqual(deployments.twoTierArbiters, manifest.twoTierArbiters)
   assert.equal(deployments.governorFactory, manifest.governorFactory)
   assert.equal(deployments.vaultCoverConduit, manifest.vaultCoverConduit)
 })

@@ -11,6 +11,9 @@ import {
   operatorRegistryAbi,
   operatorServiceRegistryAbi,
   optimisticMutualArbiterAbi,
+  optimisticInsuranceArbiterAbi,
+  twoTierArbiterAbi,
+  attestationArbiterAbi,
   mutualRegistryAbi,
   tokenWeightingAbi,
   vaultFactoryAbi,
@@ -97,6 +100,32 @@ export default createConfig({
       // still passed as an array so per-row routing via `event.log.address`
       // stays forward-compatible with a future multi-stack deployment.
       chain: { [CORE_CHAIN]: { address: deployments.commitmentManagers } },
+      startBlock,
+    },
+    OptimisticInsuranceArbiter: {
+      abi: optimisticInsuranceArbiterAbi,
+      chain: { [CORE_CHAIN]: { address: deployments.optimisticInsuranceArbiters } },
+      startBlock,
+    },
+    TwoTierArbiter: {
+      abi: twoTierArbiterAbi,
+      chain: { [CORE_CHAIN]: { address: deployments.twoTierArbiters } },
+      startBlock,
+    },
+    AttestationArbiter: {
+      abi: attestationArbiterAbi,
+      chain: { [CORE_CHAIN]: { address: deployments.attestationArbiters } },
+      startBlock,
+    },
+    OptimisticMutualArbiter: {
+      abi: optimisticMutualArbiterAbi,
+      chain: {
+        [CORE_CHAIN]: {
+          address: deployments.optimisticMutualArbiter
+            ? [deployments.optimisticMutualArbiter]
+            : [],
+        },
+      },
       startBlock,
     },
     VaultFactory: {
@@ -226,10 +255,9 @@ export default createConfig({
     // deployed the registry (absent in PROD until launch). The mutual event
     // surface itself is on the always-bound CommitmentManager; this binding adds
     // the MutualRegistry so MutualRegistered annotations are indexed and
-    // the registry's `manager()` getter is chain-readable. OptimisticMutualArbiter
-    // is bound for address/ABI resolution + chain reads; it has no event handlers
-    // yet (Ponder only warns on handler-less sources), mirroring how the manager
-    // emits the canonical loss lifecycle.
+    // the registry's `manager()` getter is chain-readable. The optimistic
+    // mutual arbiter is always declared above (with an empty address list when
+    // absent) so its own case events can be normalized independently.
     ...(deployments.mutualRegistry
       ? {
           MutualRegistry: {
@@ -237,15 +265,6 @@ export default createConfig({
             chain: { [CORE_CHAIN]: { address: deployments.mutualRegistry } },
             startBlock,
           },
-          ...(deployments.optimisticMutualArbiter
-            ? {
-                OptimisticMutualArbiter: {
-                  abi: optimisticMutualArbiterAbi,
-                  chain: { [CORE_CHAIN]: { address: deployments.optimisticMutualArbiter } },
-                  startBlock,
-                },
-              }
-            : {}),
         }
       : {}),
     // LinkedMutualPolicy (cover/standby premium router) — bound best-effort

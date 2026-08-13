@@ -293,6 +293,8 @@ export default function CommitmentDetail() {
         arbiter={row.arbiter}
         manager={row.manager ?? managerAddress}
         amount={row.amount}
+        committer={row.committer}
+        counterparty={row.counterparty}
         challengeWindow={full?.challengeWindow}
         indexedPenaltyBps={row.commitment.forfeitPenaltyBps}
         decimals={decimals}

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   profile: vi.fn(),
   forfeit: vi.fn(),
   history: vi.fn(),
+  mechanism: vi.fn(),
 }))
 
 vi.mock('wagmi', () => ({ useChainId: () => 1 }))
@@ -21,6 +22,9 @@ vi.mock('../../../hooks/useForfeitProposal', () => ({
 }))
 vi.mock('../../../hooks/useCommitmentArbitration', () => ({
   useCommitmentArbitration: (...args: unknown[]) => mocks.history(...args),
+}))
+vi.mock('../../../hooks/useMechanismArbitration', () => ({
+  useMechanismArbitration: (...args: unknown[]) => mocks.mechanism(...args),
 }))
 
 const ARBITER = '0x1000000000000000000000000000000000000001'
@@ -45,6 +49,12 @@ const profile: ArbiterProfile = {
   contestKind: 'known-mechanism',
   contestSummary: 'Use the configured court process.',
   configured: true,
+  fieldStatus: {
+    interfaceSupport: 'success',
+    reportedManager: 'success',
+    capabilities: 'success',
+    metadataURI: 'success',
+  },
   readFailures: [],
 }
 
@@ -114,6 +124,7 @@ beforeEach(() => {
     indexerOnline: true,
     refetch: vi.fn(),
   })
+  mocks.mechanism.mockReturnValue(undefined)
   setState('NONE')
 })
 
@@ -133,7 +144,10 @@ describe('ArbitrationPanel', () => {
 
   it('stays visible and read-only with no proposal or wallet provider', () => {
     renderPanel()
-    expect(screen.getByRole('heading', { name: 'Arbitration and forfeiture' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Arbiter and policy' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Mechanism case' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Manager enforcement' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Activity' })).toBeTruthy()
     expect(screen.getByText('No active arbitration or forfeit proposal')).toBeTruthy()
     expect(screen.getByText(/does not itself grant the committer a generic challenge method/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /execute|cancel|resolve/i })).toBeNull()
@@ -158,6 +172,18 @@ describe('ArbitrationPanel', () => {
     expect(screen.getByText('Execution timing unavailable')).toBeTruthy()
     expect(screen.getByText(/proposal read reverted/i)).toBeTruthy()
     expect(screen.queryByText('No active arbitration or forfeit proposal')).toBeNull()
+  })
+
+  it('keeps a reported manager mismatch prominent', () => {
+    mocks.profile.mockReturnValue({
+      profile: { ...profile, reportedManager: ARBITER, managerMatches: false },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+    renderPanel()
+    expect(screen.getByText('Reported manager mismatch')).toBeTruthy()
+    expect(screen.getByText(/declared powers may target another deployment/i)).toBeTruthy()
   })
 
   it('renders stale-cancelled history using the frontend wire field names', () => {

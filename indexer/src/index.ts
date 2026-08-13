@@ -35,6 +35,8 @@ import './mutual'
 // Side-effect import: registers the ERC-8004 AgentIdentityRegistry handlers
 // (agent identity badges — issue #33).
 import './agents'
+// Side-effect import: normalized mechanism case + event handlers.
+import './arbitrationMechanisms'
 // Side-effect import: registers the underwritten-agent-vault coverage handlers
 // (skim strategy fee ledger + conduit premium funding / vault↔mutual link).
 import './vaultCover'

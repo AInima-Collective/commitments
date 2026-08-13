@@ -43,6 +43,7 @@ export default defineConfig({
         'FlatFeeAtCreate.json',
         'AttestationArbiter.json',
         'ManualArbiter.json',
+        'TwoTierArbiter.json',
         'CommitmentsGovernor.json',
         'CommitmentsTimelock.json',
         'GovernorFactory.json',

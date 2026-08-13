@@ -6,7 +6,9 @@ import { buildArbiterProfile, type ArbiterIntrospection } from '../arbiterProfil
 const ADDRESS = '0x1111111111111111111111111111111111111111' as Address
 const MANAGER = '0x2222222222222222222222222222222222222222' as Address
 const ok = <T,>(value: T) => ({ status: 'success' as const, value })
-const failed = () => ({ status: 'error' as const, error: 'reverted' })
+const failed = () => ({ status: 'failed' as const, error: 'rpc unavailable' })
+const notApplicable = () => ({ status: 'not-applicable' as const })
+const notDeclared = () => ({ status: 'not-declared' as const })
 const reads = (overrides: Partial<ArbiterIntrospection> = {}): ArbiterIntrospection => ({
   code: ok('0x6000' as `0x${string}`),
   interfaceSupport: ok(true),
@@ -23,15 +25,16 @@ describe('buildArbiterProfile', () => {
       expectedManager: MANAGER,
       introspection: reads({
         code: ok(undefined),
-        interfaceSupport: failed(),
-        reportedManager: failed(),
-        capabilities: failed(),
-        metadataURI: failed(),
+        interfaceSupport: notApplicable(),
+        reportedManager: notApplicable(),
+        capabilities: notApplicable(),
+        metadataURI: notApplicable(),
       }),
     })
     expect(profile.addressForm).toBe('EOA')
     expect(profile.interfaceSupport).toBe('unsupported')
-    expect(profile.mechanism).toBe('Custom / unrecognized')
+    expect(profile.mechanism).toBe('Direct-address arbitration')
+    expect(profile.readFailures).toEqual([])
   })
 
   it('uses trusted configuration before live mechanism guesses', () => {
@@ -54,6 +57,55 @@ describe('buildArbiterProfile', () => {
     expect(profile.mechanismVerification).toBe('curated deployment')
   })
 
+  it('retains matching manager data and initiate/cancel declarations for a configured optimistic arbiter', () => {
+    const profile = buildArbiterProfile({
+      address: ADDRESS,
+      expectedManager: MANAGER,
+      configured: {
+        address: ADDRESS,
+        displayName: 'Optimistic insurance',
+        mechanism: 'Optimistic bonded claim game',
+        mechanismId: 'optimistic-insurance',
+        decisionSummary: 'Bonded assertions resolve optimistically.',
+        contestKind: 'known-mechanism',
+        contestSummary: 'Dispute through the bonded claim process.',
+        expectedAddressForm: 'contract',
+      },
+      introspection: reads({ capabilities: ok(3n) }),
+    })
+
+    expect(profile.managerMatches).toBe(true)
+    expect(profile.mechanismId).toBe('optimistic-insurance')
+    expect(profile.declaredCapabilities.map((capability) => capability.id)).toEqual([
+      'initiate-forfeit',
+      'cancel-forfeit',
+    ])
+  })
+
+  it('warns when a trusted contract deployment does not expose its expected interface', () => {
+    const profile = buildArbiterProfile({
+      address: ADDRESS,
+      expectedManager: MANAGER,
+      configured: {
+        address: ADDRESS,
+        displayName: 'Configured court',
+        mechanism: 'Two-tier court',
+        mechanismId: 'two-tier',
+        decisionSummary: 'Configured summary',
+        contestKind: 'known-mechanism',
+        contestSummary: 'Configured appeal',
+        expectedAddressForm: 'contract',
+      },
+      introspection: reads({
+        interfaceSupport: notDeclared(),
+        reportedManager: notDeclared(),
+        capabilities: notDeclared(),
+        metadataURI: notDeclared(),
+      }),
+    })
+    expect(profile.readFailures).toContain('IArbiter interface declaration (expected by trusted configuration)')
+  })
+
   it('keeps a compliant but unrecognized arbiter custom', () => {
     const profile = buildArbiterProfile({ address: ADDRESS, expectedManager: MANAGER, introspection: reads() })
     expect(profile.interfaceSupport).toBe('supported')
@@ -67,14 +119,15 @@ describe('buildArbiterProfile', () => {
       expectedManager: MANAGER,
       introspection: reads({
         interfaceSupport: ok(false),
-        reportedManager: failed(),
-        capabilities: failed(),
-        metadataURI: failed(),
+        reportedManager: notDeclared(),
+        capabilities: notDeclared(),
+        metadataURI: notDeclared(),
       }),
     })
     expect(profile.addressForm).toBe('contract')
     expect(profile.interfaceSupport).toBe('unsupported')
-    expect(profile.readFailures).toEqual(['reportedManager', 'capabilities', 'metadataURI'])
+    expect(profile.mechanism).toBe('Legacy / custom contract')
+    expect(profile.readFailures).toEqual([])
   })
 
   it('lets every introspection call fail independently', () => {

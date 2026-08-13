@@ -5,10 +5,12 @@ import { useChainId } from 'wagmi'
 import { useArbiterProfile } from '../../hooks/useArbiterProfile'
 import {
   useCommitmentArbitration,
+  type MechanismArbitrationEvent,
   type ManagerForfeitEvent,
   type ManagerForfeitEventKind,
 } from '../../hooks/useCommitmentArbitration'
 import { useForfeitProposal } from '../../hooks/useForfeitProposal'
+import { useMechanismArbitration } from '../../hooks/useMechanismArbitration'
 import { getBlockExplorer } from '../../lib/blockExplorer'
 import { arbiterProfilePath } from '../../lib/arbitrationRoutes'
 import {
@@ -25,6 +27,8 @@ interface ArbitrationPanelProps {
   arbiter: Address
   manager: Address
   amount: bigint
+  committer?: Address
+  counterparty?: Address
   challengeWindow?: bigint
   indexedPenaltyBps?: number
   decimals: number
@@ -50,6 +54,8 @@ export function ArbitrationPanel({
   arbiter,
   manager,
   amount,
+  committer,
+  counterparty,
   challengeWindow,
   indexedPenaltyBps,
   decimals,
@@ -58,6 +64,7 @@ export function ArbitrationPanel({
   const chainId = useChainId()
   const explorer = getBlockExplorer(chainId)
   const profile = useArbiterProfile(arbiter, manager)
+  const mechanism = useMechanismArbitration({ arbiter, commitmentId, committer, counterparty })
   const forfeit = useForfeitProposal({
     managerAddress: manager,
     commitmentId,
@@ -82,14 +89,23 @@ export function ArbitrationPanel({
     proposedPenalty === undefined || !proposalCanStillMoveStake
       ? undefined
       : (amount * BigInt(proposedPenalty)) / 10_000n
+  const activity = [
+    ...(history.data?.events.map((event) => ({ source: 'CommitmentManager' as const, event })) ?? []),
+    ...(history.data?.mechanismEvents?.map((event) => ({ source: 'arbiter mechanism' as const, event })) ?? []),
+  ].sort((left, right) => {
+    if (left.event.blockNumber !== right.event.blockNumber) {
+      return left.event.blockNumber > right.event.blockNumber ? -1 : 1
+    }
+    return right.event.logIndex - left.event.logIndex
+  })
 
   return (
     <section className="ds-card ds-stack ds-stack-4" aria-labelledby="arbitration-panel-title">
       <header className="ds-section-header">
         <div>
-          <span className="ds-section-eyebrow">manager enforcement · read-only</span>
+          <span className="ds-section-eyebrow">arbiter policy · read-only</span>
           <h2 id="arbitration-panel-title" className="ds-section-title">
-            Arbitration and forfeiture
+            Arbiter and policy
           </h2>
         </div>
         <Link className="ds-btn ds-btn--sm" to={arbiterProfilePath(arbiter)}>
@@ -145,10 +161,71 @@ export function ArbitrationPanel({
           {profile.profile?.readFailures.join(', ') || profile.error?.message}.
         </Notice>
       )}
+      {profile.profile?.managerMatches === false && (
+        <Notice tone="danger" size="sm" title="Reported manager mismatch">
+          This arbiter reports a different CommitmentManager. Its declared powers may target another deployment and must not be assumed to apply here.
+        </Notice>
+      )}
 
-      <div className="ds-stack ds-stack-3">
+      <div className="ds-stack ds-stack-3" aria-labelledby="mechanism-case-title">
         <header className="ds-section-header">
-          <h3 className="ds-section-title">Current manager proposal</h3>
+          <div>
+            <span className="ds-section-eyebrow">arbiter mechanism</span>
+            <h3 id="mechanism-case-title" className="ds-section-title">Mechanism case</h3>
+          </div>
+          {mechanism?.case && <span className="ds-badge ds-badge--solid">{mechanism.case.phase}</span>}
+        </header>
+        {!mechanism ? (
+          <Notice tone="neutral" size="sm" title="No recognized mechanism adapter">
+            This arbiter has no trusted mechanism classification. {profile.profile?.contestSummary ?? 'No generic on-chain contest action is implied.'}
+          </Notice>
+        ) : mechanism.isLoading ? (
+          <Skeleton height={64} />
+        ) : mechanism.error ? (
+          <Notice tone="warn" size="sm" title="Mechanism state could not be verified">
+            {mechanism.error.message}
+          </Notice>
+        ) : mechanism.case ? (
+          <div className="ds-party-list">
+            <PartyRow label="case">
+              {mechanism.case.detailPath ? <Link to={mechanism.case.detailPath}>{mechanism.case.label}</Link> : mechanism.case.label}
+            </PartyRow>
+            <PartyRow label="phase">{mechanism.case.phase}</PartyRow>
+            <PartyRow label="next mechanism deadline">{timestamp(mechanism.case.nextDeadline)}</PartyRow>
+            {mechanism.case.deadlines.map((deadline) => (
+              <PartyRow key={`${deadline.label}-${deadline.at.toString()}`} label={deadline.label}>
+                {timestamp(deadline.at)}
+              </PartyRow>
+            ))}
+            <PartyRow label="participants">{mechanism.case.participants.join(', ') || 'No generic participant list'}</PartyRow>
+            <PartyRow label="available actions">
+              {mechanism.case.availableActions.length > 0
+                ? mechanism.case.availableActions.join(' · ')
+                : 'No mechanism action currently available'}
+            </PartyRow>
+            {mechanism.case.outcome && <PartyRow label="ruling / outcome">{mechanism.case.outcome}</PartyRow>}
+          </div>
+        ) : (
+          <Notice tone="neutral" size="sm" title="No mechanism case is open">
+            {mechanism.noCase}
+          </Notice>
+        )}
+        {mechanism && (
+          <div className="ds-party-list">
+            <PartyRow label="process">{mechanism.process}</PartyRow>
+            {mechanism.terms.map((term) => (
+              <PartyRow key={`${term.label}-${term.value}`} label={term.label}>{term.value}</PartyRow>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="ds-stack ds-stack-3" aria-labelledby="manager-enforcement-title">
+        <header className="ds-section-header">
+          <div>
+            <span className="ds-section-eyebrow">CommitmentManager</span>
+            <h3 id="manager-enforcement-title" className="ds-section-title">Manager enforcement</h3>
+          </div>
           <span className="ds-badge ds-badge--solid">{FORFEIT_STATE_LABEL[enforcement.state]}</span>
         </header>
         {forfeit.error && (
@@ -188,18 +265,21 @@ export function ArbitrationPanel({
             </PartyRow>
           </div>
         )}
-        <Notice tone="info" size="sm" title="Manager challenge window">
+        <Notice tone="info" size="sm" title="Manager execution delay">
           This is a forfeit execution delay. It delays execution and permits the arbiter to cancel,
           but it does not itself grant the committer a generic challenge method. Mechanism-specific
           claims, disputes, or appeals follow the arbiter process described above.
         </Notice>
       </div>
 
-      <div className="ds-stack ds-stack-3">
+      <div className="ds-stack ds-stack-3" aria-labelledby="arbitration-activity-title">
         <header className="ds-section-header">
-          <h3 className="ds-section-title">Manager-side forfeit history</h3>
+          <div>
+            <span className="ds-section-eyebrow">mechanism + manager provenance</span>
+            <h3 id="arbitration-activity-title" className="ds-section-title">Activity</h3>
+          </div>
           <span className="ds-section-eyebrow">
-            {(history.data?.events.length ?? 0).toString()} events · complete for this manager + id
+            {activity.length.toString()} events · complete for this manager + id
           </span>
         </header>
         {!history.indexerOnline ? (
@@ -212,19 +292,25 @@ export function ArbitrationPanel({
           <Notice tone="danger" size="sm" title="Forfeit history unavailable">
             {history.error.message}
           </Notice>
-        ) : (history.data?.events.length ?? 0) === 0 ? (
+        ) : activity.length === 0 ? (
           <Notice tone="neutral" size="sm">
-            No manager-side forfeit attempts have occurred.
+            No mechanism or manager enforcement events have occurred.
           </Notice>
         ) : (
           <ol className="ds-stack ds-stack-2" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {history.data!.events.map((event) => (
+            {activity.map((item) => item.source === 'CommitmentManager' ? (
               <HistoryRow
-                key={`${event.blockNumber}-${event.logIndex}`}
-                event={event}
+                key={`manager-${item.event.blockNumber}-${item.event.logIndex}`}
+                event={item.event as ManagerForfeitEvent}
                 explorer={explorer}
                 decimals={decimals}
                 symbol={symbol}
+              />
+            ) : (
+              <MechanismHistoryRow
+                key={`mechanism-${item.event.blockNumber}-${item.event.logIndex}`}
+                event={item.event as MechanismArbitrationEvent}
+                explorer={explorer}
               />
             ))}
           </ol>
@@ -243,8 +329,17 @@ function CapabilityList({
 }) {
   if (loading) return <>Loading…</>
   if (!profile) return <>Unavailable</>
+  if (profile.fieldStatus.capabilities === 'not-applicable') {
+    return <span className="ds-subtle">Not applicable to a direct-address arbiter</span>
+  }
+  if (['not-declared', 'unsupported'].includes(profile.fieldStatus.capabilities)) {
+    return <span className="ds-subtle">Not declared by this legacy / custom contract</span>
+  }
+  if (['failed', 'unknown'].includes(profile.fieldStatus.capabilities)) {
+    return <span className="ds-subtle">Unknown — failed to verify</span>
+  }
   if (profile.declaredCapabilities.length === 0 && profile.unknownCapabilityBits === 0n) {
-    return <span className="ds-subtle">None reported</span>
+    return <span className="ds-subtle">No capabilities declared</span>
   }
   return (
     <span className="ds-row ds-row-1" style={{ flexWrap: 'wrap' }}>
@@ -270,7 +365,14 @@ function ManagerMatch({
   loading: boolean
 }) {
   if (loading) return <>Loading…</>
-  if (!profile?.reportedManager) return <span className="ds-subtle">Not reported / unavailable</span>
+  if (!profile) return <span className="ds-subtle">Unknown</span>
+  if (profile.fieldStatus.reportedManager === 'not-applicable') {
+    return <span className="ds-subtle">Not applicable to a direct-address arbiter</span>
+  }
+  if (['not-declared', 'unsupported'].includes(profile.fieldStatus.reportedManager)) {
+    return <span className="ds-subtle">Not declared by this legacy / custom contract</span>
+  }
+  if (!profile.reportedManager) return <span className="ds-subtle">Unknown — failed to verify</span>
   const matchKnown = profile.managerMatches !== undefined
   return (
     <span className="ds-row ds-row-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
@@ -315,7 +417,10 @@ function HistoryRow({
     <li className="ds-card ds-stack ds-stack-1">
       <div className="ds-row ds-row-2" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <strong>{HISTORY_LABEL[event.kind]}</strong>
-        <span className="ds-text-xs ds-subtle">{timestamp(event.timestamp)}</span>
+        <span className="ds-row ds-row-2 ds-text-xs ds-subtle">
+          <span className="ds-badge">source: CommitmentManager</span>
+          {timestamp(event.timestamp)}
+        </span>
       </div>
       <div className="ds-row ds-row-2 ds-text-xs ds-subtle" style={{ flexWrap: 'wrap' }}>
         {event.penaltyBps !== null && <span>penalty {formatBps(event.penaltyBps)}</span>}
@@ -324,6 +429,40 @@ function HistoryRow({
             moved <TokenAmount amount={event.unitsForfeited} decimals={decimals} symbol={symbol} compact />
           </span>
         )}
+        <span>block {event.blockNumber.toString()}</span>
+        {explorer ? (
+          <a href={`${explorer}/tx/${event.transactionHash}`} target="_blank" rel="noreferrer">
+            transaction
+          </a>
+        ) : (
+          <span className="ds-mono-num">{event.transactionHash.slice(0, 10)}…</span>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function MechanismHistoryRow({
+  event,
+  explorer,
+}: {
+  event: MechanismArbitrationEvent
+  explorer: string
+}) {
+  return (
+    <li className="ds-card ds-stack ds-stack-1">
+      <div className="ds-row ds-row-2" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <strong>{event.kind.replaceAll('-', ' ')}</strong>
+        <span className="ds-row ds-row-2 ds-text-xs ds-subtle">
+          <span className="ds-badge">source: arbiter mechanism</span>
+          {timestamp(event.timestamp)}
+        </span>
+      </div>
+      <div className="ds-row ds-row-2 ds-text-xs ds-subtle" style={{ flexWrap: 'wrap' }}>
+        <span>{event.mechanism}</span>
+        <span>case #{event.caseId.toString()}</span>
+        <span>phase {event.phase}</span>
+        {event.outcome && <span>{event.outcome}</span>}
         <span>block {event.blockNumber.toString()}</span>
         {explorer ? (
           <a href={`${explorer}/tx/${event.transactionHash}`} target="_blank" rel="noreferrer">

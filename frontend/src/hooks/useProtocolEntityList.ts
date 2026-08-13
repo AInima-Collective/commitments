@@ -241,3 +241,133 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
     error: query.error,
   }
 }
+
+export interface ProtocolArbiterRow {
+  address: Address
+  totalCommitments: number
+  activeCommitments: number
+  pendingManagerForfeits: number
+  openMechanismCases: number
+}
+
+export interface ProtocolEntityPage {
+  limit: number
+  offset: number
+  total: number
+  nextOffset: number | null
+}
+
+interface ArbiterDirectoryWire {
+  rows: Array<Omit<ProtocolArbiterRow, 'address'> & { address: string }>
+  page: ProtocolEntityPage
+}
+
+export function useProtocolArbitersList(options: {
+  limit?: number
+  offset?: number
+  address?: string
+  enabled?: boolean
+} = {}): {
+  rows: ProtocolArbiterRow[]
+  page: ProtocolEntityPage
+  isLoading: boolean
+  error: unknown
+} {
+  const { limit = 50, offset = 0, address, enabled = true } = options
+  const query = useQuery({
+    enabled: hasIndexer && enabled,
+    queryKey: ['protocol-arbiters-list', limit, offset, address?.toLowerCase() ?? null],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+      if (address) params.set('address', address.toLowerCase())
+      const response = await indexerFetch(`/protocol/arbiters?${params.toString()}`)
+      if (!response.ok) throw new Error(`Arbiter directory error: ${response.status}`)
+      const body = (await response.json()) as ArbiterDirectoryWire
+      return {
+        rows: body.rows.map((row) => ({ ...row, address: row.address as Address })),
+        page: body.page,
+      }
+    },
+    refetchInterval: 30_000,
+  })
+  return {
+    rows: query.data?.rows ?? [],
+    page: query.data?.page ?? { limit, offset, total: 0, nextOffset: null },
+    isLoading: query.isLoading,
+    error: query.error,
+  }
+}
+
+export interface ProtocolCaseRow {
+  source: 'CommitmentManager' | 'arbiter mechanism'
+  mechanismSource: 'arbiter mechanism' | null
+  managerSource: 'CommitmentManager'
+  mechanism: string | null
+  caseId: string | null
+  commitmentId: bigint | null
+  manager: Address | null
+  arbiter: Address
+  mechanismPhase: string
+  managerPhase: string
+  nextDeadline: bigint | null
+  nextAction: string | null
+  terminalOutcome: string | null
+  penaltyBps: number | null
+  proposalInitiatedAt: bigint | null
+  updatedAt: bigint
+  transactionHash: `0x${string}` | null
+}
+
+interface CasesWire {
+  rows: Array<Omit<ProtocolCaseRow, 'commitmentId' | 'nextDeadline' | 'proposalInitiatedAt' | 'updatedAt'> & {
+    commitmentId: string | null
+    nextDeadline: string | null
+    proposalInitiatedAt: string | null
+    updatedAt: string
+  }>
+  page: ProtocolEntityPage
+}
+
+export function useProtocolCasesList(options: {
+  limit?: number
+  offset?: number
+  arbiter?: Address
+  enabled?: boolean
+  openOnly?: boolean
+} = {}): {
+  rows: ProtocolCaseRow[]
+  page: ProtocolEntityPage
+  isLoading: boolean
+  error: unknown
+} {
+  const { limit = 50, offset = 0, arbiter, enabled = true, openOnly = false } = options
+  const query = useQuery({
+    enabled: hasIndexer && enabled,
+    queryKey: ['protocol-cases-list', limit, offset, arbiter?.toLowerCase() ?? null, openOnly],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+      if (arbiter) params.set('arbiter', arbiter.toLowerCase())
+      if (openOnly) params.set('open', 'true')
+      const response = await indexerFetch(`/protocol/cases?${params.toString()}`)
+      if (!response.ok) throw new Error(`Cases explorer error: ${response.status}`)
+      const body = (await response.json()) as CasesWire
+      return {
+        rows: body.rows.map((row) => ({
+          ...row,
+          commitmentId: row.commitmentId === null ? null : BigInt(row.commitmentId),
+          nextDeadline: row.nextDeadline === null ? null : BigInt(row.nextDeadline),
+          proposalInitiatedAt: row.proposalInitiatedAt === null ? null : BigInt(row.proposalInitiatedAt),
+          updatedAt: BigInt(row.updatedAt),
+        })),
+        page: body.page,
+      }
+    },
+    refetchInterval: 30_000,
+  })
+  return {
+    rows: query.data?.rows ?? [],
+    page: query.data?.page ?? { limit, offset, total: 0, nextOffset: null },
+    isLoading: query.isLoading,
+    error: query.error,
+  }
+}

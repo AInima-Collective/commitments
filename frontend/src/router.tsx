@@ -10,6 +10,7 @@ import ClaimDetail from './pages/ClaimDetail'
 import CommitmentDetail from './pages/CommitmentDetail'
 import ArbiterDetail from './pages/ArbiterDetail'
 import Arbitration from './pages/Arbitration'
+import TwoTierCaseDetail from './pages/TwoTierCaseDetail'
 // /marketplace is the risk-coverage marketplace (the former /mutuals list,
 // redesigned). Mutual is its detail surface.
 import Marketplace from './pages/Marketplace'
@@ -58,6 +59,7 @@ export const router = createBrowserRouter([
       { path: 'commitments/:id', element: <ErrorPanel panelName="Commitment"><CommitmentDetail /></ErrorPanel> },
       { path: 'arbiters/:address', element: <ErrorPanel panelName="Arbiter"><ArbiterDetail /></ErrorPanel> },
       { path: 'arbitration', element: <ErrorPanel panelName="Arbitration"><Arbitration /></ErrorPanel> },
+      { path: 'arbitration/two-tier/:id', element: <ErrorPanel panelName="Two-tier case"><TwoTierCaseDetail /></ErrorPanel> },
       { path: 'claims/:id', element: <ErrorPanel panelName="Claim"><ClaimDetail /></ErrorPanel> },
       { path: 'marketplace', element: <ErrorPanel panelName="Marketplace"><Marketplace /></ErrorPanel> },
       { path: 'marketplace/:mutualId', element: <ErrorPanel panelName="Coverage"><Mutual /></ErrorPanel> },
