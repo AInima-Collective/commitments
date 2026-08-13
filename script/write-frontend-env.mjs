@@ -12,6 +12,11 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  baseName,
+  loadCreationMatchers,
+  recoverContractName,
+} from './foundry-artifacts.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(__dirname, '..')
@@ -81,24 +86,39 @@ const proxyForImpl = new Map()
 // per-asset uniqueness check) and so doesn't emit `VaultDeployed`. The
 // constructor argument is the only reliable reverse lookup.
 const ctorArgsByName = {}
-// Foundry qualifies a CREATE's `contractName` with the active compiler-profile
-// name (e.g. `ERC1967Proxy.default`, `MutualRegistry.manager-size`) whenever a
-// contract has artifacts under more than one profile — a real hazard once any
-// `additional_compiler_profiles` / `compilation_restrictions` is in play (the
-// `manager-size` profile that keeps CommitmentManager under EIP-170 does exactly
-// this), or when stale profile artifacts linger in `out/`. Solidity identifiers
-// never contain a `.`, so strip a trailing `.<profile>` segment to recover the
-// base name. Profile names can contain HYPHENS (`manager-size`), so the segment
-// class MUST allow `-` — otherwise the strip silently no-ops. In the Simulate
-// broadcast every contract is qualified `.manager-size` except CommitmentManager,
-// so a `-`-less class leaves CommitmentManager resolvable (commitments load) while
-// every other address — MutualRegistry, OperatorServiceRegistry, the adapters,
-// and every ERC1967Proxy pairing — silently drops out, blanking the marketplace,
-// services, and backing surfaces in the UI.
-const baseName = (n) => (n ? n.replace(/\.[A-Za-z0-9_-]+$/, '') : n)
+// Foundry can emit `contractName: null` when additional compiler profiles
+// produce several artifacts for one source. Recover only the contracts this
+// env writer consumes, and only when exactly one distinct artifact name matches
+// the raw CREATE input. This is the same conservative rule as the indexer
+// deployment loader; it avoids turning artifact ambiguity into a wrong address.
+const FRONTEND_CONTRACT_NAMES = new Set([
+  'ERC1967Proxy',
+  'CommitmentManager',
+  'CommitmentsVault',
+  'OperatorRegistry',
+  'ManualArbiter',
+  'OperatorServiceRegistry',
+  'MeshFactory',
+  'ERC4626Adapter',
+  'ERC20StaticAdapter',
+  'OptimisticInsuranceArbiter',
+  'MutualRegistry',
+  'OptimisticMutualArbiter',
+  'PremiumScheduler',
+  'LinkedMutualPolicy',
+  'ClaimRouter',
+  'ForfeitDonationBeneficiary',
+  'GovernorFactory',
+  'ERC8004IdentityRegistryDev',
+  'SkimmingMockStrategy',
+  'VaultCoverConduit',
+])
+const creationMatchers = loadCreationMatchers(join(repoRoot, 'out'), FRONTEND_CONTRACT_NAMES)
 for (const tx of doc.transactions ?? []) {
   if (tx.transactionType !== 'CREATE' || !tx.contractAddress) continue
-  const name = baseName(tx.contractName)
+  const name = tx.contractName
+    ? baseName(tx.contractName)
+    : recoverContractName(tx.transaction?.input, creationMatchers)
   if (name === 'ERC1967Proxy') {
     const impl = tx.arguments?.[0]
     if (impl) proxyForImpl.set(impl.toLowerCase(), tx.contractAddress)

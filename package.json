@@ -10,7 +10,7 @@
     "dev:frontend": "pnpm --filter @commitments/frontend dev",
     "dev:indexer": "pnpm --filter @commitments/indexer dev",
     "build": "pnpm --filter @commitments/frontend build",
-    "test": "pnpm -r --if-present test",
+    "test": "node --test 'script/**/*.test.mjs' && pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "generate": "pnpm --filter @commitments/frontend generate"
