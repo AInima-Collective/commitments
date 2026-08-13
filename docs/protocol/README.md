@@ -33,6 +33,7 @@ These pages explain the shipped contracts and how to operate them. Solidity is t
 
 - [Depositor](guides/depositor.md)
 - [Arbiter](guides/arbiter.md)
+- [Two-tier arbiter deployment](guides/two-tier-arbiter.md)
 - [Operator](guides/operator.md)
 - [Integrator](guides/integrator.md)
 - [Mutual](guides/mutual.md)

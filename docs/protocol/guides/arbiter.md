@@ -76,7 +76,11 @@ passthroughs); `AttestationArbiter` advertises the full commitment, agreement
 EIP-712-typed envelope payload can express every one, dispatched under
 strict per-target ordering; `OptimisticInsuranceArbiter` advertises just
 `INITIATE_FORFEIT | CANCEL_FORFEIT`; and `OptimisticMutualArbiter` advertises
-`MUTUAL_LOSS`.
+`MUTUAL_LOSS`. `TwoTierArbiter` advertises
+`INITIATE_FORFEIT | CANCEL_FORFEIT` and routes a fast primary ruling through a
+bounded appeal to a separate final controller. See the
+[two-tier arbiter deployment guide](two-tier-arbiter.md) for its DAO, timing,
+policy, and keeper requirements.
 
 ## Releasing a commitment
 
@@ -143,6 +147,15 @@ manager.cancelForfeit(commitmentId);
 The commitment stays active; a new forfeit can be initiated later. If an arbiter
 *abandons* a proposal, anyone can clear it after its TTL via
 `cancelStaleForfeitProposal(commitmentId)`, which unblocks the committer's unbond.
+
+### Escalated primary and appeal controllers
+
+[`TwoTierArbiter`](two-tier-arbiter.md) wraps this same manager proposal in a
+case-ID-scoped court lifecycle. An unappealed primary ruling proceeds normally;
+an authorized appeal cancels and reopens the proposal, giving a separate appeal
+controller a bounded period to affirm, change, or dismiss it. The commitment's
+challenge window must cover the longer court decision window plus an execution
+buffer.
 
 ## Managing agreements
 

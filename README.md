@@ -54,6 +54,7 @@ The shipped Solidity contracts define current behavior and ABI. Standards formal
 | Depositor | [guides/depositor.md](docs/protocol/guides/depositor.md) |
 | Operator | [guides/operator.md](docs/protocol/guides/operator.md) |
 | Arbiter | [guides/arbiter.md](docs/protocol/guides/arbiter.md) |
+| Two-tier court deployer | [guides/two-tier-arbiter.md](docs/protocol/guides/two-tier-arbiter.md) |
 | Integrator | [guides/integrator.md](docs/protocol/guides/integrator.md) |
 | Mutual member | [guides/mutual.md](docs/protocol/guides/mutual.md) |
 | Service wiring | [guides/service-wiring.md](docs/protocol/guides/service-wiring.md) |

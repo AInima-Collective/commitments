@@ -237,6 +237,10 @@ page, and `/app/agents`.
 - **Parametric instead of optimistic.** Swap the arbiter for `AttestationArbiter`
   with an operator quorum watching the SLA metric (the insure-APY pattern) when the
   breach condition is machine-checkable and a service exists to attest it.
+- **AI first, human fallback.** Use
+  [`TwoTierArbiter`](../guides/two-tier-arbiter.md) when an AI-governed DAO should
+  rule quickly but a bonded agent or beneficiary must be able to escalate the
+  ruling to a separate human-governed DAO with final authority.
 - **Reputation coupling.** After settlement, either party posts ERC-8004
   `ReputationRegistry` feedback keyed by the claim outcome — the bond game produces
   exactly the kind of costly signal reputation systems want to aggregate.

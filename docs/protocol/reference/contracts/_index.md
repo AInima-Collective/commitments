@@ -70,6 +70,7 @@ Auto-generated from Solidity NatSpec via `just docs-gen`. Edit the contracts to 
 - [AttestationArbiter](/docs/protocol/reference/contracts/periphery/arbiters/AttestationArbiter) — `periphery/arbiters/AttestationArbiter.md`
 - [ManualArbiter](/docs/protocol/reference/contracts/periphery/arbiters/ManualArbiter) — `periphery/arbiters/ManualArbiter.md`
 - [OptimisticInsuranceArbiter](/docs/protocol/reference/contracts/periphery/arbiters/OptimisticInsuranceArbiter) — `periphery/arbiters/OptimisticInsuranceArbiter.md`
+- [TwoTierArbiter](/docs/protocol/reference/contracts/periphery/arbiters/TwoTierArbiter) — `periphery/arbiters/TwoTierArbiter.md`
 - [CommitmentsGovernor](/docs/protocol/reference/contracts/periphery/governance/CommitmentsGovernor) — `periphery/governance/CommitmentsGovernor.md`
 - [CommitmentsTimelock](/docs/protocol/reference/contracts/periphery/governance/CommitmentsTimelock) — `periphery/governance/CommitmentsTimelock.md`
 - [GovernorFactory](/docs/protocol/reference/contracts/periphery/governance/GovernorFactory) — `periphery/governance/GovernorFactory.md`

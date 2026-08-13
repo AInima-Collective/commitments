@@ -372,6 +372,7 @@
       { "source": "src/periphery/arbiters/AttestationArbiter.sol", "declarations": ["AttestationArbiter"] },
       { "source": "src/periphery/arbiters/ManualArbiter.sol", "declarations": ["ManualArbiter"] },
       { "source": "src/periphery/arbiters/OptimisticInsuranceArbiter.sol", "declarations": ["OptimisticInsuranceArbiter"] },
+      { "source": "src/periphery/arbiters/TwoTierArbiter.sol", "declarations": ["TwoTierArbiter"] },
       { "source": "src/periphery/governance/CommitmentsGovernor.sol", "declarations": ["CommitmentsGovernor"] },
       { "source": "src/periphery/governance/CommitmentsTimelock.sol", "declarations": ["CommitmentsTimelock"] },
       { "source": "src/periphery/governance/GovernorFactory.sol", "declarations": ["GovernorFactory"] },
