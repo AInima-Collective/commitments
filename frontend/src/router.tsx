@@ -26,6 +26,7 @@ import ProposalDetail from './pages/ProposalDetail'
 import CreateProposal from './pages/CreateProposal'
 import Design from './pages/Design'
 import DesignRecipes from './pages/DesignRecipes'
+import ValueDesignExploration from './pages/ValueDesignExploration'
 import Lab from './pages/Lab'
 import Docs from './pages/Docs'
 import Resources from './pages/Resources'
@@ -81,6 +82,7 @@ export const router = createBrowserRouter([
       { path: 'explorer', element: <ErrorPanel panelName="Explorer"><Explorer /></ErrorPanel> },
       { path: 'design', element: <ErrorPanel panelName="Design"><Design /></ErrorPanel> },
       { path: 'design/recipes', element: <ErrorPanel panelName="Design Recipes"><DesignRecipes /></ErrorPanel> },
+      { path: 'design/value', element: <ErrorPanel panelName="Value Design Exploration"><ValueDesignExploration /></ErrorPanel> },
       // Scaffolding: the palette / type / brand-mark experiment surface.
       // Remove along with components/ui/labTheme.ts once a direction lands.
       { path: 'lab', element: <ErrorPanel panelName="Design Lab"><Lab /></ErrorPanel> },

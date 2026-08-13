@@ -1,0 +1,485 @@
+.uxv-page {
+  max-width: 1280px;
+}
+
+.uxv-controls {
+  position: sticky;
+  top: 64px;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  background: var(--surface);
+}
+
+.uxv-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.uxv-control-label,
+.uxv-kicker,
+.uxv-input-label,
+.uxv-rule-number {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.uxv-section-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 72ch;
+}
+
+.uxv-section-copy p,
+.uxv-pattern-card p,
+.uxv-rule-card p,
+.uxv-signing-summary p {
+  color: var(--text-muted);
+}
+
+.uxv-pattern-grid,
+.uxv-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.uxv-pattern-card {
+  display: flex;
+  min-height: 288px;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.uxv-pattern-heading,
+.uxv-surface-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.uxv-pattern-heading h3,
+.uxv-surface-heading h3,
+.uxv-rule-card h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+}
+
+.uxv-pattern-stage {
+  display: flex;
+  min-height: 120px;
+  align-items: center;
+  padding: var(--space-4) 0;
+  border-top: var(--border-width) solid var(--border);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.uxv-pattern-card p {
+  margin: auto 0 0;
+  font-size: var(--text-sm);
+}
+
+.uxv-value-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.uxv-value-stack[data-size='display'] {
+  gap: var(--space-2);
+}
+
+.uxv-value-label {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.uxv-quote {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35ch;
+  white-space: nowrap;
+}
+
+.uxv-approx {
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+}
+
+.uxv-leading-symbol {
+  margin-right: 0.2ch;
+  margin-left: 0;
+}
+
+.uxv-contract-value,
+.uxv-comparison {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.uxv-comparison {
+  padding-top: var(--space-2);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.uxv-positive {
+  color: var(--success);
+}
+
+.uxv-surface {
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--border);
+  background: var(--surface);
+}
+
+.uxv-surface-heading {
+  margin-bottom: var(--space-5);
+}
+
+.uxv-surface-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.uxv-surface-note,
+.uxv-step {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.uxv-table-wrap {
+  overflow-x: auto;
+}
+
+.uxv-table {
+  min-width: 760px;
+}
+
+.uxv-table td {
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.uxv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.uxv-table-title,
+.uxv-table-meta {
+  display: block;
+}
+
+.uxv-table-title {
+  font-weight: 500;
+}
+
+.uxv-table-meta {
+  margin-top: var(--space-1);
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.uxv-align-right {
+  text-align: right;
+}
+
+.uxv-align-right .uxv-value-stack {
+  align-items: flex-end;
+}
+
+.uxv-two-up {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: var(--space-3);
+}
+
+.uxv-preference-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+.uxv-preference-demo {
+  position: relative;
+  min-height: 350px;
+  overflow: hidden;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg);
+}
+
+.uxv-preference-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+  background: var(--surface);
+}
+
+.uxv-preference-brand {
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.uxv-preference-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.uxv-preference-context {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.uxv-preference-popover {
+  position: absolute;
+  top: 58px;
+  right: var(--space-3);
+  width: min(420px, calc(100% - var(--space-6)));
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-strong);
+  background: var(--surface);
+}
+
+.uxv-preference-popover-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.uxv-preference-popover-head h3,
+.uxv-placement-card h3 {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+}
+
+.uxv-preference-popover > p,
+.uxv-placement-card > p {
+  margin: var(--space-3) 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.uxv-preference-popover .ds-view-toggle {
+  width: 100%;
+}
+
+.uxv-preference-popover .ds-view-toggle-option {
+  flex: 1;
+}
+
+.uxv-policy-list,
+.uxv-placement-notes {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.uxv-policy-list > div,
+.uxv-placement-notes > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-width) solid var(--border);
+  font-size: var(--text-xs);
+}
+
+.uxv-policy-list span,
+.uxv-placement-notes span {
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.uxv-policy-list strong,
+.uxv-placement-notes strong {
+  text-align: right;
+  font-weight: 500;
+}
+
+.uxv-placement-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5);
+}
+
+.uxv-placement-notes {
+  margin-top: auto;
+}
+
+.uxv-detail-surface > .uxv-value-stack {
+  margin-bottom: var(--space-6);
+}
+
+.uxv-provenance {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(0, 1.3fr);
+  gap: var(--space-2) var(--space-4);
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+  font-size: var(--text-xs);
+}
+
+.uxv-provenance > span {
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.uxv-provenance > strong {
+  font-weight: 400;
+}
+
+.uxv-form-surface {
+  display: flex;
+  flex-direction: column;
+}
+
+.uxv-input-label {
+  margin-bottom: var(--space-2);
+}
+
+.uxv-input-shell {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border-strong);
+  background: var(--bg);
+}
+
+.uxv-input-value {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.uxv-input-unit {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.uxv-signing-summary {
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  border-left: 2px solid var(--success);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.uxv-signing-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.uxv-signing-summary strong {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.uxv-signing-summary p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+}
+
+.uxv-signing-check {
+  color: var(--success);
+}
+
+.uxv-rules-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.uxv-rule-card {
+  display: flex;
+  min-height: 192px;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.uxv-rule-card p {
+  margin: auto 0 0;
+  font-size: var(--text-sm);
+}
+
+@media (width <= 1050px) {
+  .uxv-pattern-grid,
+  .uxv-rules-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .uxv-two-up {
+    grid-template-columns: 1fr;
+  }
+
+  .uxv-preference-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (width <= 700px) {
+  .uxv-controls {
+    position: static;
+    align-items: stretch;
+  }
+
+  .uxv-control {
+    width: 100%;
+  }
+
+  .uxv-control .ds-view-toggle {
+    width: 100%;
+  }
+
+  .uxv-control .ds-view-toggle-option {
+    flex: 1;
+  }
+
+  .uxv-pattern-grid,
+  .uxv-rules-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .uxv-surface {
+    padding: var(--space-4);
+  }
+
+  .uxv-provenance {
+    grid-template-columns: 1fr;
+  }
+
+  .uxv-provenance > strong {
+    margin-bottom: var(--space-2);
+  }
+}

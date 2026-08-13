@@ -62,6 +62,8 @@ function matter(raw: string): { data: Record<string, unknown>; content: string }
 
 const DOCS_PREFIX = '../../../docs/'
 
+// Keep the glob literal: it is the compile-time manifest for hand-written
+// guides and design RFCs as well as generated contract reference pages.
 const eagerModules = import.meta.glob('../../../docs/**/*.md', {
   query: '?raw',
   import: 'default',

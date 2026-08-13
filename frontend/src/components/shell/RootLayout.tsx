@@ -33,6 +33,7 @@ const DOCS_GROUP: NavGroup = {
     { label: "Protocol Documentation", to: "/app/docs/protocol", end: false },
     { label: "Design RFCs", to: "/app/docs/design", end: false },
     { label: "Design system", to: "/app/design", end: true },
+    { label: "Value exploration", to: "/app/design/value", end: true },
     // Scaffolding — remove with the lab once a visual direction is chosen.
     { label: "Design lab", to: "/app/lab", end: true },
     { label: "Skill.md", to: "/app/resources", end: true },
