@@ -4075,48 +4075,6 @@ button.ds-tag:focus-visible {
   flex-shrink: 0;
 }
 
-/* View-as address box in the top bar. `position: relative` anchors the error
- * message, which is absolutely positioned so a validation failure does not
- * change the header's height and shove the whole page down. */
-.ds-view-as {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-.ds-view-as-input {
-  /* Wide enough for a full address at the topbar's font size, and it gives up
-   * width before the wallet widget does when the header gets tight. */
-  width: 22ch;
-  min-width: 0;
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--text-xs);
-}
-.ds-view-as-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border: var(--border-width) solid var(--border);
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-.ds-view-as-clear:hover { color: var(--text); border-color: var(--text-muted); }
-.ds-view-as-clear:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.ds-view-as-error {
-  position: absolute;
-  top: calc(100% + var(--space-1));
-  right: 0;
-  white-space: nowrap;
-  font-size: var(--text-xs);
-  color: var(--error);
-}
-
 /* Read-only banner while the app is pointed at someone else's address. */
 .ds-viewing-banner {
   display: flex;
@@ -4124,14 +4082,6 @@ button.ds-tag:focus-visible {
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
-}
-
-/* Below the sidebar breakpoint the header carries the brand, the wallet, and
- * the menu trigger already; a 22ch field on top of that wraps the row. The
- * address box is an explorer affordance, not a primary one, so it steps aside
- * — /app pages still accept `?view=` from a pasted link. */
-@media (max-width: 900px) {
-  .ds-view-as { display: none; }
 }
 .ds-topnav-link {
   position: relative;

@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { BrandMark } from '../ui'
 import { WalletWidget } from './WalletWidget'
-import { ViewAddressInput } from './ViewAddressInput'
 
 export function TopBar({ onOpenDrawer }: { onOpenDrawer: () => void }) {
   return (
@@ -17,7 +16,6 @@ export function TopBar({ onOpenDrawer }: { onOpenDrawer: () => void }) {
         <span>commitments</span>
       </Link>
       <div className="ds-topnav-actions">
-        <ViewAddressInput />
         <WalletWidget />
         <button
           type="button"
