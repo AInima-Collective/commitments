@@ -66,10 +66,10 @@ export async function ensureAutomine(): Promise<void> {
  * `evm_setNextBlockTimestamp` via viem's test actions, plus a polled readout
  * of `now` (latest block timestamp) and `blockNumber`.
  *
- * Throws on non-Anvil chains is not enforced here — callers are expected to
- * gate on `useChainId() === 31337` before mounting consumers.
+ * The readout polls the anvil RPC, so a caller that can mount on another
+ * chain must pass `enabled = false` there; the admin tools only mount on anvil.
  */
-export function useAnvilTime(pollMs = 2000): UseAnvilTimeResult {
+export function useAnvilTime(pollMs = 2000, enabled = true): UseAnvilTimeResult {
   const queryClient = useQueryClient()
   const client = useMemo(() => getTestClient(), [])
 
@@ -79,6 +79,7 @@ export function useAnvilTime(pollMs = 2000): UseAnvilTimeResult {
       const block = await client.getBlock({ blockTag: 'latest' })
       return { now: block.timestamp, blockNumber: block.number ?? 0n }
     },
+    enabled,
     refetchInterval: pollMs,
     refetchOnWindowFocus: false,
     staleTime: pollMs,

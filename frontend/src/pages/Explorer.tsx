@@ -21,7 +21,6 @@ import {
 import { PageHeader } from '../components/protocol'
 import { ActivityFeed, type ActivityEvent } from '../components/protocol/ActivityFeed'
 import { getContractAddresses, getVaultRegistry } from '../config/contracts'
-import { useNowSeconds } from '../hooks/useNow'
 import { useVaultStats } from '../hooks/useVaultStats'
 import { useOperatorsIndexed } from '../hooks/useOperatorsIndexed'
 import { useServiceOperators } from '../hooks/useServiceOperators'
@@ -33,7 +32,8 @@ import {
   type PartyLeaderboardRow,
 } from '../hooks/useProtocolLeaderboards'
 import { useProtocolArbitersList, useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
-import { useTokenMetaMap } from '../hooks/useTokenMeta'
+import { useTokenMeta, useTokenMetaMap } from '../hooks/useTokenMeta'
+import { useReadCommitmentsVaultAsset } from '../generated'
 import { deriveOperatorStatus } from '../utils/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
 import { arbiterProfilePath } from '../lib/arbitrationRoutes'
@@ -64,6 +64,7 @@ export default function Explorer() {
   const { stakeRegistry: stakeRegistryAddress } = getContractAddresses(chainId)
   const vaults = useMemo(() => getVaultRegistry(chainId), [chainId])
   const primaryVault = vaults[0]?.address
+  const primaryVaultName = vaults[0]?.name
 
   const stats = useProtocolStats()
   const agreementsPayload = useProtocolAgreements({ limit: 500 })
@@ -97,6 +98,11 @@ export default function Explorer() {
   }, [stakeRegistryAddress, indexed.operators, service.serviceOperators, service.totalPower])
 
   const vaultStats = useVaultStats(primaryVault)
+  const { data: primaryVaultAsset } = useReadCommitmentsVaultAsset({
+    address: primaryVault,
+    query: { enabled: !!primaryVault, staleTime: Infinity },
+  })
+  const primaryVaultAssetMeta = useTokenMeta(primaryVaultAsset)
 
   // Flow (Sankey) view aggregates the protocol-wide commitment list client-side.
   const flowCommitments = useProtocolCommitmentsList({ limit: 500 })
@@ -190,10 +196,15 @@ export default function Explorer() {
 
       <section className="ds-stat-grid" aria-label="Protocol summary">
         <StatBlock
-          label="TVL"
+          label={primaryVaultName ? `${primaryVaultName} assets` : 'Vault assets'}
           value={
-            primaryVault && vaultStats.totalAssets !== undefined ? (
-              <TokenAmount amount={vaultStats.totalAssets} decimals={6} symbol="USDC" compact />
+            primaryVaultAsset && !primaryVaultAssetMeta.isLoading && vaultStats.totalAssets !== undefined ? (
+              <TokenAmount
+                amount={vaultStats.totalAssets}
+                decimals={primaryVaultAssetMeta.decimals}
+                symbol={primaryVaultAssetMeta.symbol}
+                compact
+              />
             ) : (
               '—'
             )
@@ -303,7 +314,6 @@ function Leaderboards({
           tone="success"
           label="Top operators"
           description="Ranked by totalDelegatedStake on the operator registry."
-          meta={operators.data ? `${operators.data.length} of ${operators.data.length}` : undefined}
         >
           <OperatorLeaderboardList rows={operators.data} />
         </EntityCard>
@@ -312,7 +322,6 @@ function Leaderboards({
           tone="info"
           label="Top arbiters"
           description="Ranked by commitment count. Open an arbiter profile for token-grouped exposure."
-          meta={arbiters.data ? `${arbiters.data.length} of ${arbiters.data.length}` : undefined}
         >
           <PartyLeaderboardList rows={arbiters.data} arbiterLinks />
         </EntityCard>
@@ -321,11 +330,6 @@ function Leaderboards({
           tone="neutral"
           label="Top counterparties"
           description="Most-frequent counterparties — addresses that receive the most committed exposure."
-          meta={
-            counterparties.data
-              ? `${counterparties.data.length} of ${counterparties.data.length}`
-              : undefined
-          }
         >
           <PartyLeaderboardList rows={counterparties.data} />
         </EntityCard>
@@ -406,23 +410,19 @@ function OperatorLeaderboardList({ rows }: { rows: OperatorLeaderboardRow[] | un
  * latest 20 commitment-created events; v2 should fan out across forfeites,
  * settlements, donations, etc. once those streams are surfaced by the indexer.
  *
- * The indexer schema doesn't expose `createdTimestamp` on the commitment
- * table today (only `createdBlock`). We approximate with the current wall
- * clock so the relative-time formatter doesn't render "55 years ago" — order
- * is preserved by the urgency sort, only the per-row stamp is fuzzy.
+ * Each event is stamped with the row's `createdAt`; a row without one shows
+ * no time. Order is the urgency sort's.
  */
 function RecentActivity() {
   const { rows, isLoading } = useProtocolCommitmentsList({ limit: 20 })
   const tokenMeta = useTokenMetaMap(rows.map((row) => row.token))
-  // useNowSeconds returns bigint; ActivityEvent.timestamp is number.
-  const nowSecs = Number(useNowSeconds())
 
   const events = useMemo<ActivityEvent[]>(
     () =>
-      rows.map((r, i) => ({
+      rows.map((r) => ({
         id: `${r.manager}-${r.id.toString()}`,
         type: 'commitment-created',
-        timestamp: nowSecs - i * 60,
+        timestamp: r.createdAt !== null ? Number(r.createdAt) : 0,
         title: (
           <span>
             Commitment <code>#{r.id.toString()}</code>{' '}
@@ -441,7 +441,7 @@ function RecentActivity() {
           return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
         })(),
       })),
-    [rows, nowSecs, tokenMeta],
+    [rows, tokenMeta],
   )
 
   return (

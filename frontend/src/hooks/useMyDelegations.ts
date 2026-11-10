@@ -99,8 +99,8 @@ export function useMyDelegations(): MyDelegationsResult {
     committerAddress: account,
   })
 
-  const result = useMemo<MyDelegationsResult>(() => {
-    if (!account) return EMPTY
+  // `refetch` is a new function each render, so it stays out of the memo.
+  const grouped = useMemo(() => {
     const byOperator = new Map<string, CommitmentWithStatus[]>()
     const delegatedOperators = new Set<string>()
     for (const c of commitments) {
@@ -112,13 +112,9 @@ export function useMyDelegations(): MyDelegationsResult {
       if (list) list.push(c)
       else byOperator.set(operator, [c])
     }
-    return {
-      delegatedOperators,
-      byOperator,
-      isLoading: isScanning || isLoadingCommitments,
-      refetch,
-    }
-  }, [account, commitments, operatorByCommitment, isScanning, isLoadingCommitments, refetch])
+    return { delegatedOperators, byOperator }
+  }, [commitments, operatorByCommitment])
 
-  return result
+  if (!account) return EMPTY
+  return { ...grouped, isLoading: isScanning || isLoadingCommitments, refetch }
 }

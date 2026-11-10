@@ -117,10 +117,11 @@ export function PortfolioSankey({
         maxPenaltyBps: r.maxPenaltyBps,
         status: r.status === 'PENDING' ? 'ACTIVE' : r.status,
         forfeitChallengeEnd: r.forfeitChallengeEnd ?? null,
-        // Neither field is read by buildSankey — they exist on
-        // ProtocolCommitmentRow for the Explorer's urgency sort.
+        // None of these is read by buildSankey — they exist on
+        // ProtocolCommitmentRow for the Explorer.
         unbondMaturesAt: null,
         createdBlock: 0n,
+        createdAt: null,
       }))
   }, [mineRows])
 

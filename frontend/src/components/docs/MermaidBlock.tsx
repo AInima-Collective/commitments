@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useTheme } from '../ui/useTheme'
+import { useTheme } from '../ui'
 
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null
 

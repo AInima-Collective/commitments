@@ -1,11 +1,11 @@
-import { forwardRef, type ComponentPropsWithoutRef, type ElementRef, type ReactNode } from 'react'
+import { forwardRef, type ComponentPropsWithoutRef, type ElementType, type ReactNode, type Ref } from 'react'
 
 export type CardTone = 'neutral' | 'info' | 'success' | 'warn' | 'danger'
 export type CardDensity = 'compact' | 'regular'
-export type CardElement = 'div' | 'a' | 'button' | 'li' | 'article' | 'section'
 
-type CardOwnProps<E extends CardElement> = {
-  /** Polymorphic root element. Default `'div'`. */
+type CardOwnProps<E extends ElementType> = {
+  /** Polymorphic root element. Default `'div'`. Pass a component (e.g.
+   *  react-router-dom's `Link`) for a card that navigates client-side. */
   as?: E
   /** Semantic color tone. Forwarded to `data-tone`. */
   tone?: CardTone
@@ -19,7 +19,7 @@ type CardOwnProps<E extends CardElement> = {
   className?: string
 }
 
-export type CardProps<E extends CardElement = 'div'> = CardOwnProps<E> &
+export type CardProps<E extends ElementType = 'div'> = CardOwnProps<E> &
   Omit<ComponentPropsWithoutRef<E>, keyof CardOwnProps<E>>
 
 /**
@@ -27,11 +27,11 @@ export type CardProps<E extends CardElement = 'div'> = CardOwnProps<E> &
  * pages compose `Card` with domain content. Polymorphic via `as`; renders
  * as `<a>` / `<button>` when the surface is interactive.
  */
-function CardImpl<E extends CardElement = 'div'>(
+function CardImpl<E extends ElementType = 'div'>(
   { as, tone = 'neutral', density = 'regular', selected, className, children, ...rest }: CardProps<E>,
-  ref: React.Ref<ElementRef<E>>,
+  ref: Ref<Element>,
 ) {
-  const Root = (as ?? 'div') as CardElement
+  const Root = (as ?? 'div') as ElementType
 
   const cls = [
     'ds-card',
@@ -54,6 +54,6 @@ function CardImpl<E extends CardElement = 'div'>(
   )
 }
 
-export const Card = forwardRef(CardImpl) as <E extends CardElement = 'div'>(
-  props: CardProps<E> & { ref?: React.Ref<ElementRef<E>> },
+export const Card = forwardRef(CardImpl) as <E extends ElementType = 'div'>(
+  props: CardProps<E> & { ref?: Ref<Element> },
 ) => ReturnType<typeof CardImpl>

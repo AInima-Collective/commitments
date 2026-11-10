@@ -5,7 +5,7 @@ import {
   useWriteContract,
 } from 'wagmi'
 
-import { optimisticInsuranceArbiterAbi } from '../../abi/optimisticInsuranceArbiterAbi'
+import { optimisticInsuranceArbiterAbi } from '../../generated'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
 import type { OptimisticArbiterConfig, OptimisticClaim } from '../../hooks/useOptimisticClaim'
 import { Input, Notice, useToasts } from '../ui'

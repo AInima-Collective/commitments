@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Highlighter } from 'shiki'
-import { useTheme } from '../ui/useTheme'
+import { useTheme } from '../ui'
 
 const SUPPORTED_LANGS = [
   'solidity',

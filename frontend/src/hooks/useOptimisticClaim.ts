@@ -1,7 +1,7 @@
 import { erc20Abi, type Address } from 'viem'
 import { useReadContract, useReadContracts } from 'wagmi'
 
-import { optimisticInsuranceArbiterAbi } from '../abi/optimisticInsuranceArbiterAbi'
+import { optimisticInsuranceArbiterAbi } from '../generated'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address
 

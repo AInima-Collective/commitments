@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useChainId } from "wagmi";
 import { type Address } from "viem";
 import { Card, EmptyState, EntityLogo, Notice, StatBlock, UsdAmount } from "../components/ui";
@@ -171,7 +172,7 @@ function ServiceListRow({
   }
 
   return (
-    <Card as="a" href={`/app/services/${service.slug}`} tone="neutral" density="regular" className="ds-service-row">
+    <Card as={Link} to={`/app/services/${service.slug}`} tone="neutral" density="regular" className="ds-service-row">
       {body}
     </Card>
   );

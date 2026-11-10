@@ -35,7 +35,7 @@ import type {
   OperatorsGraphNode,
   OperatorsGraphPayload,
 } from '../../lib/graph/types'
-import { useTheme } from '../ui/useTheme'
+import { useTheme } from '../ui'
 
 type Mode = 'agreements' | 'mesh' | 'mesh-topology' | 'operators'
 

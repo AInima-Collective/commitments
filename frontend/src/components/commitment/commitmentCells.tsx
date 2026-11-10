@@ -260,7 +260,6 @@ export function RowResolveAction({
           onClose={() => setOpen(false)}
           commitment={full}
           managerAddress={ctx.managerAddress}
-          vaultAddress={row.vault}
           connectedAddress={ctx.connectedAddress}
           isConnected={ctx.isConnected}
           onActed={ctx.onActed}

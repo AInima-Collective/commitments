@@ -14,14 +14,12 @@ interface VaultActivityProps {
 
 const KIND_LABEL: Record<VaultActivityEntry['kind'], string> = {
   deposit: 'deposit',
-  'withdraw-queued': 'withdrawal queued',
-  'withdraw-claimed': 'withdrawal claimed',
+  withdraw: 'withdrawal',
 }
 
 const KIND_BADGE: Record<VaultActivityEntry['kind'], string> = {
   deposit: 'ds-badge ds-badge--success',
-  'withdraw-queued': 'ds-badge ds-badge--warn',
-  'withdraw-claimed': 'ds-badge ds-badge--muted',
+  withdraw: 'ds-badge ds-badge--muted',
 }
 
 function formatTimestamp(ts: bigint | undefined): string {

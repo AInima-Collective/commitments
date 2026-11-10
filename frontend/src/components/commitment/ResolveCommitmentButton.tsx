@@ -6,7 +6,6 @@ import { ResolveCommitmentModal } from './ResolveCommitmentModal'
 interface ResolveCommitmentButtonProps {
   commitment: CommitmentWithStatus
   managerAddress: Address
-  vaultAddress: Address | undefined
   connectedAddress: Address | undefined
   isConnected: boolean
   onActed?: () => void
@@ -23,7 +22,6 @@ interface ResolveCommitmentButtonProps {
 export function ResolveCommitmentButton({
   commitment,
   managerAddress,
-  vaultAddress,
   connectedAddress,
   isConnected,
   onActed,
@@ -48,7 +46,6 @@ export function ResolveCommitmentButton({
         onClose={() => setOpen(false)}
         commitment={commitment}
         managerAddress={managerAddress}
-        vaultAddress={vaultAddress}
         connectedAddress={connectedAddress}
         isConnected={isConnected}
         onActed={onActed}

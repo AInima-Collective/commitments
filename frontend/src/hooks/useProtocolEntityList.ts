@@ -38,6 +38,8 @@ export interface ProtocolCommitmentRow {
   forfeitChallengeEnd: bigint | null
   unbondMaturesAt: bigint | null
   createdBlock: bigint
+  /** Block timestamp of creation (unix seconds); null on rows that predate the column. */
+  createdAt: bigint | null
 }
 
 interface CommitmentWire {
@@ -53,6 +55,7 @@ interface CommitmentWire {
   forfeitChallengeEnd: string | null
   unbondMaturesAt: string | null
   createdBlock: string
+  createdAt: string | null
 }
 
 interface UrgentEnvelope {
@@ -97,6 +100,7 @@ export function useProtocolCommitmentsList(options: {
           forfeitChallengeEnd: w.forfeitChallengeEnd ? BigInt(w.forfeitChallengeEnd) : null,
           unbondMaturesAt: w.unbondMaturesAt ? BigInt(w.unbondMaturesAt) : null,
           createdBlock: BigInt(w.createdBlock),
+          createdAt: w.createdAt ? BigInt(w.createdAt) : null,
         }),
       )
     },
@@ -127,6 +131,7 @@ export interface ProtocolAgreementRow {
 
 interface AgreementWire {
   id: string
+  manager: string
   commitmentIdA: string
   commitmentIdB: string
   status: string
@@ -137,6 +142,7 @@ interface AgreementWire {
 
 interface CommitmentLiteWire {
   id: string
+  manager: string
   committer: string
   amount: string
 }
@@ -146,6 +152,7 @@ const AGREEMENTS_QUERY = /* GraphQL */ `
     agreements(limit: $limit, orderBy: "id", orderDirection: "desc") {
       items {
         id
+        manager
         commitmentIdA
         commitmentIdB
         status
@@ -162,6 +169,7 @@ const COMMITMENTS_BY_ID_QUERY = /* GraphQL */ `
     commitments(where: { id_in: $ids }, limit: 1000) {
       items {
         id
+        manager
         committer
         amount
       }
@@ -209,14 +217,17 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
         COMMITMENTS_BY_ID_QUERY,
         { ids: Array.from(ids) },
       )
-      const byId = new Map<string, CommitmentLiteWire>()
+      // Commitment ids repeat across managers, so key the join by (manager, id);
+      // an agreement's legs live on the agreement's own manager.
+      const key = (manager: string, id: string) => `${manager.toLowerCase()}-${id}`
+      const byKey = new Map<string, CommitmentLiteWire>()
       for (const c of cRes.data?.commitments.items ?? []) {
-        byId.set(c.id, c)
+        byKey.set(key(c.manager, c.id), c)
       }
 
       return items.map((w): ProtocolAgreementRow => {
-        const a = byId.get(w.commitmentIdA)
-        const b = byId.get(w.commitmentIdB)
+        const a = byKey.get(key(w.manager, w.commitmentIdA))
+        const b = byKey.get(key(w.manager, w.commitmentIdB))
         const exposure =
           a && b ? BigInt(a.amount) + BigInt(b.amount) : a ? BigInt(a.amount) : b ? BigInt(b.amount) : undefined
         return {

@@ -9,9 +9,6 @@ import { type CommitmentWithStatus, type ForfeitProposalState } from './commitme
  */
 export const FORFEIT_PROPOSAL_TTL_SECONDS = 14n * 86_400n
 
-/** Yield-claim window — committer can `reclaimAbandonedYield` after this. */
-export const YIELD_CLAIM_WINDOW_SECONDS = 90n * 86_400n
-
 export type ViewerRole = 'committer' | 'counterparty' | 'arbiter' | 'spectator'
 
 export type ResolveActionKind =
@@ -363,7 +360,9 @@ export function getAvailableActions(input: AvailableActionsInput): ResolveAction
     })
   }
 
-  // Reclaim abandoned yield — committer, after close + 90 days. We can't read
+  // Reclaim abandoned yield — committer, 90 days after close
+  // (IndexAppreciationYield's RECLAIM_WINDOW, via `claim(id, strategy,
+  // abi.encode(true))`). We can't read
   // closedAt without a contract getter, so we expose the action whenever the
   // commitment is closed and let the contract revert if too early. The reason
   // string warns the user.

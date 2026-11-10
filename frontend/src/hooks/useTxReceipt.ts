@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useWaitForTransactionReceipt } from 'wagmi'
 import { useToasts } from '../components/ui'
+import { legibleWriteError } from '../utils/contractErrors'
 import type { ReactNode } from 'react'
 
 export interface UseTxReceiptOptions {
@@ -12,13 +13,14 @@ export interface UseTxReceiptOptions {
   successBody?: ReactNode
   /** Fired once on confirmation — refetch reads, clear form state, etc. */
   onSuccess?: () => void
-  /** The write hook's `reset`, called after a confirmed tx so the next click starts clean. */
+  /** The write hook's `reset`, called after a confirmed or reverted tx so the next click starts clean. */
   reset?: () => void
 }
 
 /**
  * Watch a write transaction's receipt and fire the canonical success toast +
- * `onSuccess` + `reset` once it confirms.
+ * `onSuccess` + `reset` once it confirms. A reverted or failed receipt (wagmi
+ * throws on `status: 'reverted'`) gets a danger toast and a `reset` instead.
  *
  * Pairs with any write hook that exposes `{ data: hash, reset }` — including the
  * wagmi-generated typed hooks (`useWriteCommitmentManagerJoinGroup`, …) and a
@@ -45,6 +47,13 @@ export function useTxReceipt({
     reset?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt.isSuccess])
+
+  useEffect(() => {
+    if (!receipt.isError) return
+    push({ tone: 'danger', title: 'TRANSACTION FAILED', body: legibleWriteError(receipt.error) })
+    reset?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receipt.isError])
 
   return receipt
 }

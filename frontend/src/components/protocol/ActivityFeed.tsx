@@ -4,8 +4,7 @@ import { MediaRow } from '../ui'
 
 export type ActivityEventType =
   | 'deposit'
-  | 'withdrawal-requested'
-  | 'withdrawal-claimed'
+  | 'withdrawal'
   | 'commitment-created'
   | 'commitment-released'
   | 'forfeit-proposed'
@@ -70,8 +69,7 @@ export interface ActivityFeedProps {
 
 const DEFAULT_TONE_BY_TYPE: Record<ActivityEventType, ActivityEventTone> = {
   deposit: 'success',
-  'withdrawal-requested': 'info',
-  'withdrawal-claimed': 'success',
+  withdrawal: 'success',
   'commitment-created': 'info',
   'commitment-released': 'success',
   'forfeit-proposed': 'warn',
@@ -92,8 +90,7 @@ const DEFAULT_TONE_BY_TYPE: Record<ActivityEventType, ActivityEventTone> = {
 
 const GLYPH_BY_TYPE: Record<ActivityEventType, string> = {
   deposit: '↓',
-  'withdrawal-requested': '⏳',
-  'withdrawal-claimed': '↑',
+  withdrawal: '↑',
   'commitment-created': '+',
   'commitment-released': '✓',
   'forfeit-proposed': '!',

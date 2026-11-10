@@ -345,7 +345,6 @@ function ArbiterQueueRow({
           <ResolveCommitmentButton
             commitment={commitment}
             managerAddress={managerAddress}
-            vaultAddress={commitment.vault}
             connectedAddress={connectedAddress}
             isConnected={isConnected}
             onActed={onActed}

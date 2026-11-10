@@ -14,8 +14,7 @@ import { formatTokenAmount } from '../../lib/format'
 import type { ProtocolCommitmentRow } from '../../hooks/useProtocolEntityList'
 import { useAssetPrices } from '../../hooks/useAssetPrices'
 import { useTokenMetaMap } from '../../hooks/useTokenMeta'
-import { Notice, TokenIcon, ViewToggle } from '../ui'
-import { useTheme } from '../ui/useTheme'
+import { Notice, TokenIcon, useTheme, ViewToggle } from '../ui'
 
 /**
  * Plot height bounds. The diagram used to be a flat 500 regardless of content,

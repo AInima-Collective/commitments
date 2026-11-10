@@ -2,7 +2,6 @@
   "extends": ["stylelint-config-standard"],
   "ignoreFiles": [
     "src/styles/tokens.css",
-    "src/theme.css",
     "node_modules/**",
     "dist/**"
   ],

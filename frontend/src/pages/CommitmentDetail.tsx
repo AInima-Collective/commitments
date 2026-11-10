@@ -38,7 +38,6 @@ export default function CommitmentDetail() {
   const managerQuery = searchParams.get('manager')
   const managerAddress: Address | undefined =
     managerQuery && isAddress(managerQuery) ? (managerQuery as Address) : configuredManager
-  const { commitmentsVault: vaultAddress } = env
 
   // Validate id param up front. BigInt() throws on non-numeric strings — bounce
   // those back to the listing rather than rendering a broken page.
@@ -307,7 +306,6 @@ export default function CommitmentDetail() {
           onClose={() => setResolveOpen(false)}
           commitment={full}
           managerAddress={managerAddress}
-          vaultAddress={vaultAddress}
           connectedAddress={connectedAddress}
           isConnected={isConnected}
           onActed={(receipt) => {

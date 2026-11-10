@@ -1,8 +1,7 @@
+import { Link } from 'react-router-dom'
 import type { Hex } from 'viem'
 
-import { AddressDisplay } from '../ui/AddressDisplay'
-import { Notice } from '../ui/Notice'
-import { SourceBlock } from '../ui/SourceBlock'
+import { AddressDisplay, Notice, SourceBlock } from '../ui'
 import type { ProposalKind } from './Status'
 
 export interface ProposalActionRowProps {
@@ -142,13 +141,13 @@ function ForfeitArbitrationBody({ decoded }: { decoded: ForfeitDecoded }) {
       <div className="ds-row" style={{ gap: 8, alignItems: 'baseline' }}>
         <span className="ds-subtle">commitment</span>
         {decoded.commitmentId ? (
-          <a
+          <Link
             className="ds-link"
-            href={`/app/commitments/${decoded.commitmentId}`}
+            to={`/app/commitments/${decoded.commitmentId}`}
             title={`Open commitment #${decoded.commitmentId}`}
           >
             #{decoded.commitmentId}
-          </a>
+          </Link>
         ) : (
           <span className="ds-subtle">—</span>
         )}

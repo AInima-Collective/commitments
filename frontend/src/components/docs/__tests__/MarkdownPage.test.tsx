@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MarkdownPage } from '../MarkdownPage'
-import { ThemeProvider } from '../../ui/ThemeProvider'
+import { ThemeProvider } from '../../ui'
 
 function renderPage(content: string, opts: { meta?: Record<string, unknown> } = {}) {
   return render(

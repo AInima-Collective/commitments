@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { OperatorAvatar, type OperatorAvatarSize } from '../ui/OperatorAvatar'
+import { OperatorAvatar, type OperatorAvatarSize } from '../ui'
 import { truncateAddress } from '../../lib/format'
 
 export type OperatorIdentitySize = 'sm' | 'md' | 'lg'

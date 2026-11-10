@@ -18,7 +18,7 @@ const SECONDS_PER_YEAR = 31_536_000n
  * member shares until `periodFinish`. `premiumPool` is the unstreamed reserve.
  */
 export interface MutualPremiumStream {
-  /** Pi — accumulated premium-per-share, 1e18-scaled. */
+  /** Pi — accumulated premium-per-share, 1e27-scaled. */
   premiumPerShareStored: bigint
   /** Numeraire capacity the stream yields against (the APR denominator). */
   activeCover: bigint

@@ -48,7 +48,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   release: {
     title: 'Release commitment',
     helper:
-      'Closes the commitment and frees the depositor’s shares. Arbiter only.',
+      'Closes the commitment and returns its backing to the committer’s free balance in the manager. Arbiter only.',
   },
   expire: {
     title: 'Expire commitment',
@@ -58,7 +58,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   'request-unbond': {
     title: 'Request unbond',
     helper:
-      'Starts the vault unbonding period. After it elapses anyone can finalize and the shares free up.',
+      'Starts this commitment’s unbonding period. After it elapses anyone can finalize, and the backing returns to the committer’s free balance.',
   },
   'finalize-unbond': {
     title: 'Finalize unbond',
@@ -92,7 +92,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   'claim-yield': {
     title: 'Claim yield',
     helper:
-      'Transfers accrued yield shares to the counterparty’s wallet.',
+      'Pays each bound strategy’s accrued yield for this commitment to the counterparty’s wallet.',
   },
   'reclaim-yield': {
     title: 'Reclaim abandoned yield',
@@ -121,15 +121,8 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   },
 }
 
-export function ResolveActionRow({
-  action,
-  commitment,
-  managerAddress,
-  decimals,
-  symbol,
-  yieldEntries,
-  onActed,
-}: ResolveActionRowProps) {
+export function ResolveActionRow(props: ResolveActionRowProps) {
+  const { action } = props
   const meta = META[action.kind]
 
   return (
@@ -145,15 +138,7 @@ export function ResolveActionRow({
           <span className="ds-text-xs ds-muted">{action.reason}</span>
         )}
       </div>
-      <ActionBody
-        action={action}
-        commitment={commitment}
-        managerAddress={managerAddress}
-        decimals={decimals}
-        symbol={symbol}
-        yieldEntries={yieldEntries}
-        onActed={onActed}
-      />
+      <ActionBody {...props} />
     </div>
   )
 }

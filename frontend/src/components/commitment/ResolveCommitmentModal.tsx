@@ -27,7 +27,6 @@ interface ResolveCommitmentModalProps {
   onClose: () => void
   commitment: CommitmentWithStatus
   managerAddress: Address
-  vaultAddress: Address | undefined
   connectedAddress: Address | undefined
   isConnected: boolean
   /** Refetch parent data on success. Receives the confirming tx receipt when

@@ -67,7 +67,10 @@ export function useClaimableYield({
     setBindingsLoading(true)
     setError(null)
     indexerFetch(`/account/${viewAddress}/claimable-yield`)
-      .then((res) => res.json() as Promise<{ bindings: RawBinding[] }>)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
+        return res.json() as Promise<{ bindings: RawBinding[] }>
+      })
       .then((data) => {
         if (reqId !== requestIdRef.current) return
         const next: ClaimableBindingRow[] = (data.bindings ?? []).map((b) => ({

@@ -124,6 +124,8 @@ export function DelegateToOperatorForm({
     !!operatorRegistryAddress &&
     parsedAmount !== undefined &&
     !!requiredArbiter &&
+    // The commitment is backed by the configured token; none configured, no submit.
+    !!backing &&
     // Funding needs a known share token to approve/deposit against.
     (!needsDeposit || !!shareToken) &&
     !exceedsWallet &&
@@ -344,7 +346,8 @@ export function DelegateToOperatorForm({
       !commitmentManagerAddress ||
       !operatorRegistryAddress ||
       !parsedAmount ||
-      !requiredArbiter
+      !requiredArbiter ||
+      !backing
     )
       return
 
@@ -356,8 +359,8 @@ export function DelegateToOperatorForm({
     const params: FullCommitmentParams = {
       arbiter: requiredArbiter,
       counterparty: operatorRegistryAddress,
-      token: (backing?.token ?? operatorRegistryAddress) as `0x${string}`,
-      adapter: (backing?.adapter ?? operatorRegistryAddress) as `0x${string}`,
+      token: backing.token,
+      adapter: backing.adapter,
       amount: parsedAmount,
       maxPenaltyBps,
       challengeWindow: BigInt(CHALLENGE_WINDOW_DEFAULT),

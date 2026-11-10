@@ -564,7 +564,8 @@ export default function Dashboard() {
     const out: ActivityEvent[] = [];
 
     for (const a of vaultActivity.data ?? []) {
-      const ts = Number(a.timestamp ?? a.blockNumber);
+      // No block timestamp means no time to show: 0 renders "—" and sorts last.
+      const ts = a.timestamp !== undefined ? Number(a.timestamp) : 0;
       if (a.kind === "deposit") {
         out.push({
           id: `dep-${a.txHash}`,
@@ -579,22 +580,13 @@ export default function Dashboard() {
             </span>
           ),
         });
-      } else if (a.kind === "withdraw-queued") {
+      } else {
         out.push({
-          id: `wq-${a.txHash}`,
-          type: "withdrawal-requested",
+          id: `wd-${a.txHash}`,
+          type: "withdrawal",
           timestamp: ts,
           txHash: a.txHash,
-          title: "Withdrawal queued",
-          meta: <TokenAmount amount={a.assets} decimals={assetDecimals ?? 6} symbol={assetSymbol ?? ""} />,
-        });
-      } else if (a.kind === "withdraw-claimed") {
-        out.push({
-          id: `wc-${a.txHash}`,
-          type: "withdrawal-claimed",
-          timestamp: ts,
-          txHash: a.txHash,
-          title: "Withdrawal claimed",
+          title: "Withdrawal",
           meta: <TokenAmount amount={a.assets} decimals={assetDecimals ?? 6} symbol={assetSymbol ?? ""} />,
         });
       }
@@ -965,7 +957,7 @@ export default function Dashboard() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Create commitment"
-        description="Pre-lock vault shares to an arbiter for a chosen counterparty. Two-phase manager enforcement prevents instant forfeiture."
+        description="Encumber part of your deposited backing for a chosen counterparty, under an arbiter. Two-phase manager enforcement prevents instant forfeiture."
         size="lg"
       >
         {managerAddress ? (
@@ -1511,13 +1503,13 @@ function WelcomeCard({ assetSymbol }: { assetSymbol: string | undefined }) {
     {
       status: "next",
       title: `Deposit ${symbol}`,
-      body: `Put ${symbol} into the vault to mint shares you can commit. Withdrawals unbond on-chain.`,
+      body: `Put ${symbol} into a vault, then deposit the shares into the commitment manager as backing. Vault exits are instant.`,
       cta: { label: "Open vault", to: "/app/vaults" },
     },
     {
       status: "later",
       title: "Create your first commitment",
-      body: "Pledge shares to a counterparty under terms you set as arbiter. The Resolve modal handles release, forfeit, and yield distribution.",
+      body: "Encumber backing for a counterparty under terms you set, with an arbiter you choose. The Resolve modal handles release, forfeit, and yield distribution.",
       cta: { label: "Explore commitments", to: "/app/explorer" },
     },
   ];

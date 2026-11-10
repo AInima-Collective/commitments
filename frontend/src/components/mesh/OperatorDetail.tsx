@@ -149,7 +149,6 @@ export function OperatorDetail({
                 <ResolveCommitmentButton
                   commitment={c}
                   managerAddress={commitmentManager}
-                  vaultAddress={commitmentsVault}
                   connectedAddress={account}
                   isConnected={isConnected}
                   onActed={onDelegationActed}

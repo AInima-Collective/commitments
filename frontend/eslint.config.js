@@ -5,6 +5,73 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
+// Feature folders under src/components: everything except the ui and protocol layers.
+const FEATURE_DIRS = [
+  'admin',
+  'agent',
+  'agreement',
+  'arbiter',
+  'backing',
+  'claim',
+  'commitment',
+  'dashboard',
+  'docs',
+  'explorer',
+  'governance',
+  'graph',
+  'landing',
+  'mesh',
+  'metadata',
+  'mutual',
+  'shell',
+  'vault',
+]
+
+function importRules() {
+  const src = (glob) => `src/${glob}/**/*.{ts,tsx}`
+  const UI = src('components/ui')
+  const PROTOCOL = src('components/protocol')
+  const FEATURES = [...FEATURE_DIRS.map((d) => src(`components/${d}`)), src('pages')]
+
+  // Feature components and pages format token amounts via the design system.
+  // lib/ and components/ui/TokenAmount.tsx are outside this set.
+  const formatterBan = {
+    name: 'viem',
+    importNames: ['formatUnits', 'formatEther'],
+    message:
+      'Format token amounts via <TokenAmount /> (components/ui/TokenAmount) or formatTokenAmount (lib/format). Direct viem.formatUnits/formatEther in feature pages drifts from the design system.',
+  }
+  // Primitives come through the barrel. `**/ui/*` also catches sibling-relative
+  // paths such as '../ui/Notice' from another components folder.
+  const barrelOnly = {
+    group: ['**/ui/*', '!**/ui/index'],
+    message:
+      "Import primitives from the barrel ('components/ui') instead of deep paths. Deep imports drift the public surface — see frontend/src/components/ui/CONTRIBUTING.md.",
+  }
+  const featureImports = FEATURE_DIRS.map((d) => `**/components/${d}/**`)
+  const uiLayer = {
+    group: ['**/components/protocol/**', ...featureImports],
+    message:
+      'components/ui/** is the primitive layer — it must not depend on protocol-aware or feature-folder components.',
+  }
+  const protocolLayer = {
+    group: featureImports,
+    message: 'components/protocol/** depends down the stack only — feature-folder imports invert layering.',
+  }
+
+  const rule = (options) => ({ 'no-restricted-imports': ['error', options] })
+  return [
+    { files: [UI], rules: rule({ patterns: [uiLayer] }) },
+    { files: [PROTOCOL], rules: rule({ patterns: [protocolLayer, barrelOnly] }) },
+    { files: FEATURES, rules: rule({ paths: [formatterBan], patterns: [barrelOnly] }) },
+    {
+      files: ['src/**/*.{ts,tsx}'],
+      ignores: [UI, PROTOCOL, ...FEATURES],
+      rules: rule({ patterns: [barrelOnly] }),
+    },
+  ]
+}
+
 export default defineConfig([
   globalIgnores(['dist']),
   {
@@ -41,94 +108,18 @@ export default defineConfig([
   },
 
   // ───────────────────────────────────────────────────────────────────────
-  // Design-system Phase 5 (Lock): rules promoted to 'error' as of 2026-04-27.
-  // Per frontend/docs/design-system.md §5 and §11. The 4 pre-existing mesh-hook
-  // tsc errors were also fixed as part of Phase 5 — see commits in
-  // 260427-rcc-SUMMARY.md.
+  // Import rules, at 'error'. Flat config does not merge a rule's options
+  // across blocks — the last matching block wins — so each file set below gets
+  // exactly one `no-restricted-imports` carrying every restriction that
+  // applies to it. The sets are disjoint.
+  //
+  //   ui/**        layering (no protocol or feature imports)
+  //   protocol/**  layering (no feature imports) + barrel-only ui imports
+  //   features,
+  //   pages/**     viem formatter ban + barrel-only ui imports
+  //   rest of src  barrel-only ui imports
   // ───────────────────────────────────────────────────────────────────────
-
-  // Rule 1 — feature pages must format token amounts via the design system,
-  // not by reaching for viem's raw formatters. Scoped to feature components
-  // and pages; lib/, components/ui/TokenAmount.tsx, and tests are exempt.
-  {
-    files: [
-      'src/components/vault/**/*.{ts,tsx}',
-      'src/components/commitment/**/*.{ts,tsx}',
-      'src/components/commitments/**/*.{ts,tsx}',
-      'src/components/entanglement/**/*.{ts,tsx}',
-      'src/components/entanglements/**/*.{ts,tsx}',
-      'src/components/mesh/**/*.{ts,tsx}',
-      'src/components/metadata/**/*.{ts,tsx}',
-      'src/components/graph/**/*.{ts,tsx}',
-      'src/pages/**/*.{ts,tsx}',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          {
-            name: 'viem',
-            importNames: ['formatUnits', 'formatEther'],
-            message:
-              "Format token amounts via <TokenAmount /> (components/ui/TokenAmount) or formatTokenAmount (lib/format). Direct viem.formatUnits/formatEther in feature pages drifts from the design system. Promoted from 'warn' to 'error' in Phase 5 (Lock).",
-          },
-        ],
-      }],
-    },
-  },
-
-  // Rule 2 — layering. Lower layers must not depend on higher layers.
-  //   - components/ui/** (primitives): no protocol or feature imports.
-  //   - components/protocol/** (domain): no feature-folder imports.
-  // Pages/feature folders are unrestricted — they're the top of the graph.
-  {
-    files: ['src/components/ui/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          {
-            group: [
-              '**/components/protocol/**',
-              '**/components/vault/**',
-              '**/components/commitment/**',
-              '**/components/commitments/**',
-              '**/components/entanglement/**',
-              '**/components/entanglements/**',
-              '**/components/mesh/**',
-              '**/components/metadata/**',
-              '**/components/graph/**',
-              '**/components/syndicate/**',
-            ],
-            message:
-              "components/ui/** is the primitive layer — it must not depend on protocol-aware or feature-folder components. Promoted from 'warn' to 'error' in Phase 5 (Lock).",
-          },
-        ],
-      }],
-    },
-  },
-  {
-    files: ['src/components/protocol/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          {
-            group: [
-              '**/components/vault/**',
-              '**/components/commitment/**',
-              '**/components/commitments/**',
-              '**/components/entanglement/**',
-              '**/components/entanglements/**',
-              '**/components/mesh/**',
-              '**/components/metadata/**',
-              '**/components/graph/**',
-              '**/components/syndicate/**',
-            ],
-            message:
-              "components/protocol/** depends down the stack only — feature-folder imports invert layering. Promoted from 'warn' to 'error' in Phase 5 (Lock).",
-          },
-        ],
-      }],
-    },
-  },
+  ...importRules(),
 
   // ───────────────────────────────────────────────────────────────────────
   // Phase 22 (Foundation) — FND-05 lint guardrails at 'warn'.
@@ -163,29 +154,6 @@ export default defineConfig([
             "Hex color literals (including inside template strings) are not permitted outside src/styles/tokens.css. Reference a token via var(--*). Locked in Phase 28 (LCK-01).",
         },
       ],
-    },
-  },
-
-  // Rule 4 (error) — Deep imports of components/ui/<Primitive> are forbidden;
-  // consumers must go through the barrel ('@/components/ui' or '../components/ui').
-  // The components/ui/** folder itself is exempt — siblings legitimately import each other.
-  {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/components/ui/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [
-          {
-            group: [
-              '**/components/ui/*',
-              '!**/components/ui',
-              '!**/components/ui/index',
-            ],
-            message:
-              "Import primitives from the barrel ('components/ui') instead of deep paths. Deep imports drift the public surface — see frontend/src/components/ui/CONTRIBUTING.md. Locked in Phase 28 (LCK-01).",
-          },
-        ],
-      }],
     },
   },
 ])
