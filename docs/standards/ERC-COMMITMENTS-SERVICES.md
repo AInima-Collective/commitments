@@ -183,7 +183,7 @@ Implementations MUST snapshot the credited amount per commitment at registration
 
 `delegate` MUST revert once `activeDelegationCount >= maxDelegationsPerOperator` (reference default `1024`). The cap bounds the per-operator callback fan-out and keeps `getOperatorSet`-driven iteration gas-bounded.
 
-`deregister` is operator-initiated and MUST revert unless the operator has no active delegations beyond their own self-stake (`activeDelegationCount == 1`). It marks the operator inactive, removes it from the enumerable set (swap-and-pop), clears the self-stake commitment's callback routing so a later release/forfeit of that commitment cannot mutate a future re-registration's counters, and sets `totalDelegatedStake` and `activeDelegationCount` to zero. Because the routing is cleared, the same still-live commitment MAY be presented to `register` again in a later block.
+`deregister` is operator-initiated and MUST revert while the operator has an active delegation other than their own live self-stake (`activeDelegationCount > (selfStakeActive ? 1 : 0)`). An operator whose self-stake has already closed may therefore deregister only at a count of zero: a count of one is then a third party's delegation. It marks the operator inactive, removes it from the enumerable set (swap-and-pop), clears the self-stake commitment's callback routing so a later release/forfeit of that commitment cannot mutate a future re-registration's counters, and sets `totalDelegatedStake` and `activeDelegationCount` to zero. Because the routing is cleared, the same still-live commitment MAY be presented to `register` again in a later block.
 
 #### 2.3 Acceptance policy
 
