@@ -23,9 +23,6 @@ import {
     GovernorTimelockControlUpgradeable
 } from "@openzeppelin/contracts-upgradeable/governance/extensions/GovernorTimelockControlUpgradeable.sol";
 import {
-    GovernorStorageUpgradeable
-} from "@openzeppelin/contracts-upgradeable/governance/extensions/GovernorStorageUpgradeable.sol";
-import {
     TimelockControllerUpgradeable
 } from "@openzeppelin/contracts-upgradeable/governance/TimelockControllerUpgradeable.sol";
 import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
@@ -43,8 +40,6 @@ import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
 ///         - GovernorVotesQuorumFraction: quorum = numerator/denominator of past total supply
 ///         - GovernorPreventLateQuorum: extends voting deadline if quorum reaches at the wire
 ///         - GovernorTimelockControl: queue + execute via TimelockController
-///         - GovernorStorage: on-chain proposal enumeration (so the indexer can read
-///           proposal data without parsing every event log)
 ///
 ///         Hash-based proposal IDs (Tally-compatible). UUPS upgradeable; the
 ///         _authorizeUpgrade is gated onlyGovernance, so the DAO can only upgrade
@@ -58,7 +53,6 @@ contract CommitmentsGovernor is
     GovernorVotesQuorumFractionUpgradeable,
     GovernorPreventLateQuorumUpgradeable,
     GovernorTimelockControlUpgradeable,
-    GovernorStorageUpgradeable,
     UUPSUpgradeable
 {
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -94,7 +88,6 @@ contract CommitmentsGovernor is
         __GovernorVotesQuorumFraction_init(quorumNumerator_);
         __GovernorPreventLateQuorum_init(lateQuorumExtension_);
         __GovernorTimelockControl_init(timelock_);
-        __GovernorStorage_init();
     }
 
     // ============================================================
@@ -151,16 +144,6 @@ contract CommitmentsGovernor is
         override(GovernorUpgradeable, GovernorPreventLateQuorumUpgradeable)
     {
         super._tallyUpdated(proposalId);
-    }
-
-    function _propose(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
-        string memory description,
-        address proposer
-    ) internal override(GovernorUpgradeable, GovernorStorageUpgradeable) returns (uint256) {
-        return super._propose(targets, values, calldatas, description, proposer);
     }
 
     function _queueOperations(

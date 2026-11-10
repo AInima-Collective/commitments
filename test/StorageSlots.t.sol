@@ -62,7 +62,6 @@ contract StorageSlotsTest is Test {
     ///           2: pendingUpdater (address) + pendingUpdaterEffectiveAt (uint64), packed
     ///           3: activationDelay (uint64) + minActivationDelay (uint64), packed
     ///           4: roots (mapping)
-    ///           5: rootHistory (array)
     function test_merkleSnapshotLayout_updaterStateRelocated() public {
         MerkleSnapshot impl = new MerkleSnapshot();
         address serviceAddr = address(0x5E12);

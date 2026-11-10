@@ -8,6 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
+import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {ICommitmentsRewardsCoordinator} from "src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol";
 import {IMerkleSnapshot} from "src/extensions/rewards/interfaces/IMerkleSnapshot.sol";
 import {
@@ -40,19 +41,6 @@ contract CommitmentsRewardsCoordinator is
 {
     using CommitmentsRewardsCoordinatorStorage for CommitmentsRewardsCoordinatorStorage.Layout;
     using SafeERC20 for IERC20;
-
-    /// @notice ERC-COMMITMENTS §D.7 uniform payout event, emitted by whichever contract
-    ///         executes the payout — here, this coordinator's own `processClaim`.
-    ///         `commitmentId = 0`: merkle leaves carry no per-commitment attribution;
-    ///         indexers reconstruct it from `CommitmentBoundToStrategy`.
-    event DistributionPaid(
-        address indexed strategy,
-        address indexed recipient,
-        address indexed token,
-        uint256 amount,
-        uint256 commitmentId,
-        bytes32 context
-    );
 
     /// @dev Disable initializers on the implementation contract (proxy pattern).
     constructor() {
@@ -121,15 +109,14 @@ contract CommitmentsRewardsCoordinator is
         amountPaidOut = cumulativeAmount - alreadyClaimed;
         if (amountPaidOut == 0) revert NoOp(); // fail fast on zero-delta
 
-        if (IERC20(token).balanceOf(address(this)) < amountPaidOut) revert InsufficientBalance();
-
         // CEI: state write before external call.
         $.claimed[msg.sender][token] = cumulativeAmount;
         IERC20(token).safeTransfer(msg.sender, amountPaidOut);
 
         emit RewardsClaimed(rootId, msg.sender, token, amountPaidOut, cumulativeAmount);
         // ERC-COMMITMENTS §D.7: the payout-executing contract emits the uniform event.
-        emit DistributionPaid(address(this), msg.sender, token, amountPaidOut, 0, rootId);
+        // `commitmentId = 0`: merkle leaves carry no per-commitment attribution.
+        emit ICommitmentManager.DistributionPaid(address(this), msg.sender, token, amountPaidOut, 0, rootId);
     }
 
     // -------------------------------------------------------------------------

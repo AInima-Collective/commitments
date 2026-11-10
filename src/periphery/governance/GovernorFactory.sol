@@ -95,17 +95,8 @@ contract GovernorFactory {
     // Plain storage: GovernorFactory is non-upgradeable (constructor-immutables
     // only), so it does not need EIP-7201 namespaced storage.
 
-    /// @notice ordered list of every governor deployed by this factory.
-    address[] private _allGovernors;
-
-    /// @notice per-governor lookup of the linked DAO components.
-    mapping(address governor => DAODeployment) private _byGovernor;
-
-    /// @notice per-source list of every governor instance reading from it.
-    ///         A TokenWeighting only has ONE governance writer (the
-    ///         tw.governance() slot); this map tracks every governor
-    ///         configured to *read* from the source via its shim.
-    mapping(address source => address[]) private _governorsBySource;
+    /// @notice governors deployed by this factory; `setCanonicalGovernor` accepts only these.
+    mapping(address governor => bool) private _deployed;
 
     /// @notice the canonical / reference DAO address (the protocol's own).
     ///         Set at most once via setCanonicalGovernor() and indexed
@@ -166,7 +157,7 @@ contract GovernorFactory {
         tl.grantRole(tl.EXECUTOR_ROLE(), address(0));
         tl.renounceRole(tl.DEFAULT_ADMIN_ROLE(), address(this));
 
-        // 5. Index.
+        // 5. Record.
         dao = DAODeployment({
             governor: governor,
             timelock: timelock,
@@ -175,9 +166,7 @@ contract GovernorFactory {
             name: cfg.name,
             deployedAtBlock: block.number
         });
-        _allGovernors.push(governor);
-        _byGovernor[governor] = dao;
-        _governorsBySource[address(cfg.source)].push(governor);
+        _deployed[governor] = true;
 
         emit GovernorDeployed(governor, timelock, address(shim), address(cfg.source), cfg.name);
     }
@@ -188,7 +177,7 @@ contract GovernorFactory {
     function setCanonicalGovernor(address governor) external {
         if (msg.sender != deployer) revert NotDeployer();
         if (_canonicalGovernor != address(0)) revert CanonicalAlreadySet();
-        if (_byGovernor[governor].governor == address(0)) revert UnknownGovernor();
+        if (!_deployed[governor]) revert UnknownGovernor();
         _canonicalGovernor = governor;
         emit CanonicalGovernorSet(governor);
     }
@@ -196,22 +185,6 @@ contract GovernorFactory {
     // ============================================================
     // VIEWS
     // ============================================================
-
-    function deploymentCount() external view returns (uint256) {
-        return _allGovernors.length;
-    }
-
-    function governorAt(uint256 i) external view returns (address) {
-        return _allGovernors[i];
-    }
-
-    function getDeployment(address governor) external view returns (DAODeployment memory dao) {
-        dao = _byGovernor[governor];
-    }
-
-    function governorsBySource(address source) external view returns (address[] memory) {
-        return _governorsBySource[source];
-    }
 
     function canonicalGovernor() external view returns (address) {
         return _canonicalGovernor;

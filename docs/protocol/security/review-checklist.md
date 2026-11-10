@@ -54,7 +54,7 @@ Primary suites: test/manager/Agreement.t.sol, test/manager/Mutual.t.sol, test/mu
 - Claimed totals never decrease and insufficient funding fails safely.
 - Freeze and upgrade authority belong to the service, not the updater.
 
-Primary suites: test/rewards/ and test/conformance/RewardsCoordinatorInvariants.t.sol.
+Primary suites: test/rewards/ and test/rewards/conformance/RewardsCoordinatorInvariants.t.sol.
 
 ## Commands
 

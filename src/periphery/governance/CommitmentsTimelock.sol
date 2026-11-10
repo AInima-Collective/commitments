@@ -6,8 +6,7 @@ import {
 } from "@openzeppelin/contracts-upgradeable/governance/TimelockControllerUpgradeable.sol";
 
 /// @title CommitmentsTimelock
-/// @notice Thin subclass of OZ TimelockControllerUpgradeable. Adds a `version()`
-///         view for indexer disambiguation; otherwise stock semantics.
+/// @notice Thin subclass of OZ TimelockControllerUpgradeable with stock semantics.
 ///
 ///         Intentionally NOT UUPS-upgradeable. Replacing the timelock means
 ///         deploying a new DAO instance — a fresh Timelock + Governor pair, and
@@ -18,10 +17,5 @@ contract CommitmentsTimelock is TimelockControllerUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
-    }
-
-    /// @notice Identifier emitted to disambiguate timelock versions in the indexer.
-    function version() external pure returns (string memory) {
-        return "1";
     }
 }

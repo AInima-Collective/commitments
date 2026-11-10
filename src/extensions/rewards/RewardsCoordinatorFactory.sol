@@ -29,7 +29,6 @@ contract RewardsCoordinatorFactory {
     );
 
     error ZeroAddress();
-    error ActivationDelayBelowFloor();
 
     /// @notice The shared coordinator implementation. New services proxy to it.
     address public immutable coordinatorImplementation;
@@ -63,11 +62,9 @@ contract RewardsCoordinatorFactory {
         external
         returns (address coordinator, address snapshot)
     {
-        if (service == address(0) || updater == address(0)) revert ZeroAddress();
-        if (activationDelay < minActivationDelay) revert ActivationDelayBelowFloor();
-
         // Deploy snapshot first — it is self-contained for updater auth, so no
-        // coordinator address is needed at init.
+        // coordinator address is needed at init. Its `initialize` rejects a zero
+        // service or updater and a delay below the floor.
         snapshot = address(
             new ERC1967Proxy(
                 snapshotImplementation,

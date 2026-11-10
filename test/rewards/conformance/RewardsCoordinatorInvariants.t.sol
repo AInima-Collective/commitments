@@ -8,8 +8,8 @@ import {MerkleSnapshot} from "src/extensions/rewards/MerkleSnapshot.sol";
 import {CommitmentsRewardsCoordinator} from "src/extensions/rewards/CommitmentsRewardsCoordinator.sol";
 import {IMerkleSnapshot} from "src/extensions/rewards/interfaces/IMerkleSnapshot.sol";
 import {ICommitmentsRewardsCoordinator} from "src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol";
-import {MockERC20} from "../helpers/MockERC20.sol";
-import {MerkleHelper} from "../rewards/MerkleHelper.sol";
+import {MockERC20} from "../../helpers/MockERC20.sol";
+import {MerkleHelper} from "../MerkleHelper.sol";
 
 /// @notice Handler that drives the rewards coordinator with random sequences
 ///         of deposit / submitRoot / processClaim / time-warp / disableRoot.
@@ -129,7 +129,7 @@ contract RewardsCoordinatorHandler is Test {
         bytes32[] memory proof = MerkleHelper.buildProof(leaves, idx);
         uint256 expectedDelta = cumulative > ghostClaimed[earner] ? cumulative - ghostClaimed[earner] : 0;
         if (expectedDelta == 0) return; // would NoOp-revert; skip
-        if (token.balanceOf(address(coord)) < expectedDelta) return; // would InsufficientBalance; skip
+        if (token.balanceOf(address(coord)) < expectedDelta) return; // the transfer would revert; skip
 
         vm.prank(earner);
         try coord.processClaim(rootId, address(token), cumulative, proof) returns (uint256 paid) {

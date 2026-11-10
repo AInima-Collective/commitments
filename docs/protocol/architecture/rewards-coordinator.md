@@ -45,4 +45,4 @@ The service may freeze and unfreeze claims and authorizes coordinator upgrades. 
 - Snapshot: src/extensions/rewards/MerkleSnapshot.sol
 - Coordinator: src/extensions/rewards/CommitmentsRewardsCoordinator.sol
 - Factory: src/extensions/rewards/RewardsCoordinatorFactory.sol
-- Tests: test/rewards/ and test/conformance/RewardsCoordinatorInvariants.t.sol
+- Tests: test/rewards/ and test/rewards/conformance/RewardsCoordinatorInvariants.t.sol

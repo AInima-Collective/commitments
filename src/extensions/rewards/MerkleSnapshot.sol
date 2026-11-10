@@ -83,9 +83,7 @@ contract MerkleSnapshot is Initializable, UUPSUpgradeable, ReentrancyGuardTransi
         uint64 submittedAt = uint64(block.timestamp);
         uint64 activeAt = submittedAt + $.activationDelay;
 
-        $.roots[merkleRoot] =
-            RewardsRoot({merkleRoot: merkleRoot, submittedAt: submittedAt, activeAt: activeAt, disabled: false});
-        $.rootHistory.push(merkleRoot);
+        $.roots[merkleRoot] = RewardsRoot({submittedAt: submittedAt, activeAt: activeAt, disabled: false});
 
         emit RootSubmitted(merkleRoot, submittedAt, activeAt);
         return merkleRoot;
@@ -164,16 +162,6 @@ contract MerkleSnapshot is Initializable, UUPSUpgradeable, ReentrancyGuardTransi
     }
 
     /// @inheritdoc IMerkleSnapshot
-    function rootCount() external view returns (uint256) {
-        return MerkleSnapshotStorage.layout().rootHistory.length;
-    }
-
-    /// @inheritdoc IMerkleSnapshot
-    function rootAt(uint256 index) external view returns (bytes32) {
-        return MerkleSnapshotStorage.layout().rootHistory[index];
-    }
-
-    /// @inheritdoc IMerkleSnapshot
     function isActive(bytes32 rootId) external view returns (bool) {
         RewardsRoot storage r = MerkleSnapshotStorage.layout().roots[rootId];
         return r.submittedAt != 0 && !r.disabled && block.timestamp >= r.activeAt;
@@ -203,11 +191,6 @@ contract MerkleSnapshot is Initializable, UUPSUpgradeable, ReentrancyGuardTransi
     function pendingUpdater() external view returns (address newUpdater, uint64 effectiveAt) {
         MerkleSnapshotStorage.Layout storage $ = MerkleSnapshotStorage.layout();
         return ($.pendingUpdater, $.pendingUpdaterEffectiveAt);
-    }
-
-    /// @inheritdoc IMerkleSnapshot
-    function updater() external view returns (address) {
-        return MerkleSnapshotStorage.layout().updater;
     }
 
     // -------------------------------------------------------------------------

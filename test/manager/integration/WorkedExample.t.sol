@@ -159,9 +159,7 @@ contract WorkedExampleTest is Test {
         bytes32[] memory proof = MerkleHelper.buildProof(leaves, 0);
 
         vm.expectEmit(true, true, true, true, address(merkleRewards));
-        emit CommitmentsRewardsCoordinator.DistributionPaid(
-            address(merkleRewards), alice, address(mUSDC), 50e18, 0, rootId
-        );
+        emit ICM.DistributionPaid(address(merkleRewards), alice, address(mUSDC), 50e18, 0, rootId);
         vm.prank(alice);
         merkleRewards.processClaim(rootId, address(mUSDC), 50e18, proof);
         assertEq(mUSDC.balanceOf(alice), 50e18);

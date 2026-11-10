@@ -3580,13 +3580,6 @@ export const commitmentsGovernorAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'proposalId', internalType: 'uint256', type: 'uint256' }],
-    name: 'cancel',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: 'targets', internalType: 'address[]', type: 'address[]' },
       { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
@@ -3688,13 +3681,6 @@ export const commitmentsGovernorAbi = [
     ],
     name: 'execute',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'payable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'proposalId', internalType: 'uint256', type: 'uint256' }],
-    name: 'execute',
-    outputs: [],
     stateMutability: 'payable',
   },
   {
@@ -3833,41 +3819,9 @@ export const commitmentsGovernorAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'proposalCount',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'proposalId', internalType: 'uint256', type: 'uint256' }],
     name: 'proposalDeadline',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'proposalId', internalType: 'uint256', type: 'uint256' }],
-    name: 'proposalDetails',
-    outputs: [
-      { name: 'targets', internalType: 'address[]', type: 'address[]' },
-      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
-      { name: 'calldatas', internalType: 'bytes[]', type: 'bytes[]' },
-      { name: 'descriptionHash', internalType: 'bytes32', type: 'bytes32' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
-    name: 'proposalDetailsAt',
-    outputs: [
-      { name: 'proposalId', internalType: 'uint256', type: 'uint256' },
-      { name: 'targets', internalType: 'address[]', type: 'address[]' },
-      { name: 'values', internalType: 'uint256[]', type: 'uint256[]' },
-      { name: 'calldatas', internalType: 'bytes[]', type: 'bytes[]' },
-      { name: 'descriptionHash', internalType: 'bytes32', type: 'bytes32' },
-    ],
     stateMutability: 'view',
   },
   {
@@ -3945,13 +3899,6 @@ export const commitmentsGovernorAbi = [
     ],
     name: 'queue',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'proposalId', internalType: 'uint256', type: 'uint256' }],
-    name: 'queue',
-    outputs: [],
     stateMutability: 'nonpayable',
   },
   {
@@ -4868,13 +4815,6 @@ export const commitmentsTimelockAbi = [
     name: 'updateDelay',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'version',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
   },
   {
     type: 'event',
@@ -7835,50 +7775,8 @@ export const governorFactoryAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'deploymentCount',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'governor', internalType: 'address', type: 'address' }],
-    name: 'getDeployment',
-    outputs: [
-      {
-        name: 'dao',
-        internalType: 'struct GovernorFactory.DAODeployment',
-        type: 'tuple',
-        components: [
-          { name: 'governor', internalType: 'address', type: 'address' },
-          { name: 'timelock', internalType: 'address', type: 'address' },
-          { name: 'shim', internalType: 'address', type: 'address' },
-          { name: 'source', internalType: 'address', type: 'address' },
-          { name: 'name', internalType: 'string', type: 'string' },
-          { name: 'deployedAtBlock', internalType: 'uint256', type: 'uint256' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'i', internalType: 'uint256', type: 'uint256' }],
-    name: 'governorAt',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'governorImpl',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'source', internalType: 'address', type: 'address' }],
-    name: 'governorsBySource',
-    outputs: [{ name: '', internalType: 'address[]', type: 'address[]' }],
     stateMutability: 'view',
   },
   {
@@ -16875,39 +16773,12 @@ export const useReadCommitmentsGovernorNonces =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentsGovernorAbi}__ and `functionName` set to `"proposalCount"`
- */
-export const useReadCommitmentsGovernorProposalCount =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentsGovernorAbi,
-    functionName: 'proposalCount',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentsGovernorAbi}__ and `functionName` set to `"proposalDeadline"`
  */
 export const useReadCommitmentsGovernorProposalDeadline =
   /*#__PURE__*/ createUseReadContract({
     abi: commitmentsGovernorAbi,
     functionName: 'proposalDeadline',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentsGovernorAbi}__ and `functionName` set to `"proposalDetails"`
- */
-export const useReadCommitmentsGovernorProposalDetails =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentsGovernorAbi,
-    functionName: 'proposalDetails',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentsGovernorAbi}__ and `functionName` set to `"proposalDetailsAt"`
- */
-export const useReadCommitmentsGovernorProposalDetailsAt =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentsGovernorAbi,
-    functionName: 'proposalDetailsAt',
   })
 
 /**
@@ -17753,15 +17624,6 @@ export const useReadCommitmentsTimelockSupportsInterface =
   /*#__PURE__*/ createUseReadContract({
     abi: commitmentsTimelockAbi,
     functionName: 'supportsInterface',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentsTimelockAbi}__ and `functionName` set to `"version"`
- */
-export const useReadCommitmentsTimelockVersion =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentsTimelockAbi,
-    functionName: 'version',
   })
 
 /**
@@ -19890,48 +19752,12 @@ export const useReadGovernorFactoryDeployer =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"deploymentCount"`
- */
-export const useReadGovernorFactoryDeploymentCount =
-  /*#__PURE__*/ createUseReadContract({
-    abi: governorFactoryAbi,
-    functionName: 'deploymentCount',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"getDeployment"`
- */
-export const useReadGovernorFactoryGetDeployment =
-  /*#__PURE__*/ createUseReadContract({
-    abi: governorFactoryAbi,
-    functionName: 'getDeployment',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"governorAt"`
- */
-export const useReadGovernorFactoryGovernorAt =
-  /*#__PURE__*/ createUseReadContract({
-    abi: governorFactoryAbi,
-    functionName: 'governorAt',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"governorImpl"`
  */
 export const useReadGovernorFactoryGovernorImpl =
   /*#__PURE__*/ createUseReadContract({
     abi: governorFactoryAbi,
     functionName: 'governorImpl',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"governorsBySource"`
- */
-export const useReadGovernorFactoryGovernorsBySource =
-  /*#__PURE__*/ createUseReadContract({
-    abi: governorFactoryAbi,
-    functionName: 'governorsBySource',
   })
 
 /**

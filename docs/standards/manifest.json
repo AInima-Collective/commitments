@@ -306,11 +306,10 @@
       "implementations": [
         "src/extensions/rewards/CommitmentsRewardsCoordinator.sol",
         "src/extensions/rewards/MerkleSnapshot.sol",
-        "src/extensions/rewards/MerkleSnapshotAdapter.sol",
         "src/extensions/rewards/RewardsCoordinatorFactory.sol"
       ],
       "conformanceTests": [
-        "test/conformance/RewardsCoordinatorInvariants.t.sol"
+        "test/rewards/conformance/RewardsCoordinatorInvariants.t.sol"
       ],
       "selectors": [
         { "artifact": "ICommitmentsRewardsCoordinator", "selection": "all" },
@@ -357,7 +356,6 @@
       { "source": "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol", "declarations": ["ILinkedMutualPolicy"] },
       { "source": "src/extensions/rewards/CommitmentsRewardsCoordinator.sol", "declarations": ["CommitmentsRewardsCoordinator"] },
       { "source": "src/extensions/rewards/MerkleSnapshot.sol", "declarations": ["MerkleSnapshot"] },
-      { "source": "src/extensions/rewards/MerkleSnapshotAdapter.sol", "declarations": ["MerkleSnapshotAdapter"] },
       { "source": "src/extensions/rewards/RewardsCoordinatorFactory.sol", "declarations": ["RewardsCoordinatorFactory"] },
       { "source": "src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol", "declarations": ["ICommitmentsRewardsCoordinator"] },
       { "source": "src/extensions/rewards/interfaces/IMerkleSnapshot.sol", "declarations": ["IMerkleSnapshot"] },

@@ -3,8 +3,8 @@ pragma solidity ^0.8.27;
 
 /// @title IMerkleSnapshot
 /// @notice Reusable on-chain root storage for cumulative-merkle distribution. The
-///         snapshot is intentionally narrow: it stores roots, gates submit on the
-///         coordinator's active updater, and gates disable on the service. It is the
+///         snapshot is intentionally narrow: it stores roots, gates submit on its
+///         own active updater, and gates disable on the service. It is the
 ///         "dumb storage" half of the snapshot/coordinator separation locked in
 /// .
 ///         The snapshot is reusable beyond rewards — the same primitive backs
@@ -24,9 +24,8 @@ pragma solidity ^0.8.27;
 ///         the coordinator so the snapshot owns its own `submitRoot` auth and
 ///         the snapshot↔coordinator deploy-time circular dependency is broken.
 interface IMerkleSnapshot {
-    /// @notice Per-root metadata. `merkleRoot` doubles as the rootId.
+    /// @notice Per-root metadata, keyed by the root itself (rootId == merkleRoot).
     struct RewardsRoot {
-        bytes32 merkleRoot;
         uint64 submittedAt;
         uint64 activeAt;
         bool disabled;
@@ -57,7 +56,6 @@ interface IMerkleSnapshot {
     error ZeroRoot();
     error ZeroAddress();
     error ActivationDelayBelowFloor();
-    error AlreadyInitialized();
     error NoStagedUpdater();
     error StagedUpdaterNotReady();
     error StagedUpdaterAlreadyExists();
@@ -112,12 +110,6 @@ interface IMerkleSnapshot {
     /// @notice Root metadata by content hash.
     function rootById(bytes32 rootId) external view returns (RewardsRoot memory);
 
-    /// @notice Total number of roots ever submitted (active or otherwise).
-    function rootCount() external view returns (uint256);
-
-    /// @notice Submission-order rootId at index. O(1).
-    function rootAt(uint256 index) external view returns (bytes32);
-
     /// @notice True if the root exists, is not disabled, and `block.timestamp >= activeAt`.
     function isActive(bytes32 rootId) external view returns (bool);
 
@@ -139,7 +131,4 @@ interface IMerkleSnapshot {
 
     /// @notice The staged (but not yet activated) updater, if any.
     function pendingUpdater() external view returns (address newUpdater, uint64 effectiveAt);
-
-    /// @notice Alias of `activeUpdater()`. Retained for source compatibility.
-    function updater() external view returns (address);
 }
