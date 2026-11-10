@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button, EmptyState, ErrorBlock, FilterBar, Notice, Skeleton } from "../components/ui";
 import { PageHeader, type MutualLifecycle } from "../components/protocol";
 import { CoveragePoolCard } from "../components/mutual/CoveragePoolCard";
+import { hasIndexer } from "../config/indexer";
 import { useMutualListings, type MutualListing } from "../hooks/useMutualListings";
 import { useMutuals, type MutualIndexed } from "../hooks/useMutuals";
 import { useTokenMetaMap } from "../hooks/useTokenMeta";
@@ -76,8 +77,8 @@ function coverOf(listing: MutualListing): bigint {
  * Listings, loss-adjusted `liveCapacity`, member count, cumulative markdown Λ,
  * premium APR, lifecycle status and the offering type all come from the
  * indexer's `/mutuals` ({@link useMutualListings} is a projection of
- * {@link useMutuals}, deduped by react-query). Without an indexer the grid is
- * empty.
+ * {@link useMutuals}, deduped by react-query). Without an indexer the page
+ * says so.
  */
 export default function Marketplace() {
   const navigate = useNavigate();
@@ -172,7 +173,13 @@ export default function Marketplace() {
 
   let content: React.ReactNode;
 
-  if (isLoading && listings.length === 0) {
+  if (!hasIndexer) {
+    content = (
+      <Notice tone="info">
+        Indexer not configured. Set <code>VITE_INDEXER_URL</code> to see live data.
+      </Notice>
+    );
+  } else if (isLoading && listings.length === 0) {
     content = (
       <div className="ds-grid-auto-fit" aria-busy="true" aria-label="Loading coverage pools">
         {[0, 1, 2].map((i) => (
@@ -202,10 +209,8 @@ export default function Marketplace() {
     content = (
       <div className="ds-stack ds-stack-4">
         {indexed.isError && (
-          <Notice tone="warn" size="sm" title="Live coverage unavailable">
-            The indexer is unreachable, so loss-adjusted cover, premium APR, underwriter counts, offering type, and
-            lifecycle status can't be shown. Figures below are nominal subscribed amounts from chain, and type/status
-            filters will not match.
+          <Notice tone="warn" size="sm">
+            Indexer offline — showing the last indexed data.
           </Notice>
         )}
         <FilterBar size="sm" activeCount={activeFilterCount} onClearAll={clearFilters}>

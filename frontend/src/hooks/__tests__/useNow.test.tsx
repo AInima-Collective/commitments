@@ -32,6 +32,22 @@ describe('shared clock', () => {
     expect(clearInterval).toHaveBeenCalledTimes(1)
   })
 
+  it('renders the current time on the first subscribe after the clock sat idle', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const first: string[] = []
+    function Clock() {
+      const now = useNowSeconds().toString()
+      first.push(now)
+      return <span>{now}</span>
+    }
+    render(<Clock />).unmount()
+    vi.setSystemTime(1_010_000)
+    first.length = 0
+    render(<Clock />)
+    expect(first[0]).toBe('1010')
+  })
+
   it('re-renders a selector subscriber only when the selection changes', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000_000)

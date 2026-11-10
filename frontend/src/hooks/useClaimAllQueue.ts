@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Address, type Hex } from 'viem'
 import { useConfig } from 'wagmi'
 import { waitForTransactionReceipt } from 'wagmi/actions'
@@ -68,6 +68,10 @@ export function useTxQueue<T>({
   const { push } = useToasts()
   const [progress, setProgress] = useState<ClaimAllQueueProgress | null>(null)
   const cancelledRef = useRef(false)
+  // Leaving the page stops the queue: no wallet prompts for a list no longer shown.
+  useEffect(() => () => {
+    cancelledRef.current = true
+  }, [])
 
   async function drain(entries: T[]) {
     cancelledRef.current = false

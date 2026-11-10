@@ -42,7 +42,9 @@ interface PremiumMembershipWire {
 export interface UseMyMembershipsReturn {
   memberships: MyMembership[]
   isLoading: boolean
-  /** Re-read the listing and the chain state; resolves with the fresh membership count. */
+  /** Rows in the indexer's listing, released ones and other managers' included. */
+  listed: number
+  /** Re-read the listing and the chain state; resolves with the fresh `listed` count. */
   refetch: () => Promise<{ data: number | undefined }>
 }
 
@@ -128,6 +130,7 @@ export function useMyMemberships({
   return {
     memberships,
     isLoading: listing.isLoading || chain.isLoading,
+    listed: listing.data?.memberships.length ?? 0,
     refetch: async () => {
       const { data } = await refetchListing()
       void refetchChain()

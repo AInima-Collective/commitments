@@ -10,7 +10,7 @@ interface FundingNoticeProps {
   wallet: bigint | undefined
   decimals: number
   symbol?: string
-  /** What the free balance is called: "backing" or "shares". */
+  /** What the free balance is called, for the shortfall title: "backing" or "shares". */
   noun: string
   /** What is being created: "commitment" or "delegation". */
   subject: string
@@ -36,7 +36,7 @@ export function FundingNotice({ amount, free, shortfall, wallet, decimals, symbo
   }
   return (
     <Notice tone="info" size="sm" title="WILL FUND FROM WALLET">
-      Free {noun} covers {token(free)} — the remaining {token(shortfall)} is deposited from your wallet in the same
+      You have {token(free)} free — the remaining {token(shortfall)} is deposited from your wallet in the same
       transaction.
     </Notice>
   )

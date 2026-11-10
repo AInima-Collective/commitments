@@ -667,7 +667,7 @@ function AgreementsTable({ filterAddress }: { filterAddress?: string | null }) {
               }
             />
           ) : (
-            <EmptyState title="NO AGREEMENTS" description="Propose and accept an agreement to see it here." />
+            <EmptyState title="NO AGREEMENTS" />
           )
         }
       />

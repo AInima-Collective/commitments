@@ -47,8 +47,8 @@ export interface UseVaultsReturn {
 
 /**
  * Every factory-deployed vault, from the indexer's `vault` table, oldest
- * first. Until the query succeeds (or without an indexer) it is the env list
- * from {@link getVaultRegistry}.
+ * first. Until the first answer (or without an indexer) it is the env list
+ * from {@link getVaultRegistry}; a failed refetch keeps the last list.
  */
 export function useVaults(): UseVaultsReturn {
   const chainId = useChainId()
@@ -60,8 +60,8 @@ export function useVaults(): UseVaultsReturn {
     retry: false,
   })
   const vaults = useMemo(
-    () => (query.isSuccess ? query.data.map(toDescriptor) : getVaultRegistry(chainId)),
-    [query.isSuccess, query.data, chainId],
+    () => (query.data ? query.data.map(toDescriptor) : getVaultRegistry(chainId)),
+    [query.data, chainId],
   )
   const isLoading = hasIndexer && query.isLoading
   return useMemo(() => {

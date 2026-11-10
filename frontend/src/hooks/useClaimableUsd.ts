@@ -117,7 +117,8 @@ export function useClaimableUsd(entries: readonly ValuedToken[]): UseClaimableUs
   const priceSymbols = useMemo(() => {
     const symbols = new Set<string>()
     for (const e of entries) {
-      if (!e.vault) symbols.add(tokenMeta.metaFor(e.token).symbol)
+      const meta = e.vault ? undefined : tokenMeta.byAddress[e.token.toLowerCase()]
+      if (meta) symbols.add(meta.symbol)
     }
     const present = assetAddresses.filter((a): a is Address => !!a)
     present.forEach((_, i) => {
@@ -125,7 +126,6 @@ export function useClaimableUsd(entries: readonly ValuedToken[]): UseClaimableUs
       if (symbol) symbols.add(symbol)
     })
     return [...symbols]
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenMeta.metaFor is stable per byAddress
   }, [entries, tokenMeta.byAddress, assetAddresses, assetData])
 
   const { getPrice } = useAssetPrices({ symbols: priceSymbols })
@@ -167,8 +167,9 @@ export function useClaimableUsd(entries: readonly ValuedToken[]): UseClaimableUs
     for (const e of entries) {
       if (e.vault) continue
       const key = e.token.toLowerCase()
-      if (map.has(key)) continue
-      const meta = tokenMeta.metaFor(e.token)
+      const meta = tokenMeta.byAddress[key]
+      // Unvalued until the token's own decimals are known, never at the placeholder's.
+      if (map.has(key) || !meta) continue
       map.set(key, {
         symbol: meta.symbol,
         valuation: { kind: 'direct', decimals: meta.decimals, priceUsd: getPrice(meta.symbol)?.usd ?? null },

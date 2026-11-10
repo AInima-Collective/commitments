@@ -4,7 +4,9 @@ import { useAccount, useChainId } from 'wagmi'
 import { commitmentManagerAbi, operatorRegistryAbi } from '../../generated'
 import { type FullCommitmentParams, useCreateCommitmentFlow } from '../../hooks/useCreateCommitmentFlow'
 import { useAmountInput } from '../../hooks/useAmountInput'
+import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useRegistryPolicy } from '../../hooks/useRegistryPolicy'
+import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { useVaults } from '../../hooks/useVaults'
 import { useTx, useTxFeedback } from '../../hooks/useWriteAction'
 import { getDefaultBacking } from '../../config/contracts'
@@ -39,8 +41,6 @@ interface Props {
   operatorAddress: Address
   commitmentManagerAddress: Address | undefined
   operatorRegistryAddress: Address | undefined
-  freeShares: bigint | undefined
-  shareDecimals: number | undefined
 }
 
 const CHALLENGE_WINDOW_DEFAULT = 86400 // 1 day — min allowed by contract
@@ -60,16 +60,16 @@ export function DelegateToOperatorForm({
   operatorAddress,
   commitmentManagerAddress,
   operatorRegistryAddress,
-  freeShares,
-  shareDecimals,
 }: Props) {
   const { address, isConnected } = useAccount()
-  const decimals = shareDecimals ?? 18
 
   const chainId = useChainId()
   const { vaults } = useVaults()
   const backing = getDefaultBacking(chainId, vaults)
   const shareToken = backing?.token
+  // The backing's own free balance and decimals, so the form measures the vault it commits.
+  const { decimals } = useTokenMeta(shareToken)
+  const freeShares = useLedgerBalance({ managerAddress: commitmentManagerAddress, token: shareToken, user: address }).free
   const { requiredArbiter, minMaxPenaltyBps } = useRegistryPolicy(
     operatorRegistryAddress,
   )

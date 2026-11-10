@@ -30,6 +30,7 @@ import {
   Modal,
   Notice,
   SectionNav,
+  Skeleton,
   TokenAmount,
   TokenIcon,
   UsdAmount,
@@ -1142,7 +1143,9 @@ function AssetRow({
         </span>
       </td>
       <td data-align="right">
-        {total > 0n ? (
+        {tokenMeta.isLoading ? (
+          <Skeleton width={80} />
+        ) : total > 0n ? (
           <span className="ds-stack ds-stack-1" style={{ alignItems: "flex-end" }}>
             <UsdAmount amount={usdPosition} compact size="inline" />
             <span className="ds-text-xs ds-subtle">
@@ -1154,12 +1157,20 @@ function AssetRow({
         )}
       </td>
       <td data-align="right">
-        <TokenAmount amount={free} decimals={decimals} symbol={symbol} compact size="inline" />
+        {tokenMeta.isLoading ? (
+          <Skeleton width={64} />
+        ) : (
+          <TokenAmount amount={free} decimals={decimals} symbol={symbol} compact size="inline" />
+        )}
       </td>
       <td data-align="right">
-        <span data-tone={encumbered > 0n ? "warn" : undefined}>
-          <TokenAmount amount={encumbered} decimals={decimals} symbol={symbol} compact size="inline" />
-        </span>
+        {tokenMeta.isLoading ? (
+          <Skeleton width={64} />
+        ) : (
+          <span data-tone={encumbered > 0n ? "warn" : undefined}>
+            <TokenAmount amount={encumbered} decimals={decimals} symbol={symbol} compact size="inline" />
+          </span>
+        )}
       </td>
       <td>
         <EncumbranceBar encumbered={encumbered} total={total} size="sm" />

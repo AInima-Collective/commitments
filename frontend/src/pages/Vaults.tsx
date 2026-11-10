@@ -419,7 +419,7 @@ function useVaultRows(vaults: VaultDescriptor[], viewAddress: Address | undefine
       free: mine ? (at(4) as bigint | undefined) : undefined,
       encumbered: mine ? (at(5) as bigint | undefined) : undefined,
       sharePrice: at(1) as bigint | undefined,
-      assetDecimals: meta?.decimals,
+      assetDecimals: descriptor.assetDecimals ?? meta?.decimals,
       shareDecimals: fixed?.[i * 2 + 1]?.result as number | undefined,
       assetSymbol: meta?.symbol ?? descriptor.assetSymbol,
       paused: at(2) === true,

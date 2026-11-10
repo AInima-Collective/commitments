@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useChainId, useReadContract, useReadContracts } from 'wagmi'
-import { type Address, type Hex, encodeAbiParameters, erc20Abi, parseUnits } from 'viem'
+import { type Address, type Hex, encodeAbiParameters, erc20Abi, isAddressEqual, parseUnits } from 'viem'
 import { AddressDisplay, Button, Card, Input, Notice, Select, Skeleton, TokenAmount } from '../../ui'
 import { commitmentManagerAbi, commitmentsVaultAbi } from '../../../generated'
 import {
@@ -100,7 +100,7 @@ function SimulateYieldToApyPanel() {
   const [vault, setVault] = useState<string>(vaults[0]?.address ?? '')
   const [amount, setAmount] = useState('1000')
 
-  const selected = vaults.find((v) => v.address === vault) ?? vaults[0]
+  const selected = vaults.find((v) => !!vault && isAddressEqual(v.address, vault as Address)) ?? vaults[0]
   const decimals = selected ? decimalsForSymbol(selected.assetSymbol) : 18
 
   const options = vaults.map((v) => ({
@@ -144,7 +144,7 @@ function SimulateYieldToApyPanel() {
         <Select
           aria-label="vault"
           options={options}
-          value={vault}
+          value={selected?.address}
           onChange={(e) => setVault(e.target.value)}
           style={{ minWidth: 220 }}
         />

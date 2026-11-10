@@ -1,5 +1,5 @@
 import { Navigate } from 'react-router-dom'
-import { Notice } from '../ui'
+import { Notice, Skeleton } from '../ui'
 import { PageHeader } from '../protocol'
 import { useVaults } from '../../hooks/useVaults'
 
@@ -11,7 +11,7 @@ import { useVaults } from '../../hooks/useVaults'
 export function VaultRedirect() {
   const { vaults, isLoading } = useVaults()
 
-  if (isLoading) return null
+  if (isLoading) return <Skeleton height={120} />
   if (vaults.length === 0) {
     return (
       <div className="ds-page">

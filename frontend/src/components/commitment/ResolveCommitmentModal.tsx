@@ -6,7 +6,7 @@ import {
   commitmentLifecycle,
 } from '../protocol'
 import { useCommitmentYield } from '../../hooks/useCommitmentYield'
-import { useNowSeconds } from '../../hooks/useNow'
+import { useDisplayNow } from '../../hooks/useDisplayNow'
 import { useForfeitProposal } from '../../hooks/useForfeitProposal'
 import { useMutualMembership } from '../../hooks/useMutualMembership'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
@@ -77,7 +77,8 @@ export function ResolveCommitmentModal({
   const pendingYield = yieldInfo.totalPending
 
   const viewerRole: ViewerRole = deriveViewerRole(commitment, connectedAddress)
-  const nowSec = useNowSeconds()
+  // Chain time on anvil, as the Mutual page uses, so a warp moves both alike.
+  const nowSec = BigInt(useDisplayNow())
 
   const actions = getAvailableActions({
     commitment,

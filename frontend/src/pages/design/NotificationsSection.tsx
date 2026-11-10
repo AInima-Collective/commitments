@@ -150,7 +150,7 @@ Version: viem@2.21.45`
         </div>
 
         <div className="ds-text-xs ds-subtle" style={{ maxWidth: '70ch' }}>
-          Position: <code>top-right</code> by default for desktop, <code>bottom-center</code> by convention on mobile. Errors are <em>sticky</em> — auto-dismiss is appropriate for confirmations, not for surfaces the user needs to read and act on. <code>aria-live="polite"</code> on the region announces non-error toasts; error toasts use <code>role="alert"</code> for immediate announcement.
+          Position: <code>top-right</code>. Errors are <em>sticky</em> — auto-dismiss is appropriate for confirmations, not for surfaces the user needs to read and act on. <code>aria-live="polite"</code> on the region announces non-error toasts; error toasts use <code>role="alert"</code> for immediate announcement.
         </div>
       </div>
 

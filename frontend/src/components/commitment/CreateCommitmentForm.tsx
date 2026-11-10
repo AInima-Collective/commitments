@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { isAddress, type Address, zeroHash } from 'viem'
+import { isAddress, isAddressEqual, type Address, zeroHash } from 'viem'
 import { useChainId } from 'wagmi'
 import { getBackingOptions } from '../../config/contracts'
 import { useAmountInput } from '../../hooks/useAmountInput'
@@ -108,7 +108,8 @@ export function CreateCommitmentForm({
   const { vaults } = useVaults()
   const backingOptions = getBackingOptions(chainId, vaults)
   const [backingToken, setBackingToken] = useState<Address | undefined>(backingOptions[0]?.token)
-  const backing = backingOptions.find((o) => o.token === backingToken) ?? backingOptions[0]
+  const backing =
+    backingOptions.find((o) => !!backingToken && isAddressEqual(o.token, backingToken)) ?? backingOptions[0]
 
   // Per-token display metadata (raw ERC-20 or vault share) — never assume the
   // vault's share decimals; a 6-decimal token parsed at 18 is 10¹²× wrong.
@@ -413,7 +414,7 @@ export function CreateCommitmentForm({
             </label>
             <Select
               id="backing-select"
-              value={backingToken}
+              value={backing?.token}
               onChange={handleBackingChange}
               disabled={disabled}
               options={backingOptions.map((o) => ({ value: o.token, label: o.label }))}

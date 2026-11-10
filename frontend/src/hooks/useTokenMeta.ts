@@ -20,7 +20,7 @@ const FALLBACK: TokenMeta = { decimals: 18, symbol: 'TOKEN' }
 interface UseTokenMetaMapReturn {
   /** Resolve metadata for one token; returns the fallback if unknown/pending. */
   metaFor: (token?: Address) => TokenMeta
-  /** Lookup keyed by lowercased address. */
+  /** Lookup keyed by lowercased address; a token appears once its decimals are read. */
   byAddress: Record<string, TokenMeta>
   isLoading: boolean
 }
@@ -86,9 +86,9 @@ export function useTokenMetaMap(tokens: ReadonlyArray<Address | undefined>): Use
     const map: Record<string, TokenMeta> = {}
     unique.forEach((token, i) => {
       const data = results[i]?.data
-      const decimals = (data?.[0]?.result as number | undefined) ?? FALLBACK.decimals
+      const decimals = data?.[0]?.result as number | undefined
       const symbol = (data?.[1]?.result as string | undefined) ?? FALLBACK.symbol
-      map[token.toLowerCase()] = { decimals, symbol }
+      if (decimals !== undefined) map[token.toLowerCase()] = { decimals, symbol }
     })
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `dataKey` is the stable projection of `results`

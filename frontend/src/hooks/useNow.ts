@@ -31,7 +31,8 @@ function subscribe(listener: () => void): () => void {
  * second. `select` must return a primitive or an otherwise stable value.
  */
 export function useNowSelect<T>(select: (nowSeconds: bigint) => T): T {
-  return useSyncExternalStore(subscribe, () => select(current))
+  // With no subscriber the ticker is stopped and `current` is stale; read the wall clock.
+  return useSyncExternalStore(subscribe, () => select(listeners.size ? current : (current = wallSeconds())))
 }
 
 /**

@@ -10,7 +10,6 @@ const SRC_EMPTY =
   glyph="⬡"
   title="No proposals"
   description="Agreements proposed to you or by you collect here until they are accepted or withdrawn."
-  action={<Button variant="primary" size="sm">Propose agreement</Button>}
 />`
 
 export function EmptySection() {
@@ -29,7 +28,6 @@ export function EmptySection() {
             glyph="⬡"
             title="No proposals"
             description="Agreements proposed to you or by you collect here until they are accepted or withdrawn."
-            action={<Button variant="primary" size="sm">Propose agreement</Button>}
           />
           <EmptyState title="Nothing to claim" description="Yield accrues to your free balance as the vault earns." />
         </div>

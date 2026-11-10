@@ -11,8 +11,24 @@ import Landing from './pages/Landing'
  * shell's `<Suspense>` (RootLayout) covers the load, so the landing page and
  * the shell no longer download every page.
  */
-function page(panelName: string, load: () => Promise<{ default: ComponentType }>) {
-  const Page = lazy(load)
+export function page(panelName: string, load: () => Promise<{ default: ComponentType }>) {
+  const Page = lazy(() =>
+    load().catch((error: unknown) => {
+      // A redeploy renames the chunks under an open tab, and `lazy` keeps the
+      // rejection: reload once per path for the new build, then show the error.
+      const key = `reloaded:${location.pathname}`
+      try {
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, '1')
+          location.reload()
+          return new Promise<never>(() => {})
+        }
+      } catch {
+        // Storage blocked: no guard, so no reload.
+      }
+      throw error
+    }),
+  )
   return (
     <ErrorPanel panelName={panelName}>
       <Page />

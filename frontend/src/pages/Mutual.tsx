@@ -351,7 +351,7 @@ export default function Mutual() {
       refetchMutual()
       roster.refetch()
       // The new membership is listed once the indexer catches up.
-      const before = myMemberships.memberships.length
+      const before = myMemberships.listed
       void refetchUntil(refetchMemberships, (n) => (n ?? 0) > before)
       void ledger.refetch()
     },
