@@ -419,6 +419,11 @@ contract SettlementTest is AgreementTestBase {
         manager.settleAgreement(agreementId, false, 20e18, bytes32(0));
         vm.expectRevert(abi.encodeWithSelector(ICM.SettlementCapExceeded.selector, 21e18, 20e18));
         manager.settleAgreement(agreementId, false, 1e18, bytes32(0));
+
+        // A request past uint128 reports saturated against the real cap, not a cap of zero.
+        uint256 tooBig = uint256(type(uint128).max) + 1;
+        vm.expectRevert(abi.encodeWithSelector(ICM.SettlementCapExceeded.selector, type(uint128).max, 50e18));
+        manager.settleAgreement(agreementId, true, tooBig, bytes32(0));
         vm.stopPrank();
     }
 
@@ -644,6 +649,33 @@ contract AgreementApiPolishTest is AgreementTestBase {
         assertEq(manager.forfeitedUnitsOf(cidA), 60e18, "leg A forfeited 30%");
         assertEq(manager.forfeitedUnitsOf(cidB), 30e18, "leg B forfeited 30%");
         _partitionHolds();
+    }
+
+    /// @dev A second forfeit while both legs have live proposals writes nothing, so it must revert
+    ///      rather than emit `AgreementForfeited` over unchanged 10% proposals.
+    function test_forfeitAgreement_revertsWhenEveryLegAlreadyPending() public {
+        (uint256 agreementId, uint256 cidA, uint256 cidB) = _proposeAndAccept();
+
+        vm.prank(carol);
+        manager.forfeitAgreement(agreementId, 1000);
+
+        vm.prank(carol);
+        vm.expectRevert(ICM.ForfeitPending.selector);
+        manager.forfeitAgreement(agreementId, 5000);
+
+        assertEq(manager.getForfeitProposal(cidA).penaltyBps, 1000, "leg A unchanged");
+        assertEq(manager.getForfeitProposal(cidB).penaltyBps, 1000, "leg B unchanged");
+
+        // Escalating means cancelling each leg first; then the higher penalty lands.
+        vm.startPrank(carol);
+        manager.cancelForfeit(cidA);
+        vm.expectEmit(true, false, false, false);
+        emit ICM.AgreementForfeited(agreementId);
+        manager.forfeitAgreement(agreementId, 5000);
+        vm.stopPrank();
+
+        assertEq(manager.getForfeitProposal(cidA).penaltyBps, 5000, "leg A re-proposed");
+        assertEq(manager.getForfeitProposal(cidB).penaltyBps, 1000, "leg B still live at 10%");
     }
 
     function test_forfeitAgreement_revertsWhenPenaltyExceedsMax() public {

@@ -11283,7 +11283,6 @@ export const optimisticInsuranceArbiterAbi = [
     ],
     name: 'WrongArbiter',
   },
-  { type: 'error', inputs: [], name: 'WrongBondToken' },
   {
     type: 'error',
     inputs: [

@@ -236,10 +236,13 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
 
     /// @dev Premium accrued to the committer by `endTime`: `ratePerSecond * elapsed`, capped by the
     ///      counterparty's cumulative deposits. `endTime` is either now or the commitment's close.
+    ///      Saturates at `funded` before multiplying, so an unbounded committer-chosen rate cannot
+    ///      overflow.
     function _earned(Stream storage st, uint64 endTime) internal view returns (uint256) {
         if (!st.bound || st.ratePerSecond == 0 || endTime <= st.startTime) return 0;
-        uint256 accrued = st.ratePerSecond * (endTime - st.startTime);
-        return accrued > st.funded ? st.funded : accrued;
+        uint256 elapsed = endTime - st.startTime;
+        if (st.ratePerSecond > st.funded / elapsed) return st.funded;
+        return st.ratePerSecond * elapsed;
     }
 
     /// @dev The timestamp accrual is measured to: the commitment's close time if it has ended,

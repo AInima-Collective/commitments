@@ -155,6 +155,30 @@ contract CounterpartyPremiumStreamTest is Test {
         assertEq(strategy.earnedOf(id), 1e18, "accrual capped by the counterparty's deposit");
     }
 
+    /// @dev A committer-chosen rate near uint256 max must saturate at `funded`, not overflow and
+    ///      lock `claim`, `pending` and `reclaimUnstreamed`.
+    function test_hugeRate_saturatesInsteadOfOverflowing() public {
+        uint256 hugeId = _create(type(uint256).max - 1);
+        vm.prank(bob);
+        strategy.fundPremium(hugeId, 100e18);
+        vm.warp(block.timestamp + 1000);
+
+        assertEq(strategy.earnedOf(hugeId), 100e18);
+        assertEq(strategy.reclaimableOf(hugeId), 0);
+        assertEq(manager.pending(hugeId, address(strategy), ""), 100e18);
+
+        vm.prank(alice);
+        manager.claim(hugeId, address(strategy), "");
+        assertEq(token.balanceOf(alice), 100e18);
+        assertEq(manager.pending(hugeId, address(strategy), ""), 0);
+
+        vm.prank(arbiter);
+        manager.releaseCommitment(hugeId);
+        vm.prank(bob);
+        vm.expectRevert(CounterpartyPremiumStream.NothingToClaim.selector);
+        strategy.reclaimUnstreamed(hugeId);
+    }
+
     function test_zeroRate_dormant() public {
         uint256 dormant = _create(0);
         vm.prank(bob);

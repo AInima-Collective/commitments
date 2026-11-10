@@ -164,7 +164,6 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
     mapping(uint256 commitmentId => uint256 activeClaimId) public activeClaimOf;
     uint256 public nextClaimId;
 
-    error WrongBondToken();
     error BondBelowFloor(uint256 minimum, uint256 provided);
     error BondNotDoubled(uint256 required, uint256 provided);
     error InvalidAmountBps(uint16 amountBps);
@@ -458,7 +457,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         // The hold already sits at `capped` (synced at propose/every dispute)
         // unless it was stale-cancelled externally — restore it then.
         if (p.cancelled) manager.initiateForfeit(c.commitmentId, capped);
-        emit ClaimFinalized(claimId, capped);
+        // `ClaimFinalized` fires once, from `executeClaim`, with the penalty enforced.
     }
 
     /// @notice Execute the manager-side forfeit after its challenge window.
@@ -486,10 +485,8 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
 
         if (!p.executed) manager.executeForfeit(c.commitmentId);
 
-        c.state = ClaimState.Settled;
-        _distributeBonds(claimId);
-        delete activeClaimOf[c.commitmentId];
-        emit ClaimFinalized(claimId, c.winningAmtBps);
+        // The hold sits at the capped winning answer, so `p.penaltyBps` is what was paid.
+        _settle(claimId, p.penaltyBps);
     }
 
     /// @notice Anyone can cancel a stale claim — one where the optimistic
@@ -527,7 +524,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         // stale-cancel of the manager proposal).
         if (_proposalActive(p)) manager.cancelForfeit(c.commitmentId);
 
-        // Refund all bonds proportionally — there's no winner, so nobody
+        // Refund every bond in full — there's no winner, so nobody
         // forfeits.
         _refundAllBonds(c);
         emit ClaimStaleCancelled(claimId);
@@ -602,14 +599,9 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 winnerPayout;
         uint256 treasuryPayout;
         if (forfeitPool > 0) {
-            if (lastWinner != address(0)) {
-                winnerPayout = (forfeitPool * winnerShareBps) / BPS_DENOMINATOR;
-                treasuryPayout = forfeitPool - winnerPayout;
-            } else {
-                // Nobody asserted the winning answer. All forfeits to
-                // treasury — there's no asserter to reward.
-                treasuryPayout = forfeitPool;
-            }
+            // `winning` is always the top-of-stack answer, so `lastWinner` is set.
+            winnerPayout = (forfeitPool * winnerShareBps) / BPS_DENOMINATOR;
+            treasuryPayout = forfeitPool - winnerPayout;
             if (winnerPayout > 0) bondToken.safeTransfer(lastWinner, winnerPayout);
             if (treasuryPayout > 0 && treasury != address(0)) {
                 bondToken.safeTransfer(treasury, treasuryPayout);

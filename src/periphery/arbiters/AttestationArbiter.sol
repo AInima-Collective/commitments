@@ -154,13 +154,16 @@ contract AttestationArbiter is IArbiter, ServiceEnvelopeVerifier {
     }
 
     /// @notice Submit a signed envelope to dispatch an arbiter action.
-    /// @dev envelope.payload MUST be `abi.encode(address(this), uint256 id,
-    ///      uint8 action, uint16 penaltyBps, uint256 deadline)` and
+    /// @dev envelope.payload MUST be the nine-field `Attestation`,
+    ///      `abi.encode(address(this), uint256 id, uint8 action,
+    ///      uint16 penaltyBps, uint256 deadline, bool fromProposer,
+    ///      uint256 units, uint256 numeraire, bytes32 evidenceHash)`, and
     ///      envelope.ordering MUST be the uint96 big-endian encoding of the
     ///      current per-`id` sequence (`commitmentOrdering(id)` for
     ///      commitment-scoped actions, `agreementOrdering(id)` for
-    ///      agreement-scoped actions). Any field mismatch, stale ordering, or
-    ///      failure to meet signature quorum reverts.
+    ///      agreement-scoped actions, `mutualOrdering(id)` for mutual-scoped
+    ///      actions). Any field mismatch, stale ordering, or failure to meet
+    ///      signature quorum reverts.
     ///
     ///      Strict ordering means every dispatched action invalidates ALL
     ///      still-unconsumed envelopes signed at an earlier sequence for the

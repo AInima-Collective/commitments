@@ -123,7 +123,7 @@ function agreementOfProposal(uint256 proposalId) external view returns (uint256)
 
 ### 3. Atomic forfeit and release
 
-`forfeitAgreement(id, penaltyBps)` MUST initiate forfeit proposals on both legs at the caller-supplied `penaltyBps`. Only the shared arbiter MAY call this. `penaltyBps` MUST NOT exceed either **unresolved** leg's `maxPenaltyBps`; the manager MUST validate against every unresolved leg and revert `PenaltyExceedsMax` **before** mutating either leg, so an out-of-range penalty never produces a partial one-leg forfeit. If one side is already resolved (released, forfeited, or finalized), the function MUST emit `AgreementPartialForfeit` for that side and proceed on the other. Pass each leg's `maxPenaltyBps` for a full forfeit.
+`forfeitAgreement(id, penaltyBps)` MUST initiate forfeit proposals on both legs at the caller-supplied `penaltyBps`. Only the shared arbiter MAY call this. `penaltyBps` MUST NOT exceed either **unresolved** leg's `maxPenaltyBps`; the manager MUST validate against every unresolved leg and revert `PenaltyExceedsMax` **before** mutating either leg, so an out-of-range penalty never produces a partial one-leg forfeit. If one side is already resolved (released, forfeited, or finalized), the function MUST emit `AgreementPartialForfeit` for that side and proceed on the other. An unresolved leg that already has an active forfeit proposal is left unchanged; if no leg receives a new proposal, the function MUST revert `ForfeitPending`, so `AgreementForfeited` is emitted only when at least one proposal was written. To change the penalty of a live proposal, the arbiter cancels it first. Pass each leg's `maxPenaltyBps` for a full forfeit.
 
 `releaseAgreement(id)` MUST release both commitments atomically. Only the shared arbiter MAY call this. Each leg's release runs that leg's bound-strategy `onCommitmentReleased` hooks under the core's guarded-hook semantics (core Part D §D.6) — a reverting strategy parks its accrual and the release completes.
 
@@ -174,7 +174,7 @@ event AgreementSettled(
 `settleAgreement(agreementId, fromProposer, units, evidenceHash)` moves `units` denominated in the **payer** leg's token — the proposer leg when `fromProposer == true`, else the acceptor leg. It MUST:
 
 - Be callable only by the agreement's shared arbiter (`NotArbiter`).
-- Revert `ZeroAmount` if `units == 0`, and `SettlementCapExceeded(type(uint128).max, 0)` if `units > type(uint128).max` (the cumulative-flow counters are `uint128`).
+- Revert `ZeroAmount` if `units == 0`, and `SettlementCapExceeded(type(uint128).max, cap)` if `units > type(uint128).max`, where `cap` is the direction's `uint128` cap (the cumulative-flow counters are `uint128`, so the request is reported saturated).
 - Revert if either leg is released or forfeited (`CommitmentInactive`), has an active forfeit proposal (`ForfeitPending`), or has a pending unbond on either side (`UnbondPending`).
 - Revert if the per-direction cap is zero (`SettlementCapZero`), or if the ratcheted cumulative would exceed it (`SettlementCapExceeded(cumulAfter, cap)`).
 - Revert `InsufficientCommitmentAmount(units, payerAmount)` if `units` exceeds the payer leg's current `amount`.
@@ -249,7 +249,7 @@ error SettlementCapExceeded(uint128 requested, uint128 cap);
 error InsufficientCommitmentAmount(uint256 requested, uint256 available);
 ```
 
-Agreement operations also surface errors reused from the core standard: `UseAgreementPath` (§3.1 — a per-leg lifecycle call on an agreement leg), `NotArbiter` (forfeit/release/settle authority), `PenaltyExceedsMax` (§3 penalty range and per-leg validation), `ZeroAmount` (`settleAgreement` with `units == 0`, and per-leg zero amount), `ExposureAllocationExceeded` (INV-3 check at propose/accept), `CommitmentInactive` / `ForfeitPending` / `UnbondPending` (`settleAgreement` state guards), and the leg-validation errors `ZeroArbiter`, `ZeroCounterparty`, `ZeroAddress`, `TooManyStrategies`, `DuplicateStrategy`, `ChallengeWindowTooShort`, and `URITooLong`.
+Agreement operations also surface errors reused from the core standard: `UseAgreementPath` (§3.1 — a per-leg lifecycle call on an agreement leg), `NotArbiter` (forfeit/release/settle authority), `PenaltyExceedsMax` (§3 penalty range and per-leg validation), `ZeroAmount` (`settleAgreement` with `units == 0`, and per-leg zero amount), `ExposureAllocationExceeded` (INV-3 check at propose/accept), `CommitmentInactive` / `ForfeitPending` / `UnbondPending` (`settleAgreement` state guards; `ForfeitPending` also when `forfeitAgreement` writes no new proposal), and the leg-validation errors `ZeroArbiter`, `ZeroCounterparty`, `ZeroAddress`, `TooManyStrategies`, `DuplicateStrategy`, `ChallengeWindowTooShort`, and `URITooLong`.
 
 ### 7. Invariants
 

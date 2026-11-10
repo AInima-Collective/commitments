@@ -26,8 +26,8 @@ library AgreementLib {
     // =========================================================================
 
     /// @notice Proposal core: validate, encumber the proposer immediately (lock early to
-    ///         prevent griefing), store the proposal + symmetric strategy bindings + settlement
-    ///         caps.
+    ///         prevent griefing), store the proposal, each leg's own strategy set, and the
+    ///         settlement caps.
     function proposeCore(
         CommitmentManagerStorage.Layout storage s,
         ICM.AgreementParams calldata params,
@@ -155,10 +155,10 @@ library AgreementLib {
     // Accept
     // =========================================================================
 
-    /// @notice Accept core: encumber the acceptor, write the two paired commitments sharing the
-    ///         same (token, adapter), bind the proposal's strategies symmetrically to both legs
-    ///         (running each onCommitmentCreated — a revert aborts acceptance atomically), link
-    ///         the pair, copy settlement caps.
+    /// @notice Accept core: encumber the acceptor, write the two paired commitments (each leg
+    ///         with its own token, adapter, amount and penalty), bind each leg's own strategy set
+    ///         to that leg (running each onCommitmentCreated — a revert aborts acceptance
+    ///         atomically), link the pair, copy settlement caps.
     function acceptCore(CommitmentManagerStorage.Layout storage s, uint256 proposalId)
         external
         returns (uint256 agreementId, uint256 commitmentIdA, uint256 commitmentIdB)
@@ -291,12 +291,12 @@ library AgreementLib {
             IDistributionStrategy(strategy)
                 .onCommitmentCreated(
                     CreatedContext({
-                    base: MovementLib.baseContext(s, commitmentId),
-                    originalAmount: legAmount,
-                    maxPenaltyBps: legMaxPenaltyBps,
-                    challengeWindow: prop.challengeWindow,
-                    strategyParams: binds[i].params
-                })
+                        base: MovementLib.baseContext(s, commitmentId),
+                        originalAmount: legAmount,
+                        maxPenaltyBps: legMaxPenaltyBps,
+                        challengeWindow: prop.challengeWindow,
+                        strategyParams: binds[i].params
+                    })
                 );
         }
     }
@@ -339,6 +339,8 @@ library AgreementLib {
     ///         `penaltyBps`. Already-resolved legs emit `AgreementPartialForfeit` instead. `penaltyBps`
     ///         must be ≤ each unresolved leg's `maxPenaltyBps` (the legs MAY differ, so the tighter one
     ///         binds), letting the arbiter forfeit proportionally rather than always at the maximum.
+    ///         Reverts `ForfeitPending` when every unresolved leg already has a live proposal, so
+    ///         `AgreementForfeited` is emitted only when at least one proposal was written.
     function forfeitCore(CommitmentManagerStorage.Layout storage s, uint256 agreementId, uint16 penaltyBps) external {
         uint256[2] storage pair = s.agreementPairs[agreementId];
         uint256 cidA = pair[0];
@@ -358,27 +360,31 @@ library AgreementLib {
         if (!aResolved && penaltyBps > cA.maxPenaltyBps) revert ICM.PenaltyExceedsMax();
         if (!bResolved && penaltyBps > cB.maxPenaltyBps) revert ICM.PenaltyExceedsMax();
 
-        if (!aResolved) _initiateForfeitIdempotent(s, cidA, penaltyBps);
+        bool written;
+        if (!aResolved) written = _initiateForfeitIdempotent(s, cidA, penaltyBps);
         else emit ICM.AgreementPartialForfeit(agreementId, cidA);
 
-        if (!bResolved) _initiateForfeitIdempotent(s, cidB, penaltyBps);
+        if (!bResolved) written = _initiateForfeitIdempotent(s, cidB, penaltyBps) || written;
         else emit ICM.AgreementPartialForfeit(agreementId, cidB);
 
+        if (!written) revert ICM.ForfeitPending();
         emit ICM.AgreementForfeited(agreementId);
     }
 
-    /// @dev Idempotent proposal write: silent no-op if resolved or a proposal is already live.
+    /// @dev Idempotent proposal write: no-op if resolved or a proposal is already live.
+    ///      Returns whether a proposal was written.
     function _initiateForfeitIdempotent(
         CommitmentManagerStorage.Layout storage s,
         uint256 commitmentId,
         uint16 penaltyBps
-    ) private {
+    ) private returns (bool) {
         ICM.Commitment storage c = s.commitments[commitmentId];
         ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-        if (c.released || c.forfeited) return;
-        if (p.initiatedAt != 0 && !p.cancelled && !p.executed) return;
+        if (c.released || c.forfeited) return false;
+        if (p.initiatedAt != 0 && !p.cancelled && !p.executed) return false;
 
         CommitmentLifecycleLib.writeForfeitProposal(s, commitmentId, penaltyBps, c.challengeWindow);
+        return true;
     }
 
     // =========================================================================
@@ -472,7 +478,14 @@ library AgreementLib {
         bytes32 evidenceHash
     ) private {
         if (units == 0) revert ICM.ZeroAmount();
-        if (units > type(uint128).max) revert ICM.SettlementCapExceeded(type(uint128).max, 0);
+        if (units > type(uint128).max) {
+            // Caps are uint128, so any larger request exceeds the direction's cap; report it
+            // saturated at uint128 max against the real cap.
+            ICM.AgreementSettlement storage caps = s.agreementSettlement[agreementId];
+            revert ICM.SettlementCapExceeded(
+                type(uint128).max, fromProposer ? caps.maxFlowProposerToAcceptor : caps.maxFlowAcceptorToProposer
+            );
+        }
 
         uint256 payerCid;
         uint256 receiverCid;

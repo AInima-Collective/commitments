@@ -285,7 +285,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
             revert ChallengeWindowTooShort(requiredChallengeWindow, commitment.challengeWindow);
         }
 
-        uint64 openedAt = _now64();
+        uint64 openedAt = uint64(block.timestamp);
         uint64 deadline = _deadline(openedAt, appealWindow);
         caseId = ++nextCaseId;
 
@@ -315,14 +315,14 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         _requireActiveManagerProposal(courtCase.commitmentId, courtCase.primaryPenaltyBps);
 
         manager.cancelForfeit(courtCase.commitmentId);
-        _closeCase(caseId, courtCase, CaseState.Withdrawn);
+        _closeCase(courtCase, CaseState.Withdrawn);
 
         emit RulingWithdrawn(
             caseId,
             courtCase.commitmentId,
             msg.sender,
             courtCase.primaryPenaltyBps,
-            _now64(),
+            uint64(block.timestamp),
             courtCase.appealDeadline,
             reasonHash
         );
@@ -337,7 +337,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         Case storage courtCase = _requireState(caseId, CaseState.PrimaryRuling);
         _requireCurrent(caseId, courtCase);
 
-        uint64 nowTs = _now64();
+        uint64 nowTs = uint64(block.timestamp);
         if (nowTs > courtCase.appealDeadline) revert AppealWindowElapsed(courtCase.appealDeadline, nowTs);
 
         ICommitmentManager.Commitment memory commitment = manager.getCommitment(courtCase.commitmentId);
@@ -381,7 +381,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         Case storage courtCase = _requireState(caseId, CaseState.Appealed);
         _requireCurrent(caseId, courtCase);
 
-        uint64 nowTs = _now64();
+        uint64 nowTs = uint64(block.timestamp);
         if (nowTs > courtCase.humanDeadline) {
             revert HumanResponseWindowElapsed(courtCase.humanDeadline, nowTs);
         }
@@ -398,7 +398,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         courtCase.humanDecisionHash = decisionHash;
 
         if (finalPenaltyBps == 0) {
-            _closeCase(caseId, courtCase, CaseState.Dismissed);
+            _closeCase(courtCase, CaseState.Dismissed);
             emit AppealResolved(
                 caseId, courtCase.commitmentId, msg.sender, 0, nowTs, courtCase.humanDeadline, 0, decisionHash
             );
@@ -426,14 +426,14 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         Case storage courtCase = _requireState(caseId, CaseState.Appealed);
         _requireCurrent(caseId, courtCase);
 
-        uint64 nowTs = _now64();
+        uint64 nowTs = uint64(block.timestamp);
         if (nowTs <= courtCase.humanDeadline) {
             revert HumanResponseWindowActive(courtCase.humanDeadline, nowTs);
         }
 
         _requireActiveManagerProposal(courtCase.commitmentId, courtCase.primaryPenaltyBps);
         manager.cancelForfeit(courtCase.commitmentId);
-        _closeCase(caseId, courtCase, CaseState.Lapsed);
+        _closeCase(courtCase, CaseState.Lapsed);
 
         emit AppealLapsed(
             caseId, courtCase.commitmentId, msg.sender, courtCase.primaryPenaltyBps, courtCase.humanDeadline
@@ -455,10 +455,16 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         ICommitmentManager.ForfeitProposal memory proposal =
             _requireActiveManagerProposal(courtCase.commitmentId, penaltyBps);
         manager.executeForfeit(courtCase.commitmentId);
-        _closeCase(caseId, courtCase, CaseState.Executed);
+        _closeCase(courtCase, CaseState.Executed);
 
         emit RulingExecuted(
-            caseId, courtCase.commitmentId, msg.sender, penaltyBps, proposal.initiatedAt, _now64(), decisionHash
+            caseId,
+            courtCase.commitmentId,
+            msg.sender,
+            penaltyBps,
+            proposal.initiatedAt,
+            uint64(block.timestamp),
+            decisionHash
         );
     }
 
@@ -478,7 +484,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
 
         bytes32 decisionHash = _operativeDecisionHash(courtCase);
         bytes32 appealHash = courtCase.appealHash;
-        _closeCase(caseId, courtCase, terminalState);
+        _closeCase(courtCase, terminalState);
         emit CaseSynchronized(
             caseId,
             courtCase.commitmentId,
@@ -486,7 +492,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
             terminalState,
             proposal.penaltyBps,
             proposal.initiatedAt,
-            _now64(),
+            uint64(block.timestamp),
             decisionHash,
             appealHash
         );
@@ -521,8 +527,8 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         }
     }
 
-    function _closeCase(uint256 caseId, Case storage courtCase, CaseState terminalState) internal {
-        _requireCurrent(caseId, courtCase);
+    /// @dev Every caller has already run `_requireCurrent`.
+    function _closeCase(Case storage courtCase, CaseState terminalState) internal {
         courtCase.state = terminalState;
         delete activeCaseOf[courtCase.commitmentId];
     }
@@ -539,11 +545,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
 
     function _isLive(CaseState state) internal pure returns (bool) {
         return state == CaseState.PrimaryRuling || state == CaseState.Appealed || state == CaseState.HumanRuling;
-    }
-
-    function _now64() internal view returns (uint64 nowTs) {
-        if (block.timestamp > type(uint64).max) revert TimingOverflow();
-        nowTs = uint64(block.timestamp);
     }
 
     function _deadline(uint64 start, uint64 window) internal pure returns (uint64) {

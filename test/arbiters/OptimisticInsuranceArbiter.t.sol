@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
+import {Vm} from "forge-std/Vm.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {OptimisticInsuranceArbiter} from "src/periphery/arbiters/OptimisticInsuranceArbiter.sol";
@@ -355,6 +356,27 @@ contract OptimisticInsuranceArbiterTest is ManagerTestBase {
 
         ICM.ForfeitProposal memory p = manager.getForfeitProposal(cid);
         assertEq(p.penaltyBps, MAX_PENALTY_BPS, "capped to commitment max");
+    }
+
+    function testFinalizeThenExecute_emitsClaimFinalizedOnceWithPaidValue() public {
+        uint256 cid = _createCommitment();
+        uint256 claimId = _proposeClaim(policyholder, cid, 3000, uint128(MIN_BOND));
+        _dispute(disputer, claimId, 9000, uint128(MIN_BOND * 2)); // > MAX_PENALTY_BPS=5000
+
+        vm.recordLogs();
+        vm.warp(block.timestamp + ANSWER_TIMEOUT + 1);
+        arbiter.finalizeClaim(claimId);
+        arbiter.executeClaim(claimId);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 count;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter != address(arbiter)) continue;
+            if (logs[i].topics[0] != OptimisticInsuranceArbiter.ClaimFinalized.selector) continue;
+            count++;
+            assertEq(abi.decode(logs[i].data, (uint16)), MAX_PENALTY_BPS, "the capped penalty actually paid");
+        }
+        assertEq(count, 1, "ClaimFinalized emitted once");
     }
 
     function testFinalize_beforeTimeoutReverts() public {
