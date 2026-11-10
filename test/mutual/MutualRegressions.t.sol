@@ -201,6 +201,25 @@ contract MutualRegressionsTest is MutualE2ETest {
         manager.releaseMutualMember(c1);
     }
 
+    /// Each loss rounds its Lambda step down, so a mutual wiped out by two declarations ends one
+    /// unit short of the cap. It is exhausted all the same.
+    function test_exhaustedByTwoLossesRejectsJoinAndFunding() public {
+        uint256 gid = _registerMutual();
+        _join(gid, u1, 100e18);
+        _join(gid, u2, 200e18);
+        _proposeAndExecute(gid, 100e18);
+        _proposeAndExecute(gid, 200e18);
+        assertEq(manager.getMutual(gid).cumulativeLoss, 1e18 - 1, "one unit short of the cap");
+
+        vm.expectRevert(ICM.MutualExhausted.selector);
+        _join(gid, u2, 100e18);
+
+        usdc.mint(address(this), 1e18);
+        usdc.approve(address(manager), 1e18);
+        vm.expectRevert(ICM.MutualExhausted.selector);
+        manager.fundMutualPremium(gid, 1e18, 30 days);
+    }
+
     // ---- Settle pokes ----
 
     /// Settling a member pokes the index first, so the interval before the loss is paid on

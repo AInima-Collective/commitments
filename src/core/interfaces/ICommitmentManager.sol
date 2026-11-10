@@ -543,7 +543,7 @@ interface ICommitmentManager {
     error DeallocationWindowActive();
     error ExitNotRequested();
     error ExitRequestLapsed(); // release at or past 2 * deallocationWindow; request again
-    error MutualExhausted(); // Lambda at its cap: no new joins or premium
+    error MutualExhausted(); // Lambda within dust of its cap: no new joins or premium
     error InvalidCreditedValue();
     error NumeraireMismatch();
     error MutualArbiterMismatch();
@@ -803,7 +803,7 @@ interface ICommitmentManager {
 
     /// @notice Create a fresh commitment and join it to `mutualId` atomically, freezing its weight
     ///         `E_i` (emitted as `MemberJoined.creditedValue`). `params.token` must be the mutual's numeraire. Reverts
-    ///         `MutualExhausted` once Lambda is at its cap (1e18).
+    ///         `MutualExhausted` once Lambda is within a billionth of its cap (1e18).
     function joinMutual(uint256 mutualId, CommitmentParams calldata params) external returns (uint256 commitmentId);
 
     /// @notice Phase 1 (mutual arbiter only): declare a loss `lossNumeraire`, starting the mutual
@@ -848,7 +848,7 @@ interface ICommitmentManager {
     ///         `StreamDurationOutOfBounds` when `duration` is outside [1 minutes, 365 days] (or the
     ///         uint64 deadline would overflow), `PremiumRateDecreased` when a live stream's rate
     ///         would drop (permissionless funding may only maintain or raise the rate), and
-    ///         `MutualExhausted` once Lambda is at its cap. While a stream is live its end never moves
+    ///         `MutualExhausted` once Lambda is within a billionth of its cap. While a stream is live its end never moves
     ///         earlier: the new end is `max(periodFinish, now + duration)` and premium plus leftover
     ///         is spread over the time to it.
     function fundMutualPremium(uint256 mutualId, uint256 amount, uint64 duration) external;

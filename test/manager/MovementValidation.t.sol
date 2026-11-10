@@ -320,6 +320,11 @@ contract MovementValidationTest is ManagerTestBase {
         manager.pending(id, mallory, "");
     }
 
+    function test_claim_unknownStrategy() public {
+        vm.expectRevert(ICM.UnknownStrategy.selector);
+        manager.claim(id, mallory, "");
+    }
+
     function test_distributeAll_iteratesInArrayOrder() public {
         strategy.setMoves(
             MOCK_DISTRIBUTE, _move(MovementKind.FromEncumberedToEscrow, alice, address(strategy), address(token), 1e18)

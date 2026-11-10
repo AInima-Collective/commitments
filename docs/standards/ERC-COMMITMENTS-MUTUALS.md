@@ -217,6 +217,7 @@ A conforming implementation defines the following constants (reference values in
 - `MIN_REINIT_INTERVAL` (1 hour) — minimum spacing between *re*-initiations (rate-limits
   initiate→cancel→re-initiate capital-freeze griefing).
 - `LAMBDA_ONE` (1e18) — the fully-attributed loss fraction (the loss index `Lambda` scale).
+- `EXHAUSTION_DUST` (1e9) — a mutual with no more than this much of the loss fraction left (a billionth of its cover) is exhausted: `joinMutual` and `fundMutualPremium` revert `MutualExhausted`.
 - `MAX_TOTAL_SHARES` (`type(uint128).max`) — the `totalShares` / `activeCover` ceiling enforced
   at join.
 - `PI_ONE` (1e27) — the premium-per-cover index `Pi` scale (§6). Higher than `LAMBDA_ONE`
@@ -352,9 +353,11 @@ join the same mutual more than once; each join creates an independent commitment
 membership. The manager MUST enforce, in order:
 
 1. Mutual exists (`MutualNotFound`), is active and non-terminal (`MutualNotActive`), and
-   `cumulativeLoss < LAMBDA_ONE` (`MutualExhausted`) — a wiped-out mutual takes no new members,
-   since a joiner at `Lambda = 1e18` could never owe anything. It is not made terminal: existing
-   members still settle, claim premium, and release.
+   `LAMBDA_ONE - cumulativeLoss > EXHAUSTION_DUST` (`MutualExhausted`) — a wiped-out mutual takes no
+   new members, since a joiner at `Lambda = 1e18` could never owe anything. The test is on dust, not
+   on equality: each executed loss rounds its `Lambda` step down, so a mutual wiped out by several
+   declarations ends a few units short of `1e18`. It is not made terminal: existing members still
+   settle, claim premium, and release.
 2. No loss is pending (`MutualLossPending`) — capacity is frozen during a declaration.
 3. `params.arbiter == mutual.arbiter` (`MutualArbiterMismatch`).
 4. `params.counterparty == mutual.beneficiary` (`MutualBeneficiaryMismatch`) — **no
@@ -672,7 +675,7 @@ stream, `newFinish = now + duration`. The manager sets only a future *rate*; pri
 entirely in the periphery. It reverts:
 
 - `MutualIsTerminal` on a wound-down mutual;
-- `MutualExhausted` when `cumulativeLoss == LAMBDA_ONE` (no cover left to pay for);
+- `MutualExhausted` when `LAMBDA_ONE - cumulativeLoss <= EXHAUSTION_DUST` (no cover left to pay for);
 - `StreamDurationOutOfBounds` when `duration ∉ [MIN_STREAM_DURATION, MAX_STREAM_DURATION]`
   (1 minute … 365 days) **or** the new `periodFinish` would overflow `uint64`;
 - `NoActiveCover` when `activeCover == 0` (no live cover to distribute to);
