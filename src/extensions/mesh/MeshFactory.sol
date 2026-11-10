@@ -3,7 +3,12 @@ pragma solidity ^0.8.27;
 
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
-import {IMeshFactory} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
+import {
+    IMeshFactory,
+    FAN_IN_TYPE_ID,
+    FAN_OUT_TYPE_ID,
+    TOKEN_WEIGHTING_TYPE_ID
+} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
 import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
@@ -16,25 +21,13 @@ import {Multicallable} from "src/shared/utilities/Multicallable.sol";
 ///         transaction, preventing initializer front-running.
 ///         Gas cost per clone + initialize is below 200k.
 /// @dev Shares the extracted `Factory` base: the three node implementations are
-///      whitelisted at construction, each self-verified against its `FACTORY_TYPE_ID`, so the
+///      whitelisted at construction, each self-verified against its type id from `IMeshFactory.sol`, so the
 ///      factory can only ever clone vetted node types. The `deploy*` entry points remain
 ///      PERMISSIONLESS (the OperatorRegistry lazily clones per-operator FanIn nodes) — they
 ///      just gate on the whitelist/blacklist ladder, so the factory owner can `blacklist` a
 ///      node implementation to freeze new clones of it. `Multicallable` lets a caller batch
 ///      several node deploys (e.g. FanIn + TokenWeighting) into one transaction.
 contract MeshFactory is IMeshFactory, Factory, Multicallable {
-    // ============================================================
-    // TYPE IDS (expected self-reported ids per node slot)
-    // ============================================================
-
-    /// @dev Must equal `FanInNode.FACTORY_TYPE_ID`. Hardcoded so the factory asserts each slot's
-    ///      node type and the implementation self-confirms it (a FanOut cannot fill the FanIn slot).
-    bytes32 private constant FAN_IN_TYPE_ID = keccak256("commitments.mesh.fan_in");
-    /// @dev Must equal `FanOutNode.FACTORY_TYPE_ID`.
-    bytes32 private constant FAN_OUT_TYPE_ID = keccak256("commitments.mesh.fan_out");
-    /// @dev Must equal `TokenWeighting.FACTORY_TYPE_ID`.
-    bytes32 private constant TOKEN_WEIGHTING_TYPE_ID = keccak256("commitments.mesh.token_weighting");
-
     // ============================================================
     // STORAGE
     // ============================================================
@@ -56,7 +49,7 @@ contract MeshFactory is IMeshFactory, Factory, Multicallable {
     /// @param _fanOutImpl Address of the deployed FanOutNode implementation
     /// @param _tokenWeightingImpl Address of the deployed TokenWeighting implementation
     /// @dev Whitelists each implementation via the `Factory` base, self-verifying it against
-    ///      the node's `FACTORY_TYPE_ID`. The deployer becomes the owner of the
+    ///      the node's type id (`FAN_IN_TYPE_ID`, ...). The deployer becomes the owner of the
     ///      implementation-set controls (whitelist additions / blacklist valve).
     constructor(address _fanInImpl, address _fanOutImpl, address _tokenWeightingImpl) Factory(msg.sender) {
         fanInImpl = _fanInImpl;
@@ -87,16 +80,6 @@ contract MeshFactory is IMeshFactory, Factory, Multicallable {
     }
 
     /// @inheritdoc IMeshFactory
-    function deployFanOutWithPenalty(address provider, address manager, uint16 inputMaxPenaltyBps)
-        external
-        returns (address clone)
-    {
-        clone = _cloneVetted(fanOutImpl);
-        FanOutNode(clone).initializeWithPenalty(provider, manager, inputMaxPenaltyBps);
-        emit NodeDeployed(fanOutImpl, clone, "fan_out");
-    }
-
-    /// @inheritdoc IMeshFactory
     function deployTokenWeighting(address provider, address governance) external returns (address clone) {
         clone = _cloneVetted(tokenWeightingImpl);
         TokenWeighting(clone).initialize(provider, governance);
@@ -120,16 +103,6 @@ contract MeshFactory is IMeshFactory, Factory, Multicallable {
     function deployFanOutAt(bytes32 salt, address provider, address manager) external returns (address clone) {
         clone = _cloneVettedDeterministic(fanOutImpl, _scopeSalt(salt));
         FanOutNode(clone).initialize(provider, manager);
-        emit NodeDeployed(fanOutImpl, clone, "fan_out");
-    }
-
-    /// @inheritdoc IMeshFactory
-    function deployFanOutWithPenaltyAt(bytes32 salt, address provider, address manager, uint16 inputMaxPenaltyBps)
-        external
-        returns (address clone)
-    {
-        clone = _cloneVettedDeterministic(fanOutImpl, _scopeSalt(salt));
-        FanOutNode(clone).initializeWithPenalty(provider, manager, inputMaxPenaltyBps);
         emit NodeDeployed(fanOutImpl, clone, "fan_out");
     }
 

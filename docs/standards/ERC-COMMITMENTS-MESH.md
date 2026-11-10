@@ -1,7 +1,7 @@
 ---
 eip: XXXX
 title: Commitments - Mesh Topology and Operator Registry
-description: FlowQuery discovery surface, canonical mesh aggregation interfaces (FanIn, FanOut, TokenWeighting), and the operator-registry integration pattern, as an extension to ERC-COMMITMENTS.
+description: Canonical mesh aggregation interfaces (FanIn, FanOut, TokenWeighting), and the operator-registry integration pattern, as an extension to ERC-COMMITMENTS.
 author: Jake Hartnell (@jakehartnell)
 discussions-to: https://ethereum-magicians.org/t/<TBD>
 status: draft
@@ -12,11 +12,11 @@ created: 2026-05-08
 
 ## Abstract
 
-This ERC defines **mesh topology** — independently deployable contracts that aggregate, distribute, or weight stake into denominations consumed by governance, restaking middleware, or service-quorum logic. These nodes compose with [`ERC-COMMITMENTS`](./ERC-COMMITMENTS.md), but do not require a commitment manager. The standard specifies the `IFlowQuery` discovery surface that lets clients walk the stake graph, the `IFlowQueryPath` single-call provenance walk, and the three RECOMMENDED operational interfaces (`IFanIn`, `IFanOut`, `ITokenWeighting`). The **operator registry** and **service manager** — the layer that integrates commitments with decentralized operator services (AVSs, oracle networks, off-chain compute markets) — are specified normatively in the sibling [`ERC-COMMITMENTS-SERVICES`](./ERC-COMMITMENTS-SERVICES.md) standard; §4 below is a pointer to it.
+This ERC defines **mesh topology** — independently deployable contracts that aggregate, distribute, or weight stake into denominations consumed by governance, restaking middleware, or service-quorum logic. These nodes compose with [`ERC-COMMITMENTS`](./ERC-COMMITMENTS.md), but do not require a commitment manager. The standard specifies the denomination scheme, event-based discovery of the stake graph, and the three RECOMMENDED operational interfaces (`IFanIn`, `IFanOut`, `ITokenWeighting`). The **operator registry** and **service manager** — the layer that integrates commitments with decentralized operator services (AVSs, oracle networks, off-chain compute markets) — are specified normatively in the sibling [`ERC-COMMITMENTS-SERVICES`](./ERC-COMMITMENTS-SERVICES.md) standard; §4 below is a pointer to it.
 
 ## Motivation
 
-Commitments produce stake: encumbered, forfeitable, parameterized capital. Services consume stake: as voting power, as quorum weight, as security collateral. Between the two sits a topology problem — many committers fan into one service, one provider fans out to many consumers, heterogeneous tokens normalize into one score. Without standard shapes for these nodes, every deployment writes bespoke adapters and no generic client can walk the stake graph.
+Commitments produce stake: encumbered, forfeitable, parameterized capital. Services consume stake: as voting power, as quorum weight, as security collateral. Between the two sits a topology problem — many committers fan into one service, one provider fans out to many consumers, heterogeneous tokens normalize into one score. Without standard shapes for these nodes, every deployment writes bespoke adapters and no generic client can read the stake graph.
 
 ## Specification
 
@@ -28,7 +28,7 @@ When Mesh is composed with Core, the terms **committer**, **arbiter**, **backing
 
 | Section | Status | Depends on |
 |---|---|---|
-| **§2 FlowQuery** | normative-optional | — |
+| **§2 Denominations and discovery** | normative-optional | — |
 | **§3 Operational interfaces** | RECOMMENDED shapes | §2 |
 | **§4 Operator Registry pattern** | specified in [`ERC-COMMITMENTS-SERVICES`](./ERC-COMMITMENTS-SERVICES.md) (pointer only) | — |
 
@@ -43,49 +43,9 @@ The `MAX_REWARD_TOKENS` value is empirical: 32 ERC-20 transfers fit comfortably 
 
 `MAX_DENOMS` bounds the registered-denom set on a `TokenWeighting` node (§3.3). The voting-power queries `getVotingPowerAt` / `getTotalPowerAt` are O(denoms) and are evaluated inside quorum validation, so the set MUST be bounded: registering a new denom past the cap MUST revert `DenomCapReached`.
 
-### 2. Discovery surface (`IFlowQuery`)
+### 2. Denominations and discovery
 
-```solidity
-struct StakeInfo {
-    bytes32 denom;
-    uint16 maxPenaltyBps;       // 0..10_000
-    uint64 unbondingPeriod;
-    uint256 amount;
-}
-
-struct ProviderInfo {
-    address provider;
-    StakeInfo[] stakes;
-}
-
-struct ConsumerInfo {
-    address consumer;
-    StakeInfo[] stakes;
-}
-
-struct AvailableDenom {
-    bytes32 local;
-    address sourceProvider;
-    bytes32 sourceDenom;
-}
-
-interface IFlowQuery {
-    function nodeType() external view returns (bytes32);
-    function nodeTypeName() external view returns (string memory);
-
-    function providers() external view returns (ProviderInfo[] memory);
-    function consumers() external view returns (ConsumerInfo[] memory);
-    function availableDenoms() external view returns (AvailableDenom[] memory);
-
-    function providersPaged(uint256 offset, uint256 limit) external view returns (ProviderInfo[] memory);
-    function consumersPaged(uint256 offset, uint256 limit) external view returns (ConsumerInfo[] memory);
-    function availableDenomsPaged(uint256 offset, uint256 limit) external view returns (AvailableDenom[] memory);
-}
-```
-
-Implementations MUST return accurate topology information so clients can walk the stake graph. `nodeType()` returns one of the reserved `bytes32` constants `FAN_IN`, `FAN_OUT`, `TOKEN_WEIGHTING`, or a custom value reserved by the implementer. `availableDenoms()` MUST trace denom provenance through the mesh.
-
-The unbounded views (`providers`, `consumers`, `availableDenoms`) are convenient for small graphs; for production graphs with tens-to-hundreds of providers or denoms, callers SHOULD use the paginated variants — the unbounded variants have O(N·M) cost.
+Nodes expose no on-chain topology views. Clients rebuild the stake graph from events: the reference `MeshFactory` announces each node with `IMeshFactory.NodeDeployed(impl, clone, nodeType)`, where `nodeType` is `"fan_in"`, `"fan_out"` or `"token_weighting"`, and each node's registration, outflow and stake events name its providers, consumers and denoms. A node SHOULD emit an event for every change to its providers, consumers, outflows or stake; where an event carries only a count (FanOut's `OutflowsSet`), the node's getters (`getOutflows`) return the detail.
 
 **Denom uniqueness.** The `denom` field is a `bytes32` namespace identifier whose meaning is preserved across composition; two services that emit the same `denom` are treated as composing in the same denomination, which is sometimes the intent and sometimes a collision. To make the choice explicit, implementations SHOULD derive denom values from a source-scoped scheme of the form
 
@@ -95,37 +55,9 @@ denom = keccak256(abi.encode(originatingSource, label))
 
 where `originatingSource` is the address of the backing token or manager from which the stake originates (for self-stake / delegation denoms) or `address(0)` for synthetic denoms emitted by aggregator nodes, and `label` is a short `bytes32` tag chosen by the issuing service (e.g. `bytes32("self")` for self-stake, `bytes32("delegated:weth")` for a WETH-denominated delegation, `bytes32("vp:tw1")` for a TokenWeighting voting-power output). Two services that adopt the same source and the same label produce the same denom — this is the intended composition surface for shared restaking. Two services that intend to remain distinct MUST choose distinct labels or extend the scheme (e.g. include a service-specific salt).
 
-### 2.1 Provenance walk (`IFlowQueryPath`)
-
-`IFlowQuery` (§2) exposes one node's local topology; walking a multi-hop denom back to its origin then requires one round-trip per hop. `IFlowQueryPath` is an OPTIONAL extension that returns a full upstream provenance chain in a single call. All three canonical nodes (§3) implement it.
-
-```solidity
-struct DenomLink {
-    address provider;   // mesh node holding this denom; address(0) marks a vault-rooted terminus
-    bytes32 denom;      // local denom on `provider`
-    bytes32 nodeType;   // FAN_IN / FAN_OUT / TOKEN_WEIGHTING / custom; 0 for a vault-rooted terminus
-}
-
-interface IFlowQueryPath is IFlowQuery {
-    function MAX_PATH_DEPTH() external view returns (uint16);
-    function denomPath(bytes32 local, uint16 maxDepth) external view returns (DenomLink[] memory path);
-}
-
-error InvalidDepth(uint16 maxDepth);
-```
-
-`denomPath(local, maxDepth)` returns the chain with the input denom as entry 0 and walks upstream. It MUST NOT revert on cycles, on providers that do not implement `IFlowQuery`, or on natural termini — each of those cases is signalled by the terminal `DenomLink` and distinguished by inspecting the returned path:
-
-- **Vault-rooted terminus** — trailing entry has `provider == address(0)` and `nodeType == 0`. The node declared the denom has no upstream mesh source.
-- **Non-mesh provider** — trailing entry has `provider != 0` and `nodeType == 0`. The walk reached an address (an EOA depositor, a `CommitmentsVault`, …) that does not implement `IFlowQuery`.
-- **Cycle** — the trailing entry duplicates an earlier `(provider, denom)` pair. This is the only case in which two entries share `(provider, denom)`.
-- **Depth limit** — `path.length == maxDepth` and the last entry's `nodeType != 0`. The chain extends further but was truncated.
-
-`denomPath` MUST revert `InvalidDepth` **only** for an out-of-range `maxDepth`; callers MUST pass `1 <= maxDepth <= MAX_PATH_DEPTH()`. `MAX_PATH_DEPTH()` SHOULD return `64` unless the implementation documents a tighter bound. Clients detect support by `try/catch` on `denomPath` — this standard does not require ERC-165.
-
 ### 3. Operational interfaces (RECOMMENDED)
 
-The discovery surface in §2 is sufficient for graph-traversal tooling but does not specify how stake actually enters or leaves a mesh node. Three operational shapes recur across mesh deployments:
+Discovery (§2) does not specify how stake actually enters or leaves a mesh node. Three operational shapes recur across mesh deployments:
 
 - **Aggregation** — many providers commit stake to one consumer through the same node.
 - **Distribution** — one provider's stake fans out to multiple consumers under explicit slices.
@@ -133,12 +65,12 @@ The discovery surface in §2 is sufficient for graph-traversal tooling but does 
 
 The `stake` and `releaseStake` signatures diverge across the three shapes because each solves a different aggregation problem and demands a different authorization model — manager-credited provider-as-parameter for aggregation, single-provider check for distribution, staker-as-parameter for weighting. The divergence is structural, not incidental, and a common-denominator `IMeshNode` interface would force premature unification on patterns that are not actually unified. This standard does NOT specify a normative `IMeshNode`; a future extension MAY introduce one if community deployment patterns converge.
 
-Implementations targeting one of the three canonical shapes SHOULD adopt the matching interface below so that wallets, indexers, and integrators do not need per-deployment adapters. Each interface MUST also implement `IFlowQuery` (§2).
+Implementations targeting one of the three canonical shapes SHOULD adopt the matching interface below so that wallets, indexers, and integrators do not need per-deployment adapters.
 
 #### 3.1 `IFanIn` — aggregation (manager-credited)
 
 ```solidity
-interface IFanIn is IFlowQuery {
+interface IFanIn {
     function initialize(address consumer, address manager) external;
 
     function registerProvider(
@@ -169,7 +101,6 @@ Releases are initiated by the consumer or by the manager (the manager path lets 
 ```solidity
 struct UserInfo {
     uint256 locked;             // total stake from the provider for this denom
-    uint256 maxLien;            // largest single-consumer lien amount
     uint256 totalForfeitable;   // Σ(amount_i × maxPenaltyBps_i / 10_000) across outflows
 }
 
@@ -184,7 +115,7 @@ struct FanOutLien {
     uint256 exposure;           // amount × maxPenaltyBps / 10_000
 }
 
-interface IFanOut is IFlowQuery {
+interface IFanOut {
     function initialize(address provider_, address manager_) external;
 
     function setOutflows(bytes32 denom, Outflow[] calldata outflows) external;
@@ -201,65 +132,18 @@ interface IFanOut is IFlowQuery {
 }
 ```
 
-The concrete `FanOutNode` additionally exposes `initializeWithPenalty(address provider_, address manager_, uint16 inputMaxPenaltyBps_)`, which fixes the node's `inputMaxPenaltyBps` at construction; plain `initialize` defaults it to `10_000`.
+The concrete `FanOutNode` additionally exposes `initializeWithPenalty(address provider_, address manager_, uint16 inputMaxPenaltyBps_)`, which fixes the node's `inputMaxPenaltyBps` at construction; plain `initialize` defaults it to `10_000`. `manager_` is recorded in the `Initialized` event only and carries no powers: only the provider configures outflows.
 
 A single provider's stake is distributed to multiple consumers under explicit `Outflow { consumer, maxPenaltyBps, portionBps }` slices. The `portionBps` across a staker/denom's outflows MUST sum to at most `10_000`; a provider MAY leave a portion unallocated (unallocated locked stake is simply subject to no consumer's lien — this relaxation is required because `releaseStake` shrinks a released outflow's portion so a later `stake` cannot resurrect it). `setOutflows` MUST reject an outflow set whose portions sum above `10_000` (revert `InvalidPortionSum`), and MUST — as a separate rule — reject a set that names the same consumer twice (revert `DuplicateConsumer`), because duplicate consumers would collapse into one lien slot while both contributing to `totalForfeitable`, desyncing the aggregate from the sum of stored liens.
 
-`stake` is provider-only (the provider is `msg.sender`). `releaseStake` is callable only by a registered consumer. `distributeRewards` is likewise consumer-only (the consumer funds the reward pool), whereas `claimRewards` is permissionless and called by the staker to pull its pro-rata accrual. The exposure allocation invariant (core INV-3, generalized to mesh nodes) MUST hold across all outflows for the same staker/denom — the sum of `amount × maxPenaltyBps / 10_000` over outflows (`totalForfeitable`) MUST NOT exceed `locked × inputMaxPenaltyBps / 10_000`. `setOutflows`, `stake`, and `allocate` (§3.2.1) MUST each re-validate this invariant (revert `ExposureAllocationExceeded`).
+`stake` is provider-only (the provider is `msg.sender`). `releaseStake` is callable only by a registered consumer. `distributeRewards` is likewise consumer-only (the consumer funds the reward pool), whereas `claimRewards` is permissionless and called by the staker to pull its pro-rata accrual. The exposure allocation invariant (core INV-3, generalized to mesh nodes) MUST hold across all outflows for the same staker/denom — the sum of `amount × maxPenaltyBps / 10_000` over outflows (`totalForfeitable`) MUST NOT exceed `locked × inputMaxPenaltyBps / 10_000`. `setOutflows` and `stake` MUST each re-validate this invariant (revert `ExposureAllocationExceeded`).
 
 **Relationship to distribution strategies.** The built-in Synthetix-style accumulator on `IFanOut` (`distributeRewards` / `claimRewards`) is independent of the core standard's Part D distribution strategies. The shipped node holds reward tokens itself, tracks stake locally, and pays callers through `claimRewards`; it does not implement `IDistributionStrategy` and does not route claims through the commitment manager.
-
-#### 3.2.1 `IFanOut` curated allocation (provider-curated caps)
-
-The static `Outflow` model fixes each consumer's share by `portionBps`. A `FanOutNode` also exposes a curated dynamic-allocation surface layered on top: the provider sets per-consumer two-limit caps and a priority order, consumers publish their own inflow ceilings, and `allocate` greedily recomputes the same liens / outflow records / `totalForfeitable` the static path uses. It is pure exposure/allocation algebra — no funds move, so the manager-custody partition invariant (core INV-1) is untouched and the exposure invariant (§3.2) is re-validated on every pass.
-
-```solidity
-struct AllocationCap {
-    uint256 absoluteLimit;   // hard ceiling in stake units
-    uint256 shareLimit;      // fraction of the provider pool, 1e18-scaled (1e18 == 100%)
-    uint16 maxPenaltyBps;    // exposure penalty for this consumer's lien (0..10_000)
-    bool set;
-}
-
-struct ConsumerCapacity {
-    uint256 ceiling;         // max inflow the consumer will accept for this denom
-    bool set;
-}
-
-// provider-only
-function setAllocationCap(bytes32 denom, address consumer, uint256 absoluteLimit, uint256 shareLimit, uint16 maxPenaltyBps) external;
-function reorderPriority(bytes32 denom, address[] calldata order) external;
-function allocate(bytes32 denom) external;
-
-// consumer self-service (permissionless)
-function publishCapacity(bytes32 denom, uint256 ceiling) external;
-function decreaseLimit(bytes32 denom, uint256 newCeiling) external;
-
-// views
-function getAllocationCap(address staker, bytes32 denom, address consumer) external view returns (AllocationCap memory);
-function getPriority(address staker, bytes32 denom) external view returns (address[] memory);
-function capacity(address consumer, bytes32 denom) external view returns (uint256 ceiling, bool set);
-function allocatable(address consumer, bytes32 denom) external view returns (uint256 room);
-function effectiveCap(address staker, bytes32 denom, address consumer) external view returns (uint256);
-function deallocatable(address staker, bytes32 denom, address consumer) external view returns (uint256);
-function probeUnwind(address staker, bytes32 denom, address consumer) external view;
-```
-
-Semantics:
-
-- **Effective cap.** For a pool equal to the provider's `locked` on the denom, a consumer's effective cap is `effectiveCap = min(absoluteLimit, pool × shareLimit / 1e18, publishedCapacity)`. `shareLimit` is 1e18-scaled and MUST be `<= 1e18` (revert `InvalidShareLimit`); a consumer with no published capacity is unbounded on that term.
-- **Penalty bound.** Each cap's `maxPenaltyBps` MUST be `<= inputMaxPenaltyBps` (revert `PenaltyExceedsInput`).
-- **Priority.** `reorderPriority` MUST receive an exact permutation of the current priority list — same length, same members, no duplicates — else revert `NotAPermutation`. `allocate` walks the priority list in order, greedily filling each capped consumer to its effective cap until the pool is exhausted.
-- **Consumer capacity.** `publishCapacity` sets or RAISES the ceiling and MUST reject a lower value (revert `CapacityNotIncreasing`); `decreaseLimit` strictly lowers it (revert `LimitNotDecreasing`). Both are permissionless self-service by the consumer.
-- **Re-validation.** `allocate` rebuilds the liens under core INV-3 and re-validates the exposure invariant (§3.2) before committing (revert `ExposureAllocationExceeded`).
-- **Dry-run.** `deallocatable` returns how much a consumer could `releaseStake` right now; it is implemented as a simulate-and-revert over `probeUnwind`, which ALWAYS reverts carrying the result in `UnwindProbe(uint256)` and persists no state.
-
-Events: `AllocationCapSet`, `PriorityReordered`, `Allocated(staker, denom, allocated, unallocated)`, `CapacityPublished`, `CapacityDecreased`. Errors: `InvalidShareLimit`, `PenaltyExceedsInput`, `NotAPermutation`, `CapacityNotIncreasing`, `LimitNotDecreasing`, `UnwindProbe(uint256)`.
 
 #### 3.3 `ITokenWeighting` — weighting (manager-driven, multi-staker)
 
 ```solidity
-interface ITokenWeighting is IFlowQuery, IVotingPowerSource {
+interface ITokenWeighting is IVotingPowerSource {
     function initialize(address provider_, address governance_) external;
 
     function stake(address staker, bytes32 denom, uint256 amount) external;
@@ -278,7 +162,7 @@ interface ITokenWeighting is IFlowQuery, IVotingPowerSource {
 }
 ```
 
-One provider contract — typically an operator registry ([`ERC-COMMITMENTS-SERVICES`](./ERC-COMMITMENTS-SERVICES.md) §2) — routes stake from many stakers through a single weighting sink that emits unified voting power. The provider is the only authorized caller for `stake` / `releaseStake`; `staker` is a parameter rather than `msg.sender` so a single registry can credit many distinct stakers. Inheriting `IVotingPowerSource` lets service managers and other governance consumers depend on the narrow voting-power surface without importing the full mesh interface. Voting power SHOULD be queryable at past block numbers (e.g. via OpenZeppelin `Checkpoints.Trace256`) so off-chain consumers can pin to a reference block.
+One provider contract — typically an operator registry ([`ERC-COMMITMENTS-SERVICES`](./ERC-COMMITMENTS-SERVICES.md) §2) — routes stake from many stakers through a single weighting sink that emits unified voting power. The provider is the only authorized caller for `stake` / `releaseStake`; `staker` is a parameter rather than `msg.sender` so a single registry can credit many distinct stakers. Inheriting `IVotingPowerSource` lets service managers and other governance consumers depend on the narrow voting-power surface without importing the full mesh interface. Voting power SHOULD be queryable at past block numbers (e.g. via OpenZeppelin `Checkpoints.Trace208`, keyed by `uint48` block number) so off-chain consumers can pin to a reference block.
 
 **`weightBps` units — an explicit exception to core §0.1.** Despite the `Bps` suffix, `weightBps` is NOT a percentage capped at `10_000`. It is a full-precision (`uint256`) governance-set normalization factor applied as
 
@@ -294,8 +178,8 @@ and it deliberately exceeds `10_000` in normal operation: it simultaneously abso
 
 Implementations targeting other aggregation patterns — governance gating, hierarchical aggregation, weighted distribution under bespoke rules, conditional outflow rebalancing — MAY define their own operational interface. Such implementations:
 
-- MUST still expose `IFlowQuery` (§2) for graph-traversal tooling so generic clients can discover the node's denoms, providers, and consumers.
-- SHOULD set `nodeType()` to a custom `bytes32` value distinct from the three reserved constants (`FAN_IN`, `FAN_OUT`, `TOKEN_WEIGHTING`) so clients can route on the discriminator.
+- MUST still emit the events §2 requires, so generic clients can discover the node's denoms, providers, and consumers.
+- SHOULD announce themselves with a `nodeType` string distinct from the three reserved names (`fan_in`, `fan_out`, `token_weighting`) so clients can route on the discriminator.
 - SHOULD publish their non-normative operational interface alongside the deployment so integrators can write a one-off adapter where a generic shape does not fit.
 
 ### 4. Operator services (see `ERC-COMMITMENTS-SERVICES`)
@@ -314,7 +198,7 @@ operator self-stake + delegations  →  FanIn(per operator)  →  TokenWeighting
 
 ### Three interfaces, not one `IMeshNode`
 
-The `stake` / `releaseStake` signatures diverge across the three canonical shapes because each demands a different authorization model. A common-denominator interface would force premature unification on patterns that are not actually unified; the discovery surface (`IFlowQuery`) is the layer where genuine commonality exists, so that is the layer the standard makes mandatory for mesh nodes.
+The `stake` / `releaseStake` signatures diverge across the three canonical shapes because each demands a different authorization model. A common-denominator interface would force premature unification on patterns that are not actually unified; event-based discovery (§2) is the layer where genuine commonality exists.
 
 ### EIP-1167 for mesh nodes
 
@@ -322,16 +206,14 @@ Mesh nodes are deployed as [EIP-1167](https://eips.ethereum.org/EIPS/eip-1167) m
 
 ## Backwards Compatibility
 
-This extension adds new interfaces and node contracts; it changes no core `ERC-COMMITMENTS` behavior and introduces no new selectors on existing core contracts. A manager deployment with no mesh nodes is fully conformant to the core standard. Mesh nodes are discoverable through `IFlowQuery` (§2) and, where implemented, `IFlowQueryPath` (§2.1); a client that does not recognize a node's `nodeType()` can still walk it through those surfaces. Support for `IFlowQueryPath` is detected by `try/catch` on `denomPath` — no ERC-165 registration is required.
+This extension adds new interfaces and node contracts; it changes no core `ERC-COMMITMENTS` behavior and introduces no new selectors on existing core contracts. A manager deployment with no mesh nodes is fully conformant to the core standard. Mesh nodes are discovered from their events (§2).
 
 ## Test Cases
 
 The conformance and behavioral tests live under `test/mesh/`:
 
 - `FanInNode.t.sol`, `FanOutNode.t.sol`, `TokenWeighting.t.sol` — per-node behavior and authorization.
-- `FanOutAllocationCaps.t.sol` — the curated-allocation surface (§3.2.1).
 - `TokenWeightingRetirement.t.sol`, `TokenWeightingWeightEpoch.t.sol` — the bounded-denom lifecycle and weight-epoch history immutability (§3.3, MESH-6).
-- `FlowPathLib.t.sol` — `IFlowQueryPath` provenance walks, including cycle / non-mesh / depth termini (§2.1).
 - `MeshBackingInvariant.t.sol` — the mesh exposure/backing invariants (MESH-1, MESH-4).
 - `MeshFactory.t.sol`, `MeshFactoryPolicy.t.sol` — clone deployment and implementation whitelisting.
 - `Integration.t.sol`, `GasBenchmark.t.sol` — end-to-end composition and gas bounds.
@@ -341,10 +223,9 @@ The conformance and behavioral tests live under `test/mesh/`:
 The reference implementation lives under `src/extensions/mesh/`:
 
 - `FanInNode.sol` — `IFanIn` aggregation node (manager-credited).
-- `FanOutNode.sol` — `IFanOut` distribution node, including the curated-allocation surface (§3.2.1).
+- `FanOutNode.sol` — `IFanOut` distribution node.
 - `TokenWeighting.sol` — `ITokenWeighting` weighting sink with checkpointed voting power and the bounded-denom lifecycle (§3.3).
-- `interfaces/` — `IFlowQuery`, `IFlowQueryPath`, `IFanIn`, `IFanOut`, `ITokenWeighting`.
-- `libraries/FlowPathLib.sol` — the shared `denomPath` walk.
+- `interfaces/` — `IFanIn`, `IFanOut`, `ITokenWeighting`, `IMeshFactory` (with the node type ids).
 - `MeshFactory.sol` — EIP-1167 clone deployment of whitelisted node implementations.
 
 ## Security Considerations
@@ -367,7 +248,7 @@ A conformant mesh deployment MUST preserve the following. The core standard's le
 
 | Invariant | Statement |
 |---|---|
-| **MESH-1 exposure bound (FanOut)** | For every staker/denom, `totalForfeitable = Σ_consumer(lien.exposure) ≤ locked × inputMaxPenaltyBps / 10_000`. Re-validated by `setOutflows`, `stake`, and `allocate`; a violation MUST revert `ExposureAllocationExceeded`. |
+| **MESH-1 exposure bound (FanOut)** | For every staker/denom, `totalForfeitable = Σ_consumer(lien.exposure) ≤ locked × inputMaxPenaltyBps / 10_000`. Re-validated by `setOutflows` and `stake`; a violation MUST revert `ExposureAllocationExceeded`. |
 | **MESH-2 portion bound (FanOut)** | For every staker/denom, `Σ_outflow(portionBps) ≤ 10_000`. A provider MAY leave a remainder unallocated. |
 | **MESH-3 lien conservation (FanOut)** | Each consumer's `lien.amount ≤ locked`, and `releaseStake` MUST reject `amount > lien.amount` (`InsufficientLien`). Duplicate consumers are rejected at configuration time (`DuplicateConsumer`) so the sum of stored liens never diverges from `totalForfeitable`. |
 | **MESH-4 stake conservation (FanIn / TokenWeighting)** | `totalStake[denom]` equals credited stake minus released stake; credit is manager/provider-gated, so mesh stake can never exceed the manager-verified backing that authorized it. |

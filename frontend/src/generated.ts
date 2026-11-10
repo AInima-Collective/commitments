@@ -6446,140 +6446,8 @@ export const fanInNodeAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'MAX_PATH_DEPTH',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'availableDenoms',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AvailableDenom[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'sourceProvider', internalType: 'address', type: 'address' },
-          { name: 'sourceDenom', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'availableDenomsPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AvailableDenom[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'sourceProvider', internalType: 'address', type: 'address' },
-          { name: 'sourceDenom', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'consumer',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'consumers',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ConsumerInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'consumer', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'consumersPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ConsumerInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'consumer', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'maxDepth', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'denomPath',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct DenomLink[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'nodeType', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
     stateMutability: 'view',
   },
   {
@@ -6618,90 +6486,11 @@ export const fanInNodeAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'nodeType',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'nodeTypeName',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
     inputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     name: 'outputSources',
     outputs: [
       { name: 'provider', internalType: 'address', type: 'address' },
       { name: 'denomIn', internalType: 'bytes32', type: 'bytes32' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'providers',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ProviderInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'providersPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ProviderInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
     ],
     stateMutability: 'view',
   },
@@ -6853,14 +6642,8 @@ export const fanInNodeAbi = [
   { type: 'error', inputs: [], name: 'DenomOutCollision' },
   { type: 'error', inputs: [], name: 'InputAlreadyRegistered' },
   { type: 'error', inputs: [], name: 'InsufficientStake' },
-  {
-    type: 'error',
-    inputs: [{ name: 'maxDepth', internalType: 'uint16', type: 'uint16' }],
-    name: 'InvalidDepth',
-  },
   { type: 'error', inputs: [], name: 'OnlyConsumer' },
   { type: 'error', inputs: [], name: 'OnlyManager' },
-  { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
   { type: 'error', inputs: [], name: 'UnregisteredProvider' },
   { type: 'error', inputs: [], name: 'ZeroAmount' },
 ] as const
@@ -6874,84 +6657,8 @@ export const fanOutNodeAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'MAX_PATH_DEPTH',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'MAX_REWARD_TOKENS',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'consumer', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-    ],
-    name: 'allocatable',
-    outputs: [{ name: 'room', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'denom', internalType: 'bytes32', type: 'bytes32' }],
-    name: 'allocate',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'availableDenoms',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AvailableDenom[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'sourceProvider', internalType: 'address', type: 'address' },
-          { name: 'sourceDenom', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'availableDenomsPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AvailableDenom[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'sourceProvider', internalType: 'address', type: 'address' },
-          { name: 'sourceDenom', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'consumer', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-    ],
-    name: 'capacity',
-    outputs: [
-      { name: 'ceiling', internalType: 'uint256', type: 'uint256' },
-      { name: 'set', internalType: 'bool', type: 'bool' },
-    ],
     stateMutability: 'view',
   },
   {
@@ -6966,113 +6673,6 @@ export const fanOutNodeAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'consumers',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ConsumerInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'consumer', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'consumersPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ConsumerInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'consumer', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'staker', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'consumer', internalType: 'address', type: 'address' },
-    ],
-    name: 'deallocatable',
-    outputs: [{ name: 'amount', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'newCeiling', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'decreaseLimit',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'maxDepth', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'denomPath',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct DenomLink[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'nodeType', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: 'stakeDenom', internalType: 'bytes32', type: 'bytes32' },
       { name: 'rewardToken', internalType: 'address', type: 'address' },
@@ -7084,44 +6684,10 @@ export const fanOutNodeAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'staker', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'consumer', internalType: 'address', type: 'address' },
-    ],
-    name: 'effectiveCap',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [],
     name: 'factoryTypeId',
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
     stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'staker', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'consumer', internalType: 'address', type: 'address' },
-    ],
-    name: 'getAllocationCap',
-    outputs: [
-      {
-        name: 'cap',
-        internalType: 'struct FanOutNode.AllocationCap',
-        type: 'tuple',
-        components: [
-          { name: 'absoluteLimit', internalType: 'uint256', type: 'uint256' },
-          { name: 'shareLimit', internalType: 'uint256', type: 'uint256' },
-          { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'set', internalType: 'bool', type: 'bool' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -7171,16 +6737,6 @@ export const fanOutNodeAbi = [
       { name: 'staker', internalType: 'address', type: 'address' },
       { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
     ],
-    name: 'getPriority',
-    outputs: [{ name: 'order', internalType: 'address[]', type: 'address[]' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'staker', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-    ],
     name: 'getUserInfo',
     outputs: [
       {
@@ -7189,7 +6745,6 @@ export const fanOutNodeAbi = [
         type: 'tuple',
         components: [
           { name: 'locked', internalType: 'uint256', type: 'uint256' },
-          { name: 'maxLien', internalType: 'uint256', type: 'uint256' },
           {
             name: 'totalForfeitable',
             internalType: 'uint256',
@@ -7230,27 +6785,6 @@ export const fanOutNodeAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'manager',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'nodeType',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'nodeTypeName',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: '', internalType: 'address', type: 'address' },
       { name: '', internalType: 'bytes32', type: 'bytes32' },
@@ -7262,96 +6796,10 @@ export const fanOutNodeAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'staker', internalType: 'address', type: 'address' },
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'consumer', internalType: 'address', type: 'address' },
-    ],
-    name: 'probeUnwind',
-    outputs: [],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [],
     name: 'provider',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'providers',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ProviderInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'providersPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ProviderInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'ceiling', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'publishCapacity',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -7361,16 +6809,6 @@ export const fanOutNodeAbi = [
       { name: 'amount', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'releaseStake',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'order', internalType: 'address[]', type: 'address[]' },
-    ],
-    name: 'reorderPriority',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -7394,19 +6832,6 @@ export const fanOutNodeAbi = [
     name: 'rewardsPerShare',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'consumer', internalType: 'address', type: 'address' },
-      { name: 'absoluteLimit', internalType: 'uint256', type: 'uint256' },
-      { name: 'shareLimit', internalType: 'uint256', type: 'uint256' },
-      { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'setAllocationCap',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -7443,130 +6868,6 @@ export const fanOutNodeAbi = [
     name: 'totalStake',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'staker',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'denom',
-        internalType: 'bytes32',
-        type: 'bytes32',
-        indexed: true,
-      },
-      {
-        name: 'allocated',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-      {
-        name: 'unallocated',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'Allocated',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'staker',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'denom',
-        internalType: 'bytes32',
-        type: 'bytes32',
-        indexed: true,
-      },
-      {
-        name: 'consumer',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'absoluteLimit',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-      {
-        name: 'shareLimit',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-      {
-        name: 'maxPenaltyBps',
-        internalType: 'uint16',
-        type: 'uint16',
-        indexed: false,
-      },
-    ],
-    name: 'AllocationCapSet',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'consumer',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'denom',
-        internalType: 'bytes32',
-        type: 'bytes32',
-        indexed: true,
-      },
-      {
-        name: 'newCeiling',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'CapacityDecreased',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'consumer',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'denom',
-        internalType: 'bytes32',
-        type: 'bytes32',
-        indexed: true,
-      },
-      {
-        name: 'ceiling',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'CapacityPublished',
   },
   {
     type: 'event',
@@ -7611,25 +6912,6 @@ export const fanOutNodeAbi = [
       },
     ],
     name: 'OutflowsSet',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'staker',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'denom',
-        internalType: 'bytes32',
-        type: 'bytes32',
-        indexed: true,
-      },
-    ],
-    name: 'PriorityReordered',
   },
   {
     type: 'event',
@@ -7744,22 +7026,12 @@ export const fanOutNodeAbi = [
     name: 'Staked',
   },
   { type: 'error', inputs: [], name: 'AlreadyInitialized' },
-  { type: 'error', inputs: [], name: 'CapacityNotIncreasing' },
   { type: 'error', inputs: [], name: 'DuplicateConsumer' },
   { type: 'error', inputs: [], name: 'ExposureAllocationExceeded' },
   { type: 'error', inputs: [], name: 'InsufficientLien' },
-  {
-    type: 'error',
-    inputs: [{ name: 'maxDepth', internalType: 'uint16', type: 'uint16' }],
-    name: 'InvalidDepth',
-  },
   { type: 'error', inputs: [], name: 'InvalidPortionSum' },
-  { type: 'error', inputs: [], name: 'InvalidShareLimit' },
-  { type: 'error', inputs: [], name: 'LimitNotDecreasing' },
-  { type: 'error', inputs: [], name: 'NotAPermutation' },
   { type: 'error', inputs: [], name: 'OnlyProvider' },
   { type: 'error', inputs: [], name: 'OnlyRegisteredConsumer' },
-  { type: 'error', inputs: [], name: 'PenaltyExceedsInput' },
   { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
   { type: 'error', inputs: [], name: 'RewardTokenLimit' },
   { type: 'error', inputs: [], name: 'RewardTooSmall' },
@@ -7767,11 +7039,6 @@ export const fanOutNodeAbi = [
     type: 'error',
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
     name: 'SafeERC20FailedOperation',
-  },
-  {
-    type: 'error',
-    inputs: [{ name: 'amount', internalType: 'uint256', type: 'uint256' }],
-    name: 'UnwindProbe',
   },
   { type: 'error', inputs: [], name: 'ZeroAmount' },
   { type: 'error', inputs: [], name: 'ZeroTotalStake' },
@@ -8970,29 +8237,6 @@ export const meshFactoryAbi = [
       { name: 'manager', internalType: 'address', type: 'address' },
     ],
     name: 'deployFanOutAt',
-    outputs: [{ name: 'clone', internalType: 'address', type: 'address' }],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'provider', internalType: 'address', type: 'address' },
-      { name: 'manager', internalType: 'address', type: 'address' },
-      { name: 'inputMaxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'deployFanOutWithPenalty',
-    outputs: [{ name: 'clone', internalType: 'address', type: 'address' }],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'provider', internalType: 'address', type: 'address' },
-      { name: 'manager', internalType: 'address', type: 'address' },
-      { name: 'inputMaxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'deployFanOutWithPenaltyAt',
     outputs: [{ name: 'clone', internalType: 'address', type: 'address' }],
     stateMutability: 'nonpayable',
   },
@@ -12717,13 +11961,6 @@ export const tokenWeightingAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'MAX_PATH_DEPTH',
-    outputs: [{ name: '', internalType: 'uint16', type: 'uint16' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'MAX_REWARD_TOKENS',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -12737,45 +11974,6 @@ export const tokenWeightingAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'availableDenoms',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AvailableDenom[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'sourceProvider', internalType: 'address', type: 'address' },
-          { name: 'sourceDenom', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'availableDenomsPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct AvailableDenom[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'sourceProvider', internalType: 'address', type: 'address' },
-          { name: 'sourceDenom', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: 'stakeDenom', internalType: 'bytes32', type: 'bytes32' },
       { name: 'rewardToken', internalType: 'address', type: 'address' },
@@ -12783,71 +11981,6 @@ export const tokenWeightingAbi = [
     name: 'claimRewards',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'consumers',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ConsumerInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'consumer', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: '', internalType: 'uint256', type: 'uint256' },
-      { name: '', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'consumersPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ConsumerInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'consumer', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'pure',
   },
   {
     type: 'function',
@@ -12864,27 +11997,6 @@ export const tokenWeightingAbi = [
     inputs: [],
     name: 'denomCount',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'local', internalType: 'bytes32', type: 'bytes32' },
-      { name: 'maxDepth', internalType: 'uint16', type: 'uint16' },
-    ],
-    name: 'denomPath',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct DenomLink[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'nodeType', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
     stateMutability: 'view',
   },
   {
@@ -12989,20 +12101,6 @@ export const tokenWeightingAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'nodeType',
-    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'nodeTypeName',
-    outputs: [{ name: '', internalType: 'string', type: 'string' }],
-    stateMutability: 'pure',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: '', internalType: 'address', type: 'address' },
       { name: '', internalType: 'bytes32', type: 'bytes32' },
@@ -13017,71 +12115,6 @@ export const tokenWeightingAbi = [
     inputs: [],
     name: 'provider',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'providers',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ProviderInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'offset', internalType: 'uint256', type: 'uint256' },
-      { name: 'limit', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'providersPaged',
-    outputs: [
-      {
-        name: '',
-        internalType: 'struct ProviderInfo[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'provider', internalType: 'address', type: 'address' },
-          {
-            name: 'stakes',
-            internalType: 'struct StakeInfo[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'denom', internalType: 'bytes32', type: 'bytes32' },
-              { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-              {
-                name: 'unbondingPeriod',
-                internalType: 'uint64',
-                type: 'uint64',
-              },
-              { name: 'amount', internalType: 'uint256', type: 'uint256' },
-            ],
-          },
-        ],
-      },
-    ],
     stateMutability: 'view',
   },
   {
@@ -13470,16 +12503,19 @@ export const tokenWeightingAbi = [
   { type: 'error', inputs: [], name: 'DenomCapReached' },
   { type: 'error', inputs: [], name: 'DenomIsRetired' },
   { type: 'error', inputs: [], name: 'InsufficientStake' },
-  {
-    type: 'error',
-    inputs: [{ name: 'maxDepth', internalType: 'uint16', type: 'uint16' }],
-    name: 'InvalidDepth',
-  },
   { type: 'error', inputs: [], name: 'OnlyGovernance' },
   { type: 'error', inputs: [], name: 'OnlyProvider' },
   { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
   { type: 'error', inputs: [], name: 'RewardTokenLimit' },
   { type: 'error', inputs: [], name: 'RewardTooSmall' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'bits', internalType: 'uint8', type: 'uint8' },
+      { name: 'value', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'SafeCastOverflowedUintDowncast',
+  },
   {
     type: 'error',
     inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
@@ -19823,61 +18859,11 @@ export const useReadFanInNode = /*#__PURE__*/ createUseReadContract({
 })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"MAX_PATH_DEPTH"`
- */
-export const useReadFanInNodeMaxPathDepth = /*#__PURE__*/ createUseReadContract(
-  { abi: fanInNodeAbi, functionName: 'MAX_PATH_DEPTH' },
-)
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"availableDenoms"`
- */
-export const useReadFanInNodeAvailableDenoms =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanInNodeAbi,
-    functionName: 'availableDenoms',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"availableDenomsPaged"`
- */
-export const useReadFanInNodeAvailableDenomsPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanInNodeAbi,
-    functionName: 'availableDenomsPaged',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"consumer"`
  */
 export const useReadFanInNodeConsumer = /*#__PURE__*/ createUseReadContract({
   abi: fanInNodeAbi,
   functionName: 'consumer',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"consumers"`
- */
-export const useReadFanInNodeConsumers = /*#__PURE__*/ createUseReadContract({
-  abi: fanInNodeAbi,
-  functionName: 'consumers',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"consumersPaged"`
- */
-export const useReadFanInNodeConsumersPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanInNodeAbi,
-    functionName: 'consumersPaged',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"denomPath"`
- */
-export const useReadFanInNodeDenomPath = /*#__PURE__*/ createUseReadContract({
-  abi: fanInNodeAbi,
-  functionName: 'denomPath',
 })
 
 /**
@@ -19906,44 +18892,12 @@ export const useReadFanInNodeManager = /*#__PURE__*/ createUseReadContract({
 })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"nodeType"`
- */
-export const useReadFanInNodeNodeType = /*#__PURE__*/ createUseReadContract({
-  abi: fanInNodeAbi,
-  functionName: 'nodeType',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"nodeTypeName"`
- */
-export const useReadFanInNodeNodeTypeName = /*#__PURE__*/ createUseReadContract(
-  { abi: fanInNodeAbi, functionName: 'nodeTypeName' },
-)
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"outputSources"`
  */
 export const useReadFanInNodeOutputSources =
   /*#__PURE__*/ createUseReadContract({
     abi: fanInNodeAbi,
     functionName: 'outputSources',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"providers"`
- */
-export const useReadFanInNodeProviders = /*#__PURE__*/ createUseReadContract({
-  abi: fanInNodeAbi,
-  functionName: 'providers',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanInNodeAbi}__ and `functionName` set to `"providersPaged"`
- */
-export const useReadFanInNodeProvidersPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanInNodeAbi,
-    functionName: 'providersPaged',
   })
 
 /**
@@ -20087,15 +19041,6 @@ export const useReadFanOutNode = /*#__PURE__*/ createUseReadContract({
 })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"MAX_PATH_DEPTH"`
- */
-export const useReadFanOutNodeMaxPathDepth =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'MAX_PATH_DEPTH',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"MAX_REWARD_TOKENS"`
  */
 export const useReadFanOutNodeMaxRewardTokens =
@@ -20105,97 +19050,12 @@ export const useReadFanOutNodeMaxRewardTokens =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"allocatable"`
- */
-export const useReadFanOutNodeAllocatable = /*#__PURE__*/ createUseReadContract(
-  { abi: fanOutNodeAbi, functionName: 'allocatable' },
-)
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"availableDenoms"`
- */
-export const useReadFanOutNodeAvailableDenoms =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'availableDenoms',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"availableDenomsPaged"`
- */
-export const useReadFanOutNodeAvailableDenomsPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'availableDenomsPaged',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"capacity"`
- */
-export const useReadFanOutNodeCapacity = /*#__PURE__*/ createUseReadContract({
-  abi: fanOutNodeAbi,
-  functionName: 'capacity',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"consumers"`
- */
-export const useReadFanOutNodeConsumers = /*#__PURE__*/ createUseReadContract({
-  abi: fanOutNodeAbi,
-  functionName: 'consumers',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"consumersPaged"`
- */
-export const useReadFanOutNodeConsumersPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'consumersPaged',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"deallocatable"`
- */
-export const useReadFanOutNodeDeallocatable =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'deallocatable',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"denomPath"`
- */
-export const useReadFanOutNodeDenomPath = /*#__PURE__*/ createUseReadContract({
-  abi: fanOutNodeAbi,
-  functionName: 'denomPath',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"effectiveCap"`
- */
-export const useReadFanOutNodeEffectiveCap =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'effectiveCap',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"factoryTypeId"`
  */
 export const useReadFanOutNodeFactoryTypeId =
   /*#__PURE__*/ createUseReadContract({
     abi: fanOutNodeAbi,
     functionName: 'factoryTypeId',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"getAllocationCap"`
- */
-export const useReadFanOutNodeGetAllocationCap =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'getAllocationCap',
   })
 
 /**
@@ -20211,13 +19071,6 @@ export const useReadFanOutNodeGetLien = /*#__PURE__*/ createUseReadContract({
  */
 export const useReadFanOutNodeGetOutflows = /*#__PURE__*/ createUseReadContract(
   { abi: fanOutNodeAbi, functionName: 'getOutflows' },
-)
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"getPriority"`
- */
-export const useReadFanOutNodeGetPriority = /*#__PURE__*/ createUseReadContract(
-  { abi: fanOutNodeAbi, functionName: 'getPriority' },
 )
 
 /**
@@ -20237,31 +19090,6 @@ export const useReadFanOutNodeInputMaxPenaltyBps =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"manager"`
- */
-export const useReadFanOutNodeManager = /*#__PURE__*/ createUseReadContract({
-  abi: fanOutNodeAbi,
-  functionName: 'manager',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"nodeType"`
- */
-export const useReadFanOutNodeNodeType = /*#__PURE__*/ createUseReadContract({
-  abi: fanOutNodeAbi,
-  functionName: 'nodeType',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"nodeTypeName"`
- */
-export const useReadFanOutNodeNodeTypeName =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'nodeTypeName',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"pendingRewards"`
  */
 export const useReadFanOutNodePendingRewards =
@@ -20271,36 +19099,12 @@ export const useReadFanOutNodePendingRewards =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"probeUnwind"`
- */
-export const useReadFanOutNodeProbeUnwind = /*#__PURE__*/ createUseReadContract(
-  { abi: fanOutNodeAbi, functionName: 'probeUnwind' },
-)
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"provider"`
  */
 export const useReadFanOutNodeProvider = /*#__PURE__*/ createUseReadContract({
   abi: fanOutNodeAbi,
   functionName: 'provider',
 })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"providers"`
- */
-export const useReadFanOutNodeProviders = /*#__PURE__*/ createUseReadContract({
-  abi: fanOutNodeAbi,
-  functionName: 'providers',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"providersPaged"`
- */
-export const useReadFanOutNodeProvidersPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: fanOutNodeAbi,
-    functionName: 'providersPaged',
-  })
 
 /**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"rewardDebt"`
@@ -20335,29 +19139,12 @@ export const useWriteFanOutNode = /*#__PURE__*/ createUseWriteContract({
 })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"allocate"`
- */
-export const useWriteFanOutNodeAllocate = /*#__PURE__*/ createUseWriteContract({
-  abi: fanOutNodeAbi,
-  functionName: 'allocate',
-})
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"claimRewards"`
  */
 export const useWriteFanOutNodeClaimRewards =
   /*#__PURE__*/ createUseWriteContract({
     abi: fanOutNodeAbi,
     functionName: 'claimRewards',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"decreaseLimit"`
- */
-export const useWriteFanOutNodeDecreaseLimit =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fanOutNodeAbi,
-    functionName: 'decreaseLimit',
   })
 
 /**
@@ -20388,39 +19175,12 @@ export const useWriteFanOutNodeInitializeWithPenalty =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"publishCapacity"`
- */
-export const useWriteFanOutNodePublishCapacity =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fanOutNodeAbi,
-    functionName: 'publishCapacity',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"releaseStake"`
  */
 export const useWriteFanOutNodeReleaseStake =
   /*#__PURE__*/ createUseWriteContract({
     abi: fanOutNodeAbi,
     functionName: 'releaseStake',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"reorderPriority"`
- */
-export const useWriteFanOutNodeReorderPriority =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fanOutNodeAbi,
-    functionName: 'reorderPriority',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"setAllocationCap"`
- */
-export const useWriteFanOutNodeSetAllocationCap =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: fanOutNodeAbi,
-    functionName: 'setAllocationCap',
   })
 
 /**
@@ -20448,30 +19208,12 @@ export const useSimulateFanOutNode = /*#__PURE__*/ createUseSimulateContract({
 })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"allocate"`
- */
-export const useSimulateFanOutNodeAllocate =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fanOutNodeAbi,
-    functionName: 'allocate',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"claimRewards"`
  */
 export const useSimulateFanOutNodeClaimRewards =
   /*#__PURE__*/ createUseSimulateContract({
     abi: fanOutNodeAbi,
     functionName: 'claimRewards',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"decreaseLimit"`
- */
-export const useSimulateFanOutNodeDecreaseLimit =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fanOutNodeAbi,
-    functionName: 'decreaseLimit',
   })
 
 /**
@@ -20502,39 +19244,12 @@ export const useSimulateFanOutNodeInitializeWithPenalty =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"publishCapacity"`
- */
-export const useSimulateFanOutNodePublishCapacity =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fanOutNodeAbi,
-    functionName: 'publishCapacity',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"releaseStake"`
  */
 export const useSimulateFanOutNodeReleaseStake =
   /*#__PURE__*/ createUseSimulateContract({
     abi: fanOutNodeAbi,
     functionName: 'releaseStake',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"reorderPriority"`
- */
-export const useSimulateFanOutNodeReorderPriority =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fanOutNodeAbi,
-    functionName: 'reorderPriority',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link fanOutNodeAbi}__ and `functionName` set to `"setAllocationCap"`
- */
-export const useSimulateFanOutNodeSetAllocationCap =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: fanOutNodeAbi,
-    functionName: 'setAllocationCap',
   })
 
 /**
@@ -20562,42 +19277,6 @@ export const useWatchFanOutNodeEvent =
   /*#__PURE__*/ createUseWatchContractEvent({ abi: fanOutNodeAbi })
 
 /**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link fanOutNodeAbi}__ and `eventName` set to `"Allocated"`
- */
-export const useWatchFanOutNodeAllocatedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: fanOutNodeAbi,
-    eventName: 'Allocated',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link fanOutNodeAbi}__ and `eventName` set to `"AllocationCapSet"`
- */
-export const useWatchFanOutNodeAllocationCapSetEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: fanOutNodeAbi,
-    eventName: 'AllocationCapSet',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link fanOutNodeAbi}__ and `eventName` set to `"CapacityDecreased"`
- */
-export const useWatchFanOutNodeCapacityDecreasedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: fanOutNodeAbi,
-    eventName: 'CapacityDecreased',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link fanOutNodeAbi}__ and `eventName` set to `"CapacityPublished"`
- */
-export const useWatchFanOutNodeCapacityPublishedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: fanOutNodeAbi,
-    eventName: 'CapacityPublished',
-  })
-
-/**
  * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link fanOutNodeAbi}__ and `eventName` set to `"Initialized"`
  */
 export const useWatchFanOutNodeInitializedEvent =
@@ -20613,15 +19292,6 @@ export const useWatchFanOutNodeOutflowsSetEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: fanOutNodeAbi,
     eventName: 'OutflowsSet',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link fanOutNodeAbi}__ and `eventName` set to `"PriorityReordered"`
- */
-export const useWatchFanOutNodePriorityReorderedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: fanOutNodeAbi,
-    eventName: 'PriorityReordered',
   })
 
 /**
@@ -21655,24 +20325,6 @@ export const useWriteMeshFactoryDeployFanOutAt =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link meshFactoryAbi}__ and `functionName` set to `"deployFanOutWithPenalty"`
- */
-export const useWriteMeshFactoryDeployFanOutWithPenalty =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: meshFactoryAbi,
-    functionName: 'deployFanOutWithPenalty',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link meshFactoryAbi}__ and `functionName` set to `"deployFanOutWithPenaltyAt"`
- */
-export const useWriteMeshFactoryDeployFanOutWithPenaltyAt =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: meshFactoryAbi,
-    functionName: 'deployFanOutWithPenaltyAt',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link meshFactoryAbi}__ and `functionName` set to `"deployTokenWeighting"`
  */
 export const useWriteMeshFactoryDeployTokenWeighting =
@@ -21776,24 +20428,6 @@ export const useSimulateMeshFactoryDeployFanOutAt =
   /*#__PURE__*/ createUseSimulateContract({
     abi: meshFactoryAbi,
     functionName: 'deployFanOutAt',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link meshFactoryAbi}__ and `functionName` set to `"deployFanOutWithPenalty"`
- */
-export const useSimulateMeshFactoryDeployFanOutWithPenalty =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: meshFactoryAbi,
-    functionName: 'deployFanOutWithPenalty',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link meshFactoryAbi}__ and `functionName` set to `"deployFanOutWithPenaltyAt"`
- */
-export const useSimulateMeshFactoryDeployFanOutWithPenaltyAt =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: meshFactoryAbi,
-    functionName: 'deployFanOutWithPenaltyAt',
   })
 
 /**
@@ -24970,15 +23604,6 @@ export const useReadTokenWeightingMaxDenoms =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"MAX_PATH_DEPTH"`
- */
-export const useReadTokenWeightingMaxPathDepth =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'MAX_PATH_DEPTH',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"MAX_REWARD_TOKENS"`
  */
 export const useReadTokenWeightingMaxRewardTokens =
@@ -24997,42 +23622,6 @@ export const useReadTokenWeightingRewarderRole =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"availableDenoms"`
- */
-export const useReadTokenWeightingAvailableDenoms =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'availableDenoms',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"availableDenomsPaged"`
- */
-export const useReadTokenWeightingAvailableDenomsPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'availableDenomsPaged',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"consumers"`
- */
-export const useReadTokenWeightingConsumers =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'consumers',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"consumersPaged"`
- */
-export const useReadTokenWeightingConsumersPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'consumersPaged',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"currentStake"`
  */
 export const useReadTokenWeightingCurrentStake =
@@ -25048,15 +23637,6 @@ export const useReadTokenWeightingDenomCount =
   /*#__PURE__*/ createUseReadContract({
     abi: tokenWeightingAbi,
     functionName: 'denomCount',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"denomPath"`
- */
-export const useReadTokenWeightingDenomPath =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'denomPath',
   })
 
 /**
@@ -25139,24 +23719,6 @@ export const useReadTokenWeightingIsDenomRetired =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"nodeType"`
- */
-export const useReadTokenWeightingNodeType =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'nodeType',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"nodeTypeName"`
- */
-export const useReadTokenWeightingNodeTypeName =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'nodeTypeName',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"pendingRewards"`
  */
 export const useReadTokenWeightingPendingRewards =
@@ -25172,24 +23734,6 @@ export const useReadTokenWeightingProvider =
   /*#__PURE__*/ createUseReadContract({
     abi: tokenWeightingAbi,
     functionName: 'provider',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"providers"`
- */
-export const useReadTokenWeightingProviders =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'providers',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link tokenWeightingAbi}__ and `functionName` set to `"providersPaged"`
- */
-export const useReadTokenWeightingProvidersPaged =
-  /*#__PURE__*/ createUseReadContract({
-    abi: tokenWeightingAbi,
-    functionName: 'providersPaged',
   })
 
 /**

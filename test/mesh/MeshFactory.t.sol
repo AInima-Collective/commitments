@@ -3,11 +3,16 @@ pragma solidity ^0.8.27;
 
 import {Test} from "forge-std/Test.sol";
 import {MeshFactory} from "src/extensions/mesh/MeshFactory.sol";
-import {IMeshFactory} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
 import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
-import {IFlowQuery} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
+import {IEntity} from "src/shared/interfaces/IEntity.sol";
+import {
+    IMeshFactory,
+    FAN_IN_TYPE_ID,
+    FAN_OUT_TYPE_ID,
+    TOKEN_WEIGHTING_TYPE_ID
+} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
 
 contract MeshFactoryTest is Test {
     MeshFactory public factory;
@@ -51,8 +56,8 @@ contract MeshFactoryTest is Test {
         // Clone is a valid address
         assertNotEq(clone, address(0));
 
-        // Clone responds to IFlowQuery.nodeType() correctly
-        assertEq(IFlowQuery(clone).nodeTypeName(), "fan_in");
+        // Clone reports its node type id
+        assertEq(IEntity(clone).factoryTypeId(), FAN_IN_TYPE_ID);
 
         // Clone is initialized (consumer and manager set)
         FanInNode fanIn = FanInNode(clone);
@@ -98,11 +103,10 @@ contract MeshFactoryTest is Test {
         address clone = factory.deployFanOut(providerAddr, manager);
 
         assertNotEq(clone, address(0));
-        assertEq(IFlowQuery(clone).nodeTypeName(), "fan_out");
+        assertEq(IEntity(clone).factoryTypeId(), FAN_OUT_TYPE_ID);
 
         FanOutNode fanOut = FanOutNode(clone);
         assertEq(fanOut.provider(), providerAddr);
-        assertEq(fanOut.manager(), manager);
     }
 
     function test_deployFanOut_cloneIsNotImplementation() public {
@@ -124,7 +128,7 @@ contract MeshFactoryTest is Test {
         address clone = factory.deployTokenWeighting(providerAddr, governance);
 
         assertNotEq(clone, address(0));
-        assertEq(IFlowQuery(clone).nodeTypeName(), "token_weighting");
+        assertEq(IEntity(clone).factoryTypeId(), TOKEN_WEIGHTING_TYPE_ID);
 
         TokenWeighting tw = TokenWeighting(clone);
         assertEq(tw.provider(), providerAddr);
@@ -156,7 +160,7 @@ contract MeshFactoryTest is Test {
         address clone = factory.deployFanInAt(salt, consumer, manager);
 
         assertEq(clone, predicted, "clone address should match predicted");
-        assertEq(IFlowQuery(clone).nodeTypeName(), "fan_in");
+        assertEq(IEntity(clone).factoryTypeId(), FAN_IN_TYPE_ID);
     }
 
     function test_deployDeterministic_fanOut() public {
@@ -166,7 +170,7 @@ contract MeshFactoryTest is Test {
         address clone = factory.deployFanOutAt(salt, providerAddr, manager);
 
         assertEq(clone, predicted, "clone address should match predicted");
-        assertEq(IFlowQuery(clone).nodeTypeName(), "fan_out");
+        assertEq(IEntity(clone).factoryTypeId(), FAN_OUT_TYPE_ID);
     }
 
     function test_deployDeterministic_tokenWeighting() public {
@@ -176,7 +180,7 @@ contract MeshFactoryTest is Test {
         address clone = factory.deployTokenWeightingAt(salt, providerAddr, governance);
 
         assertEq(clone, predicted, "clone address should match predicted");
-        assertEq(IFlowQuery(clone).nodeTypeName(), "token_weighting");
+        assertEq(IEntity(clone).factoryTypeId(), TOKEN_WEIGHTING_TYPE_ID);
     }
 
     function test_deployDeterministic_sameAddressForSameSalt() public view {

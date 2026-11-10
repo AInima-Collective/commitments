@@ -10,12 +10,10 @@ import {MeshFactory} from "src/extensions/mesh/MeshFactory.sol";
 
 import {IFanOut, Outflow, UserInfo} from "src/extensions/mesh/interfaces/IFanOut.sol";
 import {
-    IFlowQuery,
-    ProviderInfo,
-    ConsumerInfo,
-    AvailableDenom,
-    StakeInfo
-} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
+    FAN_IN_TYPE_ID,
+    FAN_OUT_TYPE_ID,
+    TOKEN_WEIGHTING_TYPE_ID
+} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
 
 import {MockERC20} from "../helpers/MockERC20.sol";
 
@@ -227,83 +225,6 @@ contract IntegrationTest is Test {
     }
 
     // ============================================================
-    // TEST: FLOW QUERY DISCOVERY
-    // ============================================================
-
-    /// @notice Proves: IFlowQuery returns correct topology at each mesh node
-    function test_flowQueryDiscovery() public {
-        // Setup full stake flow first
-        vm.prank(manager);
-        fanIn.stake(providerA, DENOM_IN_WSTETH, STAKE_A);
-
-        vm.prank(manager);
-        fanOut.stake(DENOM_OUT_WSTETH, STAKE_A);
-
-        _setFanOutOutflows(DENOM_OUT_WSTETH);
-
-        vm.prank(address(fanOut));
-        tokenWeighting.stake(address(fanOut), DENOM_OUT_WSTETH, STAKE_A);
-
-        // ---- nodeType() checks (Phase 21.2: bytes32 + nodeTypeName for string) ----
-        assertEq(fanIn.nodeTypeName(), "fan_in");
-        assertEq(fanOut.nodeTypeName(), "fan_out");
-        assertEq(tokenWeighting.nodeTypeName(), "token_weighting");
-
-        // ---- FanIn providers() ----
-        // FanIn has 2 registered providers (providerA, providerB)
-        ProviderInfo[] memory fanInProviders = fanIn.providers();
-        assertEq(fanInProviders.length, 2);
-        // ProviderA registered first
-        assertEq(fanInProviders[0].provider, providerA);
-        assertEq(fanInProviders[0].stakes.length, 1);
-        assertEq(fanInProviders[0].stakes[0].amount, STAKE_A);
-
-        // ---- FanIn consumers() ----
-        // FanIn has 1 consumer (FanOut), with stake info for staked denoms
-        ConsumerInfo[] memory fanInConsumers = fanIn.consumers();
-        assertEq(fanInConsumers.length, 1);
-        assertEq(fanInConsumers[0].consumer, address(fanOut));
-        // Only wstETH has been staked (non-zero), so 1 stake entry
-        assertEq(fanInConsumers[0].stakes.length, 1);
-        assertEq(fanInConsumers[0].stakes[0].denom, DENOM_OUT_WSTETH);
-        assertEq(fanInConsumers[0].stakes[0].amount, STAKE_A);
-
-        // ---- FanOut providers() ----
-        // FanOut has 1 provider (manager/orchestrator)
-        ProviderInfo[] memory fanOutProviders = fanOut.providers();
-        assertEq(fanOutProviders.length, 1);
-        assertEq(fanOutProviders[0].provider, manager);
-        // wstETH is the only staked denom in FanOut so far
-        assertEq(fanOutProviders[0].stakes.length, 1);
-        assertEq(fanOutProviders[0].stakes[0].denom, DENOM_OUT_WSTETH);
-        assertEq(fanOutProviders[0].stakes[0].amount, STAKE_A);
-
-        // ---- FanOut consumers() ----
-        // FanOut outflows point to TokenWeighting
-        ConsumerInfo[] memory fanOutConsumers = fanOut.consumers();
-        assertEq(fanOutConsumers.length, 1);
-        assertEq(fanOutConsumers[0].consumer, address(tokenWeighting));
-
-        // ---- availableDenoms() checks ----
-        // FanIn: 2 denoms (both registered providers)
-        AvailableDenom[] memory fanInDenoms = fanIn.availableDenoms();
-        assertEq(fanInDenoms.length, 2);
-
-        // FanOut: 1 denom (wstETH was staked)
-        AvailableDenom[] memory fanOutDenoms = fanOut.availableDenoms();
-        assertEq(fanOutDenoms.length, 1);
-        assertEq(fanOutDenoms[0].local, DENOM_OUT_WSTETH);
-
-        // TokenWeighting: 2 denoms (weights set in setUp)
-        AvailableDenom[] memory twDenoms = tokenWeighting.availableDenoms();
-        assertEq(twDenoms.length, 2);
-
-        // ---- TokenWeighting consumers() — sink node, empty ----
-        ConsumerInfo[] memory twConsumers = tokenWeighting.consumers();
-        assertEq(twConsumers.length, 0);
-    }
-
-    // ============================================================
     // TEST: REWARD PROPAGATION
     // ============================================================
 
@@ -472,16 +393,15 @@ contract IntegrationTest is Test {
         assertNotEq(factory.tokenWeightingImpl(), address(0));
 
         // Verify deployed node types
-        assertEq(IFlowQuery(address(fanIn)).nodeTypeName(), "fan_in");
-        assertEq(IFlowQuery(address(fanOut)).nodeTypeName(), "fan_out");
-        assertEq(IFlowQuery(address(tokenWeighting)).nodeTypeName(), "token_weighting");
+        assertEq(fanIn.factoryTypeId(), FAN_IN_TYPE_ID);
+        assertEq(fanOut.factoryTypeId(), FAN_OUT_TYPE_ID);
+        assertEq(tokenWeighting.factoryTypeId(), TOKEN_WEIGHTING_TYPE_ID);
 
         // Verify initialization
         assertEq(fanIn.consumer(), address(fanOut));
         assertEq(fanIn.manager(), manager);
 
         assertEq(fanOut.provider(), manager);
-        assertEq(fanOut.manager(), manager);
 
         assertEq(tokenWeighting.provider(), address(fanOut));
         assertEq(tokenWeighting.governance(), governance);

@@ -21,7 +21,7 @@ import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 ///         delegates() so Tally and other tooling render correctly).
 ///
 ///         Block-based clock — TokenWeighting checkpoints are keyed by block.number
-///         (OZ Checkpoints.Trace256), so clock() returns block.number (cast to
+///         (OZ Checkpoints.Trace208), so clock() returns block.number (cast to
 ///         uint48 per ERC-6372) and CLOCK_MODE returns "mode=blocknumber".
 ///
 ///         The source is immutable. A Governor stores its token in initializer

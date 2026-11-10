@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
+/// @dev Mesh node type ids. Each node returns its id from `IEntity.factoryTypeId()` and
+///      `MeshFactory` whitelists each implementation slot against it.
+bytes32 constant FAN_IN_TYPE_ID = keccak256("commitments.mesh.fan_in");
+bytes32 constant FAN_OUT_TYPE_ID = keccak256("commitments.mesh.fan_out");
+bytes32 constant TOKEN_WEIGHTING_TYPE_ID = keccak256("commitments.mesh.token_weighting");
+
 /// @title IMeshFactory
 /// @notice Factory for deploying FanIn, FanOut, and TokenWeighting mesh nodes as minimal clones.
 ///         Atomic clone + initialize to prevent front-running.
@@ -39,15 +45,6 @@ interface IMeshFactory {
     /// @return clone The address of the deployed FanOut clone
     function deployFanOut(address provider, address manager) external returns (address clone);
 
-    /// @notice Deploy a FanOut clone with a configured input penalty cap (, ).
-    /// @param provider The single provider for the fan-out node
-    /// @param manager The manager/owner address
-    /// @param inputMaxPenaltyBps The cap in basis points (0..10_000) the provider committed upstream
-    /// @return clone The address of the deployed FanOut clone
-    function deployFanOutWithPenalty(address provider, address manager, uint16 inputMaxPenaltyBps)
-        external
-        returns (address clone);
-
     /// @notice Deploy a TokenWeighting clone and initialize it atomically
     /// @param provider The single provider for the token weighting node
     /// @param governance The governance address for weight updates
@@ -71,11 +68,6 @@ interface IMeshFactory {
     /// @param manager The manager/owner address
     /// @return clone The deployed clone address
     function deployFanOutAt(bytes32 salt, address provider, address manager) external returns (address clone);
-
-    /// @notice Deterministic FanOut deploy with a configured input penalty cap.
-    function deployFanOutWithPenaltyAt(bytes32 salt, address provider, address manager, uint16 inputMaxPenaltyBps)
-        external
-        returns (address clone);
 
     /// @notice Deploy a TokenWeighting clone at a deterministic address derived from salt
     /// @param salt Arbitrary bytes32 salt for address derivation

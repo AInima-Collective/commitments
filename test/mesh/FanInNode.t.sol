@@ -4,13 +4,6 @@ pragma solidity ^0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
-import {
-    IFlowQuery,
-    ProviderInfo,
-    ConsumerInfo,
-    AvailableDenom,
-    StakeInfo
-} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
 import {MockConsumer} from "../helpers/MockConsumer.sol";
 
 contract FanInNodeTest is Test {
@@ -232,77 +225,6 @@ contract FanInNodeTest is Test {
     }
 
     // ============================================================
-    // IFLOWQUERY VIEW TESTS
-    // ============================================================
-
-    function test_flowQuery_nodeType() public view {
-        // Phase 21.2: nodeType() returns bytes32; nodeTypeName() returns the string.
-        string memory nType = fanIn.nodeTypeName();
-        assertEq(nType, "fan_in");
-    }
-
-    function test_flowQuery_providers_empty() public view {
-        ProviderInfo[] memory provs = fanIn.providers();
-        assertEq(provs.length, 0);
-    }
-
-    function test_flowQuery_providers() public {
-        vm.prank(manager);
-        fanIn.registerProvider(provider1, DENOM_IN_1, DENOM_OUT_1, MAX_PENALTY, UNBONDING_PERIOD);
-        vm.prank(manager);
-        fanIn.registerProvider(provider2, DENOM_IN_2, DENOM_OUT_2, MAX_PENALTY, UNBONDING_PERIOD);
-
-        vm.prank(manager);
-        fanIn.stake(provider1, DENOM_IN_1, 1000e18);
-        vm.prank(manager);
-        fanIn.stake(provider2, DENOM_IN_2, 500e18);
-
-        ProviderInfo[] memory provs = fanIn.providers();
-        assertEq(provs.length, 2);
-
-        // Provider1 is index 0
-        assertEq(provs[0].provider, provider1);
-        assertEq(provs[0].stakes.length, 1);
-        assertEq(provs[0].stakes[0].denom, DENOM_IN_1);
-        assertEq(provs[0].stakes[0].amount, 1000e18);
-        assertEq(provs[0].stakes[0].maxPenaltyBps, MAX_PENALTY);
-        assertEq(provs[0].stakes[0].unbondingPeriod, UNBONDING_PERIOD);
-    }
-
-    function test_flowQuery_consumers() public {
-        vm.prank(manager);
-        fanIn.registerProvider(provider1, DENOM_IN_1, DENOM_OUT_1, MAX_PENALTY, UNBONDING_PERIOD);
-        vm.prank(manager);
-        fanIn.stake(provider1, DENOM_IN_1, 1000e18);
-
-        ConsumerInfo[] memory cons = fanIn.consumers();
-        assertEq(cons.length, 1);
-        assertEq(cons[0].consumer, address(consumer));
-        assertEq(cons[0].stakes.length, 1);
-        assertEq(cons[0].stakes[0].denom, DENOM_OUT_1);
-        assertEq(cons[0].stakes[0].amount, 1000e18);
-    }
-
-    function test_flowQuery_availableDenoms() public {
-        vm.prank(manager);
-        fanIn.registerProvider(provider1, DENOM_IN_1, DENOM_OUT_1, MAX_PENALTY, UNBONDING_PERIOD);
-        vm.prank(manager);
-        fanIn.registerProvider(provider2, DENOM_IN_2, DENOM_OUT_2, MAX_PENALTY, UNBONDING_PERIOD);
-
-        AvailableDenom[] memory denoms = fanIn.availableDenoms();
-        assertEq(denoms.length, 2);
-
-        // Check both denoms are present (order matches provider registration)
-        assertEq(denoms[0].local, DENOM_OUT_1);
-        assertEq(denoms[0].sourceProvider, provider1);
-        assertEq(denoms[0].sourceDenom, DENOM_IN_1);
-
-        assertEq(denoms[1].local, DENOM_OUT_2);
-        assertEq(denoms[1].sourceProvider, provider2);
-        assertEq(denoms[1].sourceDenom, DENOM_IN_2);
-    }
-
-    // ============================================================
     // DENOM COLLISION TESTS (critical for mesh safety)
     // ============================================================
 
@@ -320,46 +242,4 @@ contract FanInNodeTest is Test {
     // distributeRewards entry was removed because FanIn lacks per-provider
     // accounting and a claim path; tokens sent in were permanently locked.
     // Reward distribution belongs on FanOutNode / TokenWeighting.
-
-    // ============================================================
-    // PAGINATION (Phase 21.2)
-    // ============================================================
-
-    function test_providersPaged_slicesArray() public {
-        vm.startPrank(manager);
-        fanIn.registerProvider(provider1, DENOM_IN_1, DENOM_OUT_1, MAX_PENALTY, UNBONDING_PERIOD);
-        fanIn.registerProvider(provider2, DENOM_IN_2, DENOM_OUT_2, MAX_PENALTY, UNBONDING_PERIOD);
-        vm.stopPrank();
-
-        ProviderInfo[] memory page = fanIn.providersPaged(0, 1);
-        assertEq(page.length, 1);
-        assertEq(page[0].provider, provider1);
-
-        page = fanIn.providersPaged(1, 1);
-        assertEq(page.length, 1);
-        assertEq(page[0].provider, provider2);
-
-        // Past-end returns empty.
-        page = fanIn.providersPaged(2, 5);
-        assertEq(page.length, 0);
-
-        // Limit larger than remaining clamps.
-        page = fanIn.providersPaged(0, 100);
-        assertEq(page.length, 2);
-    }
-
-    function test_availableDenomsPaged_slicesArray() public {
-        vm.startPrank(manager);
-        fanIn.registerProvider(provider1, DENOM_IN_1, DENOM_OUT_1, MAX_PENALTY, UNBONDING_PERIOD);
-        fanIn.registerProvider(provider2, DENOM_IN_2, DENOM_OUT_2, MAX_PENALTY, UNBONDING_PERIOD);
-        vm.stopPrank();
-
-        AvailableDenom[] memory page = fanIn.availableDenomsPaged(0, 1);
-        assertEq(page.length, 1);
-        assertEq(page[0].local, DENOM_OUT_1);
-
-        page = fanIn.availableDenomsPaged(1, 1);
-        assertEq(page.length, 1);
-        assertEq(page[0].local, DENOM_OUT_2);
-    }
 }

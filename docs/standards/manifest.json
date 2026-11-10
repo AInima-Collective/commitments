@@ -230,8 +230,6 @@
       "interfaces": [
         "src/extensions/mesh/interfaces/IFanIn.sol",
         "src/extensions/mesh/interfaces/IFanOut.sol",
-        "src/extensions/mesh/interfaces/IFlowQuery.sol",
-        "src/extensions/mesh/interfaces/IFlowQueryPath.sol",
         "src/extensions/mesh/interfaces/IMeshFactory.sol",
         "src/extensions/mesh/interfaces/ITokenWeighting.sol"
       ],
@@ -242,14 +240,11 @@
         "src/extensions/mesh/TokenWeighting.sol"
       ],
       "conformanceTests": [
-        "test/mesh/conformance/FlowQueryPathConformance.t.sol",
         "test/mesh/MeshBackingInvariant.t.sol"
       ],
       "selectors": [
         { "artifact": "IFanIn", "selection": "all" },
         { "artifact": "IFanOut", "selection": "all" },
-        { "artifact": "IFlowQuery", "selection": "all" },
-        { "artifact": "IFlowQueryPath", "selection": "all" },
         { "artifact": "IMeshFactory", "selection": "all" },
         { "artifact": "ITokenWeighting", "selection": "all" }
       ]
@@ -343,8 +338,6 @@
       { "source": "src/extensions/mesh/TokenWeighting.sol", "declarations": ["TokenWeighting"] },
       { "source": "src/extensions/mesh/interfaces/IFanIn.sol", "declarations": ["IFanIn"] },
       { "source": "src/extensions/mesh/interfaces/IFanOut.sol", "declarations": ["FanOutLien", "IFanOut", "Outflow", "UserInfo"] },
-      { "source": "src/extensions/mesh/interfaces/IFlowQuery.sol", "declarations": ["AvailableDenom", "ConsumerInfo", "FlowNodeTypes", "IFlowQuery", "ProviderInfo", "StakeInfo"] },
-      { "source": "src/extensions/mesh/interfaces/IFlowQueryPath.sol", "declarations": ["DenomLink", "IFlowQueryPath"] },
       { "source": "src/extensions/mesh/interfaces/IMeshFactory.sol", "declarations": ["IMeshFactory"] },
       { "source": "src/extensions/mesh/interfaces/ITokenWeighting.sol", "declarations": ["ITokenWeighting"] },
       { "source": "src/extensions/mutuals/ClaimRouter.sol", "declarations": ["ClaimRouter"] },
@@ -395,7 +388,6 @@
       { "source": "src/core/manager/libraries/MovementLib.sol", "declarations": ["IHookRunner", "MovementLib", "MovementSite"], "reason": "manager-internal movement and self-call declarations" },
       { "source": "src/core/manager/storage/CommitmentManagerStorage.sol", "declarations": ["CommitmentManagerStorage"], "reason": "namespaced storage library" },
       { "source": "src/extensions/agreements/AgreementLib.sol", "declarations": ["AgreementLib"], "reason": "manager-linked implementation library" },
-      { "source": "src/extensions/mesh/libraries/FlowPathLib.sol", "declarations": ["FlowPathLib"], "reason": "mesh-internal path helper" },
       { "source": "src/extensions/mutuals/MutualLib.sol", "declarations": ["MutualLib"], "reason": "manager-linked implementation library" },
       { "source": "src/extensions/rewards/storage/CommitmentsRewardsCoordinatorStorage.sol", "declarations": ["CommitmentsRewardsCoordinatorStorage"], "reason": "namespaced storage library" },
       { "source": "src/extensions/rewards/storage/MerkleSnapshotStorage.sol", "declarations": ["MerkleSnapshotStorage"], "reason": "namespaced storage library" },

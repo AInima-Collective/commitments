@@ -9,7 +9,8 @@ import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
 import {Factory} from "src/shared/factories/Factory.sol";
-import {IFlowQuery} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
+import {IEntity} from "src/shared/interfaces/IEntity.sol";
+import {FAN_IN_TYPE_ID, TOKEN_WEIGHTING_TYPE_ID} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
 
 /// @title MeshFactoryPolicyTest
 /// @notice Covers the issue-#45 shared `Factory` base on MeshFactory: constructor self-verifies
@@ -73,7 +74,7 @@ contract MeshFactoryPolicyTest is Test {
 
         // Other node types are unaffected.
         address tw = factory.deployTokenWeighting(consumer, governance);
-        assertEq(IFlowQuery(tw).nodeTypeName(), "token_weighting", "unaffected node type still deploys");
+        assertEq(IEntity(tw).factoryTypeId(), TOKEN_WEIGHTING_TYPE_ID, "unaffected node type still deploys");
     }
 
     function test_blacklist_onlyOwner() public {
@@ -89,7 +90,7 @@ contract MeshFactoryPolicyTest is Test {
     function test_deploy_remainsPermissionless() public {
         vm.prank(randomCaller);
         address clone = factory.deployFanIn(consumer, manager);
-        assertEq(IFlowQuery(clone).nodeTypeName(), "fan_in", "any caller can clone a whitelisted node");
+        assertEq(IEntity(clone).factoryTypeId(), FAN_IN_TYPE_ID, "any caller can clone a whitelisted node");
     }
 
     // =========================================================================
@@ -105,7 +106,7 @@ contract MeshFactoryPolicyTest is Test {
         address fanIn = abi.decode(results[0], (address));
         address tw = abi.decode(results[1], (address));
 
-        assertEq(IFlowQuery(fanIn).nodeTypeName(), "fan_in", "fan_in deployed in batch");
-        assertEq(IFlowQuery(tw).nodeTypeName(), "token_weighting", "token_weighting deployed in batch");
+        assertEq(IEntity(fanIn).factoryTypeId(), FAN_IN_TYPE_ID, "fan_in deployed in batch");
+        assertEq(IEntity(tw).factoryTypeId(), TOKEN_WEIGHTING_TYPE_ID, "token_weighting deployed in batch");
     }
 }
