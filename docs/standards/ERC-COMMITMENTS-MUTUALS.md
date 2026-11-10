@@ -143,7 +143,7 @@ struct Mutual {
     uint64  lastInitiatedAt;    // re-initiation rate-limit cursor (griefing guard)
     uint128 totalShares;        // Σ creditedValue of non-exited members. join / release ONLY — never on loss
     uint256 cumulativeLoss;     // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18
-    bool    active;             // assembler holds inactive until capacity filled
+    bool    active;             // set by the arbiter; members can only join an active mutual
     bool    terminal;           // wound down: no new joins / losses
     // ---- Premium index (reward side, §6; append-only) ----
     uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing
@@ -274,7 +274,8 @@ A conforming implementation defines the following constants (reference values in
   per-second deltas must not round to zero; the sub-`1e27` dust is carried in `premiumRemainder`.
 - `MIN_STREAM_DURATION` (1 minute) and `MAX_STREAM_DURATION` (365 days) — the inclusive bounds on
   a premium stream's `duration` (§6); outside them `fundMutualPremium` reverts
-  `StreamDurationOutOfBounds`.
+  `StreamDurationOutOfBounds`. A live stream's end never moves earlier, so a short duration
+  cannot compress one.
 - `BPS` (10_000) — the basis-points denominator for the heterogeneous band / haircut /
   junior-split arithmetic (§7).
 
@@ -389,8 +390,9 @@ function activateMutual(uint256 mutualId) external;
 ```
 
 Arbiter-only (`NotMutualArbiter` otherwise). Reverts `MutualIsTerminal` on a wound-down mutual.
-Flips `active = true`. No loss may be declared until the mutual is active. The assembler holds
-the mutual inactive while capacity fills, then activates. Emits `MutualActivated(mutualId)`.
+Flips `active = true`. No member may join and no loss may be declared until the mutual is
+active, so activation means the arbiter accepts the mutual; `targetCapacity` on a registry
+listing is informational and gates nothing. Emits `MutualActivated(mutualId)`.
 
 ### 3.3 `joinMutual`
 
@@ -409,7 +411,10 @@ than attaching a pre-existing commitment — makes the constraints structural. A
 join the same mutual more than once; each join creates an independent commitment-scoped
 membership. The manager MUST enforce, in order:
 
-1. Mutual exists (`MutualNotFound`), is active and non-terminal (`MutualNotActive`).
+1. Mutual exists (`MutualNotFound`), is active and non-terminal (`MutualNotActive`), and
+   `cumulativeLoss < LAMBDA_ONE` (`MutualExhausted`) — a wiped-out mutual takes no new members,
+   since a joiner at `Lambda = 1e18` could never owe anything. It is not made terminal: existing
+   members still settle, claim premium, and release.
 2. No loss is pending (`MutualLossPending`) — capacity is frozen during a declaration.
 3. `params.arbiter == mutual.arbiter` (`MutualArbiterMismatch`).
 4. `params.counterparty == mutual.beneficiary` (`MutualBeneficiaryMismatch`) — **no
@@ -485,6 +490,7 @@ shared window. The flow:
 m = membership[commitmentId];  require m.mutualId != 0     // NotMutualMember
 lambda = mutuals[m.mutualId].cumulativeLoss
 if (lambda == m.lossSnapshot) return                           // nothing new (idempotent)
+_syncMember(m)                                                 // poke + bank premium on pre-loss cover (INV-P8)
 owed = m.forfeitableUnits * (lambda - m.lossSnapshot) / 1e18   // round DOWN
 owed = min(owed, m.forfeitableUnits - m.settledUnits)          // Belt 1: remaining liability (INV-G3)
 owed = min(owed, c.amount)                                     // Belt 2: live commitment amount (INV-G10)
@@ -520,15 +526,23 @@ function releaseMutualMember(uint256 commitmentId) external;  // permissionless 
 Exit is **two-step**, implementing the EigenLayer deallocation-delay applied to liens — the
 defense against an informed member exiting *ahead of* a loss it can see coming.
 
+Let `elapsed` be the pause-adjusted time since `unbondRequestedAt`. The deallocation window is
+`elapsed < deallocationWindow`; the **exit window** follows it, `deallocationWindow <= elapsed <
+2 * deallocationWindow`. A request not released inside its exit window **lapses**, so a matured
+request is not a standing option to leave the moment a loss becomes visible.
+
 **`requestMutualExit`.** Committer-only (`NotCommitter`); member must be in a mutual
-(`NotMutualMember`); no loss pending (`MutualLossPending`); not already requested
-(`UnbondAlreadyRequested`). Stamps `unbondRequestedAt = block.timestamp`. The line **stays in
-`totalShares` and remains mutual-slashable** until the deallocation window elapses. Emits
-`MemberExitRequested(mutualId, commitmentId, unbondRequestedAt + deallocationWindow)`.
+(`NotMutualMember`); no loss pending (`MutualLossPending`); no live request
+(`UnbondAlreadyRequested` while a prior request has not lapsed). Stamps
+`unbondRequestedAt = block.timestamp` and a fresh pause snapshot; on a lapsed request this starts
+a new one. The line **stays in `totalShares` and remains mutual-slashable** until the deallocation
+window elapses, and keeps earning premium until release. Emits
+`MemberExitRequested(mutualId, commitmentId, unbondRequestedAt + deallocationWindow)`; the exit
+window runs from that `slashableUntil` for one more `deallocationWindow`.
 
 **`releaseMutualMember`.** Permissionless, but eligible only when: exit was requested
-(`ExitNotRequested`); the deallocation window has elapsed
-(`block.timestamp >= unbondRequestedAt + deallocationWindow`, else `DeallocationWindowActive`);
+(`ExitNotRequested`); `elapsed >= deallocationWindow` (else `DeallocationWindowActive`);
+`elapsed < 2 * deallocationWindow` (else `ExitRequestLapsed`; the member requests again);
 no loss is pending (`MutualLossPending`); and the member is fully settled to the current index
 (`lossSnapshot == cumulativeLoss`, else `MemberUnsettled` — INV-G5). It then performs a
 **mutual-aware terminal decrement** (§4, *not* the core `_closeWithHooks` bps-derived decrement),
@@ -578,8 +592,9 @@ by the conformance fuzz alongside the core invariants.
 - **INV-G4 (no retroactive loss).** A member joining at `Lambda = l0` is never liable for losses
   before its join. Holds by `lossSnapshot = cumulativeLoss` at join.
 - **INV-G5 (settled-and-windowed exit).** A mutual member cannot release with unsettled
-  `cumulativeLoss - lossSnapshot`, nor before the deallocation window elapses. Enforced by
-  `releaseMutualMember`'s gates.
+  `cumulativeLoss - lossSnapshot`, nor before the deallocation window elapses, nor after its
+  exit window lapses. Enforced by `releaseMutualMember`'s gates. A pending loss still blocks
+  release, so a request can lapse while a loss is pending; that is intended.
 - **INV-G6 (single membership).** One commitment maps to at most one mutual; `mutualId` is single
   and non-rebindable (a fresh `joinMutual` mints a new commitment).
 - **INV-G7 (bounded valuation).** `creditedValue` is never an unbounded live manager read; in
@@ -731,15 +746,20 @@ function getMutualPremiumState(uint256 mutualId) external view returns (
 
 **`fundMutualPremium`.** Pulls `amount` of the mutual's numeraire by **measured balance-delta**
 (fee-on-transfer / rebasing safe), pokes the index, then (re)starts a Synthetix stream over
-`duration` seconds with the standard leftover-roll. The manager sets only a future *rate*; pricing
-lives entirely in the periphery. It reverts:
+`duration` seconds with the standard leftover-roll. While a stream is live its end never moves
+earlier: `newFinish = max(periodFinish, now + duration)`, and the new rate is
+`(premium + leftover) / (newFinish - now)`. A short-duration funding of a live stream therefore
+tops up the rate over the existing end instead of paying the leftover out early. With no live
+stream, `newFinish = now + duration`. The manager sets only a future *rate*; pricing lives
+entirely in the periphery. It reverts:
 
 - `MutualIsTerminal` on a wound-down mutual;
+- `MutualExhausted` when `cumulativeLoss == LAMBDA_ONE` (no cover left to pay for);
 - `HeterogeneousPremiumUnsupported` when the mutual is attested (`valuationAuthority != 0`) but
   not yet `configureHeterogeneous`-configured — the money path stays closed until a `bandAdapter`
   is set;
 - `StreamDurationOutOfBounds` when `duration ∉ [MIN_STREAM_DURATION, MAX_STREAM_DURATION]`
-  (1 minute … 365 days) **or** the new `periodFinish = now + duration` would overflow `uint64`;
+  (1 minute … 365 days) **or** the new `periodFinish` would overflow `uint64`;
 - `NoActiveCover` when `activeCover == 0` (no live cover to distribute to);
 - `RewardRateOverflow` when the computed `rewardRate` would not fit `uint128`;
 - `PremiumRateDecreased` — **the S6 live-stream-rate guard**: while a stream is running
@@ -747,7 +767,8 @@ lives entirely in the periphery. It reverts:
   Synthetix `notifyRewardAmount` griefing where a 1-wei fund over a huge window re-spreads the
   leftover, collapses the rate (often to 0 by integer division), and stalls the stream — a live
   risk precisely because funding is permissionless;
-- `PremiumStreamUnderfunded` when the funding-time solvency guard (INV-P2) fails.
+- `PremiumStreamUnderfunded` when the funding-time solvency guard (INV-P2) fails:
+  `rewardRate * (newFinish - now) + bankedTotal` must not exceed the premium reserve.
 
 On success it emits `MutualPremiumFunded(mutualId, funder, received, rewardRate, periodFinish)`,
 where `received` is the **measured** receipt.
@@ -899,10 +920,14 @@ proposer posts an ERC-20 `bond` (`>= minBond`) and calls `proposeLoss`, which th
 to `manager.initiateMutualLoss`, opening the mutual challenge window. A dispute committee (the
 `owner`) MAY `veto` during the window — that calls `manager.cancelMutualLoss` and slashes the
 bond to `treasury`. If undisputed, anyone calls `manager.executeMutualLoss` directly once the
-window elapses, and the honest proposer `reclaimBond`s (gated on
+window elapses, and anyone calls `reclaimBond` to return the bond to the proposer (gated on
 `manager.getMutualLossProposal(mutualId).executed`). One active claim per mutual mirrors the
-manager's one-active-proposal rule. `activate` (owner-gated) flips the mutual active once target
-capacity fills. Events: `LossProposed`, `LossVetoed`, `BondReclaimed`.
+manager's one-active-proposal rule. `reclaimBond` and `reclaimOnCancelled` are permissionless and
+always refund the proposer; a new `proposeLoss` also refunds a prior unreclaimed claim whose
+manager proposal executed or was cancelled, so an abandoned bond never blocks the next
+declaration. Only a claim still pending in the manager reverts `ClaimActive`. `activate`
+(owner-gated) flips the mutual active; members can join only after it. Events: `LossProposed`,
+`LossVetoed`, `BondReclaimed`.
 
 **`ClaimRouter`** — the mutual beneficiary. Settled member units land in this contract's
 **free** balance in the manager. Settlement is permissionless: `settle(commitmentIds)` relays to
@@ -957,10 +982,11 @@ entirely here — the custody root only sets a future rate under INV-P2. Events:
   (utilization-curve premium, deductible/co-insurance) remains a periphery concern, in scope for
   any production deployment of the heterogeneous basket.
 - **Premium-stream integrity (permissionless funding).** `fundMutualPremium` is permissionless, so
-  the Synthetix `notifyRewardAmount` griefing surface is closed by three guards (§6): the stream
+  the Synthetix `notifyRewardAmount` griefing surface is closed by four guards (§6): the stream
   `duration` is bounded to `[MIN_STREAM_DURATION, MAX_STREAM_DURATION]`
   (`StreamDurationOutOfBounds`, which also fences the `uint64 periodFinish` cast against
-  truncation-into-the-past), a live stream's `rewardRate` may only be maintained or raised
+  truncation-into-the-past), a live stream's end never moves earlier (so a dust fund cannot
+  compress it), a live stream's `rewardRate` may only be maintained or raised
   (`PremiumRateDecreased`), and solvency is enforced once at funding time (INV-P2). The premium and
   junior reserves are true partition compartments (INV-P1 / INV-P13) mutated only through their
   `LedgerLib` helper pairs, and premium banking inside a loss settle is failure-isolated

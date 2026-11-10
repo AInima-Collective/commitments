@@ -448,7 +448,7 @@ contract CommitmentManager is
         mutualId = MutualLib.createMutual(CommitmentManagerStorage.layout(), params);
     }
 
-    /// @notice Arbiter activates a mutual once capacity is filled.
+    /// @notice Arbiter activates a mutual; members can only join an active one.
     function activateMutual(uint256 mutualId) external nonReentrant {
         MutualLib.activateMutual(CommitmentManagerStorage.layout(), mutualId);
     }

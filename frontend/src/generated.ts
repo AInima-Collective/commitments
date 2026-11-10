@@ -3350,6 +3350,7 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
   { type: 'error', inputs: [], name: 'EmptyBatch' },
   { type: 'error', inputs: [], name: 'ExitNotRequested' },
+  { type: 'error', inputs: [], name: 'ExitRequestLapsed' },
   { type: 'error', inputs: [], name: 'ExposureAllocationExceeded' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'ForfeitPending' },
@@ -3470,6 +3471,7 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'MutualBeneficiaryMismatch' },
   { type: 'error', inputs: [], name: 'MutualChallengeWindowActive' },
   { type: 'error', inputs: [], name: 'MutualChallengeWindowTooShort' },
+  { type: 'error', inputs: [], name: 'MutualExhausted' },
   { type: 'error', inputs: [], name: 'MutualIsTerminal' },
   { type: 'error', inputs: [], name: 'MutualLossPending' },
   { type: 'error', inputs: [], name: 'MutualNotActive' },
@@ -11701,7 +11703,6 @@ export const optimisticMutualArbiterAbi = [
   { type: 'error', inputs: [], name: 'LossNotCancelled' },
   { type: 'error', inputs: [], name: 'LossNotExecuted' },
   { type: 'error', inputs: [], name: 'NoClaim' },
-  { type: 'error', inputs: [], name: 'NotProposer' },
   {
     type: 'error',
     inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],

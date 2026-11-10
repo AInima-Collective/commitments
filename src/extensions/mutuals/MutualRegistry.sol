@@ -12,14 +12,14 @@ import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 ///         (a `ClaimRouter`). It is the indexer's binding target and the frontend's read surface.
 /// @dev Deliberately thin and off the audited core path. Capacity / loss accounting all live in the
 ///      manager's `Mutual`; this registry only annotates and exposes a capacity view. Members
-///      join through the manager's `joinMutual`; the mutual arbiter activates once capacity is filled.
+///      join through the manager's `joinMutual`, and only once the mutual arbiter has activated it.
 contract MutualRegistry {
     struct MutualListing {
         uint256 mutualId; // the backing Mutual (1:1)
         address creator;
         address numeraire;
         address beneficiary; // the ClaimRouter
-        uint128 targetCapacity; // creditedValue sum at which the mutual should activate
+        uint128 targetCapacity; // informational creditedValue target; gates nothing
         uint64 termEnd; // policy term end (informational; 0 = open-ended)
         string perilURI; // off-chain peril descriptor
         bytes32 perilHash;

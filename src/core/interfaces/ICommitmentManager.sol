@@ -157,7 +157,7 @@ interface ICommitmentManager {
         uint64 lastInitiatedAt; // re-initiation rate-limit cursor (griefing guard)
         uint128 totalShares; // Σ creditedValue of non-exited members. join / release ONLY — never on loss.
         uint256 cumulativeLoss; // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18.
-        bool active; // assembler holds inactive until capacity filled
+        bool active; // set by the arbiter; members can only join an active mutual
         bool terminal; // wound down: no new joins / losses
         // ---- Premium index (reward side, Mutuals premium; append-only) ----
         // A second native MasterChef index `Pi` over a SEPARATE live-deliverable-capacity
@@ -431,6 +431,9 @@ interface ICommitmentManager {
     event MemberSettled(
         uint256 indexed mutualId, uint256 indexed commitmentId, uint256 owedUnits, uint256 cumulativeLoss
     );
+    /// @notice A member started its deallocation window. It stays slashable until `slashableUntil`
+    ///         (the no-further-pause estimate); the exit window then runs from `slashableUntil` for
+    ///         one more `deallocationWindow`, after which the request lapses.
     event MemberExitRequested(uint256 indexed mutualId, uint256 indexed commitmentId, uint64 slashableUntil);
     event MemberReleased(uint256 indexed mutualId, uint256 indexed commitmentId);
 
@@ -595,6 +598,8 @@ interface ICommitmentManager {
     error MemberUnsettled();
     error DeallocationWindowActive();
     error ExitNotRequested();
+    error ExitRequestLapsed(); // release at or past 2 * deallocationWindow; request again
+    error MutualExhausted(); // Lambda at its cap: no new joins or premium
     error ValuationAuthorityIsArbiter();
     error InvalidCreditedValue();
     error NumeraireMismatch();
@@ -866,13 +871,14 @@ interface ICommitmentManager {
     // Shared-loss mutuals (Mutual extension, ERC-COMMITMENTS-MUTUALS)
     // =========================================================================
 
-    /// @notice Create a Mutual. Starts inactive; the creator (assembler/arbiter) activates
-    ///         it once capacity is filled. `valuationAuthority == 0` selects the oracle-free
+    /// @notice Create a Mutual. Starts inactive; members can only join once its arbiter
+    ///         activates it. `valuationAuthority == 0` selects the oracle-free
     ///         homogeneous-numeraire subset (every member posts the mutual's `numeraire` token and
     ///         `creditedValue == E_i` by construction).
     function createMutual(MutualParams calldata params) external returns (uint256 mutualId);
 
-    /// @notice Flip an inactive mutual active (arbiter or creator). No new losses until active.
+    /// @notice Flip an inactive mutual active (arbiter only; no creator is stored). No joins and no
+    ///         losses until active.
     function activateMutual(uint256 mutualId) external;
 
     /// @notice Configure heterogeneous mode (valuationAuthority-only, while inactive & non-terminal).
@@ -893,6 +899,7 @@ interface ICommitmentManager {
     /// @notice Create a fresh commitment and join it to `mutualId` atomically, freezing the opaque
     ///         capacity weight `creditedValue`. In homogeneous mode `creditedValue` is ignored and
     ///         set to `E_i`; in attested mode it must be signed by the mutual's `valuationAuthority`.
+    ///         Reverts `MutualExhausted` once Lambda is at its cap (1e18).
     function joinMutual(
         uint256 mutualId,
         CommitmentParams calldata params,
@@ -921,11 +928,16 @@ interface ICommitmentManager {
     function settleMembers(uint256[] calldata commitmentIds) external;
 
     /// @notice Member-only: start the deallocation window. The line stays in `totalShares` and
-    ///         mutual-slashable until the window elapses (pre-declaration escape defense).
+    ///         mutual-slashable until the window elapses (pre-declaration escape defense). On a
+    ///         lapsed request this starts a fresh one; on one that has not lapsed it reverts
+    ///         `UnbondAlreadyRequested`.
     function requestMutualExit(uint256 commitmentId) external;
 
-    /// @notice Release a mutual member once fully settled and past the deallocation window. Returns
-    ///         the residual encumbrance to the committer's free balance.
+    /// @notice Release a mutual member once fully settled and inside its exit window:
+    ///         `deallocationWindow <= elapsed < 2 * deallocationWindow` (pause-adjusted). At or past
+    ///         the end it reverts `ExitRequestLapsed`. A pending loss still blocks release, so a
+    ///         request can lapse while a loss is pending. Returns the residual encumbrance to the
+    ///         committer's free balance.
     function releaseMutualMember(uint256 commitmentId) external;
 
     // ---- Premium index (reward side, Mutuals premium) ----
@@ -935,8 +947,11 @@ interface ICommitmentManager {
     ///         core is pricing-agnostic — it only sets a future rate under the funding-time solvency
     ///         guard (INV-P2). Reverts `NoActiveCover` when there is no live cover to distribute to,
     ///         `StreamDurationOutOfBounds` when `duration` is outside [1 minutes, 365 days] (or the
-    ///         uint64 deadline would overflow), and `PremiumRateDecreased` when a live stream's rate
-    ///         would drop (permissionless funding may only maintain or raise the rate).
+    ///         uint64 deadline would overflow), `PremiumRateDecreased` when a live stream's rate
+    ///         would drop (permissionless funding may only maintain or raise the rate), and
+    ///         `MutualExhausted` once Lambda is at its cap. While a stream is live its end never moves
+    ///         earlier: the new end is `max(periodFinish, now + duration)` and premium plus leftover
+    ///         is spread over the time to it.
     function fundMutualPremium(uint256 mutualId, uint256 amount, uint64 duration) external;
 
     /// @notice Permissionless: bank-and-pay a member's accrued premium to its committer (CEI-strict).

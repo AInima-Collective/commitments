@@ -49,8 +49,8 @@ library MutualLib {
     uint64 internal constant MUTUAL_PROPOSAL_TTL = 7 days;
     /// @dev Re-initiation rate-limit: caps the initiate->cancel->re-initiate capital-freeze griefing.
     uint64 internal constant MIN_REINIT_INTERVAL = 1 hours;
-    /// @dev Premium stream duration floor — caps stream-compression churn (a dust-duration fund would
-    ///      collapse `periodFinish` to ~now and pay the whole leftover out immediately).
+    /// @dev Premium stream duration floor for a fresh stream. A live stream's end never moves earlier
+    ///      (see `fundMutualPremium`), so a short duration cannot compress one.
     uint64 internal constant MIN_STREAM_DURATION = 1 minutes;
     /// @dev Premium stream duration ceiling — together with the live-stream rate guard this bounds how
     ///      far one funding can push `periodFinish` and keeps `nowTs + duration` trivially uint64-safe.
@@ -202,6 +202,7 @@ library MutualLib {
     ) external returns (uint256 commitmentId) {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (!g.active || g.terminal) revert ICM.MutualNotActive();
+        if (g.cumulativeLoss == LAMBDA_ONE) revert ICM.MutualExhausted(); // wiped out: a joiner could never owe
         if (_lossPending(s, mutualId)) revert ICM.MutualLossPending(); // capacity frozen during a declaration
         if (params.arbiter != g.arbiter) revert ICM.MutualArbiterMismatch();
         if (params.counterparty != g.beneficiary) revert ICM.MutualBeneficiaryMismatch(); // no forfeit-to-self
@@ -423,21 +424,14 @@ library MutualLib {
 
         ICM.Commitment storage c = s.commitments[commitmentId];
 
-        // ---- Premium: bank on the OLD effCover BEFORE the loss shrinks it (INV-P8 poke-before-change).
-        // The BANK fires whenever the member has UNBANKED accrual (`premiumSnapshot < Pi`), NOT merely
-        // when the stream is live. The distinction is load-bearing: after `reclaimPremium` sets
-        // `rewardRate = 0` with `Pi` frozen at its last value, a member can still hold un-banked premium
-        // earned on its pre-loss (larger) effCover. Gating the bank on `rewardRate != 0` would skip it
-        // here, and the member's later `claimMemberPremium` would then accrue on the post-loss (smaller)
-        // effCover — permanently under-collecting premium it already earned while fully covered, with the
-        // stranded sliver recoverable only by the beneficiary (a directed under-payment that would
-        // contradict INV-P7 floor==ceiling). A never-funded mutual has `Pi == premiumSnapshot == 0`, so
-        // this stays a no-op on the pure-loss hot path; `_syncMember`'s own poke short-circuits when the
-        // index is frozen. The bank is failure-isolated inside `_syncMember` (skip-not-revert), so the
-        // loss legs below ALWAYS execute even on the infeasible premium-overflow path (INV-P10).
-        if (g.premiumPerShareStored != m.premiumSnapshot) {
-            _syncMember(g, m, c);
-        }
+        // ---- Premium: poke and bank on the OLD effCover BEFORE the loss shrinks it (INV-P8
+        // poke-before-change). Unconditional: the stored `Pi` is stale whenever the stream is live and
+        // nobody has poked since this member's last sync, so comparing it with the snapshot cannot tell
+        // whether the member has unbanked accrual. Skipping here would attribute the interval since the
+        // last poke to post-loss cover and under-pay this member. `_syncMember` short-circuits when the
+        // index is frozen, and the bank is failure-isolated inside it (skip-not-revert), so the loss legs
+        // below ALWAYS execute even on the infeasible premium-overflow path (INV-P10).
+        _syncMember(g, m, c);
         // The DENOMINATOR maintenance below is UNCONDITIONAL, not gated. `activeCover`/`settledTotal`
         // must track every loss even while unfunded, because (a) `joinMutual` and `releaseMutualMember`
         // mutate them unconditionally — so a gated settle would leave `settledTotal` stale-low and make
@@ -514,7 +508,9 @@ library MutualLib {
 
     /// @notice Member-only: start the deallocation window. The line STAYS in `totalShares` and
     ///         mutual-slashable until `unbondRequestedAt + deallocationWindow` elapses, so an informed
-    ///         member cannot exit ahead of a loss they can see coming (OBJ-3).
+    ///         member cannot exit ahead of a loss they can see coming (OBJ-3). The release window then
+    ///         runs for one more `deallocationWindow`; a request not released by then lapses, and this
+    ///         call starts a fresh one. A request that has not lapsed reverts `UnbondAlreadyRequested`.
     function requestMutualExit(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         ICM.Membership storage m = s.membership[commitmentId];
         uint256 mutualId = m.mutualId;
@@ -522,7 +518,11 @@ library MutualLib {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
         if (_lossPending(s, mutualId)) revert ICM.MutualLossPending();
-        if (m.unbondRequestedAt != 0) revert ICM.UnbondAlreadyRequested();
+        if (
+            m.unbondRequestedAt != 0
+                && PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId])
+                    < 2 * uint256(s.mutuals[mutualId].deallocationWindow)
+        ) revert ICM.UnbondAlreadyRequested(); // not lapsed yet
 
         // Bank accrued premium to date. The member STAYS in both denominators — still slashable in
         // `totalShares` AND still earning in `activeCover` through the deallocation window (still at
@@ -538,8 +538,12 @@ library MutualLib {
         emit ICM.MemberExitRequested(mutualId, commitmentId, slashableUntil);
     }
 
-    /// @notice Release a fully-settled member past its deallocation window, returning the residual
-    ///         encumbrance to the committer's free balance. Uses a MUTUAL-AWARE terminal decrement
+    /// @notice Release a fully-settled member inside its exit window, returning the residual
+    ///         encumbrance to the committer's free balance. The window is
+    ///         `deallocationWindow <= elapsed < 2 * deallocationWindow` (pause-adjusted); at or past its
+    ///         end this reverts `ExitRequestLapsed` and the member must request again. A pending loss
+    ///         still blocks release, so a request can lapse while a loss is pending; that is intended.
+    ///         Uses a MUTUAL-AWARE terminal decrement
     ///         (not `_closeWithHooks`'s bps-derived one) — settles already removed `settledUnits`
     ///         from forfeitable, so only the REMAINING liability is decremented (OBJ-1).
     function releaseMutualMember(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
@@ -553,12 +557,10 @@ library MutualLib {
         // Clock-stop (ERC §A.6 erratum): the deallocation window elapses in effective time — an
         // informed member cannot ride out its still-slashable exit window during a pause in which
         // the mutual loss it would owe cannot execute.
-        if (
-            PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId])
-                < g.deallocationWindow
-        ) {
-            revert ICM.DeallocationWindowActive();
-        }
+        uint256 elapsed =
+            PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId]);
+        if (elapsed < g.deallocationWindow) revert ICM.DeallocationWindowActive();
+        if (elapsed >= 2 * uint256(g.deallocationWindow)) revert ICM.ExitRequestLapsed();
         if (_lossPending(s, mutualId)) revert ICM.MutualLossPending();
         if (m.lossSnapshot != g.cumulativeLoss) revert ICM.MemberUnsettled(); // settle outstanding first (INV-G5)
 
@@ -616,11 +618,14 @@ library MutualLib {
     ///         pricing-agnostic — pricing lives entirely in periphery. Solvency is enforced once,
     ///         at funding time, by the full-funding guard (INV-P2): future-streamable + already-banked
     ///         must not exceed the reserve. `_pokePremium` itself never touches the pool (INV-P0).
-    ///         Funding stays permissionless, so three guards close the Synthetix `notifyRewardAmount`
+    ///         Funding stays permissionless, so four guards close the Synthetix `notifyRewardAmount`
     ///         griefing: `duration` is bounded to [MIN_STREAM_DURATION, MAX_STREAM_DURATION]
-    ///         (StreamDurationOutOfBounds), a live stream's rate may only be maintained or raised
-    ///         (PremiumRateDecreased), and the new `periodFinish` is computed in uint256 so the uint64
-    ///         cast can never truncate into the past.
+    ///         (StreamDurationOutOfBounds); a live stream's end never moves earlier
+    ///         (`newFinish = max(periodFinish, now + duration)`, and premium plus leftover is spread over
+    ///         `newFinish - now`), so a dust fund cannot compress it; a live stream's rate may only be
+    ///         maintained or raised (PremiumRateDecreased); and the new `periodFinish` is computed in
+    ///         uint256 so the uint64 cast can never truncate into the past. Reverts `MutualExhausted`
+    ///         once Lambda is at its cap.
     function fundMutualPremium(
         CommitmentManagerStorage.Layout storage s,
         uint256 mutualId,
@@ -629,6 +634,7 @@ library MutualLib {
     ) external {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (g.terminal) revert ICM.MutualIsTerminal();
+        if (g.cumulativeLoss == LAMBDA_ONE) revert ICM.MutualExhausted(); // no cover left to pay for
         // Premium funding is HOMOGENEOUS or CONFIGURED-HETEROGENEOUS only. An ATTESTED-BUT-UNCONFIGURED
         // mutual (`valuationAuthority != 0 && bandAdapter == 0`) has a `premiumWeight == creditedValue`
         // that can diverge from `E_i` while still lacking the re-priceable band machinery, so the money
@@ -661,17 +667,20 @@ library MutualLib {
 
         uint256 nowTs = block.timestamp;
         uint256 leftover = nowTs < g.periodFinish ? (uint256(g.periodFinish) - nowTs) * uint256(g.rewardRate) : 0;
-        uint256 newRate = (premiumPortion + leftover) / duration;
+        // Compute the new deadline in uint256: the uint64 cast must never truncate — a truncated
+        // `periodFinish` would land in the past and silently kill the stream. While a stream is live
+        // its end never moves earlier, so a dust fund with a short duration cannot compress it.
+        uint256 newFinish = nowTs + uint256(duration);
+        if (newFinish < g.periodFinish) newFinish = g.periodFinish; // only bites while live
+        if (newFinish > type(uint64).max) revert ICM.StreamDurationOutOfBounds();
+        uint256 window = newFinish - nowTs;
+        uint256 newRate = (premiumPortion + leftover) / window;
         if (newRate > type(uint128).max) revert ICM.RewardRateOverflow();
         // LIVE-STREAM RATE GUARD: while a stream is running, funding may only maintain or raise
         // the rate. Otherwise a 1-wei fund over a huge window re-spreads the leftover, collapses
         // `rewardRate` (often to 0 by integer division) and `_pokePremium` short-circuits — the classic
         // Synthetix `notifyRewardAmount` griefing, ungated here because funding is permissionless.
         if (nowTs < g.periodFinish && newRate < uint256(g.rewardRate)) revert ICM.PremiumRateDecreased();
-        // Compute the new deadline in uint256: the uint64 cast must never truncate — a truncated
-        // `periodFinish` would land in the past and silently kill the stream.
-        uint256 newFinish = nowTs + uint256(duration);
-        if (newFinish > type(uint64).max) revert ICM.StreamDurationOutOfBounds();
         g.rewardRate = uint128(newRate);
         g.periodFinish = uint64(newFinish);
         g.lastUpdate = uint64(nowTs);
@@ -687,7 +696,7 @@ library MutualLib {
         // FUNDING-TIME SOLVENCY GUARD (the single source of premium solvency): everything the stream can
         // still pay out, plus everything already banked, must be covered by the PREMIUM reserve (the junior
         // share is excluded — it is not streamable cover).
-        if (uint256(g.rewardRate) * duration + g.bankedTotal > s.mutualPremiumPool[mutualId]) {
+        if (uint256(g.rewardRate) * window + g.bankedTotal > s.mutualPremiumPool[mutualId]) {
             revert ICM.PremiumStreamUnderfunded();
         }
 

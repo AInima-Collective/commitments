@@ -269,8 +269,7 @@ contract ManagerMutualTest is Test {
         manager.settleMemberLoss(cid);
         assertEq(manager.getMembership(cid).settledUnits, 40e18, "exiting member still slashed");
 
-        // After the window AND once settled, release returns the residual.
-        vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
+        // The declaration ran the clock past the window; once settled, release returns the residual.
         manager.releaseMutualMember(cid);
         assertEq(manager.getMembership(cid).mutualId, 0, "membership cleared");
         assertEq(manager.getCommitment(cid).released, true, "commitment released");
@@ -283,8 +282,7 @@ contract ManagerMutualTest is Test {
         uint256 cid = _join(gid, u1, 100e18, 10_000);
         vm.prank(u1);
         manager.requestMutualExit(cid);
-        _declareAndExecute(gid, 40e18); // loss within the window, NOT settled
-        vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
+        _declareAndExecute(gid, 40e18); // loss within the window, NOT settled; the exit window is now open
         vm.expectRevert(ICM.MemberUnsettled.selector);
         manager.releaseMutualMember(cid);
     }
