@@ -93,7 +93,9 @@ function renderDesign() {
   )
 }
 
-describe('Design page', () => {
+// Each test renders all 45 sections; that takes a few seconds in jsdom and
+// more on a loaded machine, so the default 5 s timeout is too tight.
+describe('Design page', { timeout: 30_000 }, () => {
   it('renders every section, in order, with its anchor and heading', () => {
     const { container } = renderDesign()
     const headings = [...container.querySelectorAll('section > header[id]')].map((h) => [
