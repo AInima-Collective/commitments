@@ -31,7 +31,7 @@ const BANNED = {
   '.depositor': 'the commitment party field is committer, not depositor',
   'setStrategy(': 'the vault setter is setYieldStrategy(...)',
   getUserMagnitude: 'renamed — use getUserExposure(token, user)',
-  MagnitudeAllocationExceeded: 'renamed — the error is ExposureAllocationExceeded',
+  MagnitudeAllocationExceeded: 'removed — INV-3 holds by construction (ERC §C.2 erratum)',
 }
 
 const files = readdirSync(GUIDES_DIR).filter((f) => f.endsWith('.md'))

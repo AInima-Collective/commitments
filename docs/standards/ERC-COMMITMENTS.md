@@ -408,8 +408,8 @@ interface ICommitmentManager /* Part C surface */ {
         uint64 expiresAt;              // 0 = no expiry
         bool released;
         bool forfeited;
-        // Optional metadata
-        string metadataURI;
+        // Optional metadata: only the hash is stored, as the on-chain anchor. The URI is
+        // carried by `CommitmentCreated` and is not part of the stored record.
         bytes32 metadataHash;
     }
 
@@ -436,6 +436,8 @@ interface ICommitmentManager /* Part C surface */ {
         bool cancelled;
     }
 
+    /// `totalEncumbered` is the ledger's `encumberedBalance(token, user)`; only
+    /// `totalForfeitable` needs its own storage.
     struct UserExposure {
         uint256 totalEncumbered;
         uint256 totalForfeitable;
@@ -464,7 +466,6 @@ interface ICommitmentManager /* Part C surface */ {
     function getUserExposure(address token, address user) external view returns (UserExposure memory);  // token-first, §0.1
     function strategiesOf(uint256 commitmentId) external view returns (address[] memory);
     function unbondInitiatedAt(uint256 commitmentId) external view returns (uint64);
-    function getUserCommitmentIds(address user) external view returns (uint256[] memory);
     function closedAt(uint256 commitmentId) external view returns (uint64);           // 0 while active
     function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256);  // units forfeited at execute
 }
@@ -506,10 +507,7 @@ where, over all active commitments of that user backed by that token:
   totalForfeitable  = Σ commitment.amount × maxPenaltyBps / 10_000
 ```
 
-The invariant MUST be checked when:
-
-- Creating a commitment.
-- Accepting an agreement ([agreements extension](./ERC-COMMITMENTS-AGREEMENTS.md)).
+**Erratum: implied, not enforced by a revert.** Earlier drafts required the invariant to be checked, with a revert, when creating a commitment and when accepting an agreement ([agreements extension](./ERC-COMMITMENTS-AGREEMENTS.md)). That check cannot fail and is no longer required: each lien adds `amount × maxPenaltyBps / 10_000 ≤ amount` of exposure (`maxPenaltyBps ≤ 10_000` is validated first), and every later writer keeps a lien's forfeitable share at most its live amount. The invariant holds by construction. `totalEncumbered` is the ledger's `encumberedBalance` (INV-2), so implementations SHOULD NOT keep a second counter for it; the reference implementation stores only `totalForfeitable` and `getUserExposure` returns it beside the ledger balance, so INV-3 stays observable.
 
 The invariant is automatically maintained when a commitment terminates, and is preserved by validated movements (§D.5) and contributions (§C.6) through the exposure-diff rule (see Rationale).
 
@@ -611,7 +609,6 @@ event CommitmentUnbondCancelled(uint256 indexed commitmentId);
 error ZeroArbiter();
 error ZeroCounterparty();
 error PenaltyExceedsMax();
-error ExposureAllocationExceeded();
 error TooManyStrategies();
 error NotArbiter();
 error NotCommitter();
@@ -780,9 +777,8 @@ The manager is the **sole executor** of movements. For every movement a strategy
 
 **Exposure-preserving shrink (manager-applied, never strategy-supplied).** For every applied `FromEncumbered*` debit of `units`, the manager itself MUST:
 
-1. `c.amount -= units`
-2. `totalEncumbered[committer][token] -= units`
-3. `totalForfeitable[committer][token] -= (exposure_pre − exposure_post)` where `exposure = (c.amount × c.maxPenaltyBps) / 10_000` computed before and after step 1 (the exposure-diff rule — see Rationale), clamped to the current `totalForfeitable` as defense-in-depth.
+1. `c.amount -= units` (the ledger debit lowers the committer's `encumberedBalance`, the `totalEncumbered` of INV-3, by the same `units`)
+2. `totalForfeitable[committer][token] -= (exposure_pre − exposure_post)` where `exposure = (c.amount × c.maxPenaltyBps) / 10_000` computed before and after step 1 (the exposure-diff rule — see Rationale), clamped to the current `totalForfeitable` as defense-in-depth.
 
 Strategies return only `(kind, from, to, token, units)`; they cannot specify, skip, or scale exposure effects. The proportional shrink leaves `maxPenaltyBps / 10_000` constant per commitment, so INV-3 holds across any movement sequence.
 
@@ -1146,7 +1142,7 @@ A stuck forfeit proposal blocks `finalizeUnbond` until either side acts. The `FO
 
 ### Exposure allocation violation
 
-The invariant `totalForfeitable ≤ totalEncumbered` MUST be checked on every `createCommitment` (and agreement acceptance, per the extension). Violation would allow over-promising.
+A violation of `totalForfeitable ≤ totalEncumbered` would allow over-promising. It holds by construction rather than by a revert (§C.2 erratum): `maxPenaltyBps ≤ 10_000` MUST be validated on every `createCommitment` and agreement leg, and every amount change MUST use the exposure-diff rule.
 
 ### Circuit breaker role separation
 

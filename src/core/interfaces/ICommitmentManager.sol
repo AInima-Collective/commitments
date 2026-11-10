@@ -34,8 +34,7 @@ interface ICommitmentManager {
         uint64 expiresAt; // 0 = no expiry
         bool released;
         bool forfeited;
-        string metadataURI;
-        bytes32 metadataHash;
+        bytes32 metadataHash; // on-chain anchor; the URI is carried only by `CommitmentCreated`
         // ---- Pause erratum (append-only) ----
         uint64 cumulativePausedAtStart; // creditable-pause snapshot at create; anchors the expiry clock-stop
     }
@@ -67,10 +66,12 @@ interface ICommitmentManager {
         uint64 cumulativePausedAtStart; // creditable-pause snapshot at initiate; anchors the challenge-window clock-stop
     }
 
-    /// @notice Per-(user, token) exposure tracking for the allocation invariant (INV-3).
+    /// @notice Per-(user, token) view of the allocation invariant (INV-3). Returned by
+    ///         `getUserExposure`; only `totalForfeitable` is stored, `totalEncumbered` is read from the
+    ///         custody ledger.
     struct UserExposure {
-        uint256 totalEncumbered; // Σ commitment.amount over active commitments
-        uint256 totalForfeitable; // Σ amount × maxPenaltyBps / 10_000 over active commitments
+        uint256 totalEncumbered; // ledger encumberedBalance (Σ amount over live liens and pending proposals)
+        uint256 totalForfeitable; // Σ amount × maxPenaltyBps / 10_000 over the same liens
     }
 
     /// @notice Per-leg economic terms. A "leg" is one committer's side of an
@@ -438,7 +439,6 @@ interface ICommitmentManager {
     error ZeroArbiter();
     error ZeroCounterparty();
     error PenaltyExceedsMax();
-    error ExposureAllocationExceeded();
     error TooManyStrategies();
     error NotArbiter();
     error NotCommitter();
@@ -714,7 +714,6 @@ interface ICommitmentManager {
     function getUserExposure(address token, address user) external view returns (UserExposure memory);
     function strategiesOf(uint256 commitmentId) external view returns (address[] memory);
     function unbondInitiatedAt(uint256 commitmentId) external view returns (uint64);
-    function getUserCommitmentIds(address user) external view returns (uint256[] memory);
 
     /// @notice Close timestamp of a commitment (0 = still active). `getCommitment().amount` is
     ///         zeroed at close, so this is the only surviving on-chain signal that a commitment

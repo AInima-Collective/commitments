@@ -865,7 +865,6 @@ export const commitmentManagerAbi = [
           { name: 'expiresAt', internalType: 'uint64', type: 'uint64' },
           { name: 'released', internalType: 'bool', type: 'bool' },
           { name: 'forfeited', internalType: 'bool', type: 'bool' },
-          { name: 'metadataURI', internalType: 'string', type: 'string' },
           { name: 'metadataHash', internalType: 'bytes32', type: 'bytes32' },
           {
             name: 'cumulativePausedAtStart',
@@ -1027,13 +1026,6 @@ export const commitmentManagerAbi = [
     inputs: [{ name: 'role', internalType: 'bytes32', type: 'bytes32' }],
     name: 'getRoleAdmin',
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'user', internalType: 'address', type: 'address' }],
-    name: 'getUserCommitmentIds',
-    outputs: [{ name: '', internalType: 'uint256[]', type: 'uint256[]' }],
     stateMutability: 'view',
   },
   {
@@ -2987,7 +2979,6 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'EmptyBatch' },
   { type: 'error', inputs: [], name: 'ExitNotRequested' },
   { type: 'error', inputs: [], name: 'ExitRequestLapsed' },
-  { type: 'error', inputs: [], name: 'ExposureAllocationExceeded' },
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'ForfeitPending' },
   { type: 'error', inputs: [], name: 'ForfeitureIsPaused' },

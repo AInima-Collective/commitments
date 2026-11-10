@@ -813,8 +813,16 @@ contract RegistryHookTest is LifecycleTestBase {
         manager.setOperatorRegistry(address(registry));
     }
 
+    /// @dev A commitment naming the registry as counterparty: the only kind it tracks.
+    function _createForRegistry(uint256 amount, uint16 maxPenaltyBps) internal returns (uint256 id) {
+        ICM.CommitmentParams memory p = _params(amount, maxPenaltyBps);
+        p.counterparty = address(registry);
+        vm.prank(alice);
+        id = manager.createCommitment(p);
+    }
+
     function test_releaseNotifiesRegistry() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
         vm.prank(arbiter);
         manager.releaseCommitment(id);
         assertEq(registry.releasedCount(), 1);
@@ -822,7 +830,7 @@ contract RegistryHookTest is LifecycleTestBase {
     }
 
     function test_forfeitNotifiesRegistry() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
         vm.prank(arbiter);
         manager.initiateForfeit(id, 3000);
         vm.warp(block.timestamp + WINDOW);
@@ -833,7 +841,7 @@ contract RegistryHookTest is LifecycleTestBase {
     }
 
     function test_registryFailure_doesNotBlock_emitsEvent() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
         registry.setRevert(true);
 
         vm.expectEmit(true, true, false, false);
@@ -849,7 +857,7 @@ contract RegistryHookTest is LifecycleTestBase {
     ///         out-of-gas) while the release still lands: the §D.6 rule-3 min-gas guard reverts the
     ///         WHOLE transaction when the frame cannot genuinely receive the full cap.
     function test_registryHook_gasStarvation_revertsWholeTransaction() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
 
         // 400k < cap (500k) + cap/63 + reserve (50k): not enough for the hook frame to receive
         // its full cap, so the guard must revert the entire release.
@@ -867,6 +875,28 @@ contract RegistryHookTest is LifecycleTestBase {
         assertTrue(manager.getCommitment(id).released);
         assertEq(registry.releasedCount(), 1);
     }
+
+    /// @notice A commitment whose counterparty is not the registry is never notified, so its
+    ///         close needs no hook-cap headroom: release and forfeit land with less gas than the cap.
+    function test_nonRegistryCounterparty_closesBelowHookCap() public {
+        uint256 cap = manager.hookGasCap();
+        uint256 id = _create(100e18, 5000); // counterparty bob
+        vm.prank(arbiter);
+        (bool ok,) = address(manager).call{gas: cap}(abi.encodeCall(CommitmentManager.releaseCommitment, (id)));
+        assertTrue(ok, "release lands below the hook cap");
+        assertTrue(manager.getCommitment(id).released);
+
+        uint256 id2 = _create(100e18, 5000);
+        vm.prank(arbiter);
+        manager.initiateForfeit(id2, 3000);
+        vm.warp(block.timestamp + WINDOW);
+        (ok,) = address(manager).call{gas: cap}(abi.encodeCall(CommitmentManager.executeForfeit, (id2)));
+        assertTrue(ok, "forfeit lands below the hook cap");
+        assertTrue(manager.getCommitment(id2).forfeited);
+
+        assertEq(registry.releasedCount(), 0, "registry not notified");
+        assertEq(registry.forfeitedCount(), 0, "registry not notified");
+    }
 }
 
 /// @notice The delegation hook is gas-capped exactly like the strategy hooks (§D.6): even with a
@@ -882,8 +912,15 @@ contract RegistryHookGasCapTest is LifecycleTestBase {
         manager.setOperatorRegistry(address(probe));
     }
 
+    function _createForProbe() internal returns (uint256 id) {
+        ICM.CommitmentParams memory p = _params(100e18, 5000);
+        p.counterparty = address(probe);
+        vm.prank(alice);
+        id = manager.createCommitment(p);
+    }
+
     function test_registryHook_receivesAtMostTheCap() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForProbe();
         vm.prank(arbiter);
         manager.releaseCommitment{gas: 10_000_000}(id); // abundant gas at the top of the call
 
@@ -897,7 +934,7 @@ contract RegistryHookGasCapTest is LifecycleTestBase {
     ///         release still lands — the cap turns an unbounded burn into a bounded, parked failure.
     function test_registryHook_burnAll_isCappedAndParked() public {
         probe.setBurn(true);
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForProbe();
 
         vm.expectEmit(true, true, false, false);
         emit ICM.RegistryHookFailed(id, GasProbeRegistry.onDelegationReleased.selector);

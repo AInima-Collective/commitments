@@ -133,21 +133,14 @@ library CommitmentLifecycleLib {
         address committer,
         ICM.CommitmentParams calldata params
     ) internal returns (uint256 commitmentId) {
-        // --- Exposure allocation invariant, per (committer, token) (ERC §C.2 / INV-3) ---
-        uint256 exposure = ExposureLib.exposureOf(params.amount, params.maxPenaltyBps);
-        ICM.UserExposure storage mag = s.userExposures[committer][params.token];
-        if (mag.totalForfeitable + exposure > mag.totalEncumbered + params.amount) {
-            revert ICM.ExposureAllocationExceeded();
-        }
-
         // --- Encumber from free balance (manager-internal ledger op, ERC §A.3) ---
+        // INV-3 (ERC §C.2) needs no check: the lien adds at most `amount` of exposure (bps <= 10_000).
         LedgerLib.encumber(s, params.token, committer, params.amount);
-        ExposureLib.increment(s, committer, params.token, params.amount, exposure);
+        ExposureLib.increment(s, committer, params.token, ExposureLib.exposureOf(params.amount, params.maxPenaltyBps));
 
         // --- Store ---
         commitmentId = s.nextCommitmentId++;
         _storeCommitment(s, commitmentId, committer, params);
-        s.userCommitmentIds[committer].push(commitmentId);
 
         _bindStrategies(s, commitmentId, params);
     }
@@ -218,7 +211,6 @@ library CommitmentLifecycleLib {
         c.challengeWindow = params.challengeWindow;
         c.createdAt = uint64(block.timestamp);
         c.expiresAt = params.expiresAt;
-        c.metadataURI = params.metadataURI;
         c.metadataHash = params.metadataHash;
         // Anchors the expiry clock-stop. Written only when an expiry exists: the field opens a
         // fresh storage slot, and an expiry-less commitment (agreement legs included) never reads it.
@@ -303,8 +295,7 @@ library CommitmentLifecycleLib {
         if (s.unbondInitiatedAt[commitmentId] != 0) s.unbondInitiatedAt[commitmentId] = 0;
         s.closedAt[commitmentId] = uint64(block.timestamp);
 
-        uint256 exposure = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-        ExposureLib.decrement(s, c.committer, c.token, c.amount, exposure);
+        ExposureLib.decrement(s, c.committer, c.token, ExposureLib.exposureOf(c.amount, c.maxPenaltyBps));
 
         if (c.amount > 0) LedgerLib.releaseEncumbrance(s, commitmentId, c.token, c.committer, c.amount);
         // Zero the live-amount tracker: nothing remains reserved under this commitment, and a
@@ -405,7 +396,7 @@ library CommitmentLifecycleLib {
         s.forfeitedUnits[commitmentId] = unitsToForfeit;
 
         // Full exposure decrement (§C.3 step 1).
-        ExposureLib.decrement(s, c.committer, c.token, fullAmount, exposure);
+        ExposureLib.decrement(s, c.committer, c.token, exposure);
 
         // Unconditional forfeit transfer — pure ledger arithmetic, pull-payment (§C.3 step 2).
         if (unitsToForfeit > 0) LedgerLib.forfeitTransfer(s, c.token, c.committer, counterparty, unitsToForfeit);
@@ -539,12 +530,14 @@ library CommitmentLifecycleLib {
     ///      gas-capped and min-gas-guarded exactly like the strategy hooks (MovementLib §D.6
     ///      rule 3): a buggy or malicious registry cannot burn unbounded gas to grief the lifecycle
     ///      transition, and a caller cannot hand-tune gas so the notification silently parks (a
-    ///      swallowed out-of-gas) while the release/forfeit still lands.
+    ///      swallowed out-of-gas) while the release/forfeit still lands. Only a commitment whose
+    ///      counterparty is the registry is notified: the registry tracks no other kind, and the
+    ///      skip spares every other close the external call and its gas floor.
     function _notifyRegistryRelease(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint256 amount)
         private
     {
         address reg = s.operatorRegistry;
-        if (reg == address(0)) return;
+        if (reg == address(0) || s.commitments[commitmentId].counterparty != reg) return;
         uint256 cap = _registryHookCap(s);
         try IOperatorRegistryHooks(reg).onDelegationReleased{gas: cap}(commitmentId, amount) {}
         catch {
@@ -559,7 +552,7 @@ library CommitmentLifecycleLib {
         uint256 fullAmount
     ) private {
         address reg = s.operatorRegistry;
-        if (reg == address(0)) return;
+        if (reg == address(0) || s.commitments[commitmentId].counterparty != reg) return;
         uint256 cap = _registryHookCap(s);
         try IOperatorRegistryHooks(reg).onDelegationForfeited{gas: cap}(commitmentId, forfeitedAmount, fullAmount) {}
         catch {

@@ -35,16 +35,10 @@ library AgreementLib {
     ) external returns (uint256 proposalId) {
         _validateProposal(params, minChallengeWindow);
 
-        // Exposure check + encumber for the proposer, per (proposer, proposerLeg.token).
+        // Encumber the proposer and add its exposure, per (proposer, proposerLeg.token).
         ICM.LegTerms calldata pl = params.proposerLeg;
-        uint256 exposure = ExposureLib.exposureOf(pl.amount, pl.maxPenaltyBps);
-        ICM.UserExposure storage mag = s.userExposures[msg.sender][pl.token];
-        if (mag.totalForfeitable + exposure > mag.totalEncumbered + pl.amount) {
-            revert ICM.ExposureAllocationExceeded();
-        }
         LedgerLib.encumber(s, pl.token, msg.sender, pl.amount);
-        mag.totalEncumbered += pl.amount;
-        mag.totalForfeitable += exposure;
+        ExposureLib.increment(s, msg.sender, pl.token, ExposureLib.exposureOf(pl.amount, pl.maxPenaltyBps));
 
         proposalId = s.nextAgreementProposalId++;
         _storeProposal(s, proposalId, params);
@@ -163,25 +157,20 @@ library AgreementLib {
         external
         returns (uint256 agreementId, uint256 commitmentIdA, uint256 commitmentIdB)
     {
-        ICM.AgreementProposal storage prop = s.agreementProposals[proposalId];
+        // One read of every proposal field (the URI included); the helpers below work on the copy.
+        ICM.AgreementProposal memory prop = s.agreementProposals[proposalId];
 
         if (msg.sender != prop.acceptor) revert ICM.NotAcceptor();
         if (prop.accepted) revert ICM.AlreadyAccepted();
         if (prop.cancelled) revert ICM.ProposalNotFound();
         if (block.timestamp > prop.expiresAt) revert ICM.ProposalExpired();
-        prop.accepted = true;
+        s.agreementProposals[proposalId].accepted = true;
 
-        // Exposure check + encumber for the acceptor, in the ACCEPTOR leg's token.
-        {
-            uint256 exposure = ExposureLib.exposureOf(prop.acceptorAmount, prop.acceptorMaxPenaltyBps);
-            ICM.UserExposure storage mag = s.userExposures[msg.sender][prop.acceptorToken];
-            if (mag.totalForfeitable + exposure > mag.totalEncumbered + prop.acceptorAmount) {
-                revert ICM.ExposureAllocationExceeded();
-            }
-            LedgerLib.encumber(s, prop.acceptorToken, msg.sender, prop.acceptorAmount);
-            mag.totalEncumbered += prop.acceptorAmount;
-            mag.totalForfeitable += exposure;
-        }
+        // Encumber the acceptor and add its exposure, in the ACCEPTOR leg's token.
+        LedgerLib.encumber(s, prop.acceptorToken, msg.sender, prop.acceptorAmount);
+        ExposureLib.increment(
+            s, msg.sender, prop.acceptorToken, ExposureLib.exposureOf(prop.acceptorAmount, prop.acceptorMaxPenaltyBps)
+        );
 
         // Two legs: the proposer leg carries the proposer terms, the acceptor leg the
         // acceptor terms (independent token/adapter/amount/penalty).
@@ -221,7 +210,7 @@ library AgreementLib {
 
     function _storeLeg(
         CommitmentManagerStorage.Layout storage s,
-        ICM.AgreementProposal storage prop,
+        ICM.AgreementProposal memory prop,
         bool proposerSide,
         address committer,
         address counterparty
@@ -237,9 +226,7 @@ library AgreementLib {
         c.maxPenaltyBps = proposerSide ? prop.proposerMaxPenaltyBps : prop.acceptorMaxPenaltyBps;
         c.challengeWindow = prop.challengeWindow;
         c.createdAt = uint64(block.timestamp);
-        c.metadataURI = prop.metadataURI;
         c.metadataHash = prop.metadataHash;
-        s.userCommitmentIds[committer].push(commitmentId);
 
         _emitLegCreated(commitmentId, prop, proposerSide, committer, counterparty);
     }
@@ -247,7 +234,7 @@ library AgreementLib {
     /// @dev Separate frame for the 11-argument creation event (stack headroom).
     function _emitLegCreated(
         uint256 commitmentId,
-        ICM.AgreementProposal storage prop,
+        ICM.AgreementProposal memory prop,
         bool proposerSide,
         address committer,
         address counterparty
@@ -271,7 +258,7 @@ library AgreementLib {
     function _bindLegStrategies(
         CommitmentManagerStorage.Layout storage s,
         StrategyBinding[] storage binds,
-        ICM.AgreementProposal storage prop,
+        ICM.AgreementProposal memory prop,
         uint256 commitmentId,
         uint256 legAmount,
         uint16 legMaxPenaltyBps
@@ -312,10 +299,12 @@ library AgreementLib {
 
         prop.cancelled = true;
 
-        uint256 exposure = ExposureLib.exposureOf(prop.proposerAmount, prop.proposerMaxPenaltyBps);
-        ICM.UserExposure storage mag = s.userExposures[prop.proposer][prop.proposerToken];
-        mag.totalEncumbered -= prop.proposerAmount;
-        mag.totalForfeitable -= exposure;
+        ExposureLib.decrement(
+            s,
+            prop.proposer,
+            prop.proposerToken,
+            ExposureLib.exposureOf(prop.proposerAmount, prop.proposerMaxPenaltyBps)
+        );
         // commitmentId 0: no commitment exists for a cancelled proposal.
         LedgerLib.releaseEncumbrance(s, 0, prop.proposerToken, prop.proposer, prop.proposerAmount);
 
@@ -545,15 +534,7 @@ library AgreementLib {
         ICM.Commitment storage payer = s.commitments[payerCid];
         if (units > payer.amount) revert ICM.InsufficientCommitmentAmount(units, payer.amount);
 
-        uint256 expPre = ExposureLib.exposureOf(payer.amount, payer.maxPenaltyBps);
-        payer.amount -= units;
-        uint256 expPost = ExposureLib.exposureOf(payer.amount, payer.maxPenaltyBps);
-
-        ICM.UserExposure storage payerMag = s.userExposures[payer.committer][payer.token];
-        payerMag.totalEncumbered -= units;
-        uint256 forfeitDec = expPre - expPost;
-        if (forfeitDec > payerMag.totalForfeitable) forfeitDec = payerMag.totalForfeitable;
-        payerMag.totalForfeitable -= forfeitDec;
+        ExposureLib.resize(s, payer, payer.amount - units);
 
         // Payer's encumbered leg -> receiver's free balance, in the payer leg's token.
         LedgerLib.forfeitTransfer(s, payer.token, payer.committer, s.commitments[receiverCid].committer, units);
@@ -582,13 +563,7 @@ library AgreementLib {
         if (s.unbondInitiatedAt[commitmentId] != 0) revert ICM.UnbondPending();
 
         // Exposure-diff growth keeps the per-commitment forfeitable contribution exact.
-        uint256 expBefore = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-        c.amount += units;
-        uint256 expAfter = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-
-        ICM.UserExposure storage mag = s.userExposures[c.committer][c.token];
-        mag.totalEncumbered += units;
-        mag.totalForfeitable += (expAfter - expBefore);
+        ExposureLib.resize(s, c, c.amount + units);
 
         LedgerLib.attributeEncumbrance(s, c.token, msg.sender, c.committer, units);
         emit ICM.EncumbranceContributed(commitmentId, msg.sender, c.committer, units);

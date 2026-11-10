@@ -329,8 +329,9 @@ library MutualLib {
         if (owed > c.amount) owed = c.amount;
 
         if (owed > 0) {
-            // INV-G9: move both exposure legs by `owedUnits` (keeps the per-commitment gap invariant).
-            ExposureLib.decrementForfeited(s, c.committer, c.token, owed);
+            // INV-G9: forfeitable drops by `owedUnits`, as does the encumbered balance in the
+            // transfer below (keeps the per-commitment gap invariant).
+            ExposureLib.decrement(s, c.committer, c.token, owed);
             // Balance-conserving: encumbered[committer] -> free[beneficiary]. REUSED, untouched.
             LedgerLib.forfeitTransfer(s, c.token, c.committer, g.beneficiary, owed);
             m.settledUnits += owed;
@@ -434,7 +435,7 @@ library MutualLib {
         uint256 remainingForfeitable = m.forfeitableUnits - m.settledUnits;
 
         // Mutual-aware terminal exposure decrement — decrements exactly the remaining liability.
-        ExposureLib.decrement(s, c.committer, c.token, residual, remainingForfeitable);
+        ExposureLib.decrement(s, c.committer, c.token, remainingForfeitable);
         if (residual > 0) LedgerLib.releaseEncumbrance(s, commitmentId, c.token, c.committer, residual);
 
         c.amount = 0;

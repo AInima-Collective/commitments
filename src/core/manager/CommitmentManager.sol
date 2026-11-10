@@ -692,10 +692,11 @@ contract CommitmentManager is
         return CommitmentManagerStorage.layout().forfeitProposals[commitmentId];
     }
 
-    /// @notice Exposure tracking for `(token, user)` (INV-3). Arg order is token-first to match
-    ///         the rest of the view surface.
+    /// @notice Exposure for `(token, user)` (INV-3): the ledger's encumbered balance beside the
+    ///         stored forfeitable total. Arg order is token-first to match the rest of the view surface.
     function getUserExposure(address token, address user) external view returns (ICM.UserExposure memory) {
-        return CommitmentManagerStorage.layout().userExposures[user][token];
+        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
+        return ICM.UserExposure(s.ledger[token][user].encumberedBalance, s.userForfeitable[user][token]);
     }
 
     /// @notice Bound strategies of a commitment, in binding order.
@@ -722,11 +723,6 @@ contract CommitmentManager is
     /// @notice Selector of a failed guarded hook awaiting `sweepFailedHook` (0 = none).
     function failedHook(uint256 commitmentId, address strategy) external view returns (bytes4) {
         return CommitmentManagerStorage.layout().failedHookSelector[commitmentId][strategy];
-    }
-
-    /// @notice All commitment ids ever created for `user` (append-only).
-    function getUserCommitmentIds(address user) external view returns (uint256[] memory) {
-        return CommitmentManagerStorage.layout().userCommitmentIds[user];
     }
 
     // =========================================================================
@@ -780,7 +776,8 @@ contract CommitmentManager is
         s.hookGasCap = newValue;
     }
 
-    /// @notice Set or clear the operator registry for delegation hooks (mesh extension).
+    /// @notice Set or clear the operator registry for delegation hooks (mesh extension). The
+    ///         manager notifies the registry only for commitments whose counterparty is the registry.
     /// @dev The manager notifies exactly ONE registry on release/forfeit; re-pointing (or
     ///      clearing) the slot while the outgoing registry still tracks live registration/
     ///      delegation commitments would silently orphan them — their later release/forfeit
@@ -807,6 +804,8 @@ contract CommitmentManager is
     ///         guard. Any commitments still tracked by the outgoing registry are orphaned:
     ///         their release/forfeit hooks will be silently dropped. Escape hatch for
     ///         registry migrations and for outgoing registries that cannot report a count.
+    ///         The manager notifies the registry only for commitments whose counterparty is the
+    ///         registry.
     function forceSetOperatorRegistry(address operatorRegistry_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
         emit ICM.OperatorRegistryUpdated(s.operatorRegistry, operatorRegistry_);

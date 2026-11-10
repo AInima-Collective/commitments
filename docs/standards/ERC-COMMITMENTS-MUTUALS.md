@@ -84,9 +84,9 @@ of §8 are reference compositions, not part of the normative custody-root surfac
 ## 1. Storage
 
 A conforming manager appends **six** top-level fields to its EIP-7201 namespaced `Layout`
-struct, at field **offsets 28..33**, after the Part D `forfeitedUnits` mapping (offset 27), in
-two append-only groups: the **loss core** (offsets 28..31) and the **premium reserve**
-(offsets 32..33). The append is
+struct, at field **offsets 27..32**, after the Part D `forfeitedUnits` mapping (offset 26), in
+two append-only groups: the **loss core** (offsets 27..30) and the **premium reserve**
+(offsets 31..32). The append is
 **strictly additive**: no existing field is reordered, re-typed, or removed. The core
 `Commitment` struct and its `getCommitment` ABI tuple MUST NOT be widened — mutual state lives
 in *sibling mappings keyed by `commitmentId` / `mutualId`*, the same discipline used by
@@ -96,13 +96,13 @@ implementations MUST extend their storage-slot offset test
 drift fails loudly.
 
 ```solidity
-// === Shared-loss mutuals — loss core (append-only; offsets 28..31) ===
+// === Shared-loss mutuals — loss core (append-only; offsets 27..30) ===
 mapping(uint256 => Mutual)             mutuals;             // mutualId => header
 mapping(uint256 => Membership)         membership;          // commitmentId => membership (sparse)
 uint256                                nextMutualId;        // 1-indexed; 0 == not-a-member sentinel
 mapping(uint256 => MutualLossProposal) mutualLossProposals; // mutualId => pending two-phase loss
 
-// === Premium reserve — the FOURTH partition compartment (append-only; offsets 32..33) ===
+// === Premium reserve — the FOURTH partition compartment (append-only; offsets 31..32) ===
 mapping(uint256 => uint256) mutualPremiumPool;   // mutualId => premium reserve (funded − claimed)
 mapping(address => uint256) totalMutualPremium;  // numeraire => Σ mutualPremiumPool (O(1) INV-P1 aggregate)
 ```
@@ -435,7 +435,7 @@ owed = m.forfeitableUnits * (lambda - m.lossSnapshot) / 1e18   // round DOWN
 owed = min(owed, m.forfeitableUnits - m.settledUnits)          // Belt 1: remaining liability (INV-G3)
 owed = min(owed, c.amount)                                     // Belt 2: live commitment amount (INV-G10)
 if (owed > 0):
-    ExposureLib.decrementForfeited(committer, token, owed)    // INV-G9: both legs by owed
+    ExposureLib.decrement(committer, token, owed)             // INV-G9: forfeitable by owed; the transfer moves encumbered by owed
     LedgerLib.forfeitTransfer(token, committer, beneficiary, owed)  // encumbered -> beneficiary free
     m.settledUnits += owed
     c.amount       -= owed                                     // residual stays ENCUMBERED; commitment survives
@@ -644,7 +644,7 @@ in `premiumRemainder`, and never touches a reserve (INV-P0).
 
 The premium reserve `mutualPremiumPool[mutualId]` is `funded − claimed` numeraire and is a
 **genuine partition compartment** — the fourth, alongside free / encumbered / escrow — tracked by
-the per-token aggregate `totalMutualPremium` (§1 storage, offsets 32..33). It is credited only by
+the per-token aggregate `totalMutualPremium` (§1 storage, offsets 31..32). It is credited only by
 `fundMutualPremium` and debited only by `claimMemberPremium` / `reclaimPremium` / terminal-sweep,
 each through the `LedgerLib` `freeToMutualPremium` / `mutualPremiumToFree` helper pair (INV-P0), so
 the extended partition **INV-P1**
@@ -820,13 +820,13 @@ entirely here — the custody root only sets a future rate under INV-P2. Events:
 
 ## 10. Backwards compatibility
 
-This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no change to the core custody ledger, the commitment lifecycle, or any other sibling extension: a manager that does not implement the mutuals surface remains fully conformant to the core standard. Mutual membership only ever *adds* gating on commitments a member explicitly enrolls (§5) — the terminal-close, unbond, and forfeit-initiation paths revert `CommitmentInMutual` on a member commitment, with committer-liveness preserved through the mutual exit path. Non-member commitments and existing deployments are unaffected. The six storage fields are appended (offsets 28..33) with no reordering of prior fields.
+This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no change to the core custody ledger, the commitment lifecycle, or any other sibling extension: a manager that does not implement the mutuals surface remains fully conformant to the core standard. Mutual membership only ever *adds* gating on commitments a member explicitly enrolls (§5) — the terminal-close, unbond, and forfeit-initiation paths revert `CommitmentInMutual` on a member commitment, with committer-liveness preserved through the mutual exit path. Non-member commitments and existing deployments are unaffected. The six storage fields are appended (offsets 27..32) with no reordering of prior fields.
 
 ## 11. Reference implementation
 
 - `src/extensions/mutuals/MutualLib.sol` — the loss index (Λ) and premium index (Π) core logic (an external delegatecall library of the manager).
 - `src/core/interfaces/ICommitmentManager.sol` — the mutual structs, events, and errors.
-- `src/core/manager/storage/CommitmentManagerStorage.sol` — the six append-only mutual fields (offsets 28..33).
+- `src/core/manager/storage/CommitmentManagerStorage.sol` — the six append-only mutual fields (offsets 27..32).
 - `src/extensions/mutuals/` — owning extension directory for `MutualRegistry`, `LinkedMutualPolicy`, `PremiumScheduler`, `ClaimRouter`, and `OptimisticMutualArbiter`.
 
 ## 12. Test cases

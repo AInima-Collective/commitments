@@ -327,15 +327,7 @@ library MovementLib {
         if (site == MovementSite.Forfeited) {
             c.amount -= m.units;
         } else {
-            uint256 expPre = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-            c.amount -= m.units;
-            uint256 expPost = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-
-            ICM.UserExposure storage mag = s.userExposures[c.committer][c.token];
-            mag.totalEncumbered -= m.units;
-            uint256 dec = expPre - expPost;
-            if (dec > mag.totalForfeitable) dec = mag.totalForfeitable; // defense vs drift
-            mag.totalForfeitable -= dec;
+            ExposureLib.resize(s, c, c.amount - m.units);
         }
 
         // --- Apply ---
