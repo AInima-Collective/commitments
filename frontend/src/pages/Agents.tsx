@@ -3,7 +3,7 @@ import { type Address } from 'viem'
 
 import { AgentCard } from '../components/agent/AgentCard'
 import { PageHeader } from '../components/protocol'
-import { EmptyState, Notice, Skeleton } from '../components/ui'
+import { Button, EmptyState, Notice, Skeleton } from '../components/ui'
 import { hasIndexer } from '../config/indexer'
 import { useAgentsIndexed } from '../hooks/useAgentsIndexed'
 import { useTokenMetaMap } from '../hooks/useTokenMeta'
@@ -46,9 +46,9 @@ export default function Agents() {
         tone="warn"
         title="Agents unavailable"
         actions={
-          <button type="button" className="ds-btn ds-btn--sm" onClick={refetch}>
+          <Button size="sm" onClick={refetch}>
             retry
-          </button>
+          </Button>
         }
       >
         Live agent data is temporarily unavailable — please retry shortly.

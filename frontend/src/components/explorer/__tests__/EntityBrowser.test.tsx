@@ -133,7 +133,8 @@ describe('EntityBrowser', () => {
         pendingManagerForfeits: 2,
         openMechanismCases: 1,
       }],
-      page: { limit: 50, offset: options.offset, total: 75, nextOffset: options.offset === 0 ? 50 : null },
+      // The server's nextOffset is offset + rows on the page.
+      page: { limit: 50, offset: options.offset, total: 75, nextOffset: options.offset + 1 },
       isLoading: false,
       error: null,
     }))
@@ -150,7 +151,7 @@ describe('EntityBrowser', () => {
     )
     expect(screen.getByText('4 active / 9 total')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    expect(mocks.arbiters).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 }))
+    expect(mocks.arbiters).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 1 }))
   })
 
   it('shows case provenance, a next action, and terminal outcome separately', () => {

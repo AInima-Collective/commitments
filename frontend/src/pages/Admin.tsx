@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useChainId } from 'wagmi'
-import { Card, Notice } from '../components/ui'
+import { Card, Notice, Tabs } from '../components/ui'
 import { ActorSwitcher, PageHeader, TimeControls } from '../components/protocol'
 import { DevWalletProvider } from '../contexts/DevWalletProvider'
 import {
@@ -14,22 +14,7 @@ import { ensureAutomine } from '../hooks/useAnvilTime'
 
 const ANVIL_CHAIN_ID = 31337
 
-type Tab =
-  | 'scenarios'
-  | 'vault'
-  | 'risk'
-  | 'yield'
-  | 'operators'
-  | 'time'
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'scenarios', label: 'scenarios' },
-  { id: 'vault', label: 'vault' },
-  { id: 'risk', label: 'risk' },
-  { id: 'yield', label: 'yield' },
-  { id: 'operators', label: 'operators' },
-  { id: 'time', label: 'time' },
-]
+const TABS = ['scenarios', 'vault', 'risk', 'yield', 'operators', 'time']
 
 export default function Admin() {
   const chainId = useChainId()
@@ -59,7 +44,6 @@ export default function Admin() {
 }
 
 function AdminContent() {
-  const [activeTab, setActiveTab] = useState<Tab>('scenarios')
   const [autoMineState, setAutoMineState] = useState<'unknown' | 'enabled' | 'failed'>('unknown')
 
   // Force anvil's automine on while admin is open. dev-up sets interval mining
@@ -105,33 +89,35 @@ function AdminContent() {
         </strong>
       </Notice>
 
-      <div className="ds-tabs" role="tablist" aria-label="Admin sections">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === t.id}
-            className="ds-tab"
-            onClick={() => setActiveTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <section className="ds-stack ds-stack-4" role="tabpanel">
-        {activeTab === 'scenarios' && <ScenariosTab />}
-        {activeTab === 'vault' && <VaultTab />}
-        {activeTab === 'risk' && <RiskTab />}
-        {activeTab === 'yield' && <YieldTab />}
-        {activeTab === 'operators' && <OperatorsTab />}
-        {activeTab === 'time' && (
+      <Tabs defaultValue="scenarios">
+        <Tabs.List aria-label="Admin sections">
+          {TABS.map((t) => (
+            <Tabs.Trigger key={t} value={t}>
+              {t}
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
+        <Tabs.Panel value="scenarios" className="ds-stack ds-stack-4">
+          <ScenariosTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="vault" className="ds-stack ds-stack-4">
+          <VaultTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="risk" className="ds-stack ds-stack-4">
+          <RiskTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="yield" className="ds-stack ds-stack-4">
+          <YieldTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="operators" className="ds-stack ds-stack-4">
+          <OperatorsTab />
+        </Tabs.Panel>
+        <Tabs.Panel value="time" className="ds-stack ds-stack-4">
           <Card as="section" density="compact" aria-label="Time controls" className="ds-stack ds-stack-3">
             <TimeControls />
           </Card>
-        )}
-      </section>
+        </Tabs.Panel>
+      </Tabs>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { CopyButton, Disclosure, Notice, SourceBlock } from '../ui'
+import { Button, CopyButton, Disclosure, Notice, SourceBlock } from '../ui'
 import { rewriteIpfsURI } from '../../lib/ipfs'
 import { type MetadataTrust } from '../../lib/commitmentMetadata'
 import { MetadataTrustBadge } from './MetadataTrustBadge'
@@ -161,14 +161,13 @@ export function MetadataProvenance({
       )}
 
       {onRefetch && (
-        <button
-          type="button"
-          className="ds-btn ds-btn--sm"
+        <Button
+          size="sm"
           onClick={onRefetch}
           title="Re-reads what the indexer holds. The fetch and hash check run indexer-side when the record is indexed, so this will not re-check the URI itself."
         >
           reload
-        </button>
+        </Button>
       )}
     </div>
   )

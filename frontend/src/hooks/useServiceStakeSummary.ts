@@ -1,7 +1,10 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
 
 import { hasIndexer, indexerJson } from '../config/indexer'
+import { bigintToUsd } from '../lib/format'
+import { useAssetPrices } from './useAssetPrices'
 import { POLL } from './polling'
 
 export interface ServiceStakeDenom {
@@ -106,7 +109,7 @@ export function useServiceStakeSummary(
     staleTime: 15_000,
   })
 
-  const denoms = (query.data?.denoms ?? []).map(parseDenom)
+  const denoms = useMemo(() => (query.data?.denoms ?? []).map(parseDenom), [query.data])
   return {
     denoms,
     operatorCount: query.data?.operatorCount ?? 0,
@@ -117,4 +120,35 @@ export function useServiceStakeSummary(
       void query.refetch()
     },
   }
+}
+
+/**
+ * The summary priced in USD. Prices are looked up by the underlying asset's
+ * symbol and amounts read with the asset's decimals: share symbols have no
+ * price and share decimals would scale the value into invisibility.
+ * `usdAmountFor` is null for a denom without a price, and `totalUsd` is null
+ * when any denom has none, so a missing price never drops out of the total.
+ */
+export function useServiceStakeUsd(stakeRegistry: Address | undefined): {
+  stake: UseServiceStakeSummaryReturn
+  usdAmountFor: (denom: ServiceStakeDenom) => bigint | null
+  totalUsd: bigint | null
+} {
+  const stake = useServiceStakeSummary(stakeRegistry)
+  const symbols = useMemo(
+    () => Array.from(new Set(stake.denoms.map((d) => d.assetSymbol).filter((s): s is string => Boolean(s)))),
+    [stake.denoms],
+  )
+  const { getPrice } = useAssetPrices({ symbols })
+  const usdAmountFor = (denom: ServiceStakeDenom): bigint | null => {
+    const price = getPrice(denom.assetSymbol ?? undefined)
+    if (!price || denom.assetDecimals === null || denom.totalAssets === null) return null
+    return bigintToUsd(denom.totalAssets, denom.assetDecimals, price.usd)
+  }
+  let totalUsd: bigint | null = 0n
+  for (const denom of stake.denoms) {
+    const usd = usdAmountFor(denom)
+    totalUsd = usd === null || totalUsd === null ? null : totalUsd + usd
+  }
+  return { stake, usdAmountFor, totalUsd }
 }

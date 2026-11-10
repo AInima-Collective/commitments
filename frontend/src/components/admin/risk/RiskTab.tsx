@@ -14,6 +14,7 @@ import {
 import { getContractAddresses } from '../../../config/contracts'
 import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 import { useAnvilTime } from '../../../hooks/useAnvilTime'
+import { POLL } from '../../../hooks/polling'
 import { AdminActionPanel } from '../AdminActionPanel'
 import { useAdminAction } from '../useAdminAction'
 
@@ -376,7 +377,7 @@ function SkimPokePanel({ env }: { env: Env }) {
     abi: skimmingMockStrategyAbi,
     functionName: 'pendingSkim',
     address: strategy,
-    query: { enabled: Boolean(strategy), refetchInterval: 15_000 },
+    query: { enabled: Boolean(strategy), refetchInterval: POLL.fast },
   })
   const [newGains, operatorFee, premiumShare] = pending.data ?? []
 

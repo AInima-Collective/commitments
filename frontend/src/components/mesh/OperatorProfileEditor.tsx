@@ -10,7 +10,7 @@ import {
 } from '../../utils/metadataForm'
 import { type MetadataResult } from '../../hooks/useIndexerMetadata'
 import { useWriteAction } from '../../hooks/useWriteAction'
-import { Input, Notice } from '../ui'
+import { Button, Input, Notice } from '../ui'
 import { OperatorProfileCard } from './OperatorProfileCard'
 
 interface Props {
@@ -47,7 +47,7 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
 
   // Re-populate when the metadata hook delivers fresh values (e.g. first load, refetch).
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription reset on metadata load; see frontend/docs/eslint-disable-rationale.md §Pattern-3
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reseed the form when the loaded metadata changes
     setUri(metadata.uri ?? '')
     setHash(metadata.hash ?? '')
   }, [metadata.uri, metadata.hash])
@@ -188,15 +188,14 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
           placeholder='{"schemaVersion":"operator.v1","name":"..."}'
           style={{ width: '100%' }}
         />
-        <button
-          type="button"
-          className="ds-btn ds-btn--sm"
+        <Button
+          size="sm"
           onClick={handleCompute}
           disabled={scratch.length === 0}
           style={{ marginTop: 'var(--space-2)' }}
         >
           COMPUTE HASH
-        </button>
+        </Button>
       </div>
 
       {parsedPreview && (
@@ -213,22 +212,19 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
           marginTop: 'var(--space-3)',
         }}
       >
-        <button
-          type="button"
-          className="ds-btn ds-btn--primary"
+        <Button
+          variant="primary"
           onClick={handleSave}
           disabled={disabledSave}
         >
           SAVE PROFILE
-        </button>
-        <button
-          type="button"
-          className="ds-btn"
+        </Button>
+        <Button
           onClick={handleReset}
           disabled={isPending || isConfirming}
         >
           RESET PROFILE
-        </button>
+        </Button>
       </div>
     </section>
   )

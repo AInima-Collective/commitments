@@ -48,9 +48,7 @@ export function useFullCommitment({
 
   const full = useMemo<CommitmentWithStatus | null>(
     () => (data && id !== undefined ? mapCommitmentWindow(id, data, 0, hints) : null),
-    // hints destructured to primitive deps so a fresh `hints` object literal
-    // from the caller does not bust this memo every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hints by field, so a fresh `hints` literal does not bust the memo
     [id, data, hints?.committer, hints?.arbiter, hints?.counterparty, hints?.amount],
   )
 

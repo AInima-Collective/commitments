@@ -44,6 +44,8 @@ export interface AgentIdentity {
   metadataStatus?: string
 }
 
+const NOT_AN_AGENT: AgentIdentity = { isAgent: false }
+
 interface RawAgentRow {
   agentId: string
   owner: string
@@ -106,9 +108,8 @@ export interface AgentIdentityMap {
  * queued and fetched in one batched GraphQL call; known addresses return
  * synchronously from the query cache.
  *
- * Pass the **same array reference** across renders or memoize via `useMemo` —
- * like `useOperatorNames`, the hook keys its effect on the joined address
- * list, not deep equality per render.
+ * Pass the **same array reference** across renders or memoize via `useMemo`.
+ * The return keeps its identity until an answer arrives.
  */
 export function useAgentIdentities(
   addresses: ReadonlyArray<Address | string | undefined>,
@@ -148,14 +149,18 @@ export function useAgentIdentities(
 
   const isLoading = indexed.isLoading || (fallbackActive && fallbackReads.isLoading)
 
-  function get(address: string | undefined | null): AgentIdentity | undefined {
-    if (!address) return undefined
-    const entry = indexed.get(address)
-    if (entry !== undefined) return entry ?? { isAgent: false }
-    return fallbackByAddress.get(address.toLowerCase())
-  }
-
-  return { get, isLoading }
+  return useMemo(
+    () => ({
+      get: (address) => {
+        if (!address) return undefined
+        const entry = indexed.get(address)
+        if (entry !== undefined) return entry ?? NOT_AN_AGENT
+        return fallbackByAddress.get(address.toLowerCase())
+      },
+      isLoading,
+    }),
+    [indexed, fallbackByAddress, isLoading],
+  )
 }
 
 /**

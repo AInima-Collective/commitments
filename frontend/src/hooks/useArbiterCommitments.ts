@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
@@ -37,6 +38,9 @@ interface ArbiterIdRow {
   metadataContent: Record<string, unknown> | undefined
 }
 
+const NO_ROWS: ArbiterIdRow[] = []
+const NO_COUNTS = { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 }
+
 interface UseArbiterCommitmentsParams {
   managerAddress: Address | undefined
   /** Connected wallet — the prospective arbiter. */
@@ -58,7 +62,6 @@ interface UseArbiterCommitmentsReturn {
     other: number
     total: number
   }
-  page: { limit: number; offset: number; nextOffset: number | null }
   refetch: () => void
 }
 
@@ -95,7 +98,6 @@ export function useArbiterCommitments({
   } = useQuery<{
     rows: ArbiterIdRow[]
     counts: UseArbiterCommitmentsReturn['counts']
-    page: UseArbiterCommitmentsReturn['page']
   }>({
     enabled,
     queryKey: ['arbiter-commitments', viewAddress?.toLowerCase(), managerAddress?.toLowerCase(), limit, offset],
@@ -104,7 +106,6 @@ export function useArbiterCommitments({
       const payload = await indexerJson<{
         rows?: CommitmentRowWire[]
         counts?: UseArbiterCommitmentsReturn['counts']
-        page?: UseArbiterCommitmentsReturn['page']
       }>(
         `/commitments/urgent?arbiter=${lower}&manager=${managerAddress!.toLowerCase()}&limit=${limit}&offset=${offset}`,
       )
@@ -121,15 +122,12 @@ export function useArbiterCommitments({
           }
         }),
         counts: payload.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
-        page: payload.page ?? { limit, offset, nextOffset: null },
       }
     },
     refetchInterval: POLL.fast,
   })
 
-  const ids = idRows?.rows ?? []
-  const indexedById = new Map(ids.map((r) => [r.id.toString(), r]))
-
+  const ids = idRows?.rows ?? NO_ROWS
   const {
     data: multicallData,
     isLoading: isLoadingData,
@@ -142,37 +140,32 @@ export function useArbiterCommitments({
     },
   })
 
-  const commitments: ArbiterCommitment[] = (() => {
+  // Memoised on the two query results (both structurally shared), so a poll
+  // that changes nothing hands back the same rows and the queue's memoised
+  // rows skip their render.
+  const commitments = useMemo<ArbiterCommitment[]>(() => {
     if (!multicallData || ids.length === 0) return []
     const result: ArbiterCommitment[] = []
     for (let i = 0; i < ids.length; i++) {
       const mapped = mapCommitmentWindow(ids[i].id, multicallData, i * COMMITMENT_STRIDE)
       if (!mapped) continue
-      const indexed = indexedById.get(ids[i].id.toString())
-      result.push({
-        ...mapped,
-        vault: indexed?.vault,
-        metadataURI: indexed?.metadataURI,
-        metadataHash: indexed?.metadataHash,
-        metadataStatus: indexed?.metadataStatus,
-        metadataContent: indexed?.metadataContent,
-      })
+      const { id: _id, ...indexed } = ids[i]
+      result.push({ ...mapped, ...indexed })
     }
     return result
-  })()
+  }, [ids, multicallData])
 
-  function refetch() {
+  const refetch = useCallback(() => {
     void refetchIds()
     void refetchMulticall()
-  }
+  }, [refetchIds, refetchMulticall])
 
   return {
     commitments,
     isLoading: isLoadingIds || (ids.length > 0 && isLoadingData),
     error: (idsError as Error | null) ?? null,
     indexerOnline: hasIndexer,
-    counts: idRows?.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
-    page: idRows?.page ?? { limit, offset, nextOffset: null },
+    counts: idRows?.counts ?? NO_COUNTS,
     refetch,
   }
 }

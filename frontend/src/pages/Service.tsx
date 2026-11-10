@@ -1,18 +1,16 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useChainId } from "wagmi";
 import { type Address } from "viem";
 import { getContractAddresses, getServiceDescriptor } from "../config/contracts";
-import { useAssetPrices } from "../hooks/useAssetPrices";
 import { useOperators } from "../hooks/useOperators";
 import { useOperatorsIndexed } from "../hooks/useOperatorsIndexed";
 import { useServiceMetadata } from "../hooks/useIndexerMetadata";
-import { useServiceStakeSummary, type ServiceStakeDenom } from "../hooks/useServiceStakeSummary";
+import { useServiceStakeUsd } from "../hooks/useServiceStakeSummary";
 import { useServiceOperators } from "../hooks/useServiceOperators";
 import { EmptyState, EntityLogo, Tabs, UsdAmount, VaultHeader, type VaultHeaderStat } from "../components/ui";
 import { PageHeader, ServiceStakeBreakdown, useServiceMeta } from "../components/protocol";
 import { rewriteIpfsURI } from "../lib/ipfs";
-import { bigintToUsd } from "../lib/format";
 import { hostnameOf, twitterHandle } from "../lib/metadata";
 import { chainName } from "../lib/chainName";
 import { OperatorList } from "../components/mesh/OperatorList";
@@ -42,45 +40,7 @@ export default function Service() {
     operatorAddresses,
   });
   const meta = useServiceMetadata(stakeRegistryAddress);
-  const stake = useServiceStakeSummary(stakeRegistryAddress);
-  // Price lookups use the underlying asset symbol (e.g. "USDC"), not the
-  // ERC-4626 share symbol (e.g. "cvUSDC") — CoinGecko doesn't price share
-  // tokens. Same reason `usdAmountFor` formats `totalAssets` with
-  // `assetDecimals` (6 for USDC) rather than `decimals` (15 for cvUSDC):
-  // share decimals scale the asset value into invisibility.
-  const stakeSymbols = useMemo(
-    () => Array.from(new Set(stake.denoms.map((d) => d.assetSymbol).filter((s): s is string => Boolean(s)))),
-    [stake.denoms],
-  );
-  const { getPrice } = useAssetPrices({ symbols: stakeSymbols });
-
-  // Per-denom USD value (USDC-shape 6dp) + a total that's only non-null when
-  // every priced denom resolved. Missing prices render as "PRICE UNAVAILABLE"
-  // on the row instead of silently dropping out of the headline total.
-  const usdAmountFor = useMemo(
-    () =>
-      (denom: ServiceStakeDenom): bigint | null => {
-        const symbol = denom.assetSymbol;
-        const decimals = denom.assetDecimals;
-        const amount = denom.totalAssets;
-        if (!symbol || decimals === null || amount === null) return null;
-        const price = getPrice(symbol);
-        if (!price) return null;
-        return bigintToUsd(amount, decimals, price.usd);
-      },
-    [getPrice],
-  );
-
-  const totalCommittedUsd = useMemo<bigint | null>(() => {
-    if (stake.denoms.length === 0) return 0n;
-    let acc = 0n;
-    for (const denom of stake.denoms) {
-      const usd = usdAmountFor(denom);
-      if (usd === null) return null;
-      acc += usd;
-    }
-    return acc;
-  }, [stake.denoms, usdAmountFor]);
+  const { stake, usdAmountFor, totalUsd: totalCommittedUsd } = useServiceStakeUsd(stakeRegistryAddress);
 
   const hasService = !!stakeRegistryAddress;
   const [activeTab, setActiveTab] = useState<Tab>("operators");

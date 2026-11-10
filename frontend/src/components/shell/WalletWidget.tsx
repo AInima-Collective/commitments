@@ -1,13 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAccount, useConnect, useConnectors, useDisconnect, useSwitchChain } from 'wagmi'
-import { OperatorAvatar } from '../ui'
+import { Button, OperatorAvatar } from '../ui'
 import { EXPECTED_CHAIN_ID } from '../../config/wagmi'
 import { chainName } from '../../lib/chainName'
-
-function truncate(addr: string, lead = 6, tail = 4): string {
-  if (addr.length <= lead + tail + 1) return addr
-  return `${addr.slice(0, lead)}\u2026${addr.slice(-tail)}`
-}
+import { truncateAddress } from '../../lib/format'
 
 export function WalletWidget() {
   const { address, isConnected, isConnecting, chainId } = useAccount()
@@ -55,10 +51,10 @@ export function WalletWidget() {
 
   if (isConnecting) {
     return (
-      <button type="button" className="ds-btn ds-btn--sm" disabled>
+      <Button size="sm" disabled>
         <span className="ds-spinner ds-spinner--xs" aria-hidden />
         connecting…
-      </button>
+      </Button>
     )
   }
 
@@ -76,7 +72,7 @@ export function WalletWidget() {
           data-warn={wrongNetwork || undefined}
         >
           <OperatorAvatar address={address} size="sm" />
-          <span className="ds-wallet-trigger-addr">{truncate(address)}</span>
+          <span className="ds-wallet-trigger-addr">{truncateAddress(address)}</span>
           {wrongNetwork && (
             <span className="ds-glyph ds-glyph--warn ds-wallet-trigger-warn" aria-hidden>!</span>
           )}
@@ -91,7 +87,7 @@ export function WalletWidget() {
             <div className="ds-wallet-menu-head" role="presentation">
               <OperatorAvatar address={address} size="md" />
               <div className="ds-wallet-menu-head-text">
-                <span className="ds-wallet-menu-addr">{truncate(address, 8, 6)}</span>
+                <span className="ds-wallet-menu-addr">{truncateAddress(address, 8, 6)}</span>
                 <span className="ds-wallet-menu-net">
                   <span
                     className={`ds-glyph ${wrongNetwork ? 'ds-glyph--warn' : 'ds-glyph--ok'}`}
@@ -139,15 +135,15 @@ export function WalletWidget() {
 
   return (
     <div ref={wrapRef} className="ds-wallet">
-      <button
-        type="button"
-        className="ds-btn ds-btn--sm ds-btn--primary"
+      <Button
+        variant="primary"
+        size="sm"
         aria-haspopup="menu"
         aria-expanded={showConnectors}
         onClick={() => setShowConnectors((v) => !v)}
       >
         connect wallet
-      </button>
+      </Button>
       {showConnectors && (
         <div
           className="ds-dropdown-panel ds-dropdown-panel--end"

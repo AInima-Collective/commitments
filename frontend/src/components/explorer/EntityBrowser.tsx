@@ -9,6 +9,8 @@ import {
   DataTable,
   EmptyState,
   Notice,
+  Pagination,
+  Tabs,
   TokenAmount,
   type DataTableColumn,
 } from '../ui'
@@ -27,7 +29,6 @@ import {
   type ProtocolAgreementRow,
   type ProtocolArbiterRow,
   type ProtocolCaseRow,
-  type ProtocolEntityPage,
 } from '../../hooks/useProtocolEntityList'
 import { useArbiterProfile } from '../../hooks/useArbiterProfile'
 import type { ArbiterProfile } from '../../lib/arbiterProfile'
@@ -107,63 +108,28 @@ export function EntityBrowser({
         </Notice>
       )}
 
-      <div className="ds-tabs" role="tablist" aria-label="Entity browser tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === t.id}
-            className="ds-tab"
-            onClick={() => setActiveTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div role="tabpanel">
-        {activeTab === 'commitments' && <CommitmentsTable filterAddress={filterAddress} />}
-        {activeTab === 'agreements' && <AgreementsTable filterAddress={filterAddress} />}
-        {activeTab === 'arbiters' && <ArbitersTable filterAddress={filterAddress} />}
-        {activeTab === 'cases' && <CasesTable filterAddress={filterAddress} />}
-      </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EntityType)}>
+        <Tabs.List aria-label="Entity browser tabs">
+          {TABS.map((t) => (
+            <Tabs.Trigger key={t.id} value={t.id}>
+              {t.label}
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
+        <Tabs.Panel value="commitments">
+          <CommitmentsTable filterAddress={filterAddress} />
+        </Tabs.Panel>
+        <Tabs.Panel value="agreements">
+          <AgreementsTable filterAddress={filterAddress} />
+        </Tabs.Panel>
+        <Tabs.Panel value="arbiters">
+          <ArbitersTable filterAddress={filterAddress} />
+        </Tabs.Panel>
+        <Tabs.Panel value="cases">
+          <CasesTable filterAddress={filterAddress} />
+        </Tabs.Panel>
+      </Tabs>
     </section>
-  )
-}
-
-function PaginationNav({
-  page,
-  loading,
-  onOffset,
-}: {
-  page: ProtocolEntityPage
-  loading: boolean
-  onOffset: (offset: number) => void
-}) {
-  const end = Math.min(page.total, page.offset + page.limit)
-  return (
-    <nav className="ds-row ds-row-2" aria-label="Table pages" style={{ justifyContent: 'space-between' }}>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={page.offset === 0 || loading}
-        onClick={() => onOffset(Math.max(0, page.offset - page.limit))}
-      >
-        Previous
-      </Button>
-      <span className="ds-text-xs ds-subtle">
-        {page.total === 0 ? 'No rows' : `${page.offset + 1}–${end} of ${page.total}`}
-      </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={page.nextOffset === null || loading}
-        onClick={() => page.nextOffset !== null && onOffset(page.nextOffset)}
-      >
-        Next
-      </Button>
-    </nav>
   )
 }
 
@@ -213,7 +179,15 @@ function ArbitersTable({ filterAddress }: { filterAddress?: string | null }) {
         getRowKey={(row) => row.address.toLowerCase()}
         emptyState={<EmptyState title="NO ARBITERS" description="No indexed commitment names an arbiter yet." />}
       />
-      <PaginationNav page={page} loading={isLoading} onOffset={setOffset} />
+      <Pagination
+        aria-label="Table pages"
+        offset={page.offset}
+        limit={page.limit}
+        count={rows.length}
+        total={page.total}
+        loading={isLoading}
+        onOffsetChange={setOffset}
+      />
     </div>
   )
 }
@@ -289,7 +263,7 @@ function CasesTable({ filterAddress }: { filterAddress?: string | null }) {
         render: (row) => (
           row.commitmentId !== null && row.manager ? (
             <span className="ds-stack ds-stack-1">
-              <Link to={`/app/commitments/${row.commitmentId}?manager=${row.manager}`}>
+              <Link to={commitmentDetailPath(row.commitmentId, row.manager)}>
                 Commitment #{row.commitmentId.toString()}
               </Link>
               <AddressDisplay address={row.manager} compact />
@@ -383,7 +357,15 @@ function CasesTable({ filterAddress }: { filterAddress?: string | null }) {
         getRowKey={(row) => `${row.source}-${row.arbiter}-${row.caseId ?? row.commitmentId}-${row.proposalInitiatedAt ?? row.updatedAt}`}
         emptyState={<EmptyState title="NO CASES" description="No arbitration or manager-enforcement activity has occurred." />}
       />
-      <PaginationNav page={page} loading={isLoading} onOffset={setOffset} />
+      <Pagination
+        aria-label="Table pages"
+        offset={page.offset}
+        limit={page.limit}
+        count={rows.length}
+        total={page.total}
+        loading={isLoading}
+        onOffsetChange={setOffset}
+      />
     </div>
   )
 }
@@ -410,7 +392,6 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
   const { metaFor } = useTokenMetaMap(filtered.map((row) => row.token))
   const capped = total > filtered.length
 
-  // Not memoized: `names` and `agents` are fresh objects every render.
   const columns: DataTableColumn<ProtocolCommitmentRow>[] = [
     {
       id: 'id',
@@ -589,7 +570,6 @@ function AgreementsTable({ filterAddress }: { filterAddress?: string | null }) {
   const names = useOperatorNames(allAddresses)
   const agents = useAgentIdentities(allAddresses)
 
-  // Not memoized: `names` and `agents` are fresh objects every render.
   const columns: DataTableColumn<ProtocolAgreementRow>[] = [
     {
       id: 'id',

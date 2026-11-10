@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { type Address } from 'viem'
 import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../utils/mesh'
-import { EmptyState, Notice, Skeleton } from '../ui'
+import { Button, EmptyState, Notice, Skeleton } from '../ui'
 import { OperatorRow } from './OperatorRow'
 import { OperatorFilterBar } from './OperatorFilterBar'
 import {
@@ -157,9 +157,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
           title="NO OPERATORS MATCH"
           description="Try a different search, clear a tag filter, or toggle off service-registered."
           action={
-            <button
-              type="button"
-              className="ds-btn"
+            <Button
               onClick={() =>
                 setFilterState({
                   search: '',
@@ -169,7 +167,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
               }
             >
               CLEAR FILTERS
-            </button>
+            </Button>
           }
         />
       ) : (

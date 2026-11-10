@@ -36,8 +36,6 @@ interface CommitmentDetailContentProps {
    *  row's status is UNBONDING. */
   unbondTotalSecs?: number
   unbondElapsed?: number
-  /** Clicking a tag chip. Wire it to the list's tag filter. */
-  onSelectTag?: (tag: string) => void
   /** Re-run the indexer's metadata fetch + verify. */
   onRefetchMetadata?: () => void
   /**
@@ -62,7 +60,6 @@ export function CommitmentDetailContent({
   row,
   unbondTotalSecs,
   unbondElapsed,
-  onSelectTag,
   onRefetchMetadata,
   label,
 }: CommitmentDetailContentProps) {
@@ -108,7 +105,6 @@ export function CommitmentDetailContent({
         termsURI={metadataTermsURI(row)}
         tags={tags}
         attestationId={metadataAttestationId(row)}
-        onSelectTag={onSelectTag}
       />
 
       <LifecycleStepper steps={lifecycle} />

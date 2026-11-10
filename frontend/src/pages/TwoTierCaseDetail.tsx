@@ -5,6 +5,7 @@ import { useChainId } from 'wagmi'
 import { getContractAddresses } from '../config/contracts'
 import { useMechanismArbitration } from '../hooks/useMechanismArbitration'
 import { arbiterProfilePath, commitmentDetailPath } from '../lib/arbitrationRoutes'
+import { parseIdParam } from '../lib/routeParams'
 import { AddressDisplay, Notice, Skeleton } from '../components/ui'
 import { PageHeader, PartyRow } from '../components/protocol'
 
@@ -15,7 +16,7 @@ export default function TwoTierCaseDetail() {
   const manager = getContractAddresses(chainId).commitmentManager
   const [search] = useSearchParams()
   const rawArbiter = search.get('arbiter')
-  const caseId = id && /^(0|[1-9]\d*)$/.test(id) ? BigInt(id) : undefined
+  const caseId = parseIdParam(id) ?? undefined
   const arbiter = rawArbiter && isAddress(rawArbiter) ? rawArbiter as Address : undefined
   const mechanism = useMechanismArbitration({
     arbiter: arbiter ?? '0x0000000000000000000000000000000000000000',

@@ -5,10 +5,6 @@ Every primitive in `components/ui/` follows them. Every PR adding or changing
 a primitive is reviewed against them. Rules are documented here so contributors
 can ship without re-deriving the spec.
 
-The long-form rationale lives in [`frontend/docs/design-system.md`](../../../docs/design-system.md).
-This file is the rule-first companion — read it first, read the rationale only
-when you need it.
-
 ## 1. Composition over configuration
 
 Rule: primitives compose; they do not embed feature knowledge. A primitive
@@ -158,7 +154,6 @@ These rules are enforced by:
   in feature folders, no hex literals outside `tokens.css`
 - Code review — rules 1, 2, 3, 4, 5, 6 (no automated check yet for the
   composition shape; rely on reviewers)
-- `frontend/docs/design-system.md` — long-form rationale, sections 1-12
 
 When in doubt: if the rule isn't here, it isn't a rule. Add a section in a
 follow-up PR rather than enforcing tribal knowledge through review comments.

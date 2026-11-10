@@ -7,7 +7,7 @@ import { useAmountInput } from '../../hooks/useAmountInput'
 import { useRegistryPolicy } from '../../hooks/useRegistryPolicy'
 import { useTx, useTxFeedback } from '../../hooks/useWriteAction'
 import { getDefaultBacking } from '../../config/contracts'
-import { Input, Notice, TokenAmount } from '../ui'
+import { Button, Input, Notice, TokenAmount } from '../ui'
 import { FundingNotice } from '../commitment/FundingNotice'
 
 /**
@@ -261,14 +261,13 @@ export function DelegateToOperatorForm({
             placeholder="0.0000"
             disabled={!isConnected}
           />
-          <button
-            type="button"
-            className="ds-btn ds-btn--max"
+          <Button
+            className="ds-btn--max"
             onClick={handleMaxFree}
             disabled={!isConnected || freeShares === undefined}
           >
             MAX FREE
-          </button>
+          </Button>
         </span>
         <FundingNotice
           amount={parsedAmount}
@@ -282,22 +281,21 @@ export function DelegateToOperatorForm({
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-        <button
+        <Button
           type="submit"
-          className="ds-btn ds-btn--primary ds-btn--full"
+          variant="primary"
+          fullWidth
           disabled={!canSubmit}
           title={!isConnected ? 'Connect wallet to delegate' : undefined}
         >
           {needsDeposit ? 'FUND & DELEGATE' : 'DELEGATE'}
-        </button>
+        </Button>
         {(phase.kind === 'done' || phase.kind === 'error') && (
-          <button
-            type="button"
-            className="ds-btn"
+          <Button
             onClick={handleReset}
           >
             NEW DELEGATION
-          </button>
+          </Button>
         )}
       </div>
 

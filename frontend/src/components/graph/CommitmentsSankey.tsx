@@ -128,11 +128,11 @@ export function CommitmentsSankey({
 }: Props) {
   const { theme } = useTheme()
   // Re-resolve the palette when the theme changes (CSS-cascade re-read).
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- theme drives CSS-cascade re-resolve, see frontend/docs/eslint-disable-rationale.md §Pattern-5
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `theme` is unread here; a theme change is what makes getGraphPalette's CSS variables differ
   const palette = useMemo(() => getGraphPalette(), [theme])
   // Card surface, for the label halo — node labels can cross ribbons, and a
   // paint-order stroke in the surface colour is what keeps them readable there.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- theme drives CSS-cascade re-resolve, see frontend/docs/eslint-disable-rationale.md §Pattern-5
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `theme` is unread here; a theme change is what changes --surface
   const surface = useMemo(() => resolveTokenColor('--surface'), [theme])
 
   const [weight, setWeight] = useState<SankeyWeight>('amount')

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { type Address } from 'viem'
 import { type CommitmentWithStatus } from '../../utils/commitments'
+import { Button } from '../ui'
 import { ResolveCommitmentModal } from './ResolveCommitmentModal'
 
 interface ResolveCommitmentButtonProps {
@@ -31,16 +32,15 @@ export function ResolveCommitmentButton({
 
   return (
     <>
-      <button
-        type="button"
-        className="ds-btn ds-btn--sm"
+      <Button
+        size="sm"
         onClick={(e) => {
           e.stopPropagation()
           setOpen(true)
         }}
       >
         {label}
-      </button>
+      </Button>
       {/* Mounted only while open: the modal body runs a clock and several reads. */}
       {open && (
         <ResolveCommitmentModal

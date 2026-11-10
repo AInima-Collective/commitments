@@ -1,5 +1,6 @@
 import { type Address } from 'viem'
 import { type CommitmentWithStatus, type ForfeitProposalState } from './commitments'
+import { formatDuration } from '../lib/format'
 
 /**
  * Forfeit window TTL constant — mirrors `FORFEIT_PROPOSAL_TTL` in
@@ -122,11 +123,7 @@ function staleAt(forfeit: ForfeitContext): bigint {
 }
 
 function formatRemaining(seconds: bigint): string {
-  if (seconds <= 0n) return 'now'
-  const s = Number(seconds)
-  if (s < 3600) return `${Math.ceil(s / 60)}m`
-  if (s < 86_400) return `${Math.ceil(s / 3600)}h`
-  return `${Math.ceil(s / 86_400)}d`
+  return seconds <= 0n ? 'now' : formatDuration(Number(seconds))
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { isAddress, type Address } from 'viem'
 import { useAccount, useChainId } from 'wagmi'
@@ -7,7 +7,7 @@ import { CommitmentDetailContent } from '../components/commitment/CommitmentDeta
 import { ResolveCommitmentModal } from '../components/commitment/ResolveCommitmentModal'
 import { ArbitrationPanel } from '../components/arbiter/ArbitrationPanel'
 import { CommitmentStatusBadge, CommitmentTitle, PageHeader } from '../components/protocol'
-import { Notice, TokenAmount } from '../components/ui'
+import { Button, Notice, TokenAmount } from '../components/ui'
 import { findOptimisticInsuranceArbiter } from '../config/arbiters'
 import { getContractAddresses } from '../config/contracts'
 import { useCommitmentLabelContext } from '../hooks/useCommitmentLabelContext'
@@ -18,6 +18,7 @@ import { useTokenMeta } from '../hooks/useTokenMeta'
 import { type UnifiedCommitmentRowEntry } from '../hooks/useUnifiedRows'
 import { useViewAddress } from '../hooks/useViewAddress'
 import { commitmentLabel } from '../lib/commitmentLabel'
+import { parseIdParam } from '../lib/routeParams'
 
 /**
  * /commitments/:id — standalone, link-shareable detail surface for a single
@@ -39,16 +40,8 @@ export default function CommitmentDetail() {
   const managerAddress: Address | undefined =
     managerQuery && isAddress(managerQuery) ? (managerQuery as Address) : configuredManager
 
-  // Validate id param up front. BigInt() throws on non-numeric strings — bounce
-  // those back to the listing rather than rendering a broken page.
-  const id = useMemo<bigint | null>(() => {
-    if (!idParam) return null
-    try {
-      return BigInt(idParam)
-    } catch {
-      return null
-    }
-  }, [idParam])
+  // A malformed id bounces back to the listing below.
+  const id = parseIdParam(idParam)
 
   const indexed = useIndexedCommitment(id ?? undefined, viewAddress, managerAddress)
   // v2: every commitment carries its own backing token. Amounts are denominated
@@ -115,60 +108,50 @@ export default function CommitmentDetail() {
     )
   }
 
+  const placeholder = (body: ReactNode) => (
+    <div className="ds-page">
+      <BackLink origin={origin} />
+      <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
+      {body}
+    </div>
+  )
+
   if (!indexed.indexerOnline) {
-    return (
-      <div className="ds-page">
-        <BackLink origin={origin} />
-        <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
-        <Notice tone="warn" title="Details unavailable">
-          Commitment details are temporarily unavailable — please retry shortly.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="warn" title="Details unavailable">
+        Commitment details are temporarily unavailable — please retry shortly.
+      </Notice>,
     )
   }
 
   if (indexed.notFound) {
-    return (
-      <div className="ds-page">
-        <BackLink origin={origin} />
-        <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
-        <Notice tone="warn" title="Commitment not found">
-          No commitment with id <code>#{id?.toString()}</code> exists in the indexer. It may be
-          on a different chain, or the indexer hasn't caught up yet.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="warn" title="Commitment not found">
+        No commitment with id <code>#{id?.toString()}</code> exists in the indexer. It may be
+        on a different chain, or the indexer hasn't caught up yet.
+      </Notice>,
     )
   }
 
   if (indexed.error) {
-    return (
-      <div className="ds-page">
-        <BackLink origin={origin} />
-        <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
-        <Notice
-          tone="danger"
-          title="Failed to load commitment"
-          actions={
-            <button type="button" className="ds-btn ds-btn--sm" onClick={indexed.refetch}>
-              retry
-            </button>
-          }
-        >
-          {indexed.error.message}
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice
+        tone="danger"
+        title="Failed to load commitment"
+        actions={
+          <Button size="sm" onClick={indexed.refetch}>
+            retry
+          </Button>
+        }
+      >
+        {indexed.error.message}
+      </Notice>,
     )
   }
 
   if (!row || !label) {
     // First load — render the chrome so the URL feels responsive.
-    return (
-      <div className="ds-page">
-        <BackLink origin={origin} />
-        <PageHeader eyebrow="primitive" title={`Commitment #${id?.toString() ?? ''}`} />
-        <p className="ds-subtle">Loading commitment…</p>
-      </div>
-    )
+    return placeholder(<p className="ds-subtle">Loading commitment…</p>)
   }
 
   // Unbond countdown — derived from the indexed timestamps so anonymous
@@ -234,15 +217,14 @@ export default function CommitmentDetail() {
                 tokenSymbol={symbol}
               />
             )}
-            <button
-              type="button"
-              className="ds-btn ds-btn--primary"
+            <Button
+              variant="primary"
               onClick={() => setResolveOpen(true)}
               disabled={!full}
               title={!full ? 'Loading commitment data…' : undefined}
             >
               Open resolve flow
-            </button>
+            </Button>
           </div>
         }
       />

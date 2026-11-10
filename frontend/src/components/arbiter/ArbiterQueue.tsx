@@ -1,5 +1,5 @@
 import { useReadContract } from 'wagmi'
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { type Address } from 'viem'
 import { commitmentManagerAbi } from '../../generated'
 
@@ -9,9 +9,11 @@ import { POLL } from '../../hooks/polling'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { compareCommitmentUrgency } from '../../lib/commitmentSort'
 import {
+  Button,
   Disclosure,
   EmptyState,
   Notice,
+  Pagination,
   Skeleton,
   StatBlock,
   TokenAmount,
@@ -82,20 +84,14 @@ const BUCKET_ORDER: ArbiterQueueBucket[] = ['executable', 'pending', 'active', '
  */
 export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: ArbiterQueueProps) {
   const paginationScope = `${connectedAddress?.toLowerCase() ?? ''}-${managerAddress?.toLowerCase() ?? ''}`
-  const [pagination, setPagination] = useState({ scope: paginationScope, page: 0 })
-  const page = pagination.scope === paginationScope ? pagination.page : 0
-  const setPage = (update: (value: number) => number) => {
-    setPagination((current) => ({
-      scope: paginationScope,
-      page: update(current.scope === paginationScope ? current.page : 0),
-    }))
-  }
+  const [pagination, setPagination] = useState({ scope: paginationScope, offset: 0 })
+  const offset = pagination.scope === paginationScope ? pagination.offset : 0
   const pageSize = 50
-  const { commitments, counts, page: pageInfo, isLoading, error, indexerOnline, refetch } = useArbiterCommitments({
+  const { commitments, counts, isLoading, error, indexerOnline, refetch } = useArbiterCommitments({
     managerAddress,
     viewAddress: connectedAddress,
     limit: pageSize,
-    offset: page * pageSize,
+    offset,
   })
   const { data: pauseRaw } = useReadContract({
     abi: commitmentManagerAbi,
@@ -149,37 +145,35 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     />
   )
 
+  const placeholder = (body: ReactNode) => (
+    <div className="ds-page">
+      {header}
+      {body}
+    </div>
+  )
+
   if (!isConnected || !connectedAddress) {
-    return (
-      <div className="ds-page">
-        {header}
-        <Notice tone="info" title="Connect a wallet">
-          Connect the wallet that arbitrates commitments to see your queue. This view is
-          arbiter-scoped — it lists only commitments whose arbiter matches the connected address.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="info" title="Connect a wallet">
+        Connect the wallet that arbitrates commitments to see your queue. This view is
+        arbiter-scoped — it lists only commitments whose arbiter matches the connected address.
+      </Notice>,
     )
   }
 
   if (!managerAddress) {
-    return (
-      <div className="ds-page">
-        {header}
-        <Notice tone="danger" title="Commitment manager not configured">
-          Set <code>VITE_COMMITMENT_MANAGER_ADDRESS</code> to enable arbitration.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="danger" title="Commitment manager not configured">
+        Set <code>VITE_COMMITMENT_MANAGER_ADDRESS</code> to enable arbitration.
+      </Notice>,
     )
   }
 
   if (!indexerOnline) {
-    return (
-      <div className="ds-page">
-        {header}
-        <Notice tone="warn" title="Arbiter queue unavailable">
-          The arbiter queue is temporarily unavailable — please check back shortly.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="warn" title="Arbiter queue unavailable">
+        The arbiter queue is temporarily unavailable — please check back shortly.
+      </Notice>,
     )
   }
 
@@ -199,9 +193,9 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
           tone="danger"
           title="Failed to load arbiter queue"
           actions={
-            <button type="button" className="ds-btn ds-btn--sm" onClick={refetch}>
+            <Button size="sm" onClick={refetch}>
               retry
-            </button>
+            </Button>
           }
         >
           {error.message}
@@ -248,29 +242,15 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
               </section>
             )
           })}
-          <nav className="ds-row ds-row-2" aria-label="Arbiter commitment pages" style={{ justifyContent: 'space-between' }}>
-            <button
-              type="button"
-              className="ds-btn ds-btn--sm"
-              disabled={page === 0 || isLoading}
-              onClick={() => setPage((value) => Math.max(0, value - 1))}
-            >
-              Previous
-            </button>
-            <span className="ds-text-xs ds-subtle">
-              {counts.total === 0
-                ? 'No commitments'
-                : `${pageInfo.offset + 1}–${pageInfo.offset + commitments.length} of ${counts.total}`}
-            </span>
-            <button
-              type="button"
-              className="ds-btn ds-btn--sm"
-              disabled={pageInfo.nextOffset === null || isLoading}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Next
-            </button>
-          </nav>
+          <Pagination
+            aria-label="Arbiter commitment pages"
+            offset={offset}
+            limit={pageSize}
+            count={commitments.length}
+            total={counts.total}
+            loading={isLoading}
+            onOffsetChange={(next) => setPagination({ scope: paginationScope, offset: next })}
+          />
         </div>
       )}
     </div>
@@ -288,7 +268,8 @@ interface ArbiterQueueRowProps {
   onActed: () => void
 }
 
-function ArbiterQueueRow({
+// Memoised so a poll that changes nothing re-renders no row.
+const ArbiterQueueRow = memo(function ArbiterQueueRow({
   commitment,
   bucket,
   managerAddress,
@@ -350,7 +331,7 @@ function ArbiterQueueRow({
       </Disclosure>
     </div>
   )
-}
+})
 
 /** The row's ticking part: the pause-adjusted forfeit execution delay. */
 function ForfeitCountdown({

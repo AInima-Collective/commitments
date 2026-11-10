@@ -17,6 +17,7 @@ import { formatBps } from '../../utils/commitments'
 import { legibleWriteError } from '../../utils/contractErrors'
 import { ZERO_HASH } from '../../utils/metadataForm'
 import {
+  Button,
   Disclosure,
   Input,
   Notice,
@@ -374,14 +375,13 @@ export function CreateCommitmentForm({
               placeholder="0.0000"
               tone={amountError ? 'danger' : 'neutral'}
             />
-            <button
-              type="button"
-              className="ds-btn ds-btn--max"
+            <Button
+              className="ds-btn--max"
               onClick={handleMaxFree}
               disabled={disabled || freeBalance === undefined}
             >
               MAX FREE
-            </button>
+            </Button>
           </div>
           {freeBalance !== undefined && (
             <Notice tone="info" size="sm">
@@ -570,14 +570,13 @@ export function CreateCommitmentForm({
                   onChange={(e) => setExpiryValue(e.target.value)}
                   disabled={disabled}
                 />
-                <button
-                  type="button"
-                  className="ds-btn ds-btn--max"
+                <Button
+                  className="ds-btn--max"
                   onClick={() => setExpiryValue('')}
                   disabled={disabled}
                 >
                   CLEAR
-                </button>
+                </Button>
               </div>
               {!expiryValue && <Notice tone="info" size="sm">NO EXPIRY</Notice>}
             </div>
@@ -628,9 +627,10 @@ export function CreateCommitmentForm({
             Pin your metadata (or clear the fields) before creating the commitment.
           </Notice>
         )}
-        <button
+        <Button
           type="submit"
-          className="ds-btn ds-btn--primary ds-btn--full"
+          variant="primary"
+          fullWidth
           disabled={disabled || !isValidForm || isPendingAny}
           title={!isConnected ? 'Connect wallet to create commitments' : undefined}
         >
@@ -641,7 +641,7 @@ export function CreateCommitmentForm({
               : needsDeposit
                 ? 'FUND & CREATE'
                 : 'CREATE COMMITMENT'}
-        </button>
+        </Button>
       </form>
     </div>
   )

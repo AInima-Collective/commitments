@@ -3,7 +3,7 @@ import { type Address } from 'viem'
 import { useAccount } from 'wagmi'
 import { commitmentManagerAbi } from '../../generated'
 import { type AgreementProposalWithStatus } from '../../utils/agreements'
-import { AddressDisplay, Notice, OperatorAvatar, TokenAmount } from '../ui'
+import { AddressDisplay, Button, Notice, OperatorAvatar, TokenAmount } from '../ui'
 import { CommitmentStatusBadge } from '../protocol'
 import { useCountdown } from '../../hooks/useCountdown'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
@@ -153,9 +153,8 @@ export function ProposalCard({
       <div className="ds-decision-row-actions">
         {!proposal.viewerIsProposer ? (
           <>
-            <button
-              type="button"
-              className="ds-btn ds-btn--primary"
+            <Button
+              variant="primary"
               onClick={handleAccept}
               disabled={
                 !isConnected || isAcceptPendingAny || isCancelPendingAny || insufficientBacking
@@ -169,27 +168,23 @@ export function ProposalCard({
               }
             >
               {isAcceptPendingAny ? 'ACCEPTING...' : 'ACCEPT'}
-            </button>
-            <button
-              type="button"
-              className="ds-btn"
+            </Button>
+            <Button
               onClick={handleCancelOrReject}
               disabled={!isConnected || isAcceptPendingAny || isCancelPendingAny}
               title={!isConnected ? 'Connect wallet to reject' : undefined}
             >
               {isCancelPendingAny ? 'REJECTING...' : 'REJECT'}
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            type="button"
-            className="ds-btn"
+          <Button
             onClick={handleCancelOrReject}
             disabled={!isConnected || isCancelPendingAny}
             title={!isConnected ? 'Connect wallet to cancel' : undefined}
           >
             {isCancelPendingAny ? 'CANCELLING...' : 'CANCEL PROPOSAL'}
-          </button>
+          </Button>
         )}
       </div>
     </article>

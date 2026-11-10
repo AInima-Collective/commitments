@@ -296,16 +296,15 @@ export function MetadataEditor({ schema, onChange, onStatusChange, disabled = fa
                   {tags.map((t) => (
                     <span key={t} className="ds-row ds-row-1" style={{ alignItems: 'center' }}>
                       <TokenChip symbol={t} />
-                      <button
-                        type="button"
-                        className="ds-btn ds-btn--sm"
+                      <Button
+                        size="sm"
                         aria-label={`Remove tag ${t}`}
                         title={`Remove tag ${t}`}
                         onClick={() => removeTag(t)}
                         disabled={controlsDisabled}
                       >
                         ×
-                      </button>
+                      </Button>
                     </span>
                   ))}
                 </div>

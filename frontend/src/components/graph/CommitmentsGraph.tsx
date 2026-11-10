@@ -35,7 +35,7 @@ import type {
   OperatorsGraphNode,
   OperatorsGraphPayload,
 } from '../../lib/graph/types'
-import { useTheme } from '../ui'
+import { Button, useTheme } from '../ui'
 
 type Mode = 'agreements' | 'mesh' | 'mesh-topology' | 'operators'
 
@@ -90,7 +90,7 @@ export function CommitmentsGraph({
   // Resolve palette per-render so SigmaContainer's mount-time settings (label
   // colors) reflect the current theme. Live theme switches after mount land
   // via the LayoutAndEvents `applyPalette` effect — see below.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- theme drives CSS-cascade re-resolve, see frontend/docs/eslint-disable-rationale.md §Pattern-5
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `theme` is unread here; a theme change is what makes getGraphPalette's CSS variables differ
   const palette = useMemo(() => getGraphPalette(), [theme])
 
   const graph = useMemo<BuiltGraph | null>(() => {
@@ -359,15 +359,15 @@ function NodeDetailPanel({
               <span className="ds-label">Address</span>
               <code className="ds-text-sm">{selected.id}</code>
             </div>
-            <button
-              type="button"
-              className="ds-btn ds-btn--ghost ds-btn--sm"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onClear}
               aria-label="Clear selection"
               title="Clear selection"
             >
               ×
-            </button>
+            </Button>
           </header>
           <dl className="ds-stack ds-stack-2" style={{ margin: 0 }}>
             <DetailRows data={selected.data} />

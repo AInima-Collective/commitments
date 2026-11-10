@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { type Address } from 'viem'
@@ -6,10 +6,12 @@ import { useChainId } from 'wagmi'
 
 import { agentDisplayName, parseRegistration } from '../components/agent/registration'
 import { AgentBadge, CommitmentStatusBadge, OperatorIdentity, PageHeader, PartyRow, RiskRow } from '../components/protocol'
-import { AddressDisplay, Card, EmptyState, Notice, Skeleton, StatBlock, TokenAmount } from '../components/ui'
+import { AddressDisplay, Button, Card, EmptyState, Notice, Skeleton, StatBlock, TokenAmount } from '../components/ui'
 import { getContractAddresses } from '../config/contracts'
 import { hasIndexer, indexerJson } from '../config/indexer'
+import { commitmentDetailPath } from '../lib/arbitrationRoutes'
 import { commitmentStatusFromWire } from '../lib/indexerRows'
+import { parseIdParam } from '../lib/routeParams'
 import { useVaults } from '../hooks/useVaults'
 import { useAgentsIndexed, type AgentBondRow } from '../hooks/useAgentsIndexed'
 import { useMutuals, type MutualIndexed } from '../hooks/useMutuals'
@@ -24,14 +26,7 @@ import { useTokenMetaMap } from '../hooks/useTokenMeta'
  */
 export default function AgentDetail() {
   const { agentId: idParam } = useParams<{ agentId: string }>()
-  const id = useMemo<bigint | null>(() => {
-    if (idParam === undefined) return null
-    try {
-      return BigInt(idParam)
-    } catch {
-      return null
-    }
-  }, [idParam])
+  const id = parseIdParam(idParam)
 
   const { agents, isLoading, isReady, refetch } = useAgentsIndexed()
   const agent = id !== null ? agents.find((a) => a.agentId === id) : undefined
@@ -84,59 +79,49 @@ export default function AgentDetail() {
     return <Navigate to="/app/agents" replace />
   }
 
+  const placeholder = (body: ReactNode) => (
+    <div className="ds-page">
+      <BackLink />
+      <PageHeader eyebrow="erc-8004" title={`Agent #${id?.toString() ?? ''}`} />
+      {body}
+    </div>
+  )
+
   if (!hasIndexer) {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="erc-8004" title={`Agent #${id?.toString() ?? ''}`} />
-        <Notice tone="info" title="Indexer required">
-          Agent dossiers need the indexer's registry mirror. Set <code>VITE_INDEXER_URL</code> and run the
-          indexer.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="info" title="Indexer required">
+        Agent dossiers need the indexer's registry mirror. Set <code>VITE_INDEXER_URL</code> and run the
+        indexer.
+      </Notice>,
     )
   }
 
   if (isLoading && !agent) {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="erc-8004" title={`Agent #${id?.toString() ?? ''}`} />
-        <Skeleton shape="block" style={{ height: 280 }} />
-      </div>
-    )
+    return placeholder(<Skeleton shape="block" style={{ height: 280 }} />)
   }
 
   if (!isReady) {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="erc-8004" title={`Agent #${id?.toString() ?? ''}`} />
-        <Notice
-          tone="warn"
-          title="Agent unavailable"
-          actions={
-            <button type="button" className="ds-btn ds-btn--sm" onClick={refetch}>
-              retry
-            </button>
-          }
-        >
-          Live agent data is temporarily unavailable — please retry shortly.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice
+        tone="warn"
+        title="Agent unavailable"
+        actions={
+          <Button size="sm" onClick={refetch}>
+            retry
+          </Button>
+        }
+      >
+        Live agent data is temporarily unavailable — please retry shortly.
+      </Notice>,
     )
   }
 
   if (!agent) {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="erc-8004" title={`Agent #${id?.toString() ?? ''}`} />
-        <Notice tone="warn" title="Agent not found">
-          No agent with id <code>#{id?.toString()}</code> in the identity registry. It may be on a different
-          chain, or the indexer hasn't caught up yet.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="warn" title="Agent not found">
+        No agent with id <code>#{id?.toString()}</code> in the identity registry. It may be on a different
+        chain, or the indexer hasn't caught up yet.
+      </Notice>,
     )
   }
 
@@ -318,9 +303,9 @@ function BondRow({
       className="ds-row"
       role="link"
       tabIndex={0}
-      onClick={() => navigate(`/app/commitments/${bond.id.toString()}`)}
+      onClick={() => navigate(commitmentDetailPath(bond.id))}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') navigate(`/app/commitments/${bond.id.toString()}`)
+        if (e.key === 'Enter') navigate(commitmentDetailPath(bond.id))
       }}
       aria-label={`Bond commitment #${bond.id.toString()}`}
       style={{

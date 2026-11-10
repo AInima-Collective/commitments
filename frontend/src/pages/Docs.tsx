@@ -42,7 +42,7 @@ function DocBody({ entry }: { entry: DocEntry }) {
 
   useEffect(() => {
     let cancelled = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription reset; see frontend/docs/eslint-disable-rationale.md §Pattern-3
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the previous doc while the next one loads
     setState(null)
     setError(null)
     loadDocBody(entry)

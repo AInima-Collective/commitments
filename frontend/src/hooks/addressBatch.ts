@@ -35,10 +35,20 @@ export function createAddressBatcher<T>(
 }
 
 /**
+ * `useQueries` keeps a combined result's identity while the answers are
+ * unchanged, so the memo over it holds across renders. Module-level so the
+ * function's identity is stable too.
+ */
+function combineAnswers<T>(results: Array<{ data: T | null | undefined; isPending: boolean }>) {
+  return { data: results.map((r) => r.data), isPending: results.some((r) => r.isPending) }
+}
+
+/**
  * Resolve a page's address list through a batcher, one query per address in
  * the query cache (keyed by chain, so a network switch never serves another
  * chain's answer). Values are cached for the session: names and identities
- * change only by deliberate on-chain action.
+ * change only by deliberate on-chain action. The return keeps its identity
+ * until an answer arrives.
  *
  * `get` returns `undefined` while unknown, `null` for "looked up, not found".
  */
@@ -60,14 +70,17 @@ export function useBatchedByAddress<T>(
       queryFn: () => load(address),
       staleTime: Infinity,
     })),
+    combine: combineAnswers<T>,
   })
-  const byAddress = new Map<string, T | null>()
-  results.forEach((r, i) => {
-    if (r.data !== undefined) byAddress.set(lc[i], r.data)
-  })
-  return {
-    lc,
-    get: (address) => (address ? byAddress.get(address.toLowerCase()) : undefined),
-    isLoading: hasIndexer && results.some((r) => r.isPending),
-  }
+  return useMemo(() => {
+    const byAddress = new Map<string, T | null>()
+    results.data.forEach((d, i) => {
+      if (d !== undefined) byAddress.set(lc[i], d)
+    })
+    return {
+      lc,
+      get: (address) => (address ? byAddress.get(address.toLowerCase()) : undefined),
+      isLoading: hasIndexer && results.isPending,
+    }
+  }, [lc, results])
 }

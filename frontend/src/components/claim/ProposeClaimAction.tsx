@@ -4,12 +4,13 @@ import { parseUnits, type Address, type Hex } from 'viem'
 import { useAccount, useReadContract } from 'wagmi'
 
 import { optimisticInsuranceArbiterAbi } from '../../generated'
+import { POLL } from '../../hooks/polling'
 import { useProposeClaimFlow } from '../../hooks/useProposeClaimFlow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { formatTokenAmount } from '../../lib/format'
 import { formatBps } from '../../utils/commitments'
 import { ZERO_HASH, computeHashFromJsonText } from '../../utils/metadataForm'
-import { Input, Modal, Notice, TokenAmount, useToasts } from '../ui'
+import { Button, Input, Modal, Notice, TokenAmount, useToasts } from '../ui'
 import { legibleWriteError } from '../../utils/contractErrors'
 
 /** Claim-size presets as a fraction of the commitment's maxPenaltyBps. */
@@ -60,9 +61,9 @@ export function ProposeClaimAction({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button type="button" className="ds-btn" onClick={() => setOpen(true)}>
+      <Button onClick={() => setOpen(true)}>
         Propose claim
-      </button>
+      </Button>
       <Modal
         open={open}
         onClose={() => setOpen(false)}
@@ -118,7 +119,7 @@ function ProposeClaimBody({
     functionName: 'activeClaimOf',
     address: arbiterAddress,
     args: [commitmentId],
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: POLL.fast },
   })
   const { data: answerTimeout } = useReadContract({
     abi: optimisticInsuranceArbiterAbi,
@@ -359,12 +360,11 @@ function ProposeClaimBody({
       )}
 
       <div className="ds-row ds-row-2" style={{ justifyContent: 'flex-end' /* layout only */ }}>
-        <button type="button" className="ds-btn" onClick={onClose} disabled={isPending}>
+        <Button onClick={onClose} disabled={isPending}>
           CANCEL
-        </button>
-        <button
-          type="button"
-          className="ds-btn ds-btn--primary"
+        </Button>
+        <Button
+          variant="primary"
           onClick={handleSubmit}
           disabled={!canSubmit}
           title={disabledReason}
@@ -376,7 +376,7 @@ function ProposeClaimBody({
               : needsApproval
                 ? `APPROVE ${bondSymbol} BOND`
                 : 'PROPOSE CLAIM'}
-        </button>
+        </Button>
       </div>
 
       <Notice tone="neutral" size="sm" title="WHAT HAPPENS NEXT">

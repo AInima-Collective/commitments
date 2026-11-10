@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { truncateAddress } from '../../lib/format'
 
 interface AddressDisplayProps {
   address: `0x${string}`
@@ -12,19 +13,10 @@ interface AddressDisplayProps {
   compact?: boolean
 }
 
-function truncate(a: string, lead = 6, tail = 4): string {
-  // Defensive: a missing address (e.g. a not-yet-migrated indexer field) must
-  // degrade to a placeholder rather than throw `undefined.length` and take the
-  // whole page down. Callers should still pass a real address.
-  if (!a) return '\u2014'
-  if (a.length <= lead + tail + 1) return a
-  return `${a.slice(0, lead)}\u2026${a.slice(-tail)}`
-}
-
 export function AddressDisplay({ address, ens, explorerUrl, compact = false }: AddressDisplayProps) {
   const [copied, setCopied] = useState(false)
   const display = ens ?? address ?? '\u2014'
-  const short = ens ?? truncate(address)
+  const short = ens ?? truncateAddress(address)
 
   const onCopy = async () => {
     try {

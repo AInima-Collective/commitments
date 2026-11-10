@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { Hex } from 'viem'
+import { commitmentDetailPath } from '../../lib/arbitrationRoutes'
 
 import { AddressDisplay, Notice, SourceBlock } from '../ui'
 import type { ProposalKind } from './Status'
@@ -143,7 +144,7 @@ function ForfeitArbitrationBody({ decoded }: { decoded: ForfeitDecoded }) {
         {decoded.commitmentId ? (
           <Link
             className="ds-link"
-            to={`/app/commitments/${decoded.commitmentId}`}
+            to={commitmentDetailPath(BigInt(decoded.commitmentId), decoded.manager)}
             title={`Open commitment #${decoded.commitmentId}`}
           >
             #{decoded.commitmentId}

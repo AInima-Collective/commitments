@@ -12,7 +12,7 @@ import {
   type ResolveAction,
   type ResolveActionKind,
 } from '../../../utils/resolveActions'
-import { Input, TokenAmount } from '../../ui'
+import { Button, Input, TokenAmount, type ButtonVariant } from '../../ui'
 import { useWriteAction } from '../../../hooks/useWriteAction'
 
 interface ResolveActionRowProps {
@@ -152,11 +152,11 @@ function ActionBody(props: ResolveActionRowProps) {
     case 'request-unbond':
       return <SimpleAction {...props} fnName="requestUnbond" idle="Request unbond" pending="Submitting…" success="Unbond requested" />
     case 'finalize-unbond':
-      return <SimpleAction {...props} fnName="finalizeUnbond" idle="Close commitment" pending="Closing…" success="Closed" primary />
+      return <SimpleAction {...props} fnName="finalizeUnbond" idle="Close commitment" pending="Closing…" success="Closed" variant="primary" />
     case 'cancel-unbond':
       return <SimpleAction {...props} fnName="cancelUnbond" idle="Cancel unbond" pending="Cancelling…" success="Cancelled" variant="ghost" />
     case 'execute-forfeit':
-      return <SimpleAction {...props} fnName="executeForfeit" idle="Execute forfeit" pending="Executing…" success="Executed" primary />
+      return <SimpleAction {...props} fnName="executeForfeit" idle="Execute forfeit" pending="Executing…" success="Executed" variant="primary" />
     case 'cancel-forfeit':
       return <SimpleAction {...props} fnName="cancelForfeit" idle="Cancel forfeit" pending="Cancelling…" success="Cancelled" variant="ghost" />
     case 'cancel-stale-forfeit':
@@ -174,7 +174,7 @@ function ActionBody(props: ResolveActionRowProps) {
     case 'request-mutual-exit':
       return <SimpleAction {...props} fnName="requestMutualExit" idle="Request exit" pending="Submitting…" success="Exit requested" />
     case 'release-mutual-member':
-      return <SimpleAction {...props} fnName="releaseMutualMember" idle="Release member" pending="Releasing…" success="Released" primary />
+      return <SimpleAction {...props} fnName="releaseMutualMember" idle="Release member" pending="Releasing…" success="Released" variant="primary" />
   }
 }
 
@@ -193,15 +193,14 @@ interface SimpleActionExtras {
   idle: string
   pending: string
   success: string
-  primary?: boolean
-  variant?: 'ghost'
+  variant?: ButtonVariant
 }
 
 /** Disabled placeholder for yield actions whose v2 UI is deferred. */
 function DeferredAction({ label, reason }: { label: string; reason: string }) {
   return (
     <ButtonRow
-      buttonClassName="ds-btn ds-btn--ghost"
+      variant="ghost"
       onClick={() => {}}
       disabled
       label={label}
@@ -219,7 +218,6 @@ function SimpleAction({
   idle,
   pending,
   success,
-  primary,
   variant,
   onActed,
 }: ResolveActionRowProps & SimpleActionExtras) {
@@ -238,17 +236,9 @@ function SimpleAction({
     })
   }
 
-  const cls = [
-    'ds-btn',
-    primary ? 'ds-btn--primary' : '',
-    variant === 'ghost' ? 'ds-btn--ghost' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-
   return (
     <ButtonRow
-      buttonClassName={cls}
+      variant={variant}
       onClick={handleClick}
       disabled={!action.enabled || isPendingAny}
       label={isPendingAny ? pending : idle}
@@ -313,7 +303,6 @@ function InitiateForfeitAction({
         </span>
       </div>
       <ButtonRow
-        buttonClassName="ds-btn"
         onClick={handleClick}
         disabled={!action.enabled || isPendingAny}
         label={isPendingAny ? 'Initiating…' : 'Initiate forfeit'}
@@ -453,7 +442,6 @@ function StrategyClaimButton({
 
   return (
     <ButtonRow
-      buttonClassName="ds-btn"
       onClick={handleClick}
       disabled={!enabled || isPendingAny}
       label={isPendingAny ? `${verb}ing…` : idleLabel}
@@ -487,7 +475,6 @@ function DistributeYieldAction({
   return (
     <div className="ds-stack ds-stack-2">
       <ButtonRow
-        buttonClassName="ds-btn"
         onClick={() => distribute()}
         disabled={!action.enabled || isPendingAny}
         label={isPendingAny ? 'Distributing…' : 'Distribute yield'}
@@ -539,7 +526,6 @@ function SettleMutualLossAction({
 
   return (
     <ButtonRow
-      buttonClassName="ds-btn"
       onClick={handleClick}
       disabled={!action.enabled || isPendingAny}
       label={isPendingAny ? 'Settling…' : idleLabel}
@@ -549,7 +535,7 @@ function SettleMutualLossAction({
 }
 
 interface ButtonRowProps {
-  buttonClassName: string
+  variant?: ButtonVariant
   onClick: () => void
   disabled: boolean
   label: ReactNode
@@ -558,7 +544,7 @@ interface ButtonRowProps {
 }
 
 function ButtonRow({
-  buttonClassName,
+  variant,
   onClick,
   disabled,
   label,
@@ -567,15 +553,9 @@ function ButtonRow({
 }: ButtonRowProps) {
   return (
     <div className="ds-row ds-row-2">
-      <button
-        type="button"
-        className={buttonClassName}
-        onClick={onClick}
-        disabled={disabled}
-        title={title}
-      >
+      <Button variant={variant} onClick={onClick} disabled={disabled} title={title}>
         {label}
-      </button>
+      </Button>
       {success && (
         <span className="ds-tx-success ds-text-xs">{success}</span>
       )}

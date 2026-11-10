@@ -20,7 +20,8 @@ import {
 } from '../components/ui'
 import { PageHeader } from '../components/protocol'
 import { ActivityFeed, type ActivityEvent } from '../components/protocol/ActivityFeed'
-import { getContractAddresses, getVaultRegistry } from '../config/contracts'
+import { getContractAddresses } from '../config/contracts'
+import { useVaults } from '../hooks/useVaults'
 import { useVaultStats } from '../hooks/useVaultStats'
 import { useOperatorsIndexed } from '../hooks/useOperatorsIndexed'
 import { useServiceOperators } from '../hooks/useServiceOperators'
@@ -36,7 +37,7 @@ import { useTokenMeta, useTokenMetaMap } from '../hooks/useTokenMeta'
 import { commitmentsVaultAbi } from '../generated'
 import { deriveOperatorStatus } from '../utils/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
-import { arbiterProfilePath } from '../lib/arbitrationRoutes'
+import { arbiterProfilePath, commitmentDetailPath } from '../lib/arbitrationRoutes'
 
 type GraphMode = 'agreements' | 'operators' | 'flow'
 
@@ -47,11 +48,11 @@ const VIEW_OPTIONS = [
 ] as const
 
 /**
- * /explorer — protocol-wide overview. Hero is the existing CommitmentsGraph
- * fed unscoped data via four ViewToggle modes. Below the graph: an
- * Etherscan-style EntityBrowser with sortable tables for vaults, commitments,
- * agreements, and operators. KPI strip up top is sourced from the
- * /protocol/stats endpoint plus on-chain TVL via useVaultStats.
+ * /explorer — protocol-wide overview. Hero is the CommitmentsGraph (or the
+ * flow Sankey) fed unscoped data via three ViewToggle modes. Below the graph:
+ * an Etherscan-style EntityBrowser with tabs for commitments, agreements,
+ * arbiters and cases. KPI strip up top is sourced from the /protocol/stats
+ * endpoint plus on-chain TVL via useVaultStats.
  *
  * Search bar accepts:
  *   - 0x-address → highlights node in the active graph
@@ -62,7 +63,7 @@ export default function Explorer() {
   const navigate = useNavigate()
 
   const { stakeRegistry: stakeRegistryAddress } = getContractAddresses(chainId)
-  const vaults = useMemo(() => getVaultRegistry(chainId), [chainId])
+  const { vaults } = useVaults()
   const primaryVault = vaults[0]?.address
   const primaryVaultName = vaults[0]?.name
 
@@ -126,7 +127,7 @@ export default function Explorer() {
     const trimmed = search.trim()
     if (!trimmed) return
     if (/^\d+$/.test(trimmed)) {
-      navigate(`/app/commitments/${trimmed}`, {
+      navigate(commitmentDetailPath(BigInt(trimmed)), {
         state: { commitmentOrigin: 'explorer' },
       })
       setSearchError(null)

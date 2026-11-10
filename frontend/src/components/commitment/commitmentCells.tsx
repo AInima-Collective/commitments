@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type Address } from 'viem'
-import { AddressDisplay, TokenAmount } from '../ui'
+import { AddressDisplay, Button, TokenAmount } from '../ui'
 import { CommitmentStatusBadge, CommitmentTags, CommitmentTitle } from '../protocol'
 import { ResolveCommitmentModal } from './ResolveCommitmentModal'
 import { type CommitmentHints } from '../../hooks/commitmentReads'
@@ -240,9 +240,8 @@ export function RowResolveAction({
 
   return (
     <>
-      <button
-        type="button"
-        className="ds-btn ds-btn--sm"
+      <Button
+        size="sm"
         disabled={loading}
         aria-busy={loading || undefined}
         onClick={(e) => {
@@ -251,7 +250,7 @@ export function RowResolveAction({
         }}
       >
         {loading ? 'Loading…' : 'Resolve'}
-      </button>
+      </Button>
       {open && full && (
         <ResolveCommitmentModal
           open

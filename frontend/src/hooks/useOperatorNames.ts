@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { type Address } from 'viem'
 import { indexerGraphqlData } from '../config/indexer'
 import { createAddressBatcher, useBatchedByAddress } from './addressBatch'
@@ -54,8 +55,8 @@ export interface OperatorNameMap {
  */
 export function useOperatorNames(addresses: ReadonlyArray<Address | string | undefined>): OperatorNameMap {
   const names = useBatchedByAddress('operator-name', addresses, loadOperatorName)
-  return {
-    get: (address) => names.get(address) ?? undefined,
-    isLoading: names.isLoading,
-  }
+  return useMemo(
+    () => ({ get: (address) => names.get(address) ?? undefined, isLoading: names.isLoading }),
+    [names],
+  )
 }

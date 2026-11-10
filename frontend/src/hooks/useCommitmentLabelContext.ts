@@ -25,11 +25,8 @@ interface TokenMetaResolver {
  * and the card view can share one context instead of each growing a private
  * copy of the naming rules.
  *
- * The returned object is deliberately NOT memoized across renders. Memoizing
- * it would buy nothing: cell render functions run on every render regardless of
- * whether a column array kept its identity, so the resolvers are re-invoked
- * either way — and a fresh object is the honest signal that the names inside
- * can have changed since last render.
+ * The context keeps its identity until a name or the token resolver changes,
+ * so a memo that depends on it holds.
  */
 export function useCommitmentLabelContext(
   rows: readonly UnifiedRow[],
@@ -52,9 +49,12 @@ export function useCommitmentLabelContext(
   // amount denominated in a token called TOKEN.
   const metaFor = tokenMeta && !tokenMeta.isLoading ? tokenMeta.metaFor : undefined
 
-  return {
-    operatorName: (address: string) => names.get(address),
-    knownAddress: (address: string) => findKnownAddress(chainId, address),
-    tokenMeta: metaFor ? (token: Address) => metaFor(token) : undefined,
-  }
+  return useMemo(
+    () => ({
+      operatorName: (address: string) => names.get(address),
+      knownAddress: (address: string) => findKnownAddress(chainId, address),
+      tokenMeta: metaFor ? (token: Address) => metaFor(token) : undefined,
+    }),
+    [names, chainId, metaFor],
+  )
 }
