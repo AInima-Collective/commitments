@@ -595,12 +595,12 @@ Self-reviewed against the implementation (item numbers from the list above):
 
 | # | Verdict | Evidence |
 |---|---|---|
-| 1 | ✓ conforms | `LedgerOpsLib._pullMeasured` credits measured balance delta; zero-delta reverts |
+| 1 | ✓ conforms | `MeasuredPull.pull` (via `LedgerOpsLib.deposit`) credits measured balance delta; zero-delta reverts |
 | 2 | ✓ conforms | `withdrawCore` is CEI: ledger + aggregate updated before `safeTransfer` (explicit comment, L88-92) |
 | 4 | ✓ conforms | `executeForfeit` §C.3 step 2 is `LedgerLib.forfeitTransfer` (pure ledger); CVL rule P1-PULL authored |
 | 5 | ✓ conforms | `MovementLib._applyFromEncumbered` shrink is `expPre − expPost` diff with drift clamp (L353-361) |
 | 6 | ✓ conforms | distribute-site guard checks live proposal (`initiatedAt != 0 && !cancelled && !executed`, L342-345) |
-| 8 | ✓ conforms | `createAndFundCore` validates BEFORE `depositCore` pull (L123-125) |
+| 8 | ✓ conforms | `createAndFundCore` validates BEFORE the `LedgerOpsLib.deposit` pull |
 | 9 | ✓ conforms | `AgreementLib.forfeitCore` validates every unresolved leg's penalty before mutating either (L355-358) |
 | 10 | ✓ conforms | `_settleCore` rejects `units > uint128.max` before the cast; `_settleApplyCap` adds in uint128 after |
 | 11 | ✓ strengthened | INV-E2 receiver-leg-untouched asserts added to `AgreementFlows.spec` settle rule |

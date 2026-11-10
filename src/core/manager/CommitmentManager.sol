@@ -7,14 +7,14 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {IDistributionStrategy} from "src/core/interfaces/IDistributionStrategy.sol";
 import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManagerStorage.sol";
 import {CommitmentLifecycleLib, IOperatorRegistryHooks} from "src/core/manager/libraries/CommitmentLifecycleLib.sol";
 import {AgreementLib} from "src/extensions/agreements/AgreementLib.sol";
 import {MutualLib} from "src/extensions/mutuals/MutualLib.sol";
 import {LedgerOpsLib} from "src/core/manager/libraries/LedgerOpsLib.sol";
 import {PauseLib} from "src/core/manager/libraries/PauseLib.sol";
-import {MovementLib, HOOK_RELEASED, HOOK_FORFEITED} from "src/core/manager/libraries/MovementLib.sol";
+import {MovementLib} from "src/core/manager/libraries/MovementLib.sol";
+import {FORFEIT_PROPOSAL_TTL as FORFEIT_TTL, HOOK_GAS_CAP_FLOOR} from "src/shared/Constants.sol";
 
 /// @title CommitmentManager
 /// @notice Direct-custody commitment manager (ERC-COMMITMENTS Parts A–D). The manager is the
@@ -44,26 +44,16 @@ contract CommitmentManager is
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE");
 
-    /// @dev ERC §0.3 — MUST-level floor on challenge windows. Lazy default when storage is 0;
-    ///      `setMinChallengeWindow` may raise this floor but can never lower it.
+    /// @dev ERC §0.3 — MUST-level floor on challenge windows. `initialize` sets the minimum to it;
+    ///      `setMinChallengeWindow` may raise the minimum but can never lower it below this.
     uint64 internal constant DEFAULT_MIN_CHALLENGE_WINDOW = 86_400; // 1 day
-    /// @dev ERC §0.3 — MUST-level cap on bound strategies per commitment.
-    uint256 internal constant MAX_STRATEGIES = 8;
     /// @notice Stale forfeit proposals can be force-cancelled by anyone after
     ///         `initiatedAt + challengeWindow + FORFEIT_PROPOSAL_TTL` (ERC §C.4).
-    uint64 public constant FORFEIT_PROPOSAL_TTL = 14 days;
-    uint256 internal constant MAX_METADATA_URI_LENGTH = 512;
-    /// @dev ERC §0.3 — SHOULD-level floor on the per-hook gas cap (§D.6). Admin may set any
-    ///      value at or above it, never below.
-    uint64 internal constant HOOK_GAS_CAP_FLOOR = 500_000;
+    uint64 public constant FORFEIT_PROPOSAL_TTL = FORFEIT_TTL;
 
     /// @notice Canonical relayer typehash (ERC §C.8). `strategiesHash` is
     ///         keccak256(abi.encode(params.strategies)).
-    bytes32 public constant CREATE_COMMITMENT_TYPEHASH = keccak256(
-        "CreateCommitment(address committer,address arbiter,address counterparty,address token,"
-        "address adapter,uint256 amount,uint16 maxPenaltyBps,uint64 challengeWindow,uint64 expiresAt,"
-        "bytes32 strategiesHash,string metadataURI,bytes32 metadataHash,uint256 nonce,uint256 deadline)"
-    );
+    bytes32 public constant CREATE_COMMITMENT_TYPEHASH = CommitmentLifecycleLib.CREATE_COMMITMENT_TYPEHASH;
 
     // =========================================================================
     // Initializer
@@ -89,6 +79,8 @@ contract CommitmentManager is
 
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
         s.unbondingPeriod = unbondingPeriod_;
+        s.minChallengeWindow = DEFAULT_MIN_CHALLENGE_WINDOW;
+        s.hookGasCap = HOOK_GAS_CAP_FLOOR;
         s.maxPauseDuration = maxPauseDuration_;
         // Ids are 1-indexed: 0 is the DistributionPaid non-attribution sentinel (INV-10).
         s.nextCommitmentId = 1;
@@ -156,7 +148,7 @@ contract CommitmentManager is
         nonReentrant
         returns (uint256 commitmentId)
     {
-        commitmentId = _createCommitmentInternal(msg.sender, params);
+        commitmentId = CommitmentLifecycleLib.createFull(CommitmentManagerStorage.layout(), params);
     }
 
     /// @notice Deposit `depositAmount` of `params.token` and create a commitment in one tx,
@@ -173,30 +165,7 @@ contract CommitmentManager is
         returns (uint256 commitmentId)
     {
         commitmentId = CommitmentLifecycleLib.createAndFundCore(
-            CommitmentManagerStorage.layout(),
-            msg.sender,
-            params,
-            depositAmount,
-            MIN_CHALLENGE_WINDOW(),
-            MAX_STRATEGIES,
-            MAX_METADATA_URI_LENGTH
-        );
-    }
-
-    /// @dev All creation logic — validation, exposure, encumber, store, strategy binding and
-    ///      creation hooks — lives in CommitmentLifecycleLib.createFull (DELEGATECALL). Callers
-    ///      (createCommitment, relayer) hold the reentrancy guard.
-    function _createCommitmentInternal(address committer, ICM.CommitmentParams calldata params)
-        internal
-        returns (uint256 commitmentId)
-    {
-        commitmentId = CommitmentLifecycleLib.createFull(
-            CommitmentManagerStorage.layout(),
-            committer,
-            params,
-            MIN_CHALLENGE_WINDOW(),
-            MAX_STRATEGIES,
-            MAX_METADATA_URI_LENGTH
+            CommitmentManagerStorage.layout(), params, depositAmount
         );
     }
 
@@ -239,7 +208,7 @@ contract CommitmentManager is
 
     /// @notice Anyone, after `initiatedAt + challengeWindow + FORFEIT_PROPOSAL_TTL` (ERC §C.4).
     function cancelStaleForfeitProposal(uint256 commitmentId) external nonReentrant {
-        CommitmentLifecycleLib.cancelStaleCore(CommitmentManagerStorage.layout(), commitmentId, FORFEIT_PROPOSAL_TTL);
+        CommitmentLifecycleLib.cancelStaleCore(CommitmentManagerStorage.layout(), commitmentId);
     }
 
     // =========================================================================
@@ -286,16 +255,12 @@ contract CommitmentManager is
     ///         close — so parked accrual is always recoverable (ERC §D.3). Caller authorization
     ///         is the strategy's job (the context carries `caller`).
     function claim(uint256 commitmentId, address strategy, bytes calldata claimData) external nonReentrant {
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        if (!s.isBoundStrategy[commitmentId][strategy]) revert ICM.UnknownStrategy();
-        MovementLib.claimCore(s, commitmentId, strategy, claimData);
+        MovementLib.claimCore(CommitmentManagerStorage.layout(), commitmentId, strategy, claimData);
     }
 
     /// @notice Pending amount claimable via `claim` for the caller-implied recipient.
     function pending(uint256 commitmentId, address strategy, bytes calldata claimData) external view returns (uint256) {
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        if (!s.isBoundStrategy[commitmentId][strategy]) revert ICM.UnknownStrategy();
-        return MovementLib.pendingCore(s, commitmentId, strategy, claimData);
+        return MovementLib.pendingCore(CommitmentManagerStorage.layout(), commitmentId, strategy, claimData);
     }
 
     /// @notice Permissionless re-drive of a failed lifecycle hook under the same guarded
@@ -303,14 +268,7 @@ contract CommitmentManager is
     ///         encumbrance is already settled by then, so a re-driven hook can only dispose of
     ///         escrowed value (`c.amount` is zeroed at close — no FromEncumbered* headroom).
     function sweepFailedHook(uint256 commitmentId, address strategy) external nonReentrant {
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        bytes4 sel = s.failedHookSelector[commitmentId][strategy];
-        if (sel == bytes4(0)) revert ICM.NoFailedHook();
-
-        uint8 hook = sel == IDistributionStrategy.onCommitmentForfeited.selector ? HOOK_FORFEITED : HOOK_RELEASED;
-        if (MovementLib.guardedCall(s, commitmentId, strategy, hook)) {
-            delete s.failedHookSelector[commitmentId][strategy];
-        }
+        MovementLib.sweepFailedHookCore(CommitmentManagerStorage.layout(), commitmentId, strategy);
     }
 
     /// @notice Self-call-only frame putting the strategy call, the validation of its returned
@@ -330,7 +288,7 @@ contract CommitmentManager is
     /// @notice Propose a bilateral agreement. The proposer's backing is encumbered
     ///         immediately (lock early to prevent griefing).
     function proposeAgreement(ICM.AgreementParams calldata params) external nonReentrant returns (uint256 proposalId) {
-        proposalId = AgreementLib.proposeCore(CommitmentManagerStorage.layout(), params, MIN_CHALLENGE_WINDOW());
+        proposalId = AgreementLib.proposeCore(CommitmentManagerStorage.layout(), params);
     }
 
     /// @notice Accept an agreement proposal, creating two linked commitments sharing the
@@ -380,11 +338,7 @@ contract CommitmentManager is
     /// @notice Contribute free balance into a commitment's encumbered position (ERC §C.6).
     ///         The committer opts in by being the first contributor.
     function contributeEncumbered(uint256 commitmentId, uint256 units) external nonReentrant {
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        // A member commitment's `E_i` / `creditedValue` are frozen at join; contributions would
-        // drift them and desync the shared-loss accounting (ERC-COMMITMENTS-MUTUALS).
-        if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
-        AgreementLib.contributeCore(s, commitmentId, units);
+        AgreementLib.contributeCore(CommitmentManagerStorage.layout(), commitmentId, units);
     }
 
     /// @notice Live bilateral-settlement state (caps + cumulative flow).
@@ -438,14 +392,7 @@ contract CommitmentManager is
         nonReentrant
         returns (uint256 commitmentId)
     {
-        commitmentId = MutualLib.joinMutual(
-            CommitmentManagerStorage.layout(),
-            mutualId,
-            params,
-            MIN_CHALLENGE_WINDOW(),
-            MAX_STRATEGIES,
-            MAX_METADATA_URI_LENGTH
-        );
+        commitmentId = MutualLib.joinMutual(CommitmentManagerStorage.layout(), mutualId, params);
     }
 
     /// @notice Phase 1 (mutual arbiter): declare a mutual loss.
@@ -573,20 +520,9 @@ contract CommitmentManager is
         uint256 nonce,
         bytes calldata sig
     ) external nonReentrant returns (uint256 commitmentId) {
-        if (block.timestamp > deadline) revert ICM.SignatureExpired();
-
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        if (s.nonces[committer] != nonce) revert ICM.InvalidNonce();
-        s.nonces[committer]++;
-
-        // Digest assembly + signature validation live in CommitmentLifecycleLib (DELEGATECALL) to
-        // keep the manager under EIP-170; nonce consumption (above) stays here. Validation uses OZ
-        // SignatureChecker, so `committer` may be an EOA (ECDSA) or an ERC-1271 contract wallet.
-        if (!CommitmentLifecycleLib.isValidCreateSignature(
-                CREATE_COMMITMENT_TYPEHASH, _domainSeparatorV4(), committer, params, nonce, deadline, sig
-            )) revert ICM.InvalidSignature();
-
-        commitmentId = _createCommitmentInternal(committer, params);
+        commitmentId = CommitmentLifecycleLib.createForCore(
+            CommitmentManagerStorage.layout(), committer, params, deadline, nonce, sig, _domainSeparatorV4()
+        );
     }
 
     /// @notice Current relayer nonce for `committer`.
@@ -734,17 +670,15 @@ contract CommitmentManager is
         return CommitmentManagerStorage.layout().unbondingPeriod;
     }
 
-    /// @notice Active minimum challenge window (seconds). Lazy default: 1 day.
+    /// @notice Active minimum challenge window (seconds). `initialize` sets it to 1 day.
     // solhint-disable-next-line func-name-mixedcase
-    function MIN_CHALLENGE_WINDOW() public view returns (uint64) {
-        uint64 stored = CommitmentManagerStorage.layout().minChallengeWindow;
-        return stored == 0 ? DEFAULT_MIN_CHALLENGE_WINDOW : stored;
+    function MIN_CHALLENGE_WINDOW() external view returns (uint64) {
+        return CommitmentManagerStorage.layout().minChallengeWindow;
     }
 
-    /// @notice Per-hook gas cap for guarded lifecycle hooks (ERC §D.6). Lazy default: 500k.
-    function hookGasCap() public view returns (uint64) {
-        uint64 stored = CommitmentManagerStorage.layout().hookGasCap;
-        return stored == 0 ? HOOK_GAS_CAP_FLOOR : stored;
+    /// @notice Per-hook gas cap for guarded lifecycle hooks (ERC §D.6). `initialize` sets it to 500k.
+    function hookGasCap() external view returns (uint64) {
+        return CommitmentManagerStorage.layout().hookGasCap;
     }
 
     /// @notice Update the unbonding period. MUST stay > 0.
@@ -755,22 +689,19 @@ contract CommitmentManager is
         s.unbondingPeriod = newValue;
     }
 
-    /// @notice Update the minimum challenge window. Passing 0 restores the 1-day default;
-    ///         non-zero values must be at least one day.
+    /// @notice Update the minimum challenge window. Values below one day (zero included) revert
+    ///         `MinChallengeWindowBelowFloor`.
     function setMinChallengeWindow(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newValue != 0 && newValue < DEFAULT_MIN_CHALLENGE_WINDOW) {
-            revert ICM.MinChallengeWindowBelowFloor();
-        }
+        if (newValue < DEFAULT_MIN_CHALLENGE_WINDOW) revert ICM.MinChallengeWindowBelowFloor();
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
         emit ICM.MinChallengeWindowUpdated(s.minChallengeWindow, newValue);
         s.minChallengeWindow = newValue;
     }
 
-    /// @notice Set the per-hook gas cap to any value at or above the 500k floor (ERC §0.3), or
-    ///         pass 0 to restore the 500k default. A non-zero value below the floor reverts
-    ///         `ZeroAmount`.
+    /// @notice Set the per-hook gas cap to any value at or above the 500k floor (ERC §0.3). A value
+    ///         below the floor (zero included) reverts `ZeroAmount`.
     function setHookGasCap(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newValue != 0 && newValue < HOOK_GAS_CAP_FLOOR) revert ICM.ZeroAmount();
+        if (newValue < HOOK_GAS_CAP_FLOOR) revert ICM.ZeroAmount();
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
         emit ICM.HookGasCapUpdated(s.hookGasCap, newValue);
         s.hookGasCap = newValue;
@@ -787,17 +718,7 @@ contract CommitmentManager is
     ///      (fail-closed for non-conforming registries). Use `forceSetOperatorRegistry`
     ///      to override deliberately.
     function setOperatorRegistry(address operatorRegistry_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        address outgoing = s.operatorRegistry;
-        if (outgoing != address(0) && outgoing != operatorRegistry_) {
-            bool clean = false;
-            try IOperatorRegistryHooks(outgoing).trackedCommitmentCount() returns (uint256 tracked) {
-                clean = tracked == 0;
-            } catch {}
-            if (!clean) revert ICM.OperatorRegistrySwapBlocked(outgoing);
-        }
-        emit ICM.OperatorRegistryUpdated(outgoing, operatorRegistry_);
-        s.operatorRegistry = operatorRegistry_;
+        _setOperatorRegistry(operatorRegistry_, false);
     }
 
     /// @notice Force-set or clear the operator registry, bypassing the tracked-commitments
@@ -807,8 +728,22 @@ contract CommitmentManager is
     ///         The manager notifies the registry only for commitments whose counterparty is the
     ///         registry.
     function forceSetOperatorRegistry(address operatorRegistry_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setOperatorRegistry(operatorRegistry_, true);
+    }
+
+    /// @dev Shared tail of the two registry setters. Without `force`, an outgoing registry that
+    ///      still tracks commitments, or cannot report a count, blocks the swap (fail-closed).
+    function _setOperatorRegistry(address operatorRegistry_, bool force) private {
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        emit ICM.OperatorRegistryUpdated(s.operatorRegistry, operatorRegistry_);
+        address outgoing = s.operatorRegistry;
+        if (!force && outgoing != address(0) && outgoing != operatorRegistry_) {
+            bool clean = false;
+            try IOperatorRegistryHooks(outgoing).trackedCommitmentCount() returns (uint256 tracked) {
+                clean = tracked == 0;
+            } catch {}
+            if (!clean) revert ICM.OperatorRegistrySwapBlocked(outgoing);
+        }
+        emit ICM.OperatorRegistryUpdated(outgoing, operatorRegistry_);
         s.operatorRegistry = operatorRegistry_;
     }
 

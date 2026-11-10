@@ -34,9 +34,11 @@ library PauseLib {
     ///      `[0, wall-clock elapsed since the snapshot]`.
     function creditablePaused(CommitmentManagerStorage.Layout storage s) internal view returns (uint64) {
         uint256 acc = s.cumulativePaused;
-        // `pausedAt == 0` with the flag set can only be a pre-erratum pause carried across an
-        // upgrade; it has no measurable start, so it credits nothing (fail-closed to wall clock).
-        if (s.forfeiturePaused && s.pausedAt != 0) acc += block.timestamp - s.pausedAt;
+        // `pausedAt != 0` implies the flag is set: `pauseForfeiture` writes both and
+        // `unpauseForfeiture` clears both, so the flag (a separate, often cold slot) is not read.
+        // A pause with no recorded start credits nothing (fail-closed to wall clock).
+        uint64 pausedAt = s.pausedAt;
+        if (pausedAt != 0) acc += block.timestamp - pausedAt;
         uint256 cap = s.maxPauseDuration;
         if (acc > cap) acc = cap;
         // forge-lint: disable-next-line(unsafe-typecast)

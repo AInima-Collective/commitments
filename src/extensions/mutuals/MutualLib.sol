@@ -8,8 +8,7 @@ import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {PauseLib} from "src/core/manager/libraries/PauseLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {MeasuredPull} from "src/shared/utilities/MeasuredPull.sol";
 
 /// @title MutualLib
 /// @notice The shared-loss-index ("Mutual" / Mutual) primitive — a manager-level
@@ -30,8 +29,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///      capped at 1e18 — a third loss past full coverage is clamped and the shortfall emitted, never
 ///      silently over-attributed.
 library MutualLib {
-    using SafeERC20 for IERC20;
-
     /// @dev 1e18-scaled fully-attributed loss fraction (Lambda == 1 means 100% of every E_i owed).
     uint256 internal constant LAMBDA_ONE = 1e18;
     /// @dev 1e27 precision for the premium-per-cover index `Pi` (Synthetix-style; higher than Lambda's
@@ -104,15 +101,12 @@ library MutualLib {
     function joinMutual(
         CommitmentManagerStorage.Layout storage s,
         uint256 mutualId,
-        ICM.CommitmentParams calldata params,
-        uint64 minChallengeWindow,
-        uint256 maxStrategies,
-        uint256 maxURILength
+        ICM.CommitmentParams calldata params
     ) external returns (uint256 commitmentId) {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (!g.active || g.terminal) revert ICM.MutualNotActive();
         if (g.cumulativeLoss == LAMBDA_ONE) revert ICM.MutualExhausted(); // wiped out: a joiner could never owe
-        if (_lossPending(s, mutualId)) revert ICM.MutualLossPending(); // capacity frozen during a declaration
+        if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending(); // capacity frozen during a declaration
         if (params.arbiter != g.arbiter) revert ICM.MutualArbiterMismatch();
         if (params.counterparty != g.beneficiary) revert ICM.MutualBeneficiaryMismatch(); // no forfeit-to-self
         if (params.strategies.length != 0) revert ICM.MemberStrategyForbidden();
@@ -127,8 +121,7 @@ library MutualLib {
         uint128 credited = uint128(ei); // checked just above
 
         // Reuse the audited create path verbatim (committer = caller).
-        commitmentId =
-            CommitmentLifecycleLib.createFull(s, msg.sender, params, minChallengeWindow, maxStrategies, maxURILength);
+        commitmentId = CommitmentLifecycleLib.createFull(s, params);
 
         // Register the membership + freeze its weight (extracted to bound stack depth).
         _registerMember(s, g, mutualId, commitmentId, ei, credited);
@@ -191,14 +184,14 @@ library MutualLib {
         if (msg.sender != g.arbiter) revert ICM.NotMutualArbiter();
         if (!g.active || g.terminal) revert ICM.MutualNotActive();
         if (lossNumeraire == 0) revert ICM.ZeroAmount();
-        if (_lossPending(s, mutualId)) revert ICM.MutualLossPending();
+        ICM.MutualLossProposal storage prior = s.mutualLossProposals[mutualId];
+        if (_lossLive(prior)) revert ICM.MutualLossPending();
         // Rate-limit only RE-initiation (a prior proposal exists — proposals are overwritten,
         // never deleted): caps the initiate->cancel->re-init capital-freeze griefing without
         // blocking the first honest declaration. Clock-stop (ERC §A.6 erratum): the interval
         // elapses in effective time from the prior proposal's start. An honest arbiter whose
         // declaration went TTL-stale during a pause re-initiates one effective interval after
         // the unpause.
-        ICM.MutualLossProposal storage prior = s.mutualLossProposals[mutualId];
         if (
             prior.initiatedAt != 0
                 && PauseLib.effectiveElapsed(s, prior.initiatedAt, prior.cumulativePausedAtStart) < MIN_REINIT_INTERVAL
@@ -220,7 +213,7 @@ library MutualLib {
     function executeMutualLoss(CommitmentManagerStorage.Layout storage s, uint256 mutualId) external {
         ICM.Mutual storage g = _mutual(s, mutualId);
         ICM.MutualLossProposal storage p = s.mutualLossProposals[mutualId];
-        if (p.initiatedAt == 0 || p.executed || p.cancelled) revert ICM.NoMutualLossPending();
+        if (!_lossLive(p)) revert ICM.NoMutualLossPending();
         // Clock-stop (ERC §A.6 erratum): the mutual challenge window elapses in effective time —
         // a pause cannot shrink the members' contest time while the execute below is inoperable.
         if (PauseLib.effectiveElapsed(s, p.initiatedAt, p.cumulativePausedAtStart) < g.challengeWindow) {
@@ -260,7 +253,7 @@ library MutualLib {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (msg.sender != g.arbiter) revert ICM.NotMutualArbiter();
         ICM.MutualLossProposal storage p = s.mutualLossProposals[mutualId];
-        if (p.initiatedAt == 0 || p.executed || p.cancelled) revert ICM.NoMutualLossPending();
+        if (!_lossLive(p)) revert ICM.NoMutualLossPending();
         p.cancelled = true;
         emit ICM.MutualLossCancelled(mutualId, false);
     }
@@ -269,7 +262,7 @@ library MutualLib {
     function cancelStaleMutualLoss(CommitmentManagerStorage.Layout storage s, uint256 mutualId) external {
         ICM.Mutual storage g = _mutual(s, mutualId);
         ICM.MutualLossProposal storage p = s.mutualLossProposals[mutualId];
-        if (p.initiatedAt == 0 || p.executed || p.cancelled) revert ICM.NoMutualLossPending();
+        if (!_lossLive(p)) revert ICM.NoMutualLossPending();
         // ANTI-PIN (ERC §A.6 erratum): see PauseLib.staleAt — a pause can neither stale-cancel an
         // HONEST loss whose contest window never effectively ran, nor pin members behind an
         // abandoned declaration beyond the budget-bounded horizon.
@@ -307,8 +300,8 @@ library MutualLib {
         // nobody has poked since this member's last sync, so comparing it with the snapshot cannot tell
         // whether the member has unbanked accrual. Skipping here would attribute the interval since the
         // last poke to post-loss cover and under-pay this member. `_syncMember` short-circuits when the
-        // index is frozen, and the bank is failure-isolated inside it (skip-not-revert), so the loss legs
-        // below ALWAYS execute even on the infeasible premium-overflow path (INV-P10).
+        // index is frozen, and its bank arithmetic cannot overflow (see `_accrue`), so the loss legs
+        // below always execute (INV-P10).
         _syncMember(g, m, c);
         // The DENOMINATOR maintenance below is UNCONDITIONAL, not gated. `activeCover`/`settledTotal`
         // must track every loss even while unfunded, because (a) `joinMutual` and `releaseMutualMember`
@@ -373,7 +366,7 @@ library MutualLib {
         if (mutualId == 0) revert ICM.NotMutualMember();
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
-        if (_lossPending(s, mutualId)) revert ICM.MutualLossPending();
+        if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending();
         if (
             m.unbondRequestedAt != 0
                 && PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId])
@@ -417,7 +410,7 @@ library MutualLib {
             PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId]);
         if (elapsed < g.deallocationWindow) revert ICM.DeallocationWindowActive();
         if (elapsed >= 2 * uint256(g.deallocationWindow)) revert ICM.ExitRequestLapsed();
-        if (_lossPending(s, mutualId)) revert ICM.MutualLossPending();
+        if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending();
         if (m.lossSnapshot != g.cumulativeLoss) revert ICM.MemberUnsettled(); // settle outstanding first (INV-G5)
 
         // ---- Premium: final bank, then exit BOTH denominators (INV-P8 poke-before-change). Capture the
@@ -499,8 +492,9 @@ library MutualLib {
         // Measured-receipt pull: credits the funder's free balance by exactly what arrived. The
         // free->pool move is then the LedgerLib helper, so every pool mutation routes through the one
         // helper pair (INV-P0) and INV-P1 holds on the manager's ACTUAL balance.
-        uint256 received = _pullNumeraireMeasured(s, g.numeraire, msg.sender, amount);
+        uint256 received = MeasuredPull.pull(g.numeraire, amount);
         if (received == 0) revert ICM.ZeroAmount();
+        LedgerLib.creditFree(s, g.numeraire, msg.sender, received);
 
         _pokePremium(g);
 
@@ -546,16 +540,21 @@ library MutualLib {
         ICM.Mutual storage g = s.mutuals[mutualId];
         ICM.Commitment storage c = s.commitments[commitmentId];
 
-        _syncMember(g, m, c); // bring the bank current (poke + accrue on live effCover)
-
-        uint256 pay = m.rewardBank;
+        // Pay the bank plus the accrual since the last sync, computed in memory: banking the accrual
+        // and zeroing it again in the same call would net to the same `rewardBank == 0` and
+        // `bankedTotal -= banked`, through four storage writes.
+        uint256 pending = _accrue(g, m, c);
+        uint256 banked = m.rewardBank;
+        uint256 pay = banked + pending;
         address committer = c.committer;
         if (pay == 0) {
             emit ICM.MemberPremiumClaimed(commitmentId, committer, 0);
             return;
         }
-        m.rewardBank = 0; // EFFECTS first (zeroed before any movement)
-        g.bankedTotal -= pay;
+        if (banked != 0) {
+            m.rewardBank = 0; // EFFECTS first (zeroed before any movement)
+            g.bankedTotal -= banked;
+        }
         LedgerLib.mutualPremiumToFree(s, g.numeraire, committer, mutualId, pay); // pool -> free[committer]
 
         emit ICM.MemberPremiumClaimed(commitmentId, committer, pay);
@@ -597,17 +596,10 @@ library MutualLib {
         if (mutualId == 0) return 0;
         ICM.Mutual storage g = s.mutuals[mutualId];
 
-        // Simulate `_pokePremium` read-only (no storage writes).
-        uint256 pi = g.premiumPerShareStored;
-        if (g.rewardRate != 0 && g.activeCover != 0) {
-            uint256 t = block.timestamp < g.periodFinish ? block.timestamp : g.periodFinish;
-            if (t > g.lastUpdate) {
-                uint256 gross = (t - uint256(g.lastUpdate)) * uint256(g.rewardRate) + g.premiumRemainder;
-                pi += Math.mulDiv(gross, PI_ONE, g.activeCover);
-            }
-        }
-        uint256 eff = _effCover(m, s.commitments[commitmentId]);
-        claimable = m.rewardBank + _safePending(eff, pi - m.premiumSnapshot);
+        // `_pokePremium` read-only (no storage writes).
+        (, uint256 delta,) = _accrual(g);
+        uint256 piDelta = g.premiumPerShareStored + delta - m.premiumSnapshot;
+        claimable = m.rewardBank + Math.mulDiv(_effCover(m, s.commitments[commitmentId]), piDelta, PI_ONE);
     }
 
     /// @notice Raw units `commitmentId` would owe the beneficiary if settled at the current Lambda.
@@ -643,21 +635,25 @@ library MutualLib {
     ///      Uses `Math.mulDiv` (512-bit intermediate) for both the index delta and the dust back-multiply
     ///      so no value is lost and the product is overflow-safe for any feasible numeraire (INV-P10).
     function _pokePremium(ICM.Mutual storage g) private {
-        uint64 nowTs = uint64(block.timestamp);
-        uint64 t = nowTs < g.periodFinish ? nowTs : g.periodFinish;
-        if (g.rewardRate == 0 || g.activeCover == 0) {
-            g.lastUpdate = t; // pure-loss / no-claimant fast path: no index churn
-            return;
-        }
-        uint256 elapsed = uint256(t) - uint256(g.lastUpdate);
-        if (elapsed != 0) {
-            uint256 gross = elapsed * uint256(g.rewardRate) + g.premiumRemainder; // carry prior dust forward
-            uint256 cover = uint256(g.activeCover);
-            uint256 delta = Math.mulDiv(gross, PI_ONE, cover);
+        (uint64 t, uint256 delta, uint256 gross) = _accrual(g);
+        if (gross != 0) {
             g.premiumPerShareStored += delta;
-            g.premiumRemainder = gross - Math.mulDiv(delta, cover, PI_ONE); // sub-1e27 dust kept for next poke
+            g.premiumRemainder = gross - Math.mulDiv(delta, g.activeCover, PI_ONE); // sub-1e27 dust kept for next poke
         }
         g.lastUpdate = t;
+    }
+
+    /// @dev The index growth `_pokePremium` would apply now, read-only (shared with the
+    ///      `pendingMemberPremium` view). `t = min(now, periodFinish)`; `gross` is the premium streamed
+    ///      since `lastUpdate` plus the carried dust, and zero on the pure-loss / no-claimant fast path
+    ///      (`rewardRate == 0 || activeCover == 0`) or when no time has passed.
+    function _accrual(ICM.Mutual storage g) private view returns (uint64 t, uint256 delta, uint256 gross) {
+        uint64 nowTs = uint64(block.timestamp);
+        t = nowTs < g.periodFinish ? nowTs : g.periodFinish;
+        uint256 cover = g.activeCover;
+        if (g.rewardRate == 0 || cover == 0 || t <= g.lastUpdate) return (t, 0, 0);
+        gross = (uint256(t) - g.lastUpdate) * g.rewardRate + g.premiumRemainder; // carry prior dust forward
+        delta = Math.mulDiv(gross, PI_ONE, cover);
     }
 
     /// @dev Join-time premium init: poke (INV-P8), snapshot the member at the current `Pi` (reward
@@ -683,68 +679,37 @@ library MutualLib {
         return amt < deliverable ? amt : deliverable; // Belt-2 deliverable cap (inert)
     }
 
-    /// @dev Bank a member's accrued premium up to the current `Pi` (Synthetix bank-on-change). Pokes
-    ///      first (INV-P8), banks on the member's OLD effCover, then advances `premiumSnapshot`. The
+    /// @dev Bank a member's accrued premium up to the current `Pi` (Synthetix bank-on-change). The
     ///      caller (settle / release) recomputes effCover afterwards and adjusts `activeCover` by the
-    ///      delta. The bank is FAILURE-ISOLATED via `_safePending` (skip-not-revert on the infeasible
-    ///      overflow path), so a premium-arithmetic edge can never wedge the loss legs (INV-P10).
+    ///      delta.
     function _syncMember(ICM.Mutual storage g, ICM.Membership storage m, ICM.Commitment storage c) private {
-        _pokePremium(g);
-        uint256 piDelta = g.premiumPerShareStored - m.premiumSnapshot;
-        if (piDelta == 0) return; // already current — nothing to bank, snapshot unchanged
-        uint256 eff = _effCover(m, c);
-        uint256 pending = _safePending(eff, piDelta);
-        if (pending == 0 && eff != 0) {
-            // `_safePending` saturated on the infeasible overflow path (it would only return 0 here for a
-            // sub-1e27 round-down or the ~1.15e50-funding overflow). DEFER rather than forfeit: leave
-            // `premiumSnapshot` un-advanced so the accrual is recovered on a later poke once it fits /
-            // accumulates past one unit — never lost (matches the INV-P10 "deferred, not forfeited" claim).
-            return;
-        }
+        uint256 pending = _accrue(g, m, c);
         if (pending != 0) {
             m.rewardBank += pending;
             g.bankedTotal += pending;
         }
+    }
+
+    /// @dev Poke (INV-P8), then return the member's accrual since its snapshot on its OLD effCover and
+    ///      advance the snapshot; the caller banks or pays the result.
+    ///      `effCover * piDelta / 1e27` cannot overflow, so the loss legs that sync first never revert
+    ///      on premium arithmetic (INV-P10): between two syncs a member's effCover only shrinks (it
+    ///      moves only at settle / release, each synced first), and at every poke in between
+    ///      `effCover <= activeCover` (INV-P9: activeCover == Σ effCover). So the result is at most
+    ///      Σ gross over those pokes, the premium streamed plus carried dust, below 2^194
+    ///      (`rewardRate` is uint128, time is uint64). A zero result with live cover is a sub-unit
+    ///      round-down: the snapshot stays put so the accrual is recovered on a later poke, never lost.
+    function _accrue(ICM.Mutual storage g, ICM.Membership storage m, ICM.Commitment storage c)
+        private
+        returns (uint256 pending)
+    {
+        _pokePremium(g);
+        uint256 piDelta = g.premiumPerShareStored - m.premiumSnapshot;
+        if (piDelta == 0) return 0; // already current — snapshot unchanged
+        uint256 eff = _effCover(m, c);
+        pending = Math.mulDiv(eff, piDelta, PI_ONE);
+        if (pending == 0 && eff != 0) return 0; // deferred, not forfeited
         m.premiumSnapshot = g.premiumPerShareStored;
-    }
-
-    /// @dev `effCover * piDelta / 1e27` via `Math.mulDiv`, but SATURATING-to-zero on the (infeasible)
-    ///      path where the quotient would not fit `uint256` — so banking inside settle/release can never
-    ///      revert and brick a validated loss (INV-P10 skip-not-revert). The pre-check mirrors `mulDiv`'s
-    ///      own overflow guard (`prod1 < denominator`) using the standard 512-bit full-mul decomposition,
-    ///      so it skips exactly when — and only when — `mulDiv` would revert. Unreachable below ~1.15e50
-    ///      cumulative funding; the `uint128` cap on `effCover` gives the 512-bit headroom unconditionally.
-    function _safePending(uint256 effCover, uint256 piDelta) private pure returns (uint256) {
-        if (effCover == 0 || piDelta == 0) return 0;
-        uint256 prod0; // low 256 bits of effCover * piDelta
-        uint256 prod1; // high 256 bits of effCover * piDelta
-        unchecked {
-            uint256 mm = mulmod(effCover, piDelta, type(uint256).max);
-            prod0 = effCover * piDelta;
-            prod1 = mm - prod0;
-            if (mm < prod0) prod1 -= 1;
-        }
-        if (prod1 >= PI_ONE) return 0; // would overflow uint256 after /1e27 ⇒ skip the bank, do not revert
-        return Math.mulDiv(effCover, piDelta, PI_ONE);
-    }
-
-    /// @dev External measured-receipt pull of the mutual numeraire into the manager, crediting the
-    ///      funder's free balance by the EXACT balance delta (fee-on-transfer / rebasing safe). The
-    ///      SafeERC20 transfer lives here, NOT in LedgerLib, preserving LedgerLib's no-external-transfer
-    ///      convention; the free->pool move is the LedgerLib `freeToMutualPremium` helper.
-    function _pullNumeraireMeasured(
-        CommitmentManagerStorage.Layout storage s,
-        address token,
-        address from,
-        uint256 amount
-    ) private returns (uint256 received) {
-        uint256 balBefore = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransferFrom(from, address(this), amount);
-        received = IERC20(token).balanceOf(address(this)) - balBefore;
-        // Credit the measured receipt to the funder's free balance; `freeToMutualPremium` moves it to
-        // the pool. Both legs are INV-P1-preserving (totalFree += then -=, balanceOf += received).
-        s.ledger[token][from].freeBalance += received;
-        s.totalFree[token] += received;
     }
 
     /// @dev Terminal sweep: a wound-down mutual (`totalShares == 0` ⇒ `activeCover == 0`, no members ⇒
@@ -770,8 +735,8 @@ library MutualLib {
         if (g.arbiter == address(0)) revert ICM.MutualNotFound();
     }
 
-    function _lossPending(CommitmentManagerStorage.Layout storage s, uint256 mutualId) private view returns (bool) {
-        ICM.MutualLossProposal storage p = s.mutualLossProposals[mutualId];
+    /// @dev Whether a loss declaration is live: initiated and neither executed nor cancelled.
+    function _lossLive(ICM.MutualLossProposal storage p) private view returns (bool) {
         return p.initiatedAt != 0 && !p.executed && !p.cancelled;
     }
 }

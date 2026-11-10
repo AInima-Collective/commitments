@@ -92,9 +92,10 @@ library CommitmentManagerStorage {
         /// @dev Committer-unbond period in seconds. Set at initialize; setUnbondingPeriod rejects 0
         ///      (ZeroAmount), so this is always > 0 — there is no lazy default.
         uint64 unbondingPeriod;
-        /// @dev Minimum challenge window. 0 = lazy default (DEFAULT_MIN_CHALLENGE_WINDOW = 1 day).
+        /// @dev Minimum challenge window. Set to 1 day at initialize; the setter rejects anything lower.
         uint64 minChallengeWindow;
-        /// @dev Per-hook gas cap for guarded lifecycle hooks. 0 = lazy default (HOOK_GAS_CAP = 500k).
+        /// @dev Per-hook gas cap for guarded lifecycle hooks. Set to the 500k floor at initialize; the
+        ///      setter rejects anything lower.
         uint64 hookGasCap;
         /// @dev Circuit breaker: executeForfeit reverts while true (ERC §A.6).
         bool forfeiturePaused;

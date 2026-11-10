@@ -35,7 +35,7 @@ import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 ///         ```
 ///         The manager-side forfeit proposal is opened AT PROPOSE TIME so the
 ///         committer cannot exit through `finalizeUnbond` / `expire` while a
-///         claim is pending (`_forfeitActive` blocks both). Each dispute
+///         claim is pending (`MovementLib.forfeitLive` blocks both). Each dispute
 ///         re-initiates the hold at the capped counter-answer, so the manager
 ///         proposal always mirrors the current top-of-stack assertion and its
 ///         challenge window restarts with the answer timer. `proposeClaim`

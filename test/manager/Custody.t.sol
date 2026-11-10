@@ -331,12 +331,13 @@ contract CustodyTest is ManagerTestBase {
         assertEq(manager.MIN_CHALLENGE_WINDOW(), 1 days, "failed update leaves default active");
     }
 
-    function test_setMinChallengeWindow_zeroRestoresLazyDefault() public {
+    function test_setMinChallengeWindow_rejectsZero() public {
         vm.prank(admin);
         manager.setMinChallengeWindow(2 days);
         vm.prank(admin);
+        vm.expectRevert(ICM.MinChallengeWindowBelowFloor.selector);
         manager.setMinChallengeWindow(0);
-        assertEq(manager.MIN_CHALLENGE_WINDOW(), 86_400, "0 restores default");
+        assertEq(manager.MIN_CHALLENGE_WINDOW(), 2 days, "failed update leaves the value");
     }
 
     function test_setHookGasCap_floorEnforced() public {
@@ -349,8 +350,9 @@ contract CustodyTest is ManagerTestBase {
         manager.setHookGasCap(499_999);
 
         vm.prank(admin);
+        vm.expectRevert(ICM.ZeroAmount.selector);
         manager.setHookGasCap(0);
-        assertEq(manager.hookGasCap(), 500_000, "0 restores default");
+        assertEq(manager.hookGasCap(), 1_000_000, "failed update leaves the value");
     }
 
     function test_adminSetters_unauthorizedRevert() public {

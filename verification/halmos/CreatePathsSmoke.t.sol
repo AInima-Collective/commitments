@@ -90,7 +90,7 @@ contract CreatePathsSmokeTest is HalmosBase {
     ///      the ecrecover would then be over a fully concrete digest, giving no symbolic coverage
     ///      of the create accounting beyond what `createCommitment` already proves. The nonce and
     ///      digest machinery are covered by the Foundry relayer tests; the shared create core
-    ///      (`_createCommitmentInternal` → `CommitmentLifecycleLib.createFull`) is exactly the
+    ///      (`CommitmentLifecycleLib._createCore`, behind `createForCore` and `createFull`) is exactly the
     ///      code path `createCommitment` and `createAndFund` exercise symbolically.
     ///      Left as a no-op placeholder so the gap is visible in the harness surface.
     function check_createCommitmentFor_INV10_signaturePathNote() public pure {

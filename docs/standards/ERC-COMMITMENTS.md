@@ -92,7 +92,7 @@ The SHOULD-level values above are baselines, not arbitrary numbers. The threat e
 
 Implementations choosing to deviate from a SHOULD baseline are conformant but assume responsibility for re-validating these threat trade-offs in their deployment context.
 
-**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `setMinChallengeWindow(0)` restores the one-day floor, values greater than or equal to one day are accepted, and shorter non-zero values revert with `MinChallengeWindowBelowFloor()`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
+**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `initialize` sets the minimum to one day, values greater than or equal to one day are accepted, and shorter values (zero included) revert with `MinChallengeWindowBelowFloor()`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
 
 #### 0.4 Conformance levels
 
@@ -1134,7 +1134,7 @@ Rebasing tokens break INV-1 structurally and MUST be rejected (§A.2). Fee-on-tr
 
 ### Challenge window timing
 
-`challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected. Implementers MAY raise the floor for higher-stakes deployments; they MUST NOT expose a production path that lowers the enforced floor below `MIN_CHALLENGE_WINDOW`. The reference implementation's `setMinChallengeWindow` accepts zero only as a sentinel restoring the one-day floor and rejects shorter non-zero values.
+`challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected. Implementers MAY raise the floor for higher-stakes deployments; they MUST NOT expose a production path that lowers the enforced floor below `MIN_CHALLENGE_WINDOW`. The reference implementation's `setMinChallengeWindow` rejects every value below one day, zero included.
 
 ### Stale forfeit proposals
 

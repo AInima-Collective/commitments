@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {
     IDistributionStrategy,
@@ -11,6 +10,7 @@ import {
     LifecycleContext,
     ForfeitContext
 } from "src/core/interfaces/IDistributionStrategy.sol";
+import {MeasuredPull} from "src/shared/utilities/MeasuredPull.sol";
 
 /// @title StrategyBase
 /// @notice Shared scaffolding for distribution strategies: the manager binding, the manager-only
@@ -19,8 +19,6 @@ import {
 /// @dev The no-op hooks add no external call and no storage read, so they cost nothing under the
 ///      manager's gas-capped hook calls.
 abstract contract StrategyBase is IDistributionStrategy {
-    using SafeERC20 for IERC20;
-
     /// @notice The manager whose hooks this strategy serves. One deployment per manager.
     address public immutable manager;
 
@@ -68,9 +66,7 @@ abstract contract StrategyBase is IDistributionStrategy {
     ///      fee-on-transfer token credits only what arrived (the rule `manager.deposit` follows).
     ///      Reverts `ZeroAmount` when nothing arrives.
     function _pullMeasured(IERC20 token, uint256 amount) internal returns (uint256 received) {
-        uint256 balanceBefore = token.balanceOf(address(this));
-        token.safeTransferFrom(msg.sender, address(this), amount);
-        received = token.balanceOf(address(this)) - balanceBefore;
+        received = MeasuredPull.pull(address(token), amount);
         if (received == 0) revert ZeroAmount();
     }
 }

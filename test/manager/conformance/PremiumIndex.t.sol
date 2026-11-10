@@ -564,6 +564,39 @@ contract PremiumIndexTest is Test {
         assertGt(manager.getMembership(cid).settledUnits, 0, "loss leg applied (not bricked)");
     }
 
+    function testFuzz_invP10_tinyCoverHugeStream_claimMatchesView(
+        uint256 eiSeed,
+        uint256 fundSeed,
+        uint64 durSeed,
+        uint256 warpSeed
+    ) public {
+        // The other extreme: a cover of a few units under a stream up to the uint128 rate cap, where
+        // `piDelta` is largest. The member accrual is a plain `mulDiv`; it must not revert, must match
+        // the view, and can never pay more than was funded.
+        uint256 ei = bound(eiSeed, 1, 1e6);
+        uint64 dur = uint64(bound(uint256(durSeed), 1 minutes, 365 days));
+        uint256 fundAmt = bound(fundSeed, 1e18, uint256(type(uint128).max) * dur);
+
+        uint256 gid = _createMutual(token);
+        uint256 cid = _join(gid, token, u1, ei, 10_000); // E_i == activeCover == ei
+        token.mint(policyholder, fundAmt);
+        _fund(gid, fundAmt, dur);
+        vm.warp(block.timestamp + bound(warpSeed, 1, 2 * uint256(dur)));
+
+        uint256 expected = manager.pendingMemberPremium(cid);
+        uint256 freeBefore = manager.freeBalance(address(token), u1);
+        manager.claimMemberPremium(cid);
+        uint256 paid = manager.freeBalance(address(token), u1) - freeBefore;
+        assertEq(paid, expected, "claim pays what the view reported");
+        assertLe(paid, fundAmt, "never more than was funded");
+        assertEq(manager.pendingMemberPremium(cid), 0, "nothing left to claim at the same instant");
+        _assertP1(gid, token);
+
+        _declareAndExecute(gid, ei);
+        manager.settleMemberLoss(cid); // the loss leg still applies
+        assertEq(manager.getMembership(cid).settledUnits, ei, "loss leg applied");
+    }
+
     // =========================================================================
     // Reclaim-then-loss must NOT under-pay premium already earned while fully covered
     // (INV-P7 floor==ceiling; regression for the settle bank-gate finding)
