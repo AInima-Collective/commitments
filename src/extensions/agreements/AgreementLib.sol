@@ -228,19 +228,22 @@ library AgreementLib {
             s,
             ICM.Commitment({
                 committer: committer,
-                arbiter: prop.arbiter,
-                counterparty: counterparty,
-                token: proposerSide ? prop.proposerToken : prop.acceptorToken,
-                adapter: proposerSide ? prop.proposerAdapter : prop.acceptorAdapter,
-                amount: proposerSide ? prop.proposerAmount : prop.acceptorAmount,
                 maxPenaltyBps: proposerSide ? prop.proposerMaxPenaltyBps : prop.acceptorMaxPenaltyBps,
-                challengeWindow: prop.challengeWindow,
-                createdAt: 0,
-                expiresAt: 0,
                 released: false,
                 forfeited: false,
+                closedAt: 0,
+                arbiter: prop.arbiter,
+                challengeWindow: prop.challengeWindow,
+                counterparty: counterparty,
+                createdAt: 0,
+                token: proposerSide ? prop.proposerToken : prop.acceptorToken,
+                expiresAt: 0,
+                adapter: proposerSide ? prop.proposerAdapter : prop.acceptorAdapter,
+                unbondInitiatedAt: 0,
+                amount: proposerSide ? prop.proposerAmount : prop.acceptorAmount,
                 metadataHash: prop.metadataHash,
-                cumulativePausedAtStart: 0
+                cumulativePausedAtStart: 0,
+                unbondCumulativePausedAtStart: 0
             }),
             prop.metadataURI
         );
@@ -469,7 +472,7 @@ library AgreementLib {
         if (MovementLib.forfeitLive(s.forfeitProposals[payerCid])) revert ICM.ForfeitPending();
         if (MovementLib.forfeitLive(s.forfeitProposals[receiverCid])) revert ICM.ForfeitPending();
 
-        if (s.unbondInitiatedAt[payerCid] != 0 || s.unbondInitiatedAt[receiverCid] != 0) revert ICM.UnbondPending();
+        if (payer.unbondInitiatedAt != 0 || receiver.unbondInitiatedAt != 0) revert ICM.UnbondPending();
     }
 
     /// @dev Per-direction lifetime cap (INV-E1). Cumulatives only ratchet up.
@@ -519,7 +522,7 @@ library AgreementLib {
     ///         caller's free balance. Opt-in: the committer's own first contribution enables
     ///         external ones.
     function contributeCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint256 units) external {
-        // A member commitment's `E_i` / `creditedValue` are frozen at join; contributions would
+        // A member commitment's `E_i` is frozen at join; contributions would
         // drift them and desync the shared-loss accounting (ERC-COMMITMENTS-MUTUALS).
         if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
         if (units == 0) revert ICM.ZeroAmount();
@@ -533,7 +536,7 @@ library AgreementLib {
 
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
         if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.ForfeitPending();
-        if (s.unbondInitiatedAt[commitmentId] != 0) revert ICM.UnbondPending();
+        if (c.unbondInitiatedAt != 0) revert ICM.UnbondPending();
 
         // Exposure-diff growth keeps the per-commitment forfeitable contribution exact.
         ExposureLib.resize(s, c, c.amount + units);

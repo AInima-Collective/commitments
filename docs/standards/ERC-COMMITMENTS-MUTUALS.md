@@ -83,26 +83,22 @@ of §8 are reference compositions, not part of the normative custody-root surfac
 
 ## 1. Storage
 
-A conforming manager appends **six** top-level fields to its EIP-7201 namespaced `Layout`
-struct, at field **offsets 27..32**, after the Part D `forfeitedUnits` mapping (offset 26), in
-two append-only groups: the **loss core** (offsets 27..30) and the **premium reserve**
-(offsets 31..32). The append is
-**strictly additive**: no existing field is reordered, re-typed, or removed. The core
-`Commitment` struct and its `getCommitment` ABI tuple MUST NOT be widened — mutual state lives
-in *sibling mappings keyed by `commitmentId` / `mutualId`*, the same discipline used by
-`unbondInitiatedAt`, `closedAt`, and `forfeitedUnits`. The layout is append-only, and
-implementations MUST extend their storage-slot offset test
-(`test/manager/StorageSlots.t.sol`) with probes for all **six** new fields so any layout
-drift fails loudly.
+A conforming manager adds **six** top-level fields to its EIP-7201 namespaced `Layout`
+struct, in the reference implementation at field **offsets 25..30**, after the Part D
+`forfeitedUnits` mapping (offset 24), in two groups: the **loss core** (offsets 25..28) and the
+**premium reserve** (offsets 29..30). The core `Commitment` struct carries no mutual state —
+mutual state lives in *mappings keyed by `commitmentId` / `mutualId`*. Implementations MUST
+cover these fields, and the packing of `Mutual` and `Membership`, in their storage-slot offset
+test (`test/manager/StorageSlots.t.sol`) so any layout drift fails loudly.
 
 ```solidity
-// === Shared-loss mutuals — loss core (append-only; offsets 27..30) ===
+// === Shared-loss mutuals — loss core (offsets 25..28) ===
 mapping(uint256 => Mutual)             mutuals;             // mutualId => header
 mapping(uint256 => Membership)         membership;          // commitmentId => membership (sparse)
 uint256                                nextMutualId;        // 1-indexed; 0 == not-a-member sentinel
 mapping(uint256 => MutualLossProposal) mutualLossProposals; // mutualId => pending two-phase loss
 
-// === Premium reserve — the FOURTH partition compartment (append-only; offsets 31..32) ===
+// === Premium reserve — the FOURTH partition compartment (offsets 29..30) ===
 mapping(uint256 => uint256) mutualPremiumPool;   // mutualId => premium reserve (funded − claimed)
 mapping(address => uint256) totalMutualPremium;  // numeraire => Σ mutualPremiumPool (O(1) INV-P1 aggregate)
 ```
@@ -125,58 +121,57 @@ the `Membership.mutualId` "not-a-member" sentinel. `membership` is sparse: a zer
 ```solidity
 struct Mutual {
     address arbiter;            // sole authority to INITIATE a mutual loss
-    address numeraire;          // the token every member posts; unit of creditedValue, L and premium
-    address beneficiary;        // who settled units pay to (typically a ClaimRouter) — REQUIRED
     uint64  challengeWindow;    // >= MUTUAL_MIN_CHALLENGE_WINDOW
-    uint64  deallocationWindow; // post-exit-request slashable window; >= challengeWindow
-    uint128 totalShares;        // Σ creditedValue of non-exited members. join / release ONLY — never on loss
-    uint256 cumulativeLoss;     // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18
     bool    active;             // set by the arbiter; members can only join an active mutual
     bool    terminal;           // wound down: no new joins / losses
-    // ---- Premium index (reward side, §6; append-only) ----
-    uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing
-    uint128 activeCover;           // Σ effCover_i over active members = the premium denominator (live cover)
-    uint256 settledTotal;          // Σ settledUnits — cross-checks activeCover == totalShares − settledTotal (INV-P9)
+    address numeraire;          // the token every member posts; unit of E_i, L and premium
+    uint64  deallocationWindow; // post-exit-request slashable window; >= challengeWindow
+    address beneficiary;        // who settled units pay to (typically a ClaimRouter) — REQUIRED
+    uint128 totalShares;        // Σ E_i of non-exited members. join / release ONLY — never on loss
+    uint128 activeCover;        // Σ effCover_i over active members = the premium denominator (live cover)
+    uint256 cumulativeLoss;     // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18
     uint128 rewardRate;            // streamed numeraire per second (Synthetix). 0 == never/no-longer funded
     uint64  lastUpdate;            // last _pokePremium time, clamped to periodFinish
     uint64  periodFinish;          // end of the current stream; accrual stops here
+    uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing
+    uint256 settledTotal;          // Σ settledUnits — cross-checks activeCover == totalShares − settledTotal (INV-P9)
     uint256 premiumRemainder;      // sub-1e27 dust carried forward between pokes (no value ever lost)
     uint256 bankedTotal;           // Σ rewardBank_i — outstandingBank for the funding-time solvency guard (INV-P2)
 }
 ```
 
-The first ten fields (`arbiter` … `terminal`) are the loss-path core. The eight premium
-fields (`premiumPerShareStored` … `bankedTotal`) drive the reward-side index `Pi` (§6). **All
-eight appended fields default to zero**, so a mutual that never funds premium is byte-for-byte
-the pure-loss primitive: the premium index is inert while `rewardRate == 0`. A conforming implementation MUST declare all appended fields in the exact
-order shown (the struct is fuzz-locked by the storage-slot test).
+The premium fields (`activeCover`, `rewardRate` … `bankedTotal`) drive the reward-side index
+`Pi` (§6); the rest are the loss-path core. **The premium fields default to zero**, so a mutual
+that never funds premium is the pure-loss primitive: the premium index is inert while
+`rewardRate == 0`. The order packs the struct into ten slots: the join and loss-initiation
+guards (`arbiter`, `active`, `terminal`) share one, and the two denominators a join or release
+moves (`totalShares`, `activeCover`) share another. The reference layout is locked by the
+storage-slot test.
 
 ### 1.2 `Membership`
 
 ```solidity
 struct Membership {
-    uint256 mutualId;          // 0 == not a member (single, non-rebindable)
-    uint256 forfeitableUnits; // E_i = amount * maxPenaltyBps / 10_000, FROZEN at join (raw units, the loss base)
-    uint256 settledUnits;     // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
-    uint128 creditedValue;    // == E_i, FROZEN at join (totalShares accounting)
-    uint256 lossSnapshot;     // Lambda at join / last settle — liable only for cumulativeLoss - snapshot
-    uint64  unbondRequestedAt;// 0 == active; nonzero starts the deallocation window (still slashable until elapsed)
-    // ---- Premium index (reward side, §6; append-only) ----
-    uint256 premiumSnapshot;  // Pi at join / last sync — earns only Pi-growth after (reward non-retroactivity, INV-P5)
-    uint256 rewardBank;       // accrued-but-unclaimed premium in numeraire (paid to the committer on claim/release)
+    uint64  mutualId;          // 0 == not a member (single, non-rebindable); ids count up from 1
+    uint64  lossSnapshot;      // Lambda at join / last settle (<= 1e18) — liable only for cumulativeLoss - snapshot
+    uint64  unbondRequestedAt; // 0 == active; nonzero starts the deallocation window (still slashable until elapsed)
+    uint64  memberExitCumulativePausedAtStart; // pause snapshot at requestMutualExit; anchors the deallocation clock-stop
+    uint256 forfeitableUnits;  // E_i = amount * maxPenaltyBps / 10_000, FROZEN at join (raw units, the loss base)
+    uint256 settledUnits;      // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
+    uint256 premiumSnapshot;   // Pi at join / last sync — earns only Pi-growth after (reward non-retroactivity, INV-P5)
+    uint256 rewardBank;        // accrued-but-unclaimed premium in numeraire (paid to the committer on claim/release)
 }
 ```
 
-The first six fields are the loss-path core. The two appended fields carry the reward side:
 `premiumSnapshot` is the member's `Pi` cursor; `rewardBank` is accrued-but-unclaimed premium,
-paid to the committer on claim or release. Both MUST be declared in this order. A member's
-weight in the premium denominator is its `creditedValue`, the same weight it carries in
-`totalShares`.
+paid to the committer on claim or release. The order packs the struct into five slots: the id,
+the loss snapshot and both exit fields share the first, so settle, exit request and release
+read them together. `lossSnapshot` fits 64 bits because Lambda never exceeds 1e18.
 
-Both `forfeitableUnits` (`E_i`, the raw-unit loss base) and `creditedValue` (the capacity
-weight, equal to `E_i`) MUST be stored. Settlement reads only `forfeitableUnits` and never a price;
-`creditedValue` is decremented from `totalShares` at exactly the value it was added, so exit
-cannot drift the denominator. `settledUnits` MUST be stored explicitly (not re-derived from the
+`forfeitableUnits` (`E_i`) is both the raw-unit loss base and the member's capacity weight
+`creditedValue` (emitted by `MemberJoined`): it is what the member adds to `totalShares` and to
+the premium denominator. Settlement reads it and never a price; exit decrements `totalShares` by
+exactly the value it added, so exit cannot drift the denominator. `settledUnits` MUST be stored explicitly (not re-derived from the
 live `commitment.amount`) so the surviving-partial decrement and the terminal close are
 closed-form (§4, INV-G9).
 
@@ -487,7 +482,7 @@ no loss is pending (`MutualLossPending`); and the member is fully settled to the
 (`lossSnapshot == cumulativeLoss`, else `MemberUnsettled` — INV-G5). It then performs a
 **mutual-aware terminal decrement** (§4, *not* the core `_closeWithHooks` bps-derived decrement),
 returns the residual `c.amount` to the committer's free balance via `releaseEncumbrance`, zeroes
-`c.amount`, marks the commitment `released`, removes `creditedValue` from `totalShares`, deletes
+`c.amount`, marks the commitment `released`, removes its `E_i` from `totalShares`, deletes
 the membership, and emits `MemberReleased(mutualId, commitmentId)`.
 
 Release also carries the member's **premium exit leg** (§6): it pokes the index and banks the
@@ -644,7 +639,7 @@ in `premiumRemainder`, and never touches a reserve (INV-P0).
 
 The premium reserve `mutualPremiumPool[mutualId]` is `funded − claimed` numeraire and is a
 **genuine partition compartment** — the fourth, alongside free / encumbered / escrow — tracked by
-the per-token aggregate `totalMutualPremium` (§1 storage, offsets 31..32). It is credited only by
+the per-token aggregate `totalMutualPremium` (§1 storage, offsets 29..30). It is credited only by
 `fundMutualPremium` and debited only by `claimMemberPremium` / `reclaimPremium` / terminal-sweep,
 each through the `LedgerLib` `freeToMutualPremium` / `mutualPremiumToFree` helper pair (INV-P0), so
 the extended partition **INV-P1**
@@ -820,13 +815,13 @@ entirely here — the custody root only sets a future rate under INV-P2. Events:
 
 ## 10. Backwards compatibility
 
-This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no change to the core custody ledger, the commitment lifecycle, or any other sibling extension: a manager that does not implement the mutuals surface remains fully conformant to the core standard. Mutual membership only ever *adds* gating on commitments a member explicitly enrolls (§5) — the terminal-close, unbond, and forfeit-initiation paths revert `CommitmentInMutual` on a member commitment, with committer-liveness preserved through the mutual exit path. Non-member commitments and existing deployments are unaffected. The six storage fields are appended (offsets 27..32) with no reordering of prior fields.
+This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no change to the core custody ledger, the commitment lifecycle, or any other sibling extension: a manager that does not implement the mutuals surface remains fully conformant to the core standard. Mutual membership only ever *adds* gating on commitments a member explicitly enrolls (§5) — the terminal-close, unbond, and forfeit-initiation paths revert `CommitmentInMutual` on a member commitment, with committer-liveness preserved through the mutual exit path. Non-member commitments and existing deployments are unaffected. The six storage fields sit at offsets 25..30 of the reference layout.
 
 ## 11. Reference implementation
 
 - `src/extensions/mutuals/MutualLib.sol` — the loss index (Λ) and premium index (Π) core logic (an external delegatecall library of the manager).
 - `src/core/interfaces/ICommitmentManager.sol` — the mutual structs, events, and errors.
-- `src/core/manager/storage/CommitmentManagerStorage.sol` — the six append-only mutual fields (offsets 27..32).
+- `src/core/manager/storage/CommitmentManagerStorage.sol` — the six mutual fields (offsets 25..30).
 - `src/extensions/mutuals/` — owning extension directory for `MutualRegistry`, `LinkedMutualPolicy`, `PremiumScheduler`, `ClaimRouter`, and `OptimisticMutualArbiter`.
 
 ## 12. Test cases

@@ -205,11 +205,11 @@ contract MutualMathSmokeTest is HalmosBase {
         uint256 cidC = manager.joinMutual(mutualId, p);
 
         uint256 sharesPost = manager.getMutual(mutualId).totalShares;
-        uint256 expectedEi = (amount * 5_000) / 10_000; // == creditedValue
+        uint256 expectedEi = (amount * 5_000) / 10_000; // the member's totalShares weight
 
         ICM.Membership memory mc = manager.getMembership(cidC);
-        assert(mc.creditedValue == expectedEi); // membership records the exact credited value
-        assert(sharesPost - sharesPre == uint256(mc.creditedValue)); // INV-G3 delta: shares grew by exactly that
+        assert(mc.forfeitableUnits == expectedEi); // membership records the exact E_i
+        assert(sharesPost - sharesPre == mc.forfeitableUnits); // INV-G3 delta: shares grew by exactly that
     }
 
     // =========================================================================

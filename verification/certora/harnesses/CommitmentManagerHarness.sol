@@ -52,6 +52,6 @@ contract CommitmentManagerHarness is CommitmentManager {
     ///         (ERC §A.6 erratum). Exposed so P1-LIVE states maturity in
     ///         effective time exactly as the code computes it.
     function unbondPauseSnapshotOf(uint256 commitmentId) external view returns (uint64) {
-        return CommitmentManagerStorage.layout().unbondCumulativePausedAtStart[commitmentId];
+        return CommitmentManagerStorage.layout().commitments[commitmentId].unbondCumulativePausedAtStart;
     }
 }

@@ -706,7 +706,7 @@ contract PartitionInvariantTest is Test {
     }
 
     /// @dev INV-G2/G3/G6/totalShares: for every shared-loss mutual, Lambda is in [0, 1e18];
-    ///      `totalShares` equals the sum of active members' frozen `creditedValue`; and per member
+    ///      `totalShares` equals the sum of active members' frozen `forfeitableUnits` (E_i); and per member
     ///      cumulative `settledUnits <= forfeitableUnits` (E_i).
     function invariant_mutualAccounting() public view {
         uint256 nMutuals = handler.mutualCount();
@@ -722,9 +722,9 @@ contract PartitionInvariantTest is Test {
                 ICM.Membership memory m = manager.getMembership(cid);
                 if (m.mutualId != gid) continue;
                 assertLe(m.settledUnits, m.forfeitableUnits, "INV-G3: settled <= E_i");
-                sumCredited += m.creditedValue;
+                sumCredited += m.forfeitableUnits;
             }
-            assertEq(uint256(g.totalShares), sumCredited, "totalShares == sum of active creditedValue");
+            assertEq(uint256(g.totalShares), sumCredited, "totalShares == sum of active E_i");
         }
     }
 

@@ -258,8 +258,9 @@ library MovementLib {
         view
         returns (ClaimContext memory)
     {
-        return
-            ClaimContext({base: baseContext(s, commitmentId), caller: msg.sender, closedAt: s.closedAt[commitmentId]});
+        return ClaimContext({
+            base: baseContext(s, commitmentId), caller: msg.sender, closedAt: s.commitments[commitmentId].closedAt
+        });
     }
 
     /// @notice Core of the `manager.pending` view.

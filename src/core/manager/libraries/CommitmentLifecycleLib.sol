@@ -238,19 +238,22 @@ library CommitmentLifecycleLib {
             s,
             ICM.Commitment({
                 committer: committer,
-                arbiter: params.arbiter,
-                counterparty: params.counterparty,
-                token: params.token,
-                adapter: params.adapter,
-                amount: params.amount,
                 maxPenaltyBps: params.maxPenaltyBps,
-                challengeWindow: params.challengeWindow,
-                createdAt: 0,
-                expiresAt: params.expiresAt,
                 released: false,
                 forfeited: false,
+                closedAt: 0,
+                arbiter: params.arbiter,
+                challengeWindow: params.challengeWindow,
+                counterparty: params.counterparty,
+                createdAt: 0,
+                token: params.token,
+                expiresAt: params.expiresAt,
+                adapter: params.adapter,
+                unbondInitiatedAt: 0,
+                amount: params.amount,
                 metadataHash: params.metadataHash,
-                cumulativePausedAtStart: 0
+                cumulativePausedAtStart: 0,
+                unbondCumulativePausedAtStart: 0
             }),
             params.metadataURI
         );
@@ -258,7 +261,8 @@ library CommitmentLifecycleLib {
 
     /// @notice Take the next commitment id, store `t` under it field by field and emit
     ///         `CommitmentCreated`. `createdAt` and the expiry pause snapshot are set here; the
-    ///         status flags and the other two fields of `t` are ignored. Shared with agreement accept.
+    ///         status flags and the close, unbond and pause-snapshot fields of `t` are ignored (a
+    ///         fresh id's slots are zero). Shared with agreement accept.
     function storeCommitment(
         CommitmentManagerStorage.Layout storage s,
         ICM.Commitment memory t,
@@ -278,7 +282,7 @@ library CommitmentLifecycleLib {
         c.expiresAt = t.expiresAt;
         c.metadataHash = t.metadataHash;
         // Anchors the expiry clock-stop. Written only when an expiry exists and the snapshot is
-        // non-zero: the field opens a fresh (zero) storage slot, and an expiry-less commitment
+        // non-zero: the field's slot is otherwise left fresh (zero), and an expiry-less commitment
         // (agreement legs included) never reads it.
         if (t.expiresAt != 0) {
             uint64 paused = PauseLib.creditablePaused(s);
@@ -361,8 +365,8 @@ library CommitmentLifecycleLib {
         MovementLib._runGuardedHooks(s, commitmentId, HOOK_RELEASED);
 
         c.released = true;
-        if (s.unbondInitiatedAt[commitmentId] != 0) s.unbondInitiatedAt[commitmentId] = 0;
-        s.closedAt[commitmentId] = uint64(block.timestamp);
+        if (c.unbondInitiatedAt != 0) c.unbondInitiatedAt = 0;
+        c.closedAt = uint64(block.timestamp);
 
         ExposureLib.decrement(s, c.committer, c.token, ExposureLib.exposureOf(c.amount, c.maxPenaltyBps));
 
@@ -460,8 +464,8 @@ library CommitmentLifecycleLib {
         // --- Effects (CEI) ---
         p.executed = true;
         c.forfeited = true;
-        if (s.unbondInitiatedAt[commitmentId] != 0) s.unbondInitiatedAt[commitmentId] = 0;
-        s.closedAt[commitmentId] = uint64(block.timestamp);
+        if (c.unbondInitiatedAt != 0) c.unbondInitiatedAt = 0;
+        c.closedAt = uint64(block.timestamp);
         s.forfeitedUnits[commitmentId] = unitsToForfeit;
 
         // Full exposure decrement (§C.3 step 1).
@@ -511,7 +515,7 @@ library CommitmentLifecycleLib {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
-        if (s.unbondInitiatedAt[commitmentId] != 0) revert ICM.UnbondAlreadyRequested();
+        if (c.unbondInitiatedAt != 0) revert ICM.UnbondAlreadyRequested();
         // Member members exit via requestMutualExit (deallocation window), not the normal unbond.
         if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
 
@@ -523,7 +527,7 @@ library CommitmentLifecycleLib {
     /// @notice Permissionless finalize after maturity; blocked by an active forfeit proposal.
     function finalizeUnbondCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         ICM.Commitment storage c = s.commitments[commitmentId];
-        uint64 initiatedAt = s.unbondInitiatedAt[commitmentId];
+        uint64 initiatedAt = c.unbondInitiatedAt;
         if (initiatedAt == 0) revert ICM.NoUnbondPending();
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
 
@@ -531,8 +535,8 @@ library CommitmentLifecycleLib {
         // committer cannot wait out its exit delay during a pause in which the losses the delay
         // exists to absorb are inoperable. `maturesAt` reports the current best-known maturity
         // (it moves out if further pause episodes accrue credit).
-        uint64 maturesAt = initiatedAt + s.unbondingPeriod
-            + uint64(PauseLib.pauseCreditSince(s, s.unbondCumulativePausedAtStart[commitmentId]));
+        uint64 maturesAt =
+            initiatedAt + s.unbondingPeriod + uint64(PauseLib.pauseCreditSince(s, c.unbondCumulativePausedAtStart));
         if (block.timestamp < maturesAt) revert ICM.UnbondNotElapsed(maturesAt);
         if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.UnbondBlockedByForfeit();
 
@@ -546,15 +550,16 @@ library CommitmentLifecycleLib {
     function cancelUnbondCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
-        if (s.unbondInitiatedAt[commitmentId] == 0) revert ICM.NoUnbondPending();
+        if (c.unbondInitiatedAt == 0) revert ICM.NoUnbondPending();
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
 
-        s.unbondInitiatedAt[commitmentId] = 0;
+        c.unbondInitiatedAt = 0;
         emit ICM.CommitmentUnbondCancelled(commitmentId);
 
         (bool agreed, uint256 partnerId) = _partnerCommitmentId(s, commitmentId);
-        if (agreed && s.unbondInitiatedAt[partnerId] != 0) {
-            s.unbondInitiatedAt[partnerId] = 0;
+        ICM.Commitment storage partner = s.commitments[partnerId];
+        if (agreed && partner.unbondInitiatedAt != 0) {
+            partner.unbondInitiatedAt = 0;
             emit ICM.CommitmentUnbondCancelled(partnerId);
         }
     }
@@ -563,10 +568,10 @@ library CommitmentLifecycleLib {
     function initiateUnbondIdempotent(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) private {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (c.released || c.forfeited) return;
-        if (s.unbondInitiatedAt[commitmentId] != 0) return;
+        if (c.unbondInitiatedAt != 0) return;
 
-        s.unbondInitiatedAt[commitmentId] = uint64(block.timestamp);
-        s.unbondCumulativePausedAtStart[commitmentId] = PauseLib.creditablePaused(s);
+        c.unbondInitiatedAt = uint64(block.timestamp);
+        c.unbondCumulativePausedAtStart = PauseLib.creditablePaused(s);
         // The emitted maturity is the no-further-pause estimate; clock-stop can move it out.
         emit ICM.CommitmentUnbondRequested(commitmentId, c.committer, uint64(block.timestamp) + s.unbondingPeriod);
     }

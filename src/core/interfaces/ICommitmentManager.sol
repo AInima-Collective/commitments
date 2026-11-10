@@ -20,23 +20,28 @@ interface ICommitmentManager {
     // =========================================================================
 
     /// @notice A unilateral commitment: a parameterized lien on the committer's encumbered backing.
-    /// @dev `amount` is denominated in raw backing-token units (ERC §0.1).
+    /// @dev `amount` is denominated in raw backing-token units (ERC §0.1). Packed into eight
+    ///      slots: each address shares its slot with the small fields, grouped so close writes one
+    ///      slot (flags + `closedAt`) and an unbond request one (`unbondInitiatedAt`); the two pause
+    ///      snapshots, rarely non-zero, share the last slot.
     struct Commitment {
         address committer;
-        address arbiter;
-        address counterparty;
-        address token; // backing token
-        address adapter; // backing adapter (read-only pricing metadata)
-        uint256 amount; // raw units currently encumbered under this commitment
         uint16 maxPenaltyBps; // 0..10_000
-        uint64 challengeWindow; // seconds
-        uint64 createdAt;
-        uint64 expiresAt; // 0 = no expiry
         bool released;
         bool forfeited;
+        uint64 closedAt; // close timestamp; 0 = active
+        address arbiter;
+        uint64 challengeWindow; // seconds
+        address counterparty;
+        uint64 createdAt;
+        address token; // backing token
+        uint64 expiresAt; // 0 = no expiry
+        address adapter; // backing adapter (read-only pricing metadata)
+        uint64 unbondInitiatedAt; // committer-unbond start; 0 = none pending
+        uint256 amount; // raw units currently encumbered under this commitment
         bytes32 metadataHash; // on-chain anchor; the URI is carried only by `CommitmentCreated`
-        // ---- Pause erratum (append-only) ----
         uint64 cumulativePausedAtStart; // creditable-pause snapshot at create; anchors the expiry clock-stop
+        uint64 unbondCumulativePausedAtStart; // creditable-pause snapshot at unbond request; anchors the unbonding clock-stop
     }
 
     /// @notice Parameters for creating a commitment.
@@ -150,45 +155,46 @@ interface ICommitmentManager {
     ///         individually-custodied, exogenous member commitments. Tokens never centralize —
     ///         the index rebases *attribution*, not custody (INV-1 preserved). See the Mutuals standard
     ///         (ERC-COMMITMENTS-MUTUALS). Economically: Lloyd's several liability with a shared loss ratio.
+    /// @dev Packed into ten slots: the join and loss-initiation guards (`arbiter`, `active`,
+    ///      `terminal`) share one, and the two denominators a join or release moves (`totalShares`,
+    ///      `activeCover`) share another.
     struct Mutual {
         address arbiter; // sole authority to INITIATE a mutual loss
-        address numeraire; // the token every member posts; unit of creditedValue, L and premium
-        address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
         uint64 challengeWindow; // >= MUTUAL_MIN_CHALLENGE_WINDOW (longer than the per-commitment floor)
-        uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
-        uint128 totalShares; // Σ creditedValue of non-exited members. join / release ONLY — never on loss.
-        uint256 cumulativeLoss; // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18.
         bool active; // set by the arbiter; members can only join an active mutual
         bool terminal; // wound down: no new joins / losses
-        // ---- Premium index (reward side, Mutuals premium; append-only) ----
+        address numeraire; // the token every member posts; unit of E_i, L and premium
+        uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
+        address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
+        uint128 totalShares; // Σ E_i of non-exited members. join / release ONLY — never on loss.
         // A second native MasterChef index `Pi` over a SEPARATE live-deliverable-capacity
         // denominator `activeCover` (never `totalShares`). Distinct from the loss index in
-        // denominator, identical in pull-accumulator shape. All fields default-zero, so a mutual
-        // that never funds premium is byte-for-byte the pre-premium behaviour (pure-loss short-circuit).
-        uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing.
+        // denominator, identical in pull-accumulator shape. All premium fields default-zero, so a
+        // mutual that never funds premium pays nothing for them (pure-loss short-circuit).
         uint128 activeCover; // Σ effCover_i over active members = the premium denominator (live deliverable cover)
-        uint256 settledTotal; // Σ settledUnits — cross-checks `activeCover == totalShares − settledTotal` (INV-P9)
+        uint256 cumulativeLoss; // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18.
         uint128 rewardRate; // streamed numeraire per second (Synthetix). 0 == never/no-longer funded (short-circuit)
         uint64 lastUpdate; // last `_pokePremium` time, clamped to periodFinish
         uint64 periodFinish; // end of the current stream; accrual stops here
+        uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing.
+        uint256 settledTotal; // Σ settledUnits — cross-checks `activeCover == totalShares − settledTotal` (INV-P9)
         uint256 premiumRemainder; // sub-1e27 dust carried forward between pokes (no value ever lost)
         uint256 bankedTotal; // Σ rewardBank_i — `outstandingBank` for the funding-time solvency guard (INV-P2)
     }
 
     /// @notice Per-commitment membership in a Mutual (sparse; mutualId 0 == not a member).
+    /// @dev Packed into five slots: the id, the loss snapshot and both exit fields share the first,
+    ///      so settle, exit request and release read one slot for all of them. `forfeitableUnits`
+    ///      is also the member's `totalShares` weight (E_i, checked <= uint128 max at join).
     struct Membership {
-        uint256 mutualId; // 0 == not a member (single, non-rebindable)
-        uint256 forfeitableUnits; // E_i = amount*maxPenaltyBps/10_000, FROZEN at join (the loss base, raw units)
-        uint256 settledUnits; // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
-        uint128 creditedValue; // == E_i, FROZEN at join (totalShares accounting)
-        uint256 lossSnapshot; // Lambda at join / last settle — liable only for cumulativeLoss - snapshot
+        uint64 mutualId; // 0 == not a member (single, non-rebindable). Mutual ids count up from 1, one per createMutual.
+        uint64 lossSnapshot; // Lambda at join / last settle (<= 1e18) — liable only for cumulativeLoss - snapshot
         uint64 unbondRequestedAt; // 0 == active; nonzero starts the deallocation window (still slashable until elapsed)
-        // ---- Premium index (reward side; append-only) ----
+        uint64 memberExitCumulativePausedAtStart; // creditable-pause snapshot at requestMutualExit; anchors the deallocation clock-stop
+        uint256 forfeitableUnits; // E_i = amount*maxPenaltyBps/10_000, FROZEN at join (the loss base and totalShares weight, raw units)
+        uint256 settledUnits; // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
         uint256 premiumSnapshot; // Pi at join / last sync — earns only Pi-growth after (reward non-retroactivity, INV-P5)
         uint256 rewardBank; // accrued-but-unclaimed premium in numeraire (paid to the committer on claim/release)
-        // (The deallocation-window pause snapshot lives in the sibling
-        //  `memberExitCumulativePausedAtStart` mapping, written at requestMutualExit — a struct
-        //  field would cost every join a slot touch for a value only exits read.)
     }
 
     /// @notice Pending two-phase mutual-loss declaration (at most one active per mutual).
@@ -787,8 +793,8 @@ interface ICommitmentManager {
     // =========================================================================
 
     /// @notice Create a Mutual. Starts inactive; members can only join once its arbiter
-    ///         activates it. Every member posts the mutual's `numeraire` token and
-    ///         `creditedValue == E_i` by construction (oracle-free).
+    ///         activates it. Every member posts the mutual's `numeraire` token and is weighted
+    ///         by its forfeitable allotment `E_i` (oracle-free).
     function createMutual(MutualParams calldata params) external returns (uint256 mutualId);
 
     /// @notice Flip an inactive mutual active (arbiter only; no creator is stored). No joins and no
@@ -796,7 +802,7 @@ interface ICommitmentManager {
     function activateMutual(uint256 mutualId) external;
 
     /// @notice Create a fresh commitment and join it to `mutualId` atomically, freezing its weight
-    ///         `creditedValue == E_i`. `params.token` must be the mutual's numeraire. Reverts
+    ///         `E_i` (emitted as `MemberJoined.creditedValue`). `params.token` must be the mutual's numeraire. Reverts
     ///         `MutualExhausted` once Lambda is at its cap (1e18).
     function joinMutual(uint256 mutualId, CommitmentParams calldata params) external returns (uint256 commitmentId);
 

@@ -98,7 +98,7 @@ export function useMyMemberships({
         | {
             mutualId: bigint
             settledUnits: bigint
-            creditedValue: bigint
+            forfeitableUnits: bigint
             lossSnapshot: bigint
             unbondRequestedAt: bigint
           }
@@ -111,7 +111,7 @@ export function useMyMemberships({
       out.push({
         commitmentId: BigInt(w.commitmentId),
         mutualId,
-        creditedValue: m.creditedValue,
+        creditedValue: m.forfeitableUnits, // E_i: the member's credited weight
         settledUnits: m.settledUnits,
         lossSnapshot: m.lossSnapshot,
         unbondRequestedAt: m.unbondRequestedAt,

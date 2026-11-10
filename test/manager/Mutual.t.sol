@@ -99,11 +99,10 @@ contract ManagerMutualTest is Test {
         ICM.Membership memory m = manager.getMembership(cid);
         assertEq(m.mutualId, gid, "mutualId");
         assertEq(m.forfeitableUnits, 100e18, "E_i frozen");
-        assertEq(m.creditedValue, 100e18, "creditedValue == E_i (homogeneous)");
         assertEq(m.settledUnits, 0, "no settle yet");
 
         ICM.Mutual memory g = manager.getMutual(gid);
-        assertEq(g.totalShares, 100e18, "totalShares = sum creditedValue");
+        assertEq(g.totalShares, 100e18, "totalShares = sum E_i");
         // The member's encumbrance is live.
         assertEq(manager.encumberedBalance(address(token), u1), 100e18, "encumbered");
     }

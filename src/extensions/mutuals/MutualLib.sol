@@ -8,6 +8,7 @@ import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {PauseLib} from "src/core/manager/libraries/PauseLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {MeasuredPull} from "src/shared/utilities/MeasuredPull.sol";
 
 /// @title MutualLib
@@ -57,7 +58,7 @@ library MutualLib {
 
     /// @notice Create a Mutual (permissionless — the caller names the arbiter). Starts
     ///         inactive. Every member posts `numeraire`, and its weight is its forfeitable
-    ///         allotment (`creditedValue == E_i`).
+    ///         allotment `E_i`.
     function createMutual(CommitmentManagerStorage.Layout storage s, ICM.MutualParams calldata p)
         external
         returns (uint256 mutualId)
@@ -94,7 +95,7 @@ library MutualLib {
     // =========================================================================
 
     /// @notice Create a fresh commitment (committer = caller) and join it to `mutualId`, freezing
-    ///         `E_i` (and `creditedValue == E_i`). The member must post the mutual's numeraire.
+    ///         `E_i` (its `totalShares` weight). The member must post the mutual's numeraire.
     ///         Member commitments may bind NO strategies (the cover leg carries no hooks; premium
     ///         is a separate, unpooled periphery leg) — this makes the
     ///         "no FromEncumbered drift / no forfeit-reactive hook" guarantee structural (OBJ-7).
@@ -124,41 +125,41 @@ library MutualLib {
         commitmentId = CommitmentLifecycleLib.createFull(s, params);
 
         // Register the membership + freeze its weight (extracted to bound stack depth).
-        _registerMember(s, g, mutualId, commitmentId, ei, credited);
+        _registerMember(s, g, mutualId, commitmentId, ei);
 
         emit ICM.MemberJoined(mutualId, commitmentId, msg.sender, credited, ei);
     }
 
     /// @dev Post-create membership registration: grow `totalShares` (loss denominator), freeze the
-    ///      membership row, and initialize the premium side (poke + snapshot + `activeCover` add). Extracted from `joinMutual` purely to
-    ///      bound stack depth. `creditedValue` moves ONLY on join / release — never on loss.
+    ///      membership row, and initialize the premium side (poke + snapshot + `activeCover` add).
+    ///      Extracted from `joinMutual` purely to bound stack depth. A member's `totalShares` weight
+    ///      (`forfeitableUnits == E_i`) moves ONLY on join / release — never on loss.
     function _registerMember(
         CommitmentManagerStorage.Layout storage s,
         ICM.Mutual storage g,
         uint256 mutualId,
         uint256 commitmentId,
-        uint256 ei,
-        uint128 credited
+        uint256 ei
     ) private {
-        uint256 newTotal = uint256(g.totalShares) + credited;
+        uint256 newTotal = uint256(g.totalShares) + ei;
         if (newTotal > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
         g.totalShares = uint128(newTotal);
 
-        s.membership[commitmentId] = ICM.Membership({
-            mutualId: mutualId,
-            forfeitableUnits: ei,
-            settledUnits: 0,
-            creditedValue: credited,
-            lossSnapshot: g.cumulativeLoss, // no-retroactive-loss: liable only for future Lambda growth
-            unbondRequestedAt: 0,
-            premiumSnapshot: 0, // set to Pi by _initMemberPremium below — no-retroactive-reward (INV-P5)
-            rewardBank: 0
-        });
+        // The commitment id is fresh, so its membership row is all zero: write only the non-zero
+        // fields (settledUnits, unbondRequestedAt, the exit snapshot and rewardBank start at zero).
+        ICM.Membership storage m = s.membership[commitmentId];
+        // Mutual ids count up from 1, one per `createMutual` call, so they cannot reach 2^64.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        m.mutualId = uint64(mutualId);
+        m.forfeitableUnits = ei;
+        // No-retroactive-loss: liable only for future Lambda growth. Lambda <= 1e18 < 2^64.
+        uint256 lambda = g.cumulativeLoss;
+        if (lambda != 0) m.lossSnapshot = SafeCast.toUint64(lambda);
 
         // Premium side: poke BEFORE mutating `activeCover` (MasterChef discipline, INV-P8), then add the
         // member's deliverable cover to the denominator. A fresh member has `settledUnits == 0` and
-        // `c.amount >= E_i`, so `effCover == credited` — exact, no Belt-2 clamp bite.
-        _initMemberPremium(g, s.membership[commitmentId], s.commitments[commitmentId]);
+        // `c.amount >= E_i`, so `effCover == E_i` — exact, no Belt-2 clamp bite.
+        _initMemberPremium(g, m, s.commitments[commitmentId]);
     }
 
     // =========================================================================
@@ -337,7 +338,7 @@ library MutualLib {
             uint256 effNew = _effCover(m, c);
             g.activeCover = uint128(uint256(g.activeCover) - (effOld - effNew)); // effOld >= effNew
         }
-        m.lossSnapshot = lambda;
+        m.lossSnapshot = SafeCast.toUint64(lambda); // Lambda <= 1e18 < 2^64
 
         emit ICM.MemberSettled(mutualId, commitmentId, owed, lambda);
     }
@@ -369,7 +370,7 @@ library MutualLib {
         if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending();
         if (
             m.unbondRequestedAt != 0
-                && PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId])
+                && PauseLib.effectiveElapsed(s, m.unbondRequestedAt, m.memberExitCumulativePausedAtStart)
                     < 2 * uint256(s.mutuals[mutualId].deallocationWindow)
         ) revert ICM.UnbondAlreadyRequested(); // not lapsed yet
 
@@ -379,9 +380,8 @@ library MutualLib {
         _syncMember(s.mutuals[mutualId], m, c);
 
         m.unbondRequestedAt = uint64(block.timestamp);
-        // Anchors the deallocation clock-stop. A sibling mapping rather than a Membership field so
-        // the join path never touches the slot (same pattern as `unbondCumulativePausedAtStart`).
-        s.memberExitCumulativePausedAtStart[commitmentId] = PauseLib.creditablePaused(s);
+        // Anchors the deallocation clock-stop; shares the slot `unbondRequestedAt` was just written to.
+        m.memberExitCumulativePausedAtStart = PauseLib.creditablePaused(s);
         // The emitted horizon is the no-further-pause estimate; clock-stop can move it out.
         uint64 slashableUntil = uint64(block.timestamp) + s.mutuals[mutualId].deallocationWindow;
         emit ICM.MemberExitRequested(mutualId, commitmentId, slashableUntil);
@@ -406,8 +406,7 @@ library MutualLib {
         // Clock-stop (ERC §A.6 erratum): the deallocation window elapses in effective time — an
         // informed member cannot ride out its still-slashable exit window during a pause in which
         // the mutual loss it would owe cannot execute.
-        uint256 elapsed =
-            PauseLib.effectiveElapsed(s, m.unbondRequestedAt, s.memberExitCumulativePausedAtStart[commitmentId]);
+        uint256 elapsed = PauseLib.effectiveElapsed(s, m.unbondRequestedAt, m.memberExitCumulativePausedAtStart);
         if (elapsed < g.deallocationWindow) revert ICM.DeallocationWindowActive();
         if (elapsed >= 2 * uint256(g.deallocationWindow)) revert ICM.ExitRequestLapsed();
         if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending();
@@ -433,10 +432,11 @@ library MutualLib {
 
         c.amount = 0;
         c.released = true;
-        if (s.unbondInitiatedAt[commitmentId] != 0) s.unbondInitiatedAt[commitmentId] = 0;
-        s.closedAt[commitmentId] = uint64(block.timestamp);
+        if (c.unbondInitiatedAt != 0) c.unbondInitiatedAt = 0;
+        c.closedAt = uint64(block.timestamp);
 
-        g.totalShares -= m.creditedValue; // remove at the exact value added; never on loss
+        // Remove at the exact value added; never on loss. E_i <= uint128 max, checked at join.
+        g.totalShares -= SafeCast.toUint128(m.forfeitableUnits);
 
         // ---- Premium auto-pay (CEI: effects — zero bank, decrement aggregate — before the pool->free
         // move; the move is a pure internal ledger op so there is no external-call reentrancy surface).
@@ -448,7 +448,6 @@ library MutualLib {
         }
 
         delete s.membership[commitmentId];
-        delete s.memberExitCumulativePausedAtStart[commitmentId]; // refund; unreadable anyway (INV-G6 non-rebindable)
 
         // Last member out ⇒ no `activeCover`, so `_pokePremium` can no longer accrue. Sweep the residual
         // reserve to the beneficiary (the core's policyholder-of-record proxy) so INV-P1 closes at zero.
@@ -661,14 +660,15 @@ library MutualLib {
     ///      from `joinMutual` purely to bound stack depth (the join path is variable-heavy).
     function _initMemberPremium(ICM.Mutual storage g, ICM.Membership storage m, ICM.Commitment storage c) private {
         _pokePremium(g);
-        m.premiumSnapshot = g.premiumPerShareStored;
-        // effCover <= credited and Σ effCover <= totalShares (<= uint128), so the cast cannot truncate.
+        uint256 pi = g.premiumPerShareStored;
+        if (pi != 0) m.premiumSnapshot = pi; // a fresh row is already zero
+        // effCover <= E_i and Σ effCover <= totalShares (<= uint128), so the cast cannot truncate.
         // forge-lint: disable-next-line(unsafe-typecast)
         g.activeCover = uint128(uint256(g.activeCover) + _effCover(m, c));
     }
 
     /// @dev Live DELIVERABLE cover of a member = its premium denominator weight: `E_i − settledUnits`
-    ///      (`creditedValue == E_i`). The Belt-2 `min(·, c.amount)` clamp is provably inert (member
+    ///      (the frozen `E_i`). The Belt-2 `min(·, c.amount)` clamp is provably inert (member
     ///      commitments are fenced from every non-mutual `amount` mutation, so
     ///      `c.amount >= E_i − settledUnits` always). It is KEPT IN CODE so any future deliverability
     ///      divergence degrades to a bounded, solvency-independent fairness deviation rather than

@@ -7,8 +7,8 @@ import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 /// @title CommitmentManagerStorage
 /// @notice EIP-7201 namespaced storage layout for CommitmentManager.
 /// @dev All state lives in this struct at STORAGE_SLOT to avoid proxy storage collisions.
-///      Field order is APPEND-ONLY: `test/manager/StorageSlots.t.sol` locks the slot constant
-///      and probes field offsets — run it after any change to this file.
+///      `test/manager/StorageSlots.t.sol` locks the slot constant and probes field offsets — run
+///      it after any change to this file.
 library CommitmentManagerStorage {
     /// @dev keccak256(abi.encode(uint256(keccak256("commitments.manager.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant STORAGE_SLOT = 0x088c82aa976aa63e8a80c9839988524f50fb04228a27fd9edf26e1e6206df800;
@@ -32,9 +32,9 @@ library CommitmentManagerStorage {
         mapping(address => uint256) totalEncumbered;
         mapping(address => uint256) totalEscrow;
         // =====================================================================
-        // Part C — commitments (offsets 5..14)
+        // Part C — commitments (offsets 5..12)
         // =====================================================================
-        /// @dev commitmentId => Commitment
+        /// @dev commitmentId => Commitment (its close, unbond and pause-snapshot fields included)
         mapping(uint256 => ICommitmentManager.Commitment) commitments;
         /// @dev Next commitment id. Initialized to 1: id 0 is the DistributionPaid
         ///      non-attribution sentinel and MUST never identify a commitment (INV-10).
@@ -52,16 +52,10 @@ library CommitmentManagerStorage {
         /// @dev user => token => Σ forfeitable exposure over the user's live liens (INV-3 is keyed per
         ///      (user, token)). The encumbered side of INV-3 is `ledger[token][user].encumberedBalance`.
         mapping(address => mapping(address => uint256)) userForfeitable;
-        /// @dev commitmentId => unbond initiation timestamp; 0 = none. Maturity is
-        ///      `unbondInitiatedAt[id] + unbondingPeriod`.
-        mapping(uint256 => uint64) unbondInitiatedAt;
-        /// @dev commitmentId => close timestamp (0 = active). Carried into ClaimContext.closedAt
-        ///      so strategies can implement post-close policies (e.g. abandoned-accrual reclaim).
-        mapping(uint256 => uint64) closedAt;
         /// @dev committer => sequential nonce for createCommitmentFor replay protection
         mapping(address => uint256) nonces;
         // =====================================================================
-        // Agreements extension (offsets 15..22)
+        // Agreements extension (offsets 13..20)
         // =====================================================================
         /// @dev proposalId => AgreementProposal
         mapping(uint256 => ICommitmentManager.AgreementProposal) agreementProposals;
@@ -82,12 +76,12 @@ library CommitmentManagerStorage {
         /// @dev agreementId => live caps + cumulative-flow counters (INV-E1)
         mapping(uint256 => ICommitmentManager.AgreementSettlement) agreementSettlement;
         // =====================================================================
-        // Contributions (offset 23)
+        // Contributions (offset 21)
         // =====================================================================
         /// @dev commitmentId => accepts third-party contributeEncumbered calls (ERC §C.6)
         mapping(uint256 => bool) acceptsContributions;
         // =====================================================================
-        // Config (offsets 24..25; the four scalars pack into one slot)
+        // Config (offsets 22..23; the four scalars pack into one slot)
         // =====================================================================
         /// @dev Committer-unbond period in seconds. Set at initialize; setUnbondingPeriod rejects 0
         ///      (ZeroAmount), so this is always > 0 — there is no lazy default.
@@ -102,13 +96,13 @@ library CommitmentManagerStorage {
         /// @dev Optional operator registry for delegation hooks (mesh extension).
         address operatorRegistry;
         // =====================================================================
-        // Part D bookkeeping (offset 26)
+        // Part D bookkeeping (offset 24)
         // =====================================================================
         /// @dev commitmentId => units forfeited at executeForfeit. Persisted so sweepFailedHook can
         ///      reconstruct the exact ForfeitContext when re-driving a failed onCommitmentForfeited.
         mapping(uint256 => uint256) forfeitedUnits;
         // =====================================================================
-        // Shared-loss mutuals (Mutual extension; offsets 27..30)
+        // Shared-loss mutuals (Mutual extension; offsets 25..28)
         // =====================================================================
         /// @dev mutualId => Mutual header. Mutual ids are 1-indexed (`initialize` seeds
         ///      `nextMutualId` to 1): id 0 is the Membership "not-a-member" sentinel.
@@ -121,13 +115,13 @@ library CommitmentManagerStorage {
         /// @dev mutualId => pending two-phase mutual-loss declaration (at most one active).
         mapping(uint256 => ICommitmentManager.MutualLossProposal) mutualLossProposals;
         // =====================================================================
-        // Premium index (Mutual reward side; offsets 31..32)
+        // Premium index (Mutual reward side; offsets 29..30)
         //
         // The reward half of the Mutual. `mutualPremiumPool` is a genuine FOURTH
         // partition compartment (alongside free / encumbered / escrow): it holds `funded − claimed`
         // numeraire per mutual and is tracked by the per-token `totalMutualPremium` aggregate so the
         // O(1) extended partition check (INV-P1) stays closed. Both are mutated ONLY through the
-        // LedgerLib `freeToMutualPremium` / `mutualPremiumToFree` helper pair (INV-P0). Append-only.
+        // LedgerLib `freeToMutualPremium` / `mutualPremiumToFree` helper pair (INV-P0).
         // =====================================================================
         /// @dev mutualId => premium reserve (`funded − claimed`, the 4th INV-P1 compartment). Credited
         ///      only in `fundMutualPremium`; debited only in `claimMemberPremium` / `reclaimPremium` /
@@ -138,21 +132,21 @@ library CommitmentManagerStorage {
         ///      totalMutualPremium == balanceOf`) be checked without iterating mutuals.
         mapping(address => uint256) totalMutualPremium;
         // =====================================================================
-        // Agreements — proposal → agreement reverse index (offset 33; append-only)
+        // Agreements — proposal → agreement reverse index (offset 31)
         // =====================================================================
         /// @dev proposalId => agreementId (0 = proposal never accepted; ids are 1-indexed). The
         ///      reverse of the accept-time link, so a proposer/indexer can resolve the agreement a
         ///      proposal produced without scanning `AgreementAccepted` logs. Written once, at accept.
         mapping(uint256 => uint256) proposalToAgreement;
         // =====================================================================
-        // Agreements — per-leg (acceptor) strategy bindings (offset 34; append-only)
+        // Agreements — per-leg (acceptor) strategy bindings (offset 32)
         // =====================================================================
         /// @dev proposalId => the ACCEPTOR leg's strategy bindings. The PROPOSER leg's
         ///      bindings continue to live in `proposalStrategies`; splitting them is what
         ///      lets the two legs carry independent strategy sets. Consumed at accept.
         mapping(uint256 => StrategyBinding[]) proposalAcceptorStrategies;
         // =====================================================================
-        // Pause budget + window-classified clock-stop (ERC §A.6 erratum; offsets 35..37)
+        // Pause budget + window-classified clock-stop (ERC §A.6 erratum; offset 33)
         //
         // The three scalars pack into one slot. All default-zero: a manager with no budget
         // (`maxPauseDuration == 0`) — including any pre-erratum proxy upgraded in place — clamps
@@ -170,14 +164,6 @@ library CommitmentManagerStorage {
         ///      Set at initialize, immutable (no setter). Once spent, pausing still hard-blocks
         ///      the two execute functions but no longer stops any clock (self-neutralizing).
         uint64 maxPauseDuration;
-        /// @dev commitmentId => `creditablePaused` snapshot at unbond initiation — the clock-stop
-        ///      anchor for the unbonding period (sibling of `unbondInitiatedAt`, which is a bare
-        ///      uint64 mapping and cannot gain a struct field append-only).
-        mapping(uint256 => uint64) unbondCumulativePausedAtStart;
-        /// @dev commitmentId => `creditablePaused` snapshot at requestMutualExit — the clock-stop
-        ///      anchor for the deallocation window. A sibling mapping rather than a Membership
-        ///      field so the join hot path never touches the slot; deleted with the membership.
-        mapping(uint256 => uint64) memberExitCumulativePausedAtStart;
     }
 
     /// @notice Returns a storage reference to the Layout struct at STORAGE_SLOT.

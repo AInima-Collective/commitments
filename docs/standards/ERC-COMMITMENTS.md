@@ -397,20 +397,24 @@ struct StrategyBinding {
 interface ICommitmentManager /* Part C surface */ {
     struct Commitment {
         address committer;
-        address arbiter;
-        address counterparty;
-        address token;                 // backing token
-        address adapter;               // backing adapter
-        uint256 amount;                // raw backing-token units currently encumbered under this commitment
         uint16 maxPenaltyBps;          // 0..10_000
-        uint64 challengeWindow;        // seconds
-        uint64 createdAt;
-        uint64 expiresAt;              // 0 = no expiry
         bool released;
         bool forfeited;
+        uint64 closedAt;               // close timestamp; 0 = active (also `closedAt(id)`)
+        address arbiter;
+        uint64 challengeWindow;        // seconds
+        address counterparty;
+        uint64 createdAt;
+        address token;                 // backing token
+        uint64 expiresAt;              // 0 = no expiry
+        address adapter;               // backing adapter
+        uint64 unbondInitiatedAt;      // committer-unbond start; 0 = none pending (also `unbondInitiatedAt(id)`)
+        uint256 amount;                // raw backing-token units currently encumbered under this commitment
         // Optional metadata: only the hash is stored, as the on-chain anchor. The URI is
         // carried by `CommitmentCreated` and is not part of the stored record.
         bytes32 metadataHash;
+        uint64 cumulativePausedAtStart;       // pause snapshot at create; anchors the expiry clock-stop (§A.6)
+        uint64 unbondCumulativePausedAtStart; // pause snapshot at requestUnbond; anchors the unbonding clock-stop (§A.6)
     }
 
     struct CommitmentParams {

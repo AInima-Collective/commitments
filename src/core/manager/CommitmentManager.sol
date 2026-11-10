@@ -642,13 +642,13 @@ contract CommitmentManager is
 
     /// @notice Unbond initiation timestamp (0 = none pending).
     function unbondInitiatedAt(uint256 commitmentId) external view returns (uint64) {
-        return CommitmentManagerStorage.layout().unbondInitiatedAt[commitmentId];
+        return CommitmentManagerStorage.layout().commitments[commitmentId].unbondInitiatedAt;
     }
 
     /// @notice Close timestamp of a commitment (0 = still active). `getCommitment().amount` is
     ///         zeroed at close, so this is the only surviving on-chain signal of when it settled.
     function closedAt(uint256 commitmentId) external view returns (uint64) {
-        return CommitmentManagerStorage.layout().closedAt[commitmentId];
+        return CommitmentManagerStorage.layout().commitments[commitmentId].closedAt;
     }
 
     /// @notice Units forfeited at `executeForfeit` (0 = never forfeited).

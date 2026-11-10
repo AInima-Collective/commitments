@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
 import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManagerStorage.sol";
+import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {
     CommitmentsRewardsCoordinatorStorage
 } from "src/extensions/rewards/storage/CommitmentsRewardsCoordinatorStorage.sol";
@@ -30,40 +31,77 @@ contract ManagerStorageHarness {
         s.hookGasCap = 500_000;
         s.forfeiturePaused = true;
         s.operatorRegistry = address(0xBEEF);
-        // Shared-loss mutuals appended at offsets 27..30; nextMutualId (scalar) anchors them.
         s.nextMutualId = 45;
-        // Premium index appended at offsets 31..32 (two top-level maps). Sentinels under fixed keys
-        // so the test can re-derive the mapping base slots and prove nothing shifted the mutual maps.
-        s.mutualPremiumPool[7] = 123; // offset 31
-        s.totalMutualPremium[address(0xABCD)] = 456; // offset 32
-        // Appended Mutual struct fields (premium side) live inside mutuals[*] (offset 27).
-        // Probe two of them at their in-struct offsets to lock the append.
-        s.mutuals[1].premiumPerShareStored = 789; // struct slot +6
-        s.mutuals[1].activeCover = 321; // struct slot +7 (low 128 bits)
-        // Agreements proposal→agreement reverse index appended at offset 33.
-        s.proposalToAgreement[11] = 555; // offset 33
-        // Acceptor-leg strategy bindings appended at offset 34.
-        s.proposalAcceptorStrategies[15].push(); // offset 34 (dynamic-array length)
-        // Pause-budget erratum appended at offsets 35..37 (three packed uint64 scalars + the
-        // unbond and member-exit snapshot maps). NOTE: forfeiturePaused (offset 24 slot) is poked above already.
-        s.pausedAt = 1_000_001; // offset 35, bits 0..63
-        s.cumulativePaused = 1_000_002; // offset 35, bits 64..127
-        s.maxPauseDuration = 1_000_003; // offset 35, bits 128..191
-        s.unbondCumulativePausedAtStart[12] = 888; // offset 36
-        s.memberExitCumulativePausedAtStart[17] = 999; // offset 37
-        // Appended per-record snapshot fields (append-only inside their structs).
+        // Sentinels under fixed keys so the test can re-derive the mapping base slots.
+        s.mutualPremiumPool[7] = 123; // offset 29
+        s.totalMutualPremium[address(0xABCD)] = 456; // offset 30
+        s.proposalToAgreement[11] = 555; // offset 31
+        s.proposalAcceptorStrategies[15].push(); // offset 32 (dynamic-array length)
+        s.pausedAt = 1_000_001; // offset 33, bits 0..63
+        s.cumulativePaused = 1_000_002; // offset 33, bits 64..127
+        s.maxPauseDuration = 1_000_003; // offset 33, bits 128..191
         s.forfeitProposals[13].cumulativePausedAtStart = 91; // ForfeitProposal, packed slot bits 96..159
         s.mutualLossProposals[14].cumulativePausedAtStart = 92; // MutualLossProposal, slot +3 bits 16..79
-        s.commitments[16].cumulativePausedAtStart = 94; // Commitment, appended tail slot
+    }
+
+    /// @dev Every field of one Commitment (id 16), Membership (id 17) and Mutual (id 1).
+    function pokeStructs() external {
+        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
+        ICommitmentManager.Commitment storage c = s.commitments[16];
+        c.committer = address(0xC1);
+        c.maxPenaltyBps = 7_500;
+        c.released = true;
+        c.forfeited = true;
+        c.closedAt = 101;
+        c.arbiter = address(0xC2);
+        c.challengeWindow = 102;
+        c.counterparty = address(0xC3);
+        c.createdAt = 103;
+        c.token = address(0xC4);
+        c.expiresAt = 104;
+        c.adapter = address(0xC5);
+        c.unbondInitiatedAt = 105;
+        c.amount = 106;
+        c.metadataHash = bytes32(uint256(107));
+        c.cumulativePausedAtStart = 108;
+        c.unbondCumulativePausedAtStart = 109;
+
+        ICommitmentManager.Membership storage m = s.membership[17];
+        m.mutualId = 201;
+        m.lossSnapshot = 202;
+        m.unbondRequestedAt = 203;
+        m.memberExitCumulativePausedAtStart = 204;
+        m.forfeitableUnits = 205;
+        m.settledUnits = 206;
+        m.premiumSnapshot = 207;
+        m.rewardBank = 208;
+
+        ICommitmentManager.Mutual storage g = s.mutuals[1];
+        g.arbiter = address(0xD1);
+        g.challengeWindow = 301;
+        g.active = true;
+        g.terminal = true;
+        g.numeraire = address(0xD2);
+        g.deallocationWindow = 302;
+        g.beneficiary = address(0xD3);
+        g.totalShares = 303;
+        g.activeCover = 304;
+        g.cumulativeLoss = 305;
+        g.rewardRate = 306;
+        g.lastUpdate = 307;
+        g.periodFinish = 308;
+        g.premiumPerShareStored = 309;
+        g.settledTotal = 310;
+        g.premiumRemainder = 311;
+        g.bankedTotal = 312;
     }
 }
 
 /// @title ManagerStorageSlotsTest
-/// @notice Locks the CommitmentManager EIP-7201 slot constant and the Layout field offsets.
-///         Two wrong-slot incidents in this codebase's history motivated the original
-///         StorageSlots.t.sol; this file extends the same discipline to the manager layout.
-///         Field order in CommitmentManagerStorage.Layout is APPEND-ONLY — if an offset
-///         assertion here fails, the layout was reordered and any deployed proxy would corrupt.
+/// @notice Locks the CommitmentManager EIP-7201 slot constant, the Layout field offsets and the
+///         packing of the Commitment, Membership and Mutual structs. Two wrong-slot incidents in
+///         this codebase's history motivated the original StorageSlots.t.sol; if an assertion
+///         here fails, the layout moved and must be re-locked deliberately.
 contract ManagerStorageSlotsTest is Test {
     bytes32 internal constant SLOT = CommitmentManagerStorage.STORAGE_SLOT;
 
@@ -77,7 +115,7 @@ contract ManagerStorageSlotsTest is Test {
     }
 
     // =========================================================================
-    // Field-offset probes (append-only regression)
+    // Field-offset probes
     //
     // Layout field order (offsets from STORAGE_SLOT):
     //    0: ledger (mapping)
@@ -92,142 +130,178 @@ contract ManagerStorageSlotsTest is Test {
     //    9: failedHookSelector (mapping)
     //   10: forfeitProposals (mapping)
     //   11: userForfeitable (mapping)
-    //   12: unbondInitiatedAt (mapping)
-    //   13: closedAt (mapping)
-    //   14: nonces (mapping)
-    //   15: agreementProposals (mapping)
-    //   16: proposalStrategies (mapping)
-    //   17: nextAgreementProposalId (uint256)
-    //   18: agreementPairs (mapping)
-    //   19: commitmentToAgreement (mapping)
-    //   20: nextAgreementId (uint256)
-    //   21: proposalCaps (mapping)
-    //   22: agreementSettlement (mapping)
-    //   23: acceptsContributions (mapping)
-    //   24: unbondingPeriod (uint64) | minChallengeWindow (uint64) | hookGasCap (uint64)
+    //   12: nonces (mapping)
+    //   13: agreementProposals (mapping)
+    //   14: proposalStrategies (mapping)
+    //   15: nextAgreementProposalId (uint256)
+    //   16: agreementPairs (mapping)
+    //   17: commitmentToAgreement (mapping)
+    //   18: nextAgreementId (uint256)
+    //   19: proposalCaps (mapping)
+    //   20: agreementSettlement (mapping)
+    //   21: acceptsContributions (mapping)
+    //   22: unbondingPeriod (uint64) | minChallengeWindow (uint64) | hookGasCap (uint64)
     //       | forfeiturePaused (bool)            ← packed into one slot
-    //   25: operatorRegistry (address)
-    //   26: forfeitedUnits (mapping)
-    //   27: mutuals (mapping)          ← Mutual extension append
-    //   28: membership (mapping)        ← Mutual extension append
-    //   29: nextMutualId (uint256)            ← Mutual extension append
-    //   30: mutualLossProposals (mapping)     ← Mutual extension append
-    //   31: mutualPremiumPool (mapping)        ← premium-index extension append
-    //   32: totalMutualPremium (mapping)       ← premium-index extension append
-    //   33: proposalToAgreement (mapping)      ← agreement reverse-index append
-    //   34: proposalAcceptorStrategies (mapping) ← acceptor-leg strategy append
-    //   35: pausedAt (uint64) | cumulativePaused (uint64) | maxPauseDuration (uint64)
+    //   23: operatorRegistry (address)
+    //   24: forfeitedUnits (mapping)
+    //   25: mutuals (mapping)
+    //   26: membership (mapping)
+    //   27: nextMutualId (uint256)
+    //   28: mutualLossProposals (mapping)
+    //   29: mutualPremiumPool (mapping)
+    //   30: totalMutualPremium (mapping)
+    //   31: proposalToAgreement (mapping)
+    //   32: proposalAcceptorStrategies (mapping)
+    //   33: pausedAt (uint64) | cumulativePaused (uint64) | maxPauseDuration (uint64)
     //                                                   ← packed into one slot
-    //   36: unbondCumulativePausedAtStart (mapping)
-    //   37: memberExitCumulativePausedAtStart (mapping)
     // =========================================================================
 
     function test_managerLayoutOffsets() public {
         ManagerStorageHarness h = new ManagerStorageHarness();
         h.poke();
 
-        // Scalar id counters at offsets 6 / 18 / 21.
+        // Scalar id counters at offsets 6 / 15 / 18 / 27.
         assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 6))), 42, "nextCommitmentId offset");
-        assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 17))), 43, "nextAgreementProposalId offset");
-        assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 20))), 44, "nextAgreementId offset");
+        assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 15))), 43, "nextAgreementProposalId offset");
+        assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 18))), 44, "nextAgreementId offset");
+        assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 27))), 45, "nextMutualId offset");
 
-        // Packed config slot at offset 24:
+        // Packed config slot at offset 22:
         //   bits   0..63  unbondingPeriod      = 7 days
         //   bits  64..127 minChallengeWindow   = 1 days
         //   bits 128..191 hookGasCap           = 500_000
         //   bits 192..199 forfeiturePaused       = true
-        uint256 packed = uint256(vm.load(address(h), bytes32(uint256(SLOT) + 24)));
+        uint256 packed = uint256(vm.load(address(h), bytes32(uint256(SLOT) + 22)));
         assertEq(uint64(packed), 7 days, "unbondingPeriod bits");
         assertEq(uint64(packed >> 64), 1 days, "minChallengeWindow bits");
         assertEq(uint64(packed >> 128), 500_000, "hookGasCap bits");
         assertEq(uint8(packed >> 192), 1, "forfeiturePaused bit");
 
-        // operatorRegistry alone at offset 25.
+        // operatorRegistry alone at offset 23.
         assertEq(
-            address(uint160(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 25))))),
+            address(uint160(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 23))))),
             address(0xBEEF),
             "operatorRegistry offset"
         );
 
-        // Mutual extension: nextMutualId scalar at offset 29 anchors the appended mutual
-        // mappings (mutuals @27, membership @28, mutualLossProposals @30). If this
-        // fails, a field was inserted before the append point and a deployed proxy would corrupt.
-        assertEq(uint256(vm.load(address(h), bytes32(uint256(SLOT) + 29))), 45, "nextMutualId offset");
-
-        // Premium-index extension: the two new top-level maps must anchor at offsets 31 and 32. If a
-        // field were inserted before them (shifting the mutual maps), these derived slots miss.
-        bytes32 poolSlot = keccak256(abi.encode(uint256(7), bytes32(uint256(SLOT) + 31)));
-        assertEq(uint256(vm.load(address(h), poolSlot)), 123, "mutualPremiumPool @ offset 31");
-        bytes32 aggSlot = keccak256(abi.encode(address(0xABCD), bytes32(uint256(SLOT) + 32)));
-        assertEq(uint256(vm.load(address(h), aggSlot)), 456, "totalMutualPremium @ offset 32");
-
-        // Agreements reverse-index extension: proposalToAgreement must anchor at offset 33 (the next
-        // append point after the premium-index block). A field inserted before it misses this slot.
-        bytes32 propToAgrSlot = keccak256(abi.encode(uint256(11), bytes32(uint256(SLOT) + 33)));
-        assertEq(uint256(vm.load(address(h), propToAgrSlot)), 555, "proposalToAgreement @ offset 33");
-
-        // Acceptor-leg strategy extension: proposalAcceptorStrategies anchors at offset 34.
+        bytes32 poolSlot = keccak256(abi.encode(uint256(7), bytes32(uint256(SLOT) + 29)));
+        assertEq(uint256(vm.load(address(h), poolSlot)), 123, "mutualPremiumPool @ offset 29");
+        bytes32 aggSlot = keccak256(abi.encode(address(0xABCD), bytes32(uint256(SLOT) + 30)));
+        assertEq(uint256(vm.load(address(h), aggSlot)), 456, "totalMutualPremium @ offset 30");
+        bytes32 propToAgrSlot = keccak256(abi.encode(uint256(11), bytes32(uint256(SLOT) + 31)));
+        assertEq(uint256(vm.load(address(h), propToAgrSlot)), 555, "proposalToAgreement @ offset 31");
         // The mapping entry is a dynamic array, so the derived entry slot stores its length.
-        bytes32 acceptorStrategiesSlot = keccak256(abi.encode(uint256(15), bytes32(uint256(SLOT) + 34)));
-        assertEq(uint256(vm.load(address(h), acceptorStrategiesSlot)), 1, "proposalAcceptorStrategies @ offset 34");
+        bytes32 acceptorStrategiesSlot = keccak256(abi.encode(uint256(15), bytes32(uint256(SLOT) + 32)));
+        assertEq(uint256(vm.load(address(h), acceptorStrategiesSlot)), 1, "proposalAcceptorStrategies @ offset 32");
 
-        // Appended Mutual premium fields: mutuals (offset 27) value base, then the
-        // in-struct slots +6 (premiumPerShareStored) and +7 (activeCover, low 128 bits). The +6/+7
-        // offsets follow from the greedy packing of the header (beneficiary+challengeWindow share
-        // slot 2; deallocationWindow+totalShares share slot 3; active+terminal
-        // share slot 5), so the premium block begins immediately after — proving the append point.
-        bytes32 mutualBase = keccak256(abi.encode(uint256(1), bytes32(uint256(SLOT) + 27)));
-        assertEq(
-            uint256(vm.load(address(h), bytes32(uint256(mutualBase) + 6))), 789, "Mutual.premiumPerShareStored @+6"
-        );
-        assertEq(uint128(uint256(vm.load(address(h), bytes32(uint256(mutualBase) + 7)))), 321, "Mutual.activeCover @+7");
-    }
-
-    /// @notice Locks the pause-budget erratum's appended fields: the packed scalar slot at
-    ///         offset 35, the unbond snapshot map at offset 36, and the per-record
-    ///         `cumulativePausedAtStart` appends inside their three structs. Separate function
-    ///         from `test_managerLayoutOffsets` purely for legacy-codegen stack headroom.
-    function test_managerLayoutOffsets_pauseErratum() public {
-        ManagerStorageHarness h = new ManagerStorageHarness();
-        h.poke();
-
-        // Pause-budget erratum: the three scalars pack into ONE slot at offset 35
+        // Pause budget: the three scalars pack into ONE slot at offset 33
         //   bits   0..63  pausedAt, bits 64..127 cumulativePaused, bits 128..191 maxPauseDuration
-        uint256 pausePacked = uint256(vm.load(address(h), bytes32(uint256(SLOT) + 35)));
-        assertEq(uint64(pausePacked), 1_000_001, "pausedAt bits @35");
-        assertEq(uint64(pausePacked >> 64), 1_000_002, "cumulativePaused bits @35");
-        assertEq(uint64(pausePacked >> 128), 1_000_003, "maxPauseDuration bits @35");
+        uint256 pausePacked = uint256(vm.load(address(h), bytes32(uint256(SLOT) + 33)));
+        assertEq(uint64(pausePacked), 1_000_001, "pausedAt bits @33");
+        assertEq(uint64(pausePacked >> 64), 1_000_002, "cumulativePaused bits @33");
+        assertEq(uint64(pausePacked >> 128), 1_000_003, "maxPauseDuration bits @33");
 
-        // unbondCumulativePausedAtStart mapping anchors at offset 36.
-        bytes32 unbondSnapSlot = keccak256(abi.encode(uint256(12), bytes32(uint256(SLOT) + 36)));
-        assertEq(uint256(vm.load(address(h), unbondSnapSlot)), 888, "unbondCumulativePausedAtStart @ offset 36");
-
-        // memberExitCumulativePausedAtStart mapping anchors at offset 37.
-        bytes32 exitSnapSlot = keccak256(abi.encode(uint256(17), bytes32(uint256(SLOT) + 37)));
-        assertEq(uint256(vm.load(address(h), exitSnapSlot)), 999, "memberExitCumulativePausedAtStart @ offset 37");
-
-        // Appended per-record snapshots (append-only within each struct):
         // ForfeitProposal (offset 10): single packed slot — penaltyBps 0..15, initiatedAt 16..79,
         // executed 80..87, cancelled 88..95, cumulativePausedAtStart 96..159.
         bytes32 fpSlot = keccak256(abi.encode(uint256(13), bytes32(uint256(SLOT) + 10)));
         assertEq(uint64(uint256(vm.load(address(h), fpSlot)) >> 96), 91, "ForfeitProposal.cumulativePausedAtStart");
 
-        // MutualLossProposal (offset 30): slot +3 — executed 0..7, cancelled 8..15,
+        // MutualLossProposal (offset 28): slot +3 — executed 0..7, cancelled 8..15,
         // cumulativePausedAtStart 16..79.
-        bytes32 mlpBase = keccak256(abi.encode(uint256(14), bytes32(uint256(SLOT) + 30)));
+        bytes32 mlpBase = keccak256(abi.encode(uint256(14), bytes32(uint256(SLOT) + 28)));
         assertEq(
             uint64(uint256(vm.load(address(h), bytes32(uint256(mlpBase) + 3))) >> 16),
             92,
             "MutualLossProposal.cumulativePausedAtStart"
         );
+    }
 
-        // Commitment (offset 5): appended tail slot +8 (after metadataHash at +7).
-        bytes32 comBase = keccak256(abi.encode(uint256(16), bytes32(uint256(SLOT) + 5)));
-        assertEq(
-            uint64(uint256(vm.load(address(h), bytes32(uint256(comBase) + 8)))),
-            94,
-            "Commitment.cumulativePausedAtStart"
-        );
+    /// @dev Word `i` of the struct stored under `key` in the mapping at layout offset `offset`.
+    function _word(address h, uint256 key, uint256 offset, uint256 i) internal view returns (uint256) {
+        bytes32 base = keccak256(abi.encode(key, bytes32(uint256(SLOT) + offset)));
+        return uint256(vm.load(h, bytes32(uint256(base) + i)));
+    }
+
+    /// @notice Commitment (offset 5) packs into eight slots: each address carries small fields in
+    ///         its upper 96 bits; the two pause snapshots share the last slot.
+    function test_commitmentPacking() public {
+        ManagerStorageHarness h = new ManagerStorageHarness();
+        h.pokeStructs();
+        address a = address(h);
+
+        uint256 w = _word(a, 16, 5, 0);
+        assertEq(address(uint160(w)), address(0xC1), "committer @0");
+        assertEq(uint16(w >> 160), 7_500, "maxPenaltyBps @0 bits 160..175");
+        assertEq(uint8(w >> 176), 1, "released @0 bits 176..183");
+        assertEq(uint8(w >> 184), 1, "forfeited @0 bits 184..191");
+        assertEq(uint64(w >> 192), 101, "closedAt @0 bits 192..255");
+        w = _word(a, 16, 5, 1);
+        assertEq(address(uint160(w)), address(0xC2), "arbiter @1");
+        assertEq(uint64(w >> 160), 102, "challengeWindow @1 bits 160..223");
+        w = _word(a, 16, 5, 2);
+        assertEq(address(uint160(w)), address(0xC3), "counterparty @2");
+        assertEq(uint64(w >> 160), 103, "createdAt @2 bits 160..223");
+        w = _word(a, 16, 5, 3);
+        assertEq(address(uint160(w)), address(0xC4), "token @3");
+        assertEq(uint64(w >> 160), 104, "expiresAt @3 bits 160..223");
+        w = _word(a, 16, 5, 4);
+        assertEq(address(uint160(w)), address(0xC5), "adapter @4");
+        assertEq(uint64(w >> 160), 105, "unbondInitiatedAt @4 bits 160..223");
+        assertEq(_word(a, 16, 5, 5), 106, "amount @5");
+        assertEq(_word(a, 16, 5, 6), 107, "metadataHash @6");
+        w = _word(a, 16, 5, 7);
+        assertEq(uint64(w), 108, "cumulativePausedAtStart @7 bits 0..63");
+        assertEq(uint64(w >> 64), 109, "unbondCumulativePausedAtStart @7 bits 64..127");
+        assertEq(_word(a, 16, 5, 8), 0, "nothing past slot 7");
+    }
+
+    /// @notice Membership (offset 26) packs into five slots: the id, loss snapshot and both exit
+    ///         fields share the first.
+    function test_membershipPacking() public {
+        ManagerStorageHarness h = new ManagerStorageHarness();
+        h.pokeStructs();
+        address a = address(h);
+
+        uint256 w = _word(a, 17, 26, 0);
+        assertEq(uint64(w), 201, "mutualId @0 bits 0..63");
+        assertEq(uint64(w >> 64), 202, "lossSnapshot @0 bits 64..127");
+        assertEq(uint64(w >> 128), 203, "unbondRequestedAt @0 bits 128..191");
+        assertEq(uint64(w >> 192), 204, "memberExitCumulativePausedAtStart @0 bits 192..255");
+        assertEq(_word(a, 17, 26, 1), 205, "forfeitableUnits @1");
+        assertEq(_word(a, 17, 26, 2), 206, "settledUnits @2");
+        assertEq(_word(a, 17, 26, 3), 207, "premiumSnapshot @3");
+        assertEq(_word(a, 17, 26, 4), 208, "rewardBank @4");
+        assertEq(_word(a, 17, 26, 5), 0, "nothing past slot 4");
+    }
+
+    /// @notice Mutual (offset 25) packs into ten slots.
+    function test_mutualPacking() public {
+        ManagerStorageHarness h = new ManagerStorageHarness();
+        h.pokeStructs();
+        address a = address(h);
+
+        uint256 w = _word(a, 1, 25, 0);
+        assertEq(address(uint160(w)), address(0xD1), "arbiter @0");
+        assertEq(uint64(w >> 160), 301, "challengeWindow @0 bits 160..223");
+        assertEq(uint8(w >> 224), 1, "active @0 bits 224..231");
+        assertEq(uint8(w >> 232), 1, "terminal @0 bits 232..239");
+        w = _word(a, 1, 25, 1);
+        assertEq(address(uint160(w)), address(0xD2), "numeraire @1");
+        assertEq(uint64(w >> 160), 302, "deallocationWindow @1 bits 160..223");
+        assertEq(address(uint160(_word(a, 1, 25, 2))), address(0xD3), "beneficiary @2");
+        w = _word(a, 1, 25, 3);
+        assertEq(uint128(w), 303, "totalShares @3 bits 0..127");
+        assertEq(uint128(w >> 128), 304, "activeCover @3 bits 128..255");
+        assertEq(_word(a, 1, 25, 4), 305, "cumulativeLoss @4");
+        w = _word(a, 1, 25, 5);
+        assertEq(uint128(w), 306, "rewardRate @5 bits 0..127");
+        assertEq(uint64(w >> 128), 307, "lastUpdate @5 bits 128..191");
+        assertEq(uint64(w >> 192), 308, "periodFinish @5 bits 192..255");
+        assertEq(_word(a, 1, 25, 6), 309, "premiumPerShareStored @6");
+        assertEq(_word(a, 1, 25, 7), 310, "settledTotal @7");
+        assertEq(_word(a, 1, 25, 8), 311, "premiumRemainder @8");
+        assertEq(_word(a, 1, 25, 9), 312, "bankedTotal @9");
+        assertEq(_word(a, 1, 25, 10), 0, "nothing past slot 9");
     }
 
     /// @notice The coordinator layout after the wave-3 slim-down:

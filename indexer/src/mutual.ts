@@ -75,12 +75,11 @@ async function readMutualSnapshot(
 
 type MembershipSnapshot = {
   mutualId: bigint
-  forfeitableUnits: bigint
-  settledUnits: bigint
-  creditedValue: bigint
   lossSnapshot: bigint
   unbondRequestedAt: bigint
-  // §G premium index (reward side) — appended to the GroupMembership struct.
+  memberExitCumulativePausedAtStart: bigint
+  forfeitableUnits: bigint
+  settledUnits: bigint
   premiumSnapshot: bigint
   rewardBank: bigint
 }
