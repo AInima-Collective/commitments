@@ -524,7 +524,7 @@ contract ManagerMutualTest is Test {
         assertEq(exiting, 100e18, "a second request counts the cover once");
     }
 
-    function test_exitingCover_lapsedRequestWithUnsettledLoss_clearedAtPostLossCover() public {
+    function test_exitingCover_lapsedRequestWithUnsettledLoss_clearedAndSettled() public {
         uint256 gid = _createHomogeneousMutual();
         uint256 c1 = _join(gid, u1, 100e18, 10_000);
         _join(gid, u2, 100e18, 10_000);
