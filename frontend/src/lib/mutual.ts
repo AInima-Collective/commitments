@@ -1,7 +1,25 @@
-import { type Address, type Hex } from 'viem'
+import { type Address, type Hex, zeroHash } from 'viem'
 
-import { type MutualLifecycle } from '../components/protocol'
-import { ZERO_HASH } from '../utils/metadataForm'
+
+/**
+ * Mutual lifecycle. Driven by the mutual header's `active` / `terminal` flags
+ * plus the live derived state (a bonded loss under challenge, or members still
+ * owing markdown after execution). Pages must not invent ad-hoc colors for
+ * these states.
+ *
+ * - `pending`     — registered but not yet activated.
+ * - `active`      — open and covering. Members still settling owed markdown
+ *                   after an executed loss stay `active` (the pool keeps
+ *                   covering); the owed-markdown footnote carries that nuance
+ *                   rather than a distinct badge.
+ * - `loss-pending`— a bonded loss is in its challenge window; capacity frozen.
+ * - `terminated`  — terminal; no new losses can be initiated.
+ */
+export type MutualLifecycle =
+  | 'pending'
+  | 'active'
+  | 'loss-pending'
+  | 'terminated'
 
 /**
  * A mutual's lifecycle badge. `hasPendingLoss` needs the per-mutual bonded-loss
@@ -37,6 +55,6 @@ export function buildJoinMutualParams(input: {
     expiresAt: input.termEnd ?? 0n,
     strategies: [] as { strategy: Address; params: Hex }[],
     metadataURI: '',
-    metadataHash: ZERO_HASH,
+    metadataHash: zeroHash,
   }
 }

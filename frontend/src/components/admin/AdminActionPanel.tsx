@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Button, Card, Notice } from '../ui'
 import { truncateAddress } from '../../lib/format'
-import type { AdminActionState } from './useAdminAction'
+import type { AdminActionState } from '../../hooks/useAdminAction'
 
 export interface AdminActionPanelProps {
   /** Heading shown at the top of the panel. */

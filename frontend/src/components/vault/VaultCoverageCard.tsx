@@ -98,7 +98,7 @@ export function VaultCoverageCard({ vaultAddress, assetDecimals, assetSymbol }: 
         />
         <StatBlock
           label="premium stream"
-          tone={isStreaming ? 'positive' : 'negative'}
+          tone={isStreaming ? 'success' : 'danger'}
           value={isStreaming ? 'streaming' : 'paused'}
           meta={isStreaming ? `ends in ${formatDuration(secondsRemaining)}` : 'awaiting next skim'}
         />
@@ -109,7 +109,7 @@ export function VaultCoverageCard({ vaultAddress, assetDecimals, assetSymbol }: 
         />
         <StatBlock
           label="earn · premium APR"
-          tone={premiumAprBps !== undefined && premiumAprBps > 0 ? 'positive' : 'neutral'}
+          tone={premiumAprBps !== undefined && premiumAprBps > 0 ? 'success' : 'neutral'}
           value={premiumAprBps !== undefined ? formatPercent(premiumAprBps) : '—'}
           meta="to underwriters, on deployed cover"
         />

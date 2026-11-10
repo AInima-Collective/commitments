@@ -5,8 +5,8 @@ import { useReadContracts } from 'wagmi'
 
 import { hasIndexer, indexerJson } from '../config/indexer'
 import { parseCommitmentRow, type CommitmentRowWire } from '../lib/indexerRows'
-import { type CommitmentWithStatus } from '../utils/commitments'
-import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
+import { type CommitmentWithStatus } from '../lib/commitments'
+import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from '../lib/commitmentReads'
 import { POLL } from './polling'
 
 /**

@@ -12,8 +12,8 @@ function StatsRow() {
       <div className="ds-text-sm ds-subtle" style={{ maxWidth: '70ch' }}>
         Use the <code>&lt;StatBlock&gt;</code> primitive for headline metrics.
         It composes <code>.ds-stat / .ds-stat-value / .ds-stat-label</code> and
-        forwards an optional meta caption + tone (<code>positive</code>,
-        <code>negative</code>, <code>accent</code>). The raw markup below the
+        forwards an optional meta caption + tone (<code>success</code>,
+        <code>danger</code>, <code>accent</code>). The raw markup below the
         component row is the underlying HTML for slightly richer compositions
         (e.g. delta indicators), but most pages should reach for the component.
       </div>
@@ -22,7 +22,7 @@ function StatsRow() {
           label="TVL"
           value={<TokenAmount amount={parseEther('1247.328573')} decimals={18} symbol="ETH" compact />}
           meta="↑ 4.2% / 7d"
-          tone="positive"
+          tone="success"
         />
         <StatBlock label="Commitments" value="18" meta="3 active forfeites" />
         <StatBlock label="Operators" value="7" meta="2 in cooldown" />
@@ -35,7 +35,7 @@ function StatsRow() {
           <span className="ds-stat-value">
             <TokenAmount amount={parseEther('1247.328573')} decimals={18} symbol="ETH" compact />
           </span>
-          <span className="ds-stat-delta ds-stat-delta--positive">↑ 4.2% / 7d</span>
+          <span className="ds-stat-delta ds-stat-delta--success">↑ 4.2% / 7d</span>
         </div>
         <div className="ds-stat">
           <span className="ds-stat-label">Commitments</span>
@@ -62,7 +62,7 @@ const SRC_STATS =
   label="TVL"
   value={<TokenAmount amount={parseEther('1247.32')} decimals={18} symbol="ETH" compact />}
   meta="↑ 4.2% / 7d"
-  tone="positive"
+  tone="success"
 />`
 
 export function StatsSection() {

@@ -5,6 +5,7 @@ import { commitmentManagerAbi, operatorRegistryAbi } from '../../generated'
 import { type FullCommitmentParams, useCreateCommitmentFlow } from '../../hooks/useCreateCommitmentFlow'
 import { useAmountInput } from '../../hooks/useAmountInput'
 import { useRegistryPolicy } from '../../hooks/useRegistryPolicy'
+import { useVaults } from '../../hooks/useVaults'
 import { useTx, useTxFeedback } from '../../hooks/useWriteAction'
 import { getDefaultBacking } from '../../config/contracts'
 import { Button, Input, Notice, TokenAmount } from '../ui'
@@ -66,7 +67,8 @@ export function DelegateToOperatorForm({
   const decimals = shareDecimals ?? 18
 
   const chainId = useChainId()
-  const backing = getDefaultBacking(chainId)
+  const { vaults } = useVaults()
+  const backing = getDefaultBacking(chainId, vaults)
   const shareToken = backing?.token
   const { requiredArbiter, minMaxPenaltyBps } = useRegistryPolicy(
     operatorRegistryAddress,

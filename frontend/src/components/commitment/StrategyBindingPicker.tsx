@@ -3,8 +3,8 @@ import { type Address, parseUnits } from 'viem'
 import { useChainId } from 'wagmi'
 
 import { Button, Input, Notice } from '../ui'
-import { formatBps } from '../../utils/commitments'
-import { legibleWriteError } from '../../utils/contractErrors'
+import { formatBps } from '../../lib/commitments'
+import { legibleWriteError } from '../../lib/contractErrors'
 import { getContractAddresses } from '../../config/contracts'
 import { useFundStrategy } from '../../hooks/useFundStrategy'
 import {

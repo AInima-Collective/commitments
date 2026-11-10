@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compareCommitmentUrgency, sortByCommitmentUrgency } from '../commitmentSort'
-import type { CommitmentStatus } from '../../utils/commitments'
+import type { CommitmentStatus } from '../commitments'
 
 const row = (
   id: bigint,

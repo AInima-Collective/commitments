@@ -1,13 +1,37 @@
 /**
  * Pure derivation helpers for governance state.
  *
- * Mirrors utils/agreements.ts in shape — small functions that turn raw
+ * Mirrors lib/agreements.ts in shape — small functions that turn raw
  * indexer rows into UI-ready labels, never reaching for chain reads. Used
  * by the proposal-detail and proposal-list components.
  */
-import type { ProposalKind, ProposalState } from '../components/protocol/Status'
 
-export type { ProposalKind, ProposalState }
+/**
+ * Governance proposal lifecycle. Mirrors OZ Governor's `state()` enum plus
+ * the indexer's lower-cased wire format. Composes with the same badge tone
+ * family used by agreement / commitment statuses.
+ */
+export type ProposalState =
+  | 'pending'
+  | 'active'
+  | 'canceled'
+  | 'defeated'
+  | 'succeeded'
+  | 'queued'
+  | 'expired'
+  | 'executed'
+
+/**
+ * Proposal kind — decoded from the action set at index time. Renders the
+ * "shape" of the proposal (weight update, forfeit arbitration, treasury,
+ * signaling, mixed) so the proposal-detail page picks the right action card.
+ */
+export type ProposalKind =
+  | 'weight_update'
+  | 'forfeit_arbitration'
+  | 'treasury'
+  | 'signaling'
+  | 'mixed'
 
 /**
  * Title is the first non-empty line of the description, capped at 80

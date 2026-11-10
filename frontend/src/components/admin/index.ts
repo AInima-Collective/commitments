@@ -4,8 +4,6 @@
 
 export { AdminActionPanel } from './AdminActionPanel'
 export type { AdminActionPanelProps } from './AdminActionPanel'
-export { useAdminAction } from './useAdminAction'
-export type { AdminActionResult, AdminActionState, AdminActionStatus } from './useAdminAction'
 export { VaultTab } from './vault/VaultTab'
 export { RiskTab } from './risk/RiskTab'
 export { YieldTab } from './yield/YieldTab'

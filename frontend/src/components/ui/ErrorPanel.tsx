@@ -1,4 +1,6 @@
 import { Component, type ReactNode } from 'react'
+import { Button } from './Button'
+import { ErrorBlock } from './ErrorBlock'
 
 interface ErrorPanelProps {
   panelName: string
@@ -31,20 +33,15 @@ export class ErrorPanel extends Component<ErrorPanelProps, ErrorPanelState> {
   render() {
     if (this.state.hasError) {
       return (
-        <div box-="square" style={{ borderColor: 'var(--danger)', padding: '16px', margin: '16px' }}>
-          <p style={{ color: 'var(--danger)', fontWeight: 600 }}>ERROR</p>
-          <p style={{ color: 'var(--foreground0)' }}>
-            Failed to load {this.props.panelName}.
-          </p>
-          {this.state.error && (
-            <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              {this.state.error.message}
-            </p>
-          )}
-          <button onClick={this.handleRetry} style={{ marginTop: '8px' }}>
-            [ RETRY ]
-          </button>
-        </div>
+        <ErrorBlock
+          title={`Could not load ${this.props.panelName}`}
+          message={this.state.error?.message}
+          actions={
+            <Button size="sm" variant="ghost" onClick={this.handleRetry}>
+              Retry
+            </Button>
+          }
+        />
       )
     }
 

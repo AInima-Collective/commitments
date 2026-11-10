@@ -13,12 +13,12 @@ import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { useUnbondStatus } from '../../hooks/useUnbondStatus'
 import {
   type CommitmentWithStatus,
-} from '../../utils/commitments'
+} from '../../lib/commitments'
 import {
   deriveViewerRole,
   getAvailableActions,
   type ViewerRole,
-} from '../../utils/resolveActions'
+} from '../../lib/resolveActions'
 import { EmptyState, Modal, Notice, StatBlock, TokenAmount, Tooltip } from '../ui'
 import { ResolveActionRow } from './actions/ResolveActionRow'
 

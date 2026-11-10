@@ -1,6 +1,6 @@
 import { type Address } from 'viem'
 import { type CommitmentWithStatus, type ForfeitProposalState } from './commitments'
-import { formatDuration } from '../lib/format'
+import { formatDuration } from './format'
 
 /**
  * Forfeit window TTL constant — mirrors `FORFEIT_PROPOSAL_TTL` in

@@ -460,8 +460,8 @@ export default function Vault() {
           <VaultActivity
             entries={activity.data}
             isLoading={activity.isLoading}
-            assetDecimals={position.assetDecimals}
-            assetSymbol={position.assetSymbol}
+            assetDecimals={position.assetDecimals ?? descriptor?.assetDecimals}
+            assetSymbol={position.assetSymbol ?? descriptor?.assetSymbol}
           />
         </Tabs.Panel>
 
@@ -476,8 +476,8 @@ export default function Vault() {
             ledger={ledger.data}
             isLoading={ledger.isLoading}
             error={ledger.error}
-            assetDecimals={position.assetDecimals}
-            assetSymbol={position.assetSymbol}
+            assetDecimals={position.assetDecimals ?? descriptor?.assetDecimals}
+            assetSymbol={position.assetSymbol ?? descriptor?.assetSymbol}
             shareDecimals={position.shareDecimals}
           />
         </Tabs.Panel>

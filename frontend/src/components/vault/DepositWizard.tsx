@@ -5,7 +5,7 @@ import { useDepositFlow } from '../../hooks/useDepositFlow'
 import { BalanceLine, Button, Notice, TokenAmount, Tooltip, useToasts } from '../ui'
 import { DepositStepper } from './DepositStepper'
 import { deriveDepositSteps } from './depositSteps'
-import { legibleWriteError } from '../../utils/contractErrors'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 interface DepositWizardProps {
   vaultAddress: Address | undefined
@@ -97,7 +97,7 @@ export function DepositWizard({
         body: legibleWriteError(flow.error),
       })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [flow.step])
 
   const exceedsBalance =

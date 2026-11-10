@@ -37,13 +37,13 @@ import { YourPositionSummary } from '../components/mutual/YourPositionSummary'
 import { MutualRoster, type RosterMember } from '../components/mutual/MutualRoster'
 import { commitmentManagerAbi } from '../generated'
 import { getContractAddresses } from '../config/contracts'
-import { buildCommitmentWithStatus } from '../hooks/commitmentReads'
-import { type CommitmentWithStatus } from '../utils/commitments'
+import { buildCommitmentWithStatus } from '../lib/commitmentReads'
+import { type CommitmentWithStatus } from '../lib/commitments'
 import {
   deriveViewerRole,
   getAvailableActions,
   type ResolveActionKind,
-} from '../utils/resolveActions'
+} from '../lib/resolveActions'
 import { useClaimPayout } from '../hooks/useClaimPayout'
 import { useMutual, type MutualHeader } from '../hooks/useMutual'
 import { useMutualPremium } from '../hooks/useMutualPremium'
@@ -64,6 +64,7 @@ import { commitmentDetailPath } from '../lib/arbitrationRoutes'
 import { formatDuration, formatTokenAmount } from '../lib/format'
 import { buildJoinMutualParams, mutualLifecycle } from '../lib/mutual'
 import { parsePerilURI, perilLabel } from '../lib/peril'
+import { parseIdParam } from '../lib/routeParams'
 
 /** Which action modal is open, if any. */
 type ActionModal = 'underwrite' | 'buy-cover' | 'manage' | null
@@ -171,14 +172,7 @@ export default function Mutual() {
     premiumScheduler,
   } = getContractAddresses(chainId)
 
-  const mutualId = useMemo(() => {
-    if (mutualIdParam === undefined) return undefined
-    try {
-      return BigInt(mutualIdParam)
-    } catch {
-      return undefined
-    }
-  }, [mutualIdParam])
+  const mutualId = useMemo(() => parseIdParam(mutualIdParam) ?? undefined, [mutualIdParam])
 
   const { listings } = useMutualListings()
   const listing = useMemo(

@@ -1,5 +1,5 @@
 import { type Address } from 'viem'
-import { type CommitmentStatus } from '../utils/commitments'
+import { type CommitmentStatus } from './commitments'
 import { asMetadataObject, type MetadataStatus } from './commitmentMetadata'
 
 /**

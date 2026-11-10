@@ -1,8 +1,7 @@
-import { type Address, isAddress } from 'viem'
+import { type Address, isAddress, zeroAddress } from 'viem'
 
-import { ZERO_HASH, resolveMetadataArgs } from '../utils/metadataForm'
+import { resolveMetadataArgs } from './metadataForm'
 
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address
 
 /**
  * Raw form input from the Custom (and refactored Delegate) create modes.
@@ -68,8 +67,8 @@ export function buildCustomParams(input: CustomCommitInput): BuildCustomResult {
   }
   // Counterparty optional: blank ⇒ zero address (one-sided commitment).
   const counterparty =
-    input.counterparty && input.counterparty.length > 0 ? input.counterparty : ZERO_ADDRESS
-  if (counterparty !== ZERO_ADDRESS && !isAddress(counterparty, { strict: false })) {
+    input.counterparty && input.counterparty.length > 0 ? input.counterparty : zeroAddress
+  if (counterparty !== zeroAddress && !isAddress(counterparty, { strict: false })) {
     return { ok: false, error: 'INVALID COUNTERPARTY ADDRESS' }
   }
   if (input.amount === undefined || input.amount <= 0n) {
@@ -103,4 +102,3 @@ export function buildCustomParams(input: CustomCommitInput): BuildCustomResult {
   }
 }
 
-export { ZERO_HASH }

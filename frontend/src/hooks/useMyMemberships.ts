@@ -5,7 +5,7 @@ import { useChainId, useReadContracts } from 'wagmi'
 
 import { hasIndexer, indexerJson } from '../config/indexer'
 import { commitmentManagerAbi } from '../generated'
-import { type CommitmentStruct } from './commitmentReads'
+import { type CommitmentStruct } from '../lib/commitmentReads'
 import { POLL } from './polling'
 import { useViewAddress } from './useViewAddress'
 

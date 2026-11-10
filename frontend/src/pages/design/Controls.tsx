@@ -151,7 +151,7 @@ export function ButtonsSection() {
       <SectionHeading
         id="buttons"
         title="Buttons"
-        lead="Primary fills with the accent. Secondary outlines. Ghost has no chrome. Destructive uses the error tone. Small, base, large heights."
+        lead="Primary fills with the accent. Secondary outlines. Ghost has no chrome. Destructive uses the danger tone. Small, base, large heights."
       />
       <ButtonsRow />
       <SourceBlock label="example" source={SRC_BUTTONS} />

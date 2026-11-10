@@ -195,37 +195,44 @@ vaults, commitments, arbitration, claims, mutual coverage, services, agents,
 governance, the explorer, docs, admin, and the `/app/design` spec pages.
 
 **The `/app/design` route is the source of truth for the UI vocabulary.** Treat it
-as the spec, not a showcase. Live in `frontend/src/pages/Design.tsx`
-(+ `DesignRecipes.tsx` for compositions). Anything we ship in feature folders
-should be expressible in terms of what's documented there. If we add a new
-primitive, **it must appear on `/app/design`** — otherwise it's invisible to
-contributors and will silently drift.
+as the spec, not a showcase. `frontend/src/pages/Design.tsx` assembles the
+sections in `pages/design/` (+ `DesignRecipes.tsx` for compositions). Anything
+we ship in feature folders should be expressible in terms of what's documented
+there. If we add a new primitive, **it must appear on `/app/design`** —
+otherwise it's invisible to contributors and will silently drift.
 
 ### Three-layer architecture (do not invert)
 
 ```
-src/components/
-  ui/         ← primitives, NO protocol knowledge
-              (TokenAmount, AddressDisplay, Notice, Modal, Drawer, Toast,
-               Disclosure, Button, Input, Select, Skeleton, ShareRatio,
-               AllocationBar, BalanceLine, EmptyState, ErrorBlock, ErrorPanel,
-               OperatorAvatar, SourceBlock, StatBlock, ThemeProvider/Toggle,
-               TokenChip, TokenIcon, CopyButton)
-  protocol/   ← knows the protocol vocabulary, NOT a specific page
-              (CommitmentStatusBadge, OperatorStatusBadge, RiskTierBadge,
-               Countdown, EncumbranceBar, LifecycleStepper, MetadataSummary,
-               OperatorIdentity, PageHeader, PartyRow, RiskRow,
-               CommitmentTitle, CommitmentTags, CommitmentTerms,
-               MetadataTrustBadge, MetadataProvenance, DerivedLabelPreview)
-  vault/      ← page-shaped feature compositions (also admin, agent,
-  commitment/   agreement, arbiter, backing, claim, dashboard, explorer,
-  mutual/       governance, graph, landing, mesh, metadata)
-  docs/       ← MarkdownPage / MermaidBlock / CodeBlock / Sidebar (the /app/docs/* viewer)
-  shell/      ← RootLayout, Sidebar, TopBar, WalletWidget, WrongNetworkBanner
+src/
+  components/
+    ui/         ← primitives, NO protocol knowledge
+                (TokenAmount, UsdAmount, AddressDisplay, Notice, Modal, Drawer,
+                 Toast, Disclosure, Button, Input, Select, Skeleton, DataTable,
+                 Pagination, StatBlock, AllocationBar, ErrorBlock, ErrorPanel, …)
+    protocol/   ← knows the protocol vocabulary, NOT a specific page
+                (status badges, Countdown, EncumbranceBar, LifecycleStepper,
+                 OperatorIdentity, PageHeader, PartyRow, RiskRow,
+                 CommitmentTitle, CommitmentTerms, MetadataTrustBadge, …)
+    vault/      ← page-shaped feature compositions (also admin, agent,
+    commitment/   agreement, arbiter, backing, claim, dashboard, explorer,
+    mutual/       governance, graph, landing, mesh, metadata)
+    docs/       ← MarkdownPage / MermaidBlock / CodeBlock / Sidebar (the /app/docs/* viewer)
+    shell/      ← RootLayout (with the side nav), TopBar, WalletWidget, banners, redirects
+  pages/        ← one module per route; pages/design/ holds the /app/design sections
+  hooks/        ← wagmi and indexer reads, write flows (see below)
+  lib/          ← pure domain types, derivations and formatters
+  config/       ← contract addresses, arbiter profiles, the anvil chain (config/anvil.ts)
+  contexts/     ← the dev wallet used by /app/admin
 ```
 
-**Rule**: higher layer can import lower; never the reverse. Enforced by
-ESLint (`no-restricted-imports`, **enforced at error level**).
+**Rule**: higher layer can import lower; never the reverse. Within
+`components/`, ESLint enforces it (`no-restricted-imports`, **enforced at
+error level**). `hooks/` and `lib/` sit below every component and do not
+import from `components/`; a type that both need lives in `lib/` and the
+component re-exports it. The one exception is `useToasts`, which the write
+hooks (`useWriteAction`, `useClaimAllQueue`) call to report a transaction.
+Use viem's `zeroAddress` / `zeroHash` and `anvil.id`, never local copies.
 
 ### The contract (`components/ui/CONTRIBUTING.md`)
 
@@ -235,9 +242,11 @@ Six rules — must follow when adding any primitive:
    (icon/title/children/actions/tone). Domain props (commitmentId,
    operatorAddress) belong in `components/protocol/`.
 2. **`size` + `tone` vocabulary.** `size: xs|sm|md|lg|xl` (or named scale
-   `inline|default|display` for TokenAmount). `tone: neutral|info|success|warn|danger`.
-   Forwarded to `data-size` / `data-tone` for attribute-driven CSS. No
-   `variant`, no `large`/`huge`/`error`/`critical`.
+   `inline|default|display` for TokenAmount). `tone: neutral|info|success|warn|danger`,
+   plus `accent` on primitives that colour a value, series or segment and
+   `muted` on charts and bars. Forwarded to `data-size` / `data-tone` for
+   attribute-driven CSS. No `variant`, no `large`/`huge`/`error`/`positive`/
+   `negative`/`critical`.
 3. **`as` prop for polymorphism.** `<AddressDisplay as="a" href={…}/>`.
    Refs are forwarded through.
 4. **Full-precision `title`.** Any truncated/rounded/compacted value MUST
@@ -275,7 +284,7 @@ and have meaningful drift-prevention semantics:
 
 - **`viem.formatUnits` / `formatEther` are banned in feature folders and
   `pages/`.** Use `<TokenAmount/>` or `formatTokenAmount` from `lib/format`.
-  (Allowed in `lib/`, in `TokenAmount.tsx` itself, and in tests.)
+  (Allowed in `lib/`, `hooks/`, `components/ui` and `components/protocol`.)
 - **Layering**: `components/ui/**` cannot import protocol or feature folders;
   `components/protocol/**` cannot import feature folders.
 - **No hex literals** outside `src/styles/tokens.css` (test fixtures under
@@ -317,12 +326,13 @@ drift on a status rule.
 ### Hooks layer
 
 `src/hooks/*` wraps wagmi and indexer reads/writes for protocol concepts:
-`useCommitments`, `useAgreements`, `useVaultPosition`, `useVaultApy`,
-`useUnbondStatus`, `useBalanceHistory`, `useForfeitProposal`, `useDepositFlow`,
-`useWriteAction`, `useClaimableYield`, `useOperatorsIndexed`,
-`useServiceOperators`, `useViewAddress`, `useRegistryPolicy`, `useNowSeconds`,
-`useCountdown`, `useDebouncedValue`. Reach for these before adding a new fetch;
-most page state is already covered.
+`useUnifiedRows`, `useIndexedCommitments`, `useFullCommitment`,
+`useAgreements`, `useVaults`, `useVaultPosition`, `useVaultApy`,
+`useUnbondStatus`, `useBalanceHistory`, `useForfeitProposal`,
+`useDepositFlow`, `useApproveThenWrite`, `useWriteAction`,
+`useClaimableYield`, `useOperatorsIndexed`, `useServiceOperators`,
+`useViewAddress`, `useRegistryPolicy`, `useNowSeconds`, `useCountdown`.
+Reach for these before adding a new fetch; most page state is already covered.
 
 ### Adding a new UI component
 

@@ -3,6 +3,7 @@ import { parseEther } from 'viem'
 import {
   DataTable,
   FilterBar,
+  Pagination,
   SourceBlock,
   TokenAmount,
   type DataTableColumn,
@@ -117,6 +118,44 @@ function DataTableDemo() {
     />
   )
 }
+
+function PaginationDemo() {
+  const [offset, setOffset] = useState(0)
+  const total = 47
+  const count = Math.min(10, total - offset)
+  return (
+    <Pagination
+      aria-label="example pages"
+      offset={offset}
+      limit={10}
+      count={count}
+      total={total}
+      onOffsetChange={setOffset}
+    />
+  )
+}
+
+const PAGINATION_STATES: Array<[label: string, props: { offset: number; count: number; total: number; loading?: boolean }]> = [
+  ['first page', { offset: 0, count: 10, total: 47 }],
+  ['middle page', { offset: 20, count: 10, total: 47 }],
+  ['last page', { offset: 40, count: 7, total: 47 }],
+  ['loading', { offset: 20, count: 10, total: 47, loading: true }],
+  ['empty', { offset: 0, count: 0, total: 0 }],
+]
+
+const SRC_PAGINATION =
+  `// Controlled only: the page owns the offset it fetches by.
+const [offset, setOffset] = useState(0)
+
+<Pagination
+  aria-label="commitments pages"
+  offset={offset}
+  limit={10}
+  count={rows.length}
+  total={total}
+  loading={isFetching}
+  onOffsetChange={setOffset}
+/>`
 
 function FilterBarDemo() {
   const [direction, setDirection] = useState('all')
@@ -322,6 +361,28 @@ export function DataTableSection() {
       </div>
 
       <SourceBlock label="example" source={SRC_DATA_TABLE} />
+    </section>
+  )
+}
+
+export function PaginationSection() {
+  return (
+    <section className="ds-stack ds-stack-6">
+      <SectionHeading
+        id="pagination"
+        title="Pagination"
+        lead="Previous / Next for an offset-paged list, with the range between. Both buttons disable while a page loads."
+      />
+      <PaginationDemo />
+      <div className="ds-stack ds-stack-3">
+        {PAGINATION_STATES.map(([label, props]) => (
+          <div key={label} className="ds-stack ds-stack-1">
+            <div className="ds-label">{label}</div>
+            <Pagination aria-label={label} limit={10} onOffsetChange={() => undefined} {...props} />
+          </div>
+        ))}
+      </div>
+      <SourceBlock label="example" source={SRC_PAGINATION} />
     </section>
   )
 }

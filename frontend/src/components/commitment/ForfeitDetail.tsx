@@ -1,7 +1,7 @@
 import { type Address } from 'viem'
 import { useForfeitProposal } from '../../hooks/useForfeitProposal'
 import { FORFEIT_STATE_LABEL } from '../../lib/forfeitEnforcement'
-import { formatBps, type CommitmentWithStatus } from '../../utils/commitments'
+import { formatBps, type CommitmentWithStatus } from '../../lib/commitments'
 import {
   AddressDisplay,
   Notice,

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { type Address, type Hex, parseAbiItem } from 'viem'
 import { usePublicClient } from 'wagmi'
 import { POLL } from './polling'
+import { anvil } from '../config/anvil'
 
 const ROLE_GRANTED_EVENT = parseAbiItem(
   'event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)',
@@ -51,7 +52,7 @@ export function useRoleHolders({
       const head = await client.getBlockNumber()
       // Anvil deployments are minutes old; scanning from 0n is the only way to
       // catch the deploy-time grant. On any other chain we bound the scan.
-      const isAnvil = chainId === 31337
+      const isAnvil = chainId === anvil.id
       const fromBlock = isAnvil
         ? 0n
         : head > fromBlockOffset

@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { type Address, type Hex } from 'viem'
+import { type Address, type Hex, zeroHash } from 'viem'
 import { operatorRegistryAbi } from '../../generated'
 import {
-  ZERO_HASH,
   computeHashFromJsonText,
   resolveMetadataArgs,
   validateMetadataHash,
   validateMetadataURI,
-} from '../../utils/metadataForm'
+} from '../../lib/metadataForm'
 import { type MetadataResult } from '../../hooks/useIndexerMetadata'
 import { useWriteAction } from '../../hooks/useWriteAction'
 import { Button, Input, Notice } from '../ui'
@@ -160,7 +159,7 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
           type="text"
           value={hash}
           onChange={handleHash}
-          placeholder={ZERO_HASH}
+          placeholder={zeroHash}
           aria-label="CONTENT HASH"
           style={{ width: '100%' }}
         />

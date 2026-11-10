@@ -1,4 +1,5 @@
 import type { ReactNode, SVGProps } from 'react'
+import { anvil } from '../../config/anvil'
 
 export type ChainBadgeSize = 'sm' | 'md' | 'lg'
 
@@ -79,7 +80,7 @@ function AnvilGlyph(props: SVGProps<SVGSVGElement>) {
 const REGISTRY: Record<number, ChainEntry> = {
   1: { name: 'Ethereum', Glyph: EthereumGlyph },
   11155111: { name: 'Sepolia', Glyph: SepoliaGlyph },
-  31337: { name: 'Anvil', Glyph: AnvilGlyph },
+  [anvil.id]: { name: 'Anvil', Glyph: AnvilGlyph },
 }
 
 /**

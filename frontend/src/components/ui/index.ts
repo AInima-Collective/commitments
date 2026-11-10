@@ -161,7 +161,7 @@ export type {
   TooltipTone,
 } from './Tooltip'
 export { UsdAmount } from './UsdAmount'
-export type { UsdAmountProps, UsdAmountSize, UsdAmountTone } from './UsdAmount'
+export type { UsdAmountProps, UsdAmountSize } from './UsdAmount'
 export { TokenChip } from './TokenChip'
 export type { TokenChipProps } from './TokenChip'
 export { TokenIcon } from './TokenIcon'

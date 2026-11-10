@@ -51,7 +51,7 @@ export function JoinConsentGate({
         <StatBlock
           label="worst-case loss"
           value={<TokenAmount amount={creditedValue} decimals={decimals} symbol={symbol} compact />}
-          tone="negative"
+          tone="danger"
           meta="if the pool takes a total loss"
         />
       </div>

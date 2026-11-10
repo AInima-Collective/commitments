@@ -19,7 +19,7 @@ import { useOptimisticClaim } from '../hooks/useOptimisticClaim'
 import { commitmentDetailPath } from '../lib/arbitrationRoutes'
 import { formatDuration } from '../lib/format'
 import { parseIdParam } from '../lib/routeParams'
-import { formatBps } from '../utils/commitments'
+import { formatBps } from '../lib/commitments'
 
 /**
  * /claims/:id — read-shareable detail surface for an optimistic-insurance

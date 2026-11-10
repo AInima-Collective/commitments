@@ -19,7 +19,7 @@ import { useVaultPosition } from '../../hooks/useVaultPosition'
 import type { BackingOption } from '../../config/contracts'
 import { DepositStepper } from '../vault/DepositStepper'
 import { deriveDepositSteps, type StepDescriptor } from '../vault/depositSteps'
-import { legibleWriteError } from '../../utils/contractErrors'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 interface BackingFlowProps {
   managerAddress: Address | undefined
@@ -143,12 +143,12 @@ export function BackingFlow({
   // user MAXes the freshly-minted shares) and surface them on the BalanceLine.
   useEffect(() => {
     if (isVaultShare && mintFlow.step === 'complete' && phase === 'mint') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- moves to the back hop when the mint transaction confirms
       setPhase('back')
       resetInput()
       mintFlow.reset()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on the mint step only; the flow object and input reset are new every render
   }, [mintFlow.step])
 
   // Toast feedback off both sub-flow state machines.
@@ -159,7 +159,7 @@ export function BackingFlow({
     if (mintFlow.step === 'error') {
       push({ tone: 'danger', title: 'MINT FAILED', body: legibleWriteError(mintFlow.error) })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [mintFlow.step])
 
   useEffect(() => {
@@ -186,7 +186,7 @@ export function BackingFlow({
     if (backFlow.step === 'error') {
       push({ tone: 'danger', title: 'DEPOSIT FAILED', body: legibleWriteError(backFlow.error) })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [backFlow.step])
 
   // --- Active phase action wiring ---

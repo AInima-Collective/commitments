@@ -1,8 +1,7 @@
 import { useChainId } from 'wagmi'
 import { useAnvilTime } from './useAnvilTime'
 import { useNowSelect } from './useNow'
-
-const ANVIL_CHAIN_ID = 31337
+import { anvil } from '../config/anvil'
 
 /**
  * "Display now" — the timestamp countdowns and pending-window UI should be
@@ -23,7 +22,7 @@ export function useDisplayNow(): number {
  */
 export function useDisplayNowSelect<T>(select: (nowSeconds: number) => T): T {
   const chainId = useChainId()
-  const onAnvil = chainId === ANVIL_CHAIN_ID
+  const onAnvil = chainId === anvil.id
   const anvilNow = useAnvilTime(2000, onAnvil).now
   return useNowSelect((wall) =>
     select(onAnvil && anvilNow !== undefined ? Number(anvilNow) : Number(wall)),

@@ -16,7 +16,7 @@ import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 import { useAnvilTime } from '../../../hooks/useAnvilTime'
 import { POLL } from '../../../hooks/polling'
 import { AdminActionPanel } from '../AdminActionPanel'
-import { useAdminAction } from '../useAdminAction'
+import { useAdminAction } from '../../../hooks/useAdminAction'
 
 // cvUSDC vault shares: USDC's 6 decimals + the vault's decimals offset of 9.
 const CV_SHARE_DECIMALS = 15

@@ -5,22 +5,13 @@ import { useDevWallet } from '../../../contexts/devWallet'
 import type { DevActor, DevActorId } from '../../../contexts/devWallet'
 import { getContractAddresses } from '../../../config/contracts'
 import { useAnvilTime } from '../../../hooks/useAnvilTime'
+import { ANVIL_RPC_URL, anvil } from '../../../config/anvil'
 import type { Scenario, ScenarioContext, ScenarioStep, StepResult } from './types'
-
-const ANVIL_RPC_URL =
-  (import.meta.env.VITE_RPC_URL_ANVIL as string | undefined) ?? 'http://127.0.0.1:8545'
-
-const ANVIL_CHAIN = {
-  id: 31337,
-  name: 'Anvil',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [ANVIL_RPC_URL] } },
-} as const
 
 function buildWalletFor(actor: DevActor): WalletClient {
   return createWalletClient({
     account: actor.account,
-    chain: ANVIL_CHAIN,
+    chain: anvil,
     transport: http(ANVIL_RPC_URL),
   })
 }

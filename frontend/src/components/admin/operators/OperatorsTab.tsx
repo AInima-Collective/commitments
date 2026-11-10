@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useChainId } from 'wagmi'
-import { type Address, type Hex } from 'viem'
+import { type Address, type Hex, zeroHash } from 'viem'
 import { Input, Notice } from '../../ui'
 import { commitmentManagerAbi, operatorRegistryAbi } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
 import { useDevWallet } from '../../../contexts/devWallet'
 import { AdminActionPanel } from '../AdminActionPanel'
-import { useAdminAction } from '../useAdminAction'
+import { useAdminAction } from '../../../hooks/useAdminAction'
+import { anvil } from '../../../config/anvil'
 
-const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex
 
 export function OperatorsTab() {
   const chainId = useChainId()
@@ -159,7 +159,7 @@ function DelegatePanel({ registry }: { registry: Address }) {
 function SetMetadataPanel({ registry }: { registry: Address }) {
   const action = useAdminAction()
   const [uri, setUri] = useState('ipfs://operator-metadata')
-  const [hash, setHash] = useState<string>(ZERO_BYTES32)
+  const [hash, setHash] = useState<string>(zeroHash)
 
   const submit = async () => {
     await action.run(({ walletClient }) =>
@@ -281,7 +281,7 @@ function SetMinStakePanel({ registry }: { registry: Address }) {
 
 function SetOperatorRegistryPanel({ manager }: { manager: Address }) {
   const action = useAdminAction()
-  const { operatorRegistry } = getContractAddresses(31337)
+  const { operatorRegistry } = getContractAddresses(anvil.id)
   const [registry, setRegistry] = useState<string>(operatorRegistry ?? '')
 
   const submit = async () => {

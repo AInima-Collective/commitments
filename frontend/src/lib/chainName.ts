@@ -1,9 +1,10 @@
 import { mainnet, sepolia } from 'wagmi/chains'
+import { anvil } from '../config/anvil'
 
 const CHAIN_NAMES: Record<number, string> = {
   [mainnet.id]: 'Ethereum',
   [sepolia.id]: 'Sepolia',
-  31337: 'Anvil',
+  [anvil.id]: 'Anvil',
 }
 
 /**

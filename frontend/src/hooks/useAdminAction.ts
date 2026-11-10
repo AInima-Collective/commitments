@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react'
 import { usePublicClient } from 'wagmi'
 import type { Hash, TransactionReceipt } from 'viem'
-import { useDevWalletClient } from '../../hooks/useDevWalletClient'
-import { useDevWallet } from '../../contexts/devWallet'
+import { useDevWalletClient } from './useDevWalletClient'
+import { useDevWallet } from '../contexts/devWallet'
 
 export type AdminActionStatus = 'idle' | 'pending' | 'success' | 'error'
 

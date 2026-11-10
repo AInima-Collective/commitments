@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { keccak256, toBytes } from 'viem'
+import { keccak256, toBytes, zeroHash } from 'viem'
 import {
   validateMetadataURI,
   validateMetadataHash,
   buildDataJsonUri,
   computeHashFromJsonText,
   resolveMetadataArgs,
-  ZERO_HASH,
   EMPTY_URI,
 } from '../metadataForm'
 
@@ -49,7 +48,7 @@ describe('validateMetadataURI', () => {
 describe('validateMetadataHash', () => {
   it('accepts empty and the zero hash', () => {
     expect(validateMetadataHash('')).toEqual({ error: null, warning: null })
-    expect(validateMetadataHash(ZERO_HASH)).toEqual({ error: null, warning: null })
+    expect(validateMetadataHash(zeroHash)).toEqual({ error: null, warning: null })
   })
 
   it('accepts a well-formed 32-byte hex hash', () => {
@@ -102,8 +101,8 @@ describe('computeHashFromJsonText', () => {
 })
 
 describe('resolveMetadataArgs', () => {
-  it('maps blank/whitespace fields to EMPTY_URI + ZERO_HASH', () => {
-    expect(resolveMetadataArgs('   ', '')).toEqual({ uri: EMPTY_URI, hash: ZERO_HASH })
+  it('maps blank/whitespace fields to EMPTY_URI + zeroHash', () => {
+    expect(resolveMetadataArgs('   ', '')).toEqual({ uri: EMPTY_URI, hash: zeroHash })
   })
 
   it('passes through populated values unchanged', () => {

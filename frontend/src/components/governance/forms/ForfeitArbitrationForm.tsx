@@ -18,6 +18,7 @@ import { useCreateProposal } from '../../../hooks/useCreateProposal'
 import { commitmentManagerAbi } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
 import { bpsToPercent, humanizeError, humanizeStep } from './lib'
+import { anvil } from '../../../config/anvil'
 
 export interface ForfeitArbitrationFormProps {
   governor: Address
@@ -49,7 +50,7 @@ export function ForfeitArbitrationForm({
   onSuccess,
 }: ForfeitArbitrationFormProps) {
   const chainId = useChainId()
-  const addrs = getContractAddresses(chainId ?? 31337)
+  const addrs = getContractAddresses(chainId ?? anvil.id)
   const initialManager: string = defaultManager ?? addrs.commitmentManager ?? ''
 
   const [manager, setManager] = useState<string>(initialManager)

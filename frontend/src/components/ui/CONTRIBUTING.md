@@ -33,8 +33,13 @@ that same shape so callers don't have to relearn the API per primitive.
 Rule: the scale prop is `size`, not `variant`. Allowed values:
 `xs | sm | md | lg | xl` (or the named-scale equivalents already used by
 `TokenAmount`: `inline | default | display`). The semantic prop is `tone`.
-Allowed values: `neutral | info | success | warn | danger`. No bespoke names
-— `small`, `large`, `huge`, `error`, `important`, `critical` are forbidden.
+Allowed values: `neutral | info | success | warn | danger`, plus two extras:
+`accent` on primitives that colour a value, series or segment (`StatBlock`,
+`VaultHeader`, `YieldSparkline`, `TimeSeriesChart`, `AllocationBar`), and
+`muted` on the last two. No bespoke names —
+`small`, `large`, `huge`, `error`, `positive`, `negative`, `important`,
+`critical` are forbidden. A data state such as stale or unavailable is not a
+tone.
 
 Both props are forwarded to `data-size` and `data-tone` attributes on the
 root element so styling is attribute-driven CSS, not prop-mapped class soup.
@@ -122,24 +127,13 @@ always "expose the state shape, let the caller render the children". See
 how `useToasts` exposes a list rather than a fire-and-forget emitter.
 
 ```tsx
-// GOOD — useToasts exposes a state shape; the page renders <Toast>.
-const { toasts, push, dismiss } = useToasts()
+// GOOD — useToasts returns the list plus dispatchers. ToastProvider renders
+// the list, so a page only pushes.
+const { push } = useToasts()
 return (
-  <>
-    {toasts.map((t) => (
-      <Toast
-        key={t.id}
-        tone={t.tone}
-        title={t.title}
-        onDismiss={() => dismiss(t.id)}
-      >
-        {t.message}
-      </Toast>
-    ))}
-    <Button onClick={() => push({ tone: 'success', message: 'Saved.' })}>
-      Save
-    </Button>
-  </>
+  <Button onClick={() => push({ tone: 'success', title: 'Saved.' })}>
+    Save
+  </Button>
 )
 
 // BAD — imperative emitter; pages can't observe lifecycle, can't SSR.

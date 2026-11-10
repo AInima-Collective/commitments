@@ -7,7 +7,7 @@ import { Button, Input, Notice, StatBlock, TokenAmount } from '../ui'
 import { linkedMutualPolicyAbi, premiumSchedulerAbi } from '../../generated'
 import { useBuyCoverFlow } from '../../hooks/useBuyCoverFlow'
 import { POLL } from '../../hooks/polling'
-import { legibleWriteError } from '../../utils/contractErrors'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 interface BuyCoverPanelProps {
   mutualId: bigint

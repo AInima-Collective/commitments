@@ -32,6 +32,7 @@ const SECTIONS: Array<[id: string, title: string]> = [
   ['activity-feed', 'Activity Feed'],
   ['tables', 'Tables'],
   ['data-table', 'Data Table'],
+  ['pagination', 'Pagination'],
   ['filter-bar', 'Filter Bar'],
   ['badges', 'Status Badges'],
   ['agent-badge', 'Agent Badge'],
@@ -93,7 +94,7 @@ function renderDesign() {
   )
 }
 
-// Each test renders all 45 sections; that takes a few seconds in jsdom and
+// Each test renders all 46 sections; that takes a few seconds in jsdom and
 // more on a loaded machine, so the default 5 s timeout is too tight.
 describe('Design page', { timeout: 30_000 }, () => {
   it('renders every section, in order, with its anchor and heading', () => {

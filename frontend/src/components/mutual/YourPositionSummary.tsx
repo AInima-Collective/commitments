@@ -68,7 +68,7 @@ export function YourPositionSummary({
           {underwriting && (
             <StatBlock
               label="claimable premium"
-              tone={claimablePremium > 0n ? 'positive' : 'neutral'}
+              tone={claimablePremium > 0n ? 'success' : 'neutral'}
               value={
                 <TokenAmount amount={claimablePremium} decimals={decimals} symbol={symbol} compact />
               }
@@ -78,7 +78,7 @@ export function YourPositionSummary({
           {owed > 0n && (
             <StatBlock
               label="owed loss share"
-              tone="negative"
+              tone="danger"
               value={
                 <TokenAmount amount={owed} decimals={decimals} symbol={symbol} compact />
               }

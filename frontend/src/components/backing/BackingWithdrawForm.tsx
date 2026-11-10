@@ -7,7 +7,7 @@ import { useAmountInput } from '../../hooks/useAmountInput'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useManagerLedgerFlow } from '../../hooks/useManagerLedgerFlow'
 import type { BackingOption } from '../../config/contracts'
-import { legibleWriteError } from '../../utils/contractErrors'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 interface BackingWithdrawFormProps {
   managerAddress: Address | undefined
@@ -104,7 +104,7 @@ export function BackingWithdrawForm({
         body: legibleWriteError(flow.error),
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [flow.step])
 
   function handleWithdraw() {

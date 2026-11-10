@@ -1,9 +1,9 @@
-import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../utils/mesh'
+import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../lib/mesh'
 import { TokenAmount } from '../ui'
 import { AgentBadge, OperatorIdentity, OperatorStatusBadge } from '../protocol'
 import { OperatorDetail } from './OperatorDetail'
 import { type AgentIdentity } from '../../hooks/useAgentIdentities'
-import { type CommitmentWithStatus } from '../../utils/commitments'
+import { type CommitmentWithStatus } from '../../lib/commitments'
 
 interface OperatorWithStatus extends OperatorInfo {
   status: OperatorStatus

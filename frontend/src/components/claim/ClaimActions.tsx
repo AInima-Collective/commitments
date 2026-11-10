@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { parseUnits, type Address } from 'viem'
+import { parseUnits, type Address, zeroHash } from 'viem'
 
 import { optimisticInsuranceArbiterAbi } from '../../generated'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
@@ -7,7 +7,6 @@ import { useWriteAction } from '../../hooks/useWriteAction'
 import type { OptimisticArbiterConfig, OptimisticClaim } from '../../hooks/useOptimisticClaim'
 import { Button, Input, Notice } from '../ui'
 import { formatDuration, formatTokenAmount } from '../../lib/format'
-import { ZERO_HASH } from '../../utils/metadataForm'
 
 interface ClaimActionsProps {
   arbiterAddress: Address
@@ -238,7 +237,7 @@ function DisputeAction({
       abi: optimisticInsuranceArbiterAbi,
       address: arbiterAddress,
       functionName: 'disputeClaim',
-      args: [claim.claimId, counter, ZERO_HASH, parsedBond],
+      args: [claim.claimId, counter, zeroHash, parsedBond],
     })
   }
 

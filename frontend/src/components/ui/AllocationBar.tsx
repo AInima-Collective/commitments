@@ -1,6 +1,6 @@
 import { TokenAmount } from './TokenAmount'
 
-export type AllocationTone = 'success' | 'warn' | 'error' | 'accent' | 'muted'
+export type AllocationTone = 'success' | 'warn' | 'danger' | 'accent' | 'muted'
 
 export interface AllocationSegment {
   label: string

@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
-import { type CommitmentWithStatus } from '../utils/commitments'
-import { commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
+import { type CommitmentWithStatus } from '../lib/commitments'
+import { commitmentReadContracts, mapCommitmentWindow } from '../lib/commitmentReads'
 import { POLL } from './polling'
 
 interface UseFullCommitmentParams {

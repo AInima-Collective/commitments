@@ -119,7 +119,7 @@ export function OperatorsSection() {
         <div className="ds-row ds-row-3" style={{ flexWrap: 'wrap' }}>
           <RiskTierBadge tier="success" />
           <RiskTierBadge tier="warn" />
-          <RiskTierBadge tier="error" />
+          <RiskTierBadge tier="danger" />
           <RiskTierBadge tier="unknown" />
         </div>
         <div className="ds-text-xs ds-subtle" style={{ maxWidth: '60ch' }}>
@@ -197,7 +197,7 @@ export function OperatorsSection() {
             <span className="ds-stat-value">
               <TokenAmount amount={parseEther('1247.328')} decimals={18} symbol="ETH" compact />
             </span>
-            <span className="ds-stat-delta ds-stat-delta--positive">↑ 12 deleg / 7d</span>
+            <span className="ds-stat-delta ds-stat-delta--success">↑ 12 deleg / 7d</span>
           </div>
           <div className="ds-stat">
             <span className="ds-stat-label">Active Delegations</span>

@@ -6,7 +6,7 @@ import { getContractAddresses } from '../config/contracts'
 import { hasIndexer, indexerGraphqlData } from '../config/indexer'
 import { operatorRegistryAbi } from '../generated'
 import { type OperatorMetadataLite } from '../lib/operatorFilter'
-import { deriveOperatorStatus, type OperatorInfo, type OperatorStatus } from '../utils/mesh'
+import { deriveOperatorStatus, type OperatorInfo, type OperatorStatus } from '../lib/mesh'
 
 interface OperatorWithStatus extends OperatorInfo {
   status: OperatorStatus

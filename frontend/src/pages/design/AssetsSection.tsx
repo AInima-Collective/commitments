@@ -19,6 +19,7 @@ import {
 } from '../../components/protocol'
 import { formatPercent } from '../../lib/format'
 import { SectionHeading } from './SectionHeading'
+import { anvil } from '../../config/anvil'
 
 const SRC_ASSETS =
   `<TokenAmount amount={parseEther('12.4057')} decimals={18} symbol="ETH" />
@@ -87,7 +88,7 @@ export function AssetsSection() {
           <div className="ds-row ds-row-4" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <ChainBadge chainId={1} />
             <ChainBadge chainId={11155111} />
-            <ChainBadge chainId={31337} />
+            <ChainBadge chainId={anvil.id} />
             <ChainBadge chainId={999999} />
             <ChainBadge chainId={1} iconOnly />
           </div>
@@ -377,19 +378,19 @@ export function AssetsSection() {
       <div className="ds-stack ds-stack-3">
         <div className="ds-label">stat · tone variants</div>
         <div className="ds-grid-4">
-          <div className="ds-stat ds-stat--positive">
+          <div className="ds-stat ds-stat--success">
             <span className="ds-stat-label">Yield (7d)</span>
             <span className="ds-stat-value">
               <TokenAmount amount={parseEther('0.4232')} decimals={18} symbol="ETH" />
             </span>
-            <span className="ds-stat-delta ds-stat-delta--positive">↑ 4.21% APY</span>
+            <span className="ds-stat-delta ds-stat-delta--success">↑ 4.21% APY</span>
           </div>
-          <div className="ds-stat ds-stat--negative">
+          <div className="ds-stat ds-stat--danger">
             <span className="ds-stat-label">Forfeited</span>
             <span className="ds-stat-value">
               <TokenAmount amount={parseEther('1.85')} decimals={18} symbol="ETH" />
             </span>
-            <span className="ds-stat-delta ds-stat-delta--negative">↓ 0.92 / 24h</span>
+            <span className="ds-stat-delta ds-stat-delta--danger">↓ 0.92 / 24h</span>
           </div>
           <div className="ds-stat ds-stat--accent">
             <span className="ds-stat-label">Pending Reward</span>

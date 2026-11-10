@@ -1,7 +1,6 @@
-import { parseEventLogs, type Address, type Hex, type TransactionReceipt } from 'viem'
+import { parseEventLogs, type Address, type Hex, type TransactionReceipt, zeroHash } from 'viem'
 
 import { optimisticInsuranceArbiterAbi } from '../generated'
-import { ZERO_HASH } from '../utils/metadataForm'
 import { useApproveThenWrite } from './useApproveThenWrite'
 
 export type ProposeClaimStep = 'idle' | 'approving' | 'approved' | 'proposing' | 'complete' | 'error'
@@ -78,7 +77,7 @@ export function useProposeClaimFlow({
         amountBps,
         evidenceHash,
         // templateId — reserved for claim-template registries; zero today.
-        ZERO_HASH,
+        zeroHash,
         bond,
       ],
     })

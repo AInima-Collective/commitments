@@ -49,7 +49,7 @@ function ColorSwatch({ name, cssVar, note, theme }: { name: string; cssVar: stri
   const [hex, setHex] = useState('')
   useEffect(() => {
     const rs = getComputedStyle(document.documentElement)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- computed-style read on theme change; DOM is the external source; see frontend/docs/eslint-disable-rationale.md §Pattern-3
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads the resolved token colour from the DOM after a theme change
     setHex(rs.getPropertyValue(cssVar).trim())
   }, [cssVar, theme])
 

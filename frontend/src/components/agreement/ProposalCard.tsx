@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
 import { useAccount } from 'wagmi'
 import { commitmentManagerAbi } from '../../generated'
-import { type AgreementProposalWithStatus } from '../../utils/agreements'
+import { type AgreementProposalWithStatus } from '../../lib/agreements'
 import { AddressDisplay, Button, Notice, OperatorAvatar, TokenAmount } from '../ui'
 import { CommitmentStatusBadge } from '../protocol'
 import { useCountdown } from '../../hooks/useCountdown'
@@ -10,7 +10,7 @@ import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { useWriteAction } from '../../hooks/useWriteAction'
 import { formatDuration } from '../../lib/format'
-import { formatBps } from '../../utils/commitments'
+import { formatBps } from '../../lib/commitments'
 
 interface ProposalCardProps {
   proposal: AgreementProposalWithStatus

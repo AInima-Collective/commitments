@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { type Address } from 'viem'
-import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../utils/mesh'
+import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../lib/mesh'
 import { Button, EmptyState, Notice, Skeleton } from '../ui'
 import { OperatorRow } from './OperatorRow'
 import { OperatorFilterBar } from './OperatorFilterBar'

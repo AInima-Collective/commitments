@@ -1,4 +1,4 @@
-import { decodeEventLog, erc20Abi, parseUnits, type Address, type Hash } from 'viem'
+import { decodeEventLog, erc20Abi, parseUnits, type Address, type Hash, zeroAddress, zeroHash } from 'viem'
 import {
   commitmentManagerAbi,
   commitmentsVaultAbi,
@@ -8,9 +8,6 @@ import {
 import type { DevActorId } from '../../../contexts/devWallet'
 import type { Scenario, ScenarioContext } from './types'
 import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
-
-const ZERO_BYTES32 =
-  '0x0000000000000000000000000000000000000000000000000000000000000000' as const
 
 const DEFAULT_DECIMALS = 6 // USDC vault on the Simulate.s.sol seed
 const ONE_DAY = 86_400
@@ -56,8 +53,7 @@ async function donateYield(
     abi: commitmentsVaultAbi,
     functionName: 'yieldStrategy',
   })) as Address
-  const ZERO = '0x0000000000000000000000000000000000000000' as Address
-  const target = strategy && strategy !== ZERO ? strategy : vault
+  const target = strategy && strategy !== zeroAddress ? strategy : vault
   const wallet = ctx.walletFor(donorId)
   return wallet.writeContract({
     address: asset,
@@ -279,7 +275,7 @@ function buildCommitmentParams(
     // Strategy bindings deferred in scenarios — plain commitments.
     strategies: [] as { strategy: Address; params: `0x${string}` }[],
     metadataURI,
-    metadataHash: ZERO_BYTES32 as `0x${string}`,
+    metadataHash: zeroHash,
   }
 }
 
@@ -647,7 +643,7 @@ const agreementHappyPath: Scenario = {
             challengeWindow: BigInt(ONE_DAY),
             proposalDuration: BigInt(7 * ONE_DAY),
             metadataURI: 'agreement-release',
-            metadataHash: ZERO_BYTES32 as `0x${string}`,
+            metadataHash: zeroHash,
             maxFlowProposerToAcceptor: 0n,
             maxFlowAcceptorToProposer: 0n,
           }
@@ -778,7 +774,7 @@ const agreementForfeit: Scenario = {
             challengeWindow: BigInt(ONE_DAY),
             proposalDuration: BigInt(7 * ONE_DAY),
             metadataURI: 'agreement-forfeit',
-            metadataHash: ZERO_BYTES32 as `0x${string}`,
+            metadataHash: zeroHash,
             maxFlowProposerToAcceptor: 0n,
             maxFlowAcceptorToProposer: 0n,
           }
@@ -1396,7 +1392,7 @@ const agreementSettle: Scenario = {
             challengeWindow: BigInt(ONE_DAY),
             proposalDuration: BigInt(7 * ONE_DAY),
             metadataURI: 'agreement-settle',
-            metadataHash: ZERO_BYTES32 as `0x${string}`,
+            metadataHash: zeroHash,
             maxFlowProposerToAcceptor: capP2A,
             maxFlowAcceptorToProposer: capA2P,
           }
@@ -1466,7 +1462,7 @@ const agreementSettle: Scenario = {
             address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
             abi: manualArbiterAbi,
             functionName: 'settleAgreement',
-            args: [agreementId, true, settleP2A, ZERO_BYTES32 as `0x${string}`],
+            args: [agreementId, true, settleP2A, zeroHash],
             chain: wallet.chain,
             account: wallet.account!,
           })
@@ -1485,7 +1481,7 @@ const agreementSettle: Scenario = {
             address: requireAddress(ctx.manualArbiter, 'manual arbiter'),
             abi: manualArbiterAbi,
             functionName: 'settleAgreement',
-            args: [agreementId, false, settleA2P, ZERO_BYTES32 as `0x${string}`],
+            args: [agreementId, false, settleA2P, zeroHash],
             chain: wallet.chain,
             account: wallet.account!,
           })
@@ -1574,7 +1570,7 @@ function twoTierScenario(appealed: boolean): Scenario {
               address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
               abi: twoTierArbiterAbi,
               functionName: 'proposeRuling',
-              args: [ctx.vars.twoTierCommitmentId as bigint, primaryPenalty, ZERO_BYTES32.replace(/0$/, '1') as `0x${string}`],
+              args: [ctx.vars.twoTierCommitmentId as bigint, primaryPenalty, zeroHash.replace(/0$/, '1') as `0x${string}`],
               chain: wallet.chain,
               account: wallet.account!,
             })
@@ -1594,7 +1590,7 @@ function twoTierScenario(appealed: boolean): Scenario {
                 address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
                 abi: twoTierArbiterAbi,
                 functionName: 'appeal',
-                args: [ctx.vars.twoTierCaseId as bigint, ZERO_BYTES32.replace(/0$/, '2') as `0x${string}`],
+                args: [ctx.vars.twoTierCaseId as bigint, zeroHash.replace(/0$/, '2') as `0x${string}`],
                 chain: wallet.chain,
                 account: wallet.account!,
               })
@@ -1610,7 +1606,7 @@ function twoTierScenario(appealed: boolean): Scenario {
                 address: requireAddress(ctx.twoTierArbiter, 'two-tier arbiter'),
                 abi: twoTierArbiterAbi,
                 functionName: 'resolveAppeal',
-                args: [ctx.vars.twoTierCaseId as bigint, finalPenalty, ZERO_BYTES32.replace(/0$/, '3') as `0x${string}`],
+                args: [ctx.vars.twoTierCaseId as bigint, finalPenalty, zeroHash.replace(/0$/, '3') as `0x${string}`],
                 chain: wallet.chain,
                 account: wallet.account!,
               })

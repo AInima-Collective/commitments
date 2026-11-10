@@ -33,7 +33,7 @@ export function SettlementProgress({
         <StatBlock
           label="members settled"
           value={`${settledCount} / ${totalCount}`}
-          tone={totalCount > 0 && settledCount >= totalCount ? 'positive' : 'neutral'}
+          tone={totalCount > 0 && settledCount >= totalCount ? 'success' : 'neutral'}
         />
         <StatBlock
           label="collected"
@@ -46,7 +46,7 @@ export function SettlementProgress({
         <StatBlock
           label="outstanding"
           value={<TokenAmount amount={remaining} decimals={decimals} symbol={symbol} compact />}
-          tone={remaining > 0n ? 'negative' : 'positive'}
+          tone={remaining > 0n ? 'danger' : 'success'}
         />
       </div>
       <CapacityMeter

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { type Address } from 'viem'
-import { type CommitmentWithStatus } from '../../utils/commitments'
+import { type CommitmentWithStatus } from '../../lib/commitments'
 import { Button } from '../ui'
 import { ResolveCommitmentModal } from './ResolveCommitmentModal'
 

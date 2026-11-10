@@ -7,11 +7,11 @@ import { type CommitmentYieldEntry } from '../../../hooks/useCommitmentYield'
 import {
   formatBps,
   type CommitmentWithStatus,
-} from '../../../utils/commitments'
+} from '../../../lib/commitments'
 import {
   type ResolveAction,
   type ResolveActionKind,
-} from '../../../utils/resolveActions'
+} from '../../../lib/resolveActions'
 import { Button, Input, TokenAmount, type ButtonVariant } from '../../ui'
 import { useWriteAction } from '../../../hooks/useWriteAction'
 

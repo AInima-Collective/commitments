@@ -34,7 +34,7 @@ import { PageHeaderSection } from './design/PageHeaderSection'
 import { StatsSection } from './design/StatsSection'
 import { CardSection, SurfacesSection } from './design/Surfaces'
 import { TabsSection, ViewToggleSection } from './design/Switchers'
-import { DataTableSection, FilterBarSection, TablesSection } from './design/Tables'
+import { DataTableSection, FilterBarSection, PaginationSection, TablesSection } from './design/Tables'
 import { ServiceStakeSection, VaultHeaderSection, VaultMetadataSection } from './design/Vaults'
 
 /**
@@ -76,6 +76,7 @@ function sections(theme: 'light' | 'dark'): DesignSection[] {
     { id: 'activity-feed', label: 'Activity Feed', section: <ActivityFeedSection /> },
     { id: 'tables', label: 'Tables', section: <TablesSection /> },
     { id: 'data-table', label: 'Data Table', section: <DataTableSection /> },
+    { id: 'pagination', label: 'Pagination', section: <PaginationSection /> },
     { id: 'filter-bar', label: 'Filter Bar', section: <FilterBarSection /> },
     { id: 'badges', label: 'Status Badges', section: <BadgesSection /> },
     { id: 'agent-badge', label: 'Agent Badge', section: <AgentBadgeSection /> },

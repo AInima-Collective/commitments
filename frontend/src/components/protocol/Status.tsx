@@ -5,7 +5,11 @@
  * is the canonical mapping from those state strings to design-system tone.
  * Pages must not invent ad-hoc status colors.
  */
-import type { RiskTier } from '../../utils/risk'
+import type { RiskTierBadgeTier } from '../../lib/risk'
+import type { ProposalKind, ProposalState } from '../../lib/governance'
+import type { MutualLifecycle } from '../../lib/mutual'
+
+export type { RiskTierBadgeTier, ProposalKind, ProposalState, MutualLifecycle }
 
 export type CommitmentStatus =
   | 'PROPOSED'
@@ -149,25 +153,17 @@ export function OperatorStatusBadge({
   return <span className={root}>{OPERATOR_LABEL[status]}</span>
 }
 
-/**
- * Aggregate forfeiture risk, derived via {@link riskTier} from a max-penalty bps.
- * Composes with the badge tone family (success / warn / error) and `'unrated'`
- * for the unknown case. Use as a hero-level vault summary; for per-row risk,
- * prefer {@link RiskRow} (dot + bps + text).
- */
-export type RiskTierBadgeTier = RiskTier | 'unknown'
-
 const RISK_TIER_TONE: Record<RiskTierBadgeTier, string> = {
   success: 'ds-badge--success',
   warn: 'ds-badge--warn',
-  error: 'ds-badge--error',
+  danger: 'ds-badge--error',
   unknown: 'ds-badge--muted',
 }
 
 const RISK_TIER_LABEL: Record<RiskTierBadgeTier, string> = {
   success: 'low risk',
   warn: 'medium risk',
-  error: 'high risk',
+  danger: 'high risk',
   unknown: 'unrated',
 }
 
@@ -179,26 +175,6 @@ export function RiskTierBadge({ tier, className }: { tier: RiskTierBadgeTier; cl
     </span>
   )
 }
-
-/**
- * Mutual lifecycle. Driven by the mutual header's `active` / `terminal` flags
- * plus the live derived state (a bonded loss under challenge, or members still
- * owing markdown after execution). Pages must not invent ad-hoc colors for
- * these states.
- *
- * - `pending`     — registered but not yet activated.
- * - `active`      — open and covering. Members still settling owed markdown
- *                   after an executed loss stay `active` (the pool keeps
- *                   covering); the owed-markdown footnote carries that nuance
- *                   rather than a distinct badge.
- * - `loss-pending`— a bonded loss is in its challenge window; capacity frozen.
- * - `terminated`  — terminal; no new losses can be initiated.
- */
-export type MutualLifecycle =
-  | 'pending'
-  | 'active'
-  | 'loss-pending'
-  | 'terminated'
 
 const MUTUAL_TONE: Record<MutualLifecycle, string> = {
   pending: 'ds-badge--accent',
@@ -265,21 +241,6 @@ export function MetadataStatusBadge({
   )
 }
 
-/**
- * Governance proposal lifecycle. Mirrors OZ Governor's `state()` enum plus
- * the indexer's lower-cased wire format. Composes with the same badge tone
- * family used by agreement / commitment statuses.
- */
-export type ProposalState =
-  | 'pending'
-  | 'active'
-  | 'canceled'
-  | 'defeated'
-  | 'succeeded'
-  | 'queued'
-  | 'expired'
-  | 'executed'
-
 const PROPOSAL_STATE_TONE: Record<ProposalState, string> = {
   pending: 'ds-badge--muted',
   active: 'ds-badge--accent',
@@ -315,18 +276,6 @@ export function ProposalStateBadge({
   const root = ['ds-badge', tone, className].filter(Boolean).join(' ')
   return <span className={root}>{label}</span>
 }
-
-/**
- * Proposal kind — decoded from the action set at index time. Renders the
- * "shape" of the proposal (weight update, forfeit arbitration, treasury,
- * signaling, mixed) so the proposal-detail page picks the right action card.
- */
-export type ProposalKind =
-  | 'weight_update'
-  | 'forfeit_arbitration'
-  | 'treasury'
-  | 'signaling'
-  | 'mixed'
 
 const PROPOSAL_KIND_TONE: Record<ProposalKind, string> = {
   weight_update: 'ds-badge--accent',

@@ -3,7 +3,7 @@ import { type Address } from 'viem'
 import { useChainId } from 'wagmi'
 
 import { hasIndexer, indexerGraphqlData } from '../config/indexer'
-import { type AgreementProposalWithStatus, deriveAgreementStatus } from '../utils/agreements'
+import { type AgreementProposalWithStatus, deriveAgreementStatus } from '../lib/agreements'
 import { POLL } from './polling'
 
 interface UseAgreementsParams {

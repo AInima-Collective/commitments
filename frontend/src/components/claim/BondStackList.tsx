@@ -3,7 +3,7 @@ import { type Address } from 'viem'
 import { OperatorIdentity } from '../protocol'
 import { TokenAmount } from '../ui'
 import type { BondEntry } from '../../hooks/useOptimisticClaim'
-import { formatBps } from '../../utils/commitments'
+import { formatBps } from '../../lib/commitments'
 
 interface BondStackListProps {
   stack: BondEntry[]

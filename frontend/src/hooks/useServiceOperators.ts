@@ -1,7 +1,7 @@
 import { useReadContracts } from 'wagmi'
 import { type Address, zeroAddress } from 'viem'
 import { operatorServiceRegistryAbi } from '../generated'
-import { type ServiceOperatorInfo } from '../utils/mesh'
+import { type ServiceOperatorInfo } from '../lib/mesh'
 import { POLL } from './polling'
 
 interface UseServiceOperatorsOptions {

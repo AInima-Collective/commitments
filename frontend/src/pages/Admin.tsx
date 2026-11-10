@@ -11,15 +11,14 @@ import {
   YieldTab,
 } from '../components/admin'
 import { ensureAutomine } from '../hooks/useAnvilTime'
-
-const ANVIL_CHAIN_ID = 31337
+import { anvil } from '../config/anvil'
 
 const TABS = ['scenarios', 'vault', 'risk', 'yield', 'operators', 'time']
 
 export default function Admin() {
   const chainId = useChainId()
 
-  if (chainId !== ANVIL_CHAIN_ID) {
+  if (chainId !== anvil.id) {
     return (
       <div className="ds-page">
         <PageHeader
@@ -78,7 +77,7 @@ function AdminContent() {
         tone={autoMineState === 'failed' ? 'danger' : 'info'}
         title="Local dev tooling"
       >
-        Connected to Anvil ({ANVIL_CHAIN_ID}). All transactions are signed locally with
+        Connected to Anvil ({anvil.id}). All transactions are signed locally with
         anvil-mnemonic keys; no MetaMask popup. Automine:{' '}
         <strong>
           {autoMineState === 'enabled'

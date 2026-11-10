@@ -1,6 +1,6 @@
 import { type Address, type ReadContractReturnType } from 'viem'
 import { commitmentManagerAbi } from '../generated'
-import { type CommitmentWithStatus, deriveStatus } from '../utils/commitments'
+import { type CommitmentWithStatus, deriveStatus } from './commitments'
 
 /**
  * Shared read/decode helpers for commitment enrichment.

@@ -50,7 +50,7 @@ function importRules() {
   }
   // A sibling-relative path ('../mesh/X' from components/protocol) never spells
   // 'components/', so also match the folder one '..' up. Anchoring on a single
-  // leading '../' leaves lib/graph, utils/mesh and src/docs ('../../docs') alone.
+  // leading '../' leaves lib/graph, lib/mesh and src/docs ('../../docs') alone.
   const layerImports = (d) => [`**/components/${d}/**`, `../${d}`, `../${d}/**`]
   const featureImports = FEATURE_DIRS.flatMap(layerImports)
   const uiLayer = {

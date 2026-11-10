@@ -11,11 +11,11 @@ import {
   COMMITTER,
   COUNTERPARTY,
   NONZERO_HASH,
-  ZERO_HASH,
   makeOkRow as okMetadata,
   makeProposal,
   makeRow as row,
 } from './fixtures/commitmentRows'
+import { zeroHash } from 'viem'
 
 const TOKEN_CTX: CommitmentLabelContext = {
   tokenMeta: () => ({ decimals: 6, symbol: 'cvUSDC' }),
@@ -33,7 +33,7 @@ describe('commitmentLabel — tier 1, the off-chain title', () => {
 
   it('promotes a title with no hash attestation, but marks it unattested', () => {
     const label = commitmentLabel(
-      row({ metadataStatus: 'ok', metadataHash: ZERO_HASH, metadataContent: { title: 'Oracle uptime bond' } }),
+      row({ metadataStatus: 'ok', metadataHash: zeroHash, metadataContent: { title: 'Oracle uptime bond' } }),
     )
     expect(label).toMatchObject({ text: 'Oracle uptime bond', source: 'metadata', trust: 'unattested' })
   })
@@ -179,7 +179,7 @@ describe('commitmentLabel — tier 3 and proposals', () => {
 describe('metadataTrust', () => {
   it.each([
     ['ok with a hash', { metadataStatus: 'ok' as const, metadataHash: NONZERO_HASH }, 'attested'],
-    ['ok with the zero hash', { metadataStatus: 'ok' as const, metadataHash: ZERO_HASH }, 'unattested'],
+    ['ok with the zero hash', { metadataStatus: 'ok' as const, metadataHash: zeroHash }, 'unattested'],
     ['ok with no hash at all', { metadataStatus: 'ok' as const }, 'unattested'],
     ['mismatch', { metadataStatus: 'mismatch' as const, metadataHash: NONZERO_HASH }, 'mismatch'],
     ['unreachable', { metadataStatus: 'unreachable' as const }, 'unreachable'],

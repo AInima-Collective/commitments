@@ -1,5 +1,5 @@
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
-import { isAddress, type Address } from 'viem'
+import { isAddress, type Address, zeroAddress } from 'viem'
 import { useChainId } from 'wagmi'
 
 import { getContractAddresses } from '../config/contracts'
@@ -19,7 +19,7 @@ export default function TwoTierCaseDetail() {
   const caseId = parseIdParam(id) ?? undefined
   const arbiter = rawArbiter && isAddress(rawArbiter) ? rawArbiter as Address : undefined
   const mechanism = useMechanismArbitration({
-    arbiter: arbiter ?? '0x0000000000000000000000000000000000000000',
+    arbiter: arbiter ?? zeroAddress,
     caseId,
   })
 

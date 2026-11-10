@@ -15,7 +15,7 @@ import {
   useSimulateYieldToApy,
 } from '../../../hooks/useSimulateYieldToApy'
 import { AdminActionPanel } from '../AdminActionPanel'
-import { useAdminAction } from '../useAdminAction'
+import { useAdminAction } from '../../../hooks/useAdminAction'
 import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 
 /**
@@ -517,7 +517,8 @@ function FundStrategyPanel({
   chainId: number
 }) {
   const action = useAdminAction()
-  const backing = getDefaultBacking(chainId)
+  const { vaults } = useVaults()
+  const backing = getDefaultBacking(chainId, vaults)
 
   const [strategy, setStrategy] = useState<string>(defaultStrategy ?? '')
   const [token, setToken] = useState<string>(backing?.token ?? '')

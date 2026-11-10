@@ -1,7 +1,6 @@
 import { formatTokenAmount } from '../../lib/format'
 
 export type UsdAmountSize = 'inline' | 'default' | 'display'
-export type UsdAmountTone = 'neutral' | 'stale' | 'unavailable'
 
 export interface UsdAmountProps {
   /** USD-denominated bigint with 6 decimals of precision (USDC-shape).
@@ -14,9 +13,6 @@ export interface UsdAmountProps {
   precision?: 0 | 2 | 4
   /** Mute the cents segment so the dollar integer leads. Default true at size='display'. */
   dimFraction?: boolean
-  /** Tone for the rendered value. `stale` muddies the color; `unavailable`
-   *  forces the empty placeholder regardless of `amount`. */
-  tone?: UsdAmountTone
   /** Override the always-on full-precision tooltip. */
   title?: string
   className?: string
@@ -32,7 +28,7 @@ const USD_DECIMALS = 6
  * same `.ds-amount` class family — values land in the design-system surface
  * without bespoke USD CSS.
  *
- * Pass `amount={null}` (or `tone="unavailable"`) to render the explicit
+ * Pass `amount={null}` to render the explicit
  * "PRICE UNAVAILABLE" path. The full-precision tooltip always carries the
  * canonical underlying value so any rounded display remains inspectable.
  */
@@ -42,16 +38,14 @@ export function UsdAmount({
   compact = false,
   precision = 2,
   dimFraction,
-  tone = 'neutral',
   title,
   className,
 }: UsdAmountProps) {
   const sizeClass =
     size === 'inline' ? 'ds-amount--inline' : size === 'display' ? 'ds-amount--display' : ''
-  const toneClass = tone === 'neutral' ? '' : `ds-amount--${tone}`
-  const rootClass = ['ds-amount', sizeClass, toneClass, className].filter(Boolean).join(' ')
+  const rootClass = ['ds-amount', sizeClass, className].filter(Boolean).join(' ')
 
-  if (amount === null || tone === 'unavailable') {
+  if (amount === null) {
     return (
       <span className={`${rootClass} ds-amount--empty`} title={title ?? 'Price unavailable'}>
         <span className="ds-amount-symbol">$</span>

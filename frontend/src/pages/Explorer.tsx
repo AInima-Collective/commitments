@@ -35,7 +35,7 @@ import {
 import { useProtocolArbitersList, useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
 import { useTokenMeta, useTokenMetaMap } from '../hooks/useTokenMeta'
 import { commitmentsVaultAbi } from '../generated'
-import { deriveOperatorStatus } from '../utils/mesh'
+import { deriveOperatorStatus } from '../lib/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
 import { arbiterProfilePath, commitmentDetailPath } from '../lib/arbitrationRoutes'
 

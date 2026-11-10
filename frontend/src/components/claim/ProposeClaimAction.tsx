@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { parseUnits, type Address, type Hex } from 'viem'
+import { parseUnits, type Address, type Hex, zeroHash } from 'viem'
 import { useAccount, useReadContract } from 'wagmi'
 
 import { optimisticInsuranceArbiterAbi } from '../../generated'
@@ -8,10 +8,10 @@ import { POLL } from '../../hooks/polling'
 import { useProposeClaimFlow } from '../../hooks/useProposeClaimFlow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { formatTokenAmount } from '../../lib/format'
-import { formatBps } from '../../utils/commitments'
-import { ZERO_HASH, computeHashFromJsonText } from '../../utils/metadataForm'
+import { formatBps } from '../../lib/commitments'
+import { computeHashFromJsonText } from '../../lib/metadataForm'
 import { Button, Input, Modal, Notice, TokenAmount, useToasts } from '../ui'
-import { legibleWriteError } from '../../utils/contractErrors'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 /** Claim-size presets as a fraction of the commitment's maxPenaltyBps. */
 const CLAIM_PRESETS = [
@@ -111,7 +111,7 @@ function ProposeClaimBody({
 
   // ── Evidence ──────────────────────────────────────────────────────────────
   const [evidenceText, setEvidenceText] = useState('')
-  const evidenceHash: Hex = evidenceText.length > 0 ? computeHashFromJsonText(evidenceText) : ZERO_HASH
+  const evidenceHash: Hex = evidenceText.length > 0 ? computeHashFromJsonText(evidenceText) : zeroHash
 
   // ── Arbiter reads ─────────────────────────────────────────────────────────
   const { data: activeClaimId } = useReadContract({
@@ -314,7 +314,7 @@ function ProposeClaimBody({
         <Notice tone="info" size="sm">
           Only the keccak256 hash goes on-chain:{' '}
           <span title={evidenceHash}>
-            {evidenceHash === ZERO_HASH ? 'no evidence (zero hash)' : `${evidenceHash.slice(0, 10)}…${evidenceHash.slice(-6)}`}
+            {evidenceHash === zeroHash ? 'no evidence (zero hash)' : `${evidenceHash.slice(0, 10)}…${evidenceHash.slice(-6)}`}
           </span>
           . Keep the full text — disputers and the counterparty will ask for it.
         </Notice>

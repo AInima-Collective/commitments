@@ -1,5 +1,5 @@
 import { formatPercent } from '../../lib/format'
-import { riskTier } from '../../utils/risk'
+import { riskTier } from '../../lib/risk'
 
 export interface RiskRowProps {
   bps: number

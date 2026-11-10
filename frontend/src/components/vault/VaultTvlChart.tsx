@@ -47,8 +47,8 @@ export function VaultTvlChart({
   if (!isLoading && rows.length === 0) {
     return (
       <Notice tone="info" title="Snapshot history empty">
-        No TVL snapshots have been written yet. The indexer takes one every few
-        minutes — come back shortly.
+        No TVL snapshots have been written yet. The chart fills in as the
+        indexer records them.
       </Notice>
     )
   }

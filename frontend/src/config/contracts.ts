@@ -231,8 +231,8 @@ export function getBackingOptions(
 }
 
 /** The default backing pair (canonical vault share), or undefined if unconfigured. */
-export function getDefaultBacking(chainId: number): BackingOption | undefined {
-  return getBackingOptions(chainId)[0]
+export function getDefaultBacking(chainId: number, vaults?: VaultDescriptor[]): BackingOption | undefined {
+  return getBackingOptions(chainId, vaults)[0]
 }
 
 /**

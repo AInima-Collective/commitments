@@ -7,7 +7,7 @@ import {
   type ForfeitEnforcementState,
   type ManagerPauseSnapshot,
 } from '../lib/forfeitEnforcement'
-import { toForfeitProposal, type ForfeitProposalView } from './commitmentReads'
+import { toForfeitProposal, type ForfeitProposalView } from '../lib/commitmentReads'
 import { POLL } from './polling'
 import { useDisplayNow } from './useDisplayNow'
 

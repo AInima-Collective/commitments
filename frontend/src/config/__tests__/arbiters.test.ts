@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type Address } from 'viem'
 
 import {
-  ARBITER_KIND_LABEL,
   SELF_ARBITER_ID,
   findOptimisticInsuranceArbiter,
   getArbiterDescriptor,
@@ -12,9 +11,9 @@ import {
   getOptimisticInsuranceArbiters,
   resolveArbiterAddress,
 } from '../arbiters'
-import type { MarketArbiterKind } from '../arbiters'
+import { anvil } from '../anvil'
 
-const CHAIN = 31337
+const CHAIN = anvil.id
 const CONNECTED = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Address
 
 describe('getArbiterRegistry', () => {
@@ -23,7 +22,6 @@ describe('getArbiterRegistry', () => {
   it('always offers self first, recommended, with no address', () => {
     expect(reg[0].id).toBe(SELF_ARBITER_ID)
     expect(reg[0].recommended).toBe(true)
-    expect(reg[0].kind).toBe('self')
     expect(reg[0].address).toBeUndefined()
   })
 
@@ -38,23 +36,6 @@ describe('getArbiterRegistry', () => {
     // In the test env the VITE_*_ARBITER addresses are unset, so the registry
     // collapses to the self entry. Configured deployments append the rest.
     expect(reg.every((a) => a.id === SELF_ARBITER_ID || !!a.address)).toBe(true)
-  })
-})
-
-describe('ARBITER_KIND_LABEL', () => {
-  it('covers every MarketArbiterKind', () => {
-    const kinds: MarketArbiterKind[] = [
-      'eoa',
-      'multisig',
-      'committee',
-      'service',
-      'optimistic',
-      'zk',
-      'self',
-    ]
-    for (const k of kinds) {
-      expect(ARBITER_KIND_LABEL[k].length).toBeGreaterThan(0)
-    }
   })
 })
 
@@ -78,7 +59,7 @@ describe('resolveArbiterAddress', () => {
 
 describe('getArbiterDescriptor', () => {
   it('finds the self descriptor', () => {
-    expect(getArbiterDescriptor(CHAIN, SELF_ARBITER_ID)?.kind).toBe('self')
+    expect(getArbiterDescriptor(CHAIN, SELF_ARBITER_ID)?.recommended).toBe(true)
   })
 })
 
@@ -118,7 +99,7 @@ describe('getOptimisticInsuranceArbiters', () => {
   it('appends each instance to the create-flow arbiter registry', () => {
     vi.stubEnv('VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS', USDC_ARBITER)
     vi.stubEnv('VITE_DAI_OPTIMISTIC_ARBITER_ADDRESS', DAI_ARBITER)
-    const optimistic = getArbiterRegistry(CHAIN).filter((a) => a.kind === 'optimistic')
+    const optimistic = getArbiterRegistry(CHAIN).filter((a) => a.mechanism === 'Optimistic bonded claim game')
     expect(optimistic.map((a) => a.address)).toEqual([USDC_ARBITER, DAI_ARBITER])
   })
 })
@@ -147,5 +128,19 @@ describe('trusted arbiter mechanism profiles', () => {
     expect(profiles.find((entry) => entry.address === OPTIMISTIC_ARBITER)).toEqual(
       expect.objectContaining({ mechanismId: 'optimistic-insurance', expectedAddressForm: 'contract' }),
     )
+  })
+
+  it('feeds the create-form picker from the same profiles, without mutual arbiters', () => {
+    const MUTUAL_ARBITER = '0x3333333333333333333333333333333333333333' as Address
+    vi.stubEnv('VITE_DEFAULT_ARBITER_ADDRESS', ANVIL_ACCOUNT_1)
+    vi.stubEnv('VITE_MANUAL_ARBITER_ADDRESS', MANUAL_ARBITER)
+    vi.stubEnv('VITE_OPTIMISTIC_MUTUAL_ARBITER_ADDRESS', MUTUAL_ARBITER)
+
+    const demo = getConfiguredArbiterProfiles(CHAIN).find((entry) => entry.address === ANVIL_ACCOUNT_1)
+    expect(getArbiterDescriptor(CHAIN, ANVIL_ACCOUNT_1)).toEqual(
+      expect.objectContaining({ name: demo?.displayName, trustAssumption: demo?.decisionSummary }),
+    )
+    expect(resolveArbiterAddress(CHAIN, MANUAL_ARBITER, CONNECTED)).toBe(MANUAL_ARBITER)
+    expect(getArbiterDescriptor(CHAIN, MUTUAL_ARBITER)).toBeUndefined()
   })
 })

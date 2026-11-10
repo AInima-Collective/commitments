@@ -251,7 +251,7 @@ export function LoadingSection() {
             <div className="ds-stat-value">
               <TokenAmount amount={parseEther('1247.32')} decimals={18} symbol="ETH" />
             </div>
-            <div className="ds-stat-delta ds-stat-delta--positive ds-text-xs">+0.42% · 24h</div>
+            <div className="ds-stat-delta ds-stat-delta--success ds-text-xs">+0.42% · 24h</div>
             <div className="ds-loading-overlay">
               <span className="ds-spinner ds-spinner--md ds-spinner--muted" />
               <span>refreshing…</span>

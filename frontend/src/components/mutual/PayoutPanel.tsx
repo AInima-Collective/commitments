@@ -144,7 +144,7 @@ export function PayoutPanel({
             />
             <StatBlock
               label="not yet settled"
-              tone={owedOutstanding > 0n ? 'neutral' : 'positive'}
+              tone={owedOutstanding > 0n ? 'neutral' : 'success'}
               value={
                 <TokenAmount amount={owedOutstanding} decimals={decimals} symbol={symbol} compact />
               }

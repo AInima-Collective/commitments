@@ -10,7 +10,7 @@ import {
   type DataTableColumn,
 } from '../ui'
 import { getBlockExplorer } from '../../lib/blockExplorer'
-import { truncateAddress } from '../../lib/format'
+import { formatTimestamp, truncateAddress } from '../../lib/format'
 import type { LedgerEvent, LedgerEventKind, ForfeitLedger } from '../../hooks/useForfeitLedger'
 
 interface ForfeitLedgerTabProps {
@@ -39,19 +39,6 @@ const KIND_BADGE: Record<LedgerEventKind, string> = {
   donation: 'ds-badge ds-badge--muted',
 }
 
-function formatTimestamp(ts: bigint | null): string {
-  if (ts === null) return '—'
-  const date = new Date(Number(ts) * 1000)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-
 interface RowDetail {
   context: ReactNode
   amount: ReactNode
@@ -67,8 +54,8 @@ const FORFEIT_KIND_LABEL: Record<string, string> = {
 function eventDetail(
   e: LedgerEvent,
   shareDecimals: number,
-  assetDecimals: number,
-  assetSymbol: string,
+  assetDecimals: number | undefined,
+  assetSymbol: string | undefined,
 ): RowDetail {
   if (e.kind === 'forfeit') {
     const penalty =
@@ -134,9 +121,12 @@ function eventDetail(
         <AddressDisplay address={e.donor} compact />
       </span>
     ),
-    amount: (
-      <TokenAmount amount={e.assets} decimals={assetDecimals} symbol={assetSymbol} size="inline" />
-    ),
+    amount:
+      assetDecimals === undefined ? (
+        <span className="ds-subtle">—</span>
+      ) : (
+        <TokenAmount amount={e.assets} decimals={assetDecimals} symbol={assetSymbol} size="inline" />
+      ),
   }
 }
 
@@ -159,8 +149,6 @@ export function ForfeitLedgerTab({
   const chainId = useChainId()
   const explorer = getBlockExplorer(chainId)
   const sDecimals = shareDecimals ?? 18
-  const aDecimals = assetDecimals ?? 6
-  const aSymbol = assetSymbol ?? 'USDC'
 
   const counts = ledger?.counts
   const summary = counts ? (
@@ -203,14 +191,14 @@ export function ForfeitLedgerTab({
         id: 'context',
         header: 'Context',
         render: (e) => (
-          <span className="ds-text-xs">{eventDetail(e, sDecimals, aDecimals, aSymbol).context}</span>
+          <span className="ds-text-xs">{eventDetail(e, sDecimals, assetDecimals, assetSymbol).context}</span>
         ),
       },
       {
         id: 'amount',
         header: 'Amount',
         align: 'right',
-        render: (e) => eventDetail(e, sDecimals, aDecimals, aSymbol).amount,
+        render: (e) => eventDetail(e, sDecimals, assetDecimals, assetSymbol).amount,
       },
       {
         id: 'tx',
@@ -237,7 +225,7 @@ export function ForfeitLedgerTab({
         },
       },
     ],
-    [sDecimals, aDecimals, aSymbol, explorer],
+    [sDecimals, assetDecimals, assetSymbol, explorer],
   )
 
   if (error) {

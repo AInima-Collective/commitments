@@ -109,7 +109,7 @@ export function CoveragePoolCard({ listing, mutual, meta, onOpen, onOpenVault }:
       <div className="ds-row ds-row-3" style={{ alignItems: "stretch" }}>
         <StatBlock
           label="premium APR"
-          tone="positive"
+          tone="success"
           value={aprBps !== undefined ? formatPercent(aprBps) : "—"}
           meta={aprBps !== undefined ? "to underwriters" : "no active cover"}
         />

@@ -3,7 +3,7 @@ import type { Address } from 'viem'
 
 import { hasIndexer, indexerGraphql, indexerGraphqlData, indexerJson } from '../config/indexer'
 import { parseCommitmentRow, type CommitmentRowWire } from '../lib/indexerRows'
-import type { CommitmentStatus } from '../utils/commitments'
+import type { CommitmentStatus } from '../lib/commitments'
 import { POLL } from './polling'
 
 /**

@@ -1,6 +1,6 @@
 import { type Address } from 'viem'
-import { formatPercent } from '../lib/format'
-import type { ForfeitEnforcementState, ForfeitProposalSnapshot } from '../lib/forfeitEnforcement'
+import { formatPercent } from './format'
+import type { ForfeitEnforcementState, ForfeitProposalSnapshot } from './forfeitEnforcement'
 
 // ─── Status Types ────────────────────────────────────────────────────────────
 

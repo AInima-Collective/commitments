@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { type Address } from 'viem'
+import { type Address, zeroHash } from 'viem'
 
 import { buildJoinMutualParams, mutualLifecycle } from '../mutual'
-import { ZERO_HASH } from '../../utils/metadataForm'
 
 describe('mutualLifecycle', () => {
   it('ranks terminated over a pending loss over active', () => {
@@ -31,7 +30,7 @@ describe('buildJoinMutualParams', () => {
       expiresAt: 9n,
       strategies: [],
       metadataURI: '',
-      metadataHash: ZERO_HASH,
+      metadataHash: zeroHash,
     })
     expect(buildJoinMutualParams({ mutual, numeraire, adapter, amount: 5n, termEnd: undefined }).expiresAt).toBe(0n)
   })

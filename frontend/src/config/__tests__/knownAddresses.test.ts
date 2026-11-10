@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type Address } from 'viem'
 
 import { findKnownAddress, getKnownAddresses } from '../contracts'
+import { anvil } from '../anvil'
 
-const CHAIN = 31337
+const CHAIN = anvil.id
 const BENEFICIARY = '0x70e0bA845a1A0F2DA3359C97E0285013525FFC49' as Address
 const AGENT_VAULT = '0x0DB1D0Cfcba97F7Dc5AF76CFEc1a646C33Cd9297' as Address
 const CONDUIT = '0x927B167526bAbB9be047421db732C663a0b77B11' as Address

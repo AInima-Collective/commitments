@@ -3,14 +3,13 @@ import type {
   UnifiedCommitmentRowEntry,
   UnifiedProposalRowEntry,
 } from '../../../hooks/useUnifiedRows'
-import type { CommitmentStatus } from '../../../utils/commitments'
+import type { CommitmentStatus } from '../../commitments'
 
 export const COMMITTER = '0x1111111111111111111111111111111111111111' as Address
 export const COUNTERPARTY = '0x22222222222222222222222222222222222222ab' as Address
 export const ARBITER = '0x3333333333333333333333333333333333333333' as Address
 export const TOKEN = '0x4444444444444444444444444444444444444444' as Address
 export const NONZERO_HASH = `0x${'ab'.repeat(32)}`
-export const ZERO_HASH = `0x${'0'.repeat(64)}`
 
 export interface RowOverrides {
   id?: bigint

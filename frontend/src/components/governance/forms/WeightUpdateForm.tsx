@@ -9,6 +9,7 @@ import { useMeshNodeSecurity } from '../../../hooks/useMeshNodeSecurity'
 import { tokenWeightingAbi } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
 import { bpsToPercent, humanizeError, humanizeStep } from './lib'
+import { anvil } from '../../../config/anvil'
 
 export interface WeightUpdateFormProps {
   governor: Address
@@ -39,7 +40,7 @@ export function WeightUpdateForm({
   onSuccess,
 }: WeightUpdateFormProps) {
   const chainId = useChainId()
-  const addrs = getContractAddresses(chainId ?? 31337)
+  const addrs = getContractAddresses(chainId ?? anvil.id)
   const initialNode: string = defaultNode ?? addrs.tokenWeighting ?? ''
 
   const [node, setNode] = useState<string>(initialNode)

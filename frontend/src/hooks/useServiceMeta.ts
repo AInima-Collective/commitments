@@ -1,5 +1,5 @@
-import { rewriteIpfsURI } from '../../lib/ipfs'
-import { asString } from '../../lib/metadata'
+import { rewriteIpfsURI } from '../lib/ipfs'
+import { asString } from '../lib/metadata'
 
 /**
  * Service identity fallback shape — fields the registry config (or a similar

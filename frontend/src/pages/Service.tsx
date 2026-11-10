@@ -9,7 +9,8 @@ import { useServiceMetadata } from "../hooks/useIndexerMetadata";
 import { useServiceStakeUsd } from "../hooks/useServiceStakeSummary";
 import { useServiceOperators } from "../hooks/useServiceOperators";
 import { EmptyState, EntityLogo, Tabs, UsdAmount, VaultHeader, type VaultHeaderStat } from "../components/ui";
-import { PageHeader, ServiceStakeBreakdown, useServiceMeta } from "../components/protocol";
+import { PageHeader, ServiceStakeBreakdown } from "../components/protocol";
+import { useServiceMeta } from "../hooks/useServiceMeta";
 import { rewriteIpfsURI } from "../lib/ipfs";
 import { hostnameOf, twitterHandle } from "../lib/metadata";
 import { chainName } from "../lib/chainName";
@@ -105,7 +106,6 @@ export default function Service() {
               <UsdAmount
                 amount={totalCommittedUsd}
                 size="inline"
-                tone={totalCommittedUsd === null ? "unavailable" : "neutral"}
                 compact
               />
             ),

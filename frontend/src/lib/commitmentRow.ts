@@ -5,7 +5,6 @@
 // and how claimable yield is attributed, and a rule that lives in one
 // renderer's file is a rule the other renderer will eventually get wrong.
 
-import { type DataTableTone } from '../components/ui'
 import { type UnifiedRow } from '../hooks/useUnifiedRows'
 
 /**
@@ -15,7 +14,7 @@ import { type UnifiedRow } from '../hooks/useUnifiedRows'
  * commitment is the normal case and stays neutral; colouring it would leave
  * nothing to notice about the row that is one day from being forfeited.
  */
-export function rowTone(row: UnifiedRow): DataTableTone | undefined {
+export function rowTone(row: UnifiedRow): 'info' | 'warn' | 'danger' | undefined {
   if (row.status === 'FORFEIT_PENDING') return 'warn'
   if (row.status === 'FORFEITED') return 'danger'
   if (row.status === 'PENDING') return 'info'

@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import { useNowSeconds } from './useNow'
 import { type UnifiedRow } from './useUnifiedRows'
-import { riskTier } from '../utils/risk'
-import type { RiskTierBadgeTier } from '../components/protocol'
+import { riskTier, type RiskTierBadgeTier } from '../lib/risk'
 
 export interface VaultRiskMetrics {
   /** Active + forfeit-pending commitments only. */

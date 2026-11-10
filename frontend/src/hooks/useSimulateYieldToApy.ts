@@ -8,8 +8,7 @@ import { hasIndexer, indexerJson } from '../config/indexer'
 import { useAnvilTime } from './useAnvilTime'
 import { useDevWalletClient } from './useDevWalletClient'
 import { MOCK_ERC20_MINT_ABI } from '../lib/mockErc20Abi'
-
-const ANVIL_CHAIN_ID = 31337
+import { anvil } from '../config/anvil'
 
 /**
  * Chain-time advance between the two snapshots: 4 days. Chosen to sit ABOVE the
@@ -122,7 +121,7 @@ export function useSimulateYieldToApy(): {
       setIsPending(true)
       setStep('baseline')
       try {
-        if (chainId !== ANVIL_CHAIN_ID) {
+        if (chainId !== anvil.id) {
           throw new Error('Simulate yield is anvil-only (chain 31337).')
         }
         if (!hasIndexer) {

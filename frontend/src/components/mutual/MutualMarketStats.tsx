@@ -56,7 +56,7 @@ export function MutualMarketStats({
       <div className="ds-stat-grid">
         <StatBlock
           label="earn · premium APR"
-          tone={isStreaming ? 'positive' : 'neutral'}
+          tone={isStreaming ? 'success' : 'neutral'}
           value={premiumAprBps !== undefined ? formatPercent(premiumAprBps) : '—'}
           meta={isStreaming ? 'paid to underwriters' : 'no active cover demand'}
         />
@@ -75,7 +75,7 @@ export function MutualMarketStats({
         <StatBlock label="underwriters" value={memberCount > 0 ? String(memberCount) : '—'} meta="backing this risk" />
         <StatBlock
           label="shared loss"
-          tone={lossActive ? 'negative' : 'neutral'}
+          tone={lossActive ? 'danger' : 'neutral'}
           value={formatLambdaPercent(cumulativeLoss)}
           meta={lossActive ? 'of posted capital marked down' : 'no loss to date'}
         />

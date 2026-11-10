@@ -1,4 +1,4 @@
-import { type OperatorInfo, type ServiceOperatorInfo } from '../utils/mesh'
+import { type OperatorInfo, type ServiceOperatorInfo } from './mesh'
 
 /**
  * Subset of `operator.v1` metadata needed for filter matching.

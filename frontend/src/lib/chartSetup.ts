@@ -49,7 +49,7 @@ export function cssVar(name: string): string {
   return v.trim()
 }
 
-export type ChartTone = 'accent' | 'success' | 'warn' | 'error' | 'muted'
+export type ChartTone = 'accent' | 'success' | 'warn' | 'danger' | 'muted'
 
 /**
  * Resolve the line color + soft-fill color for a chart series tone, sourced
@@ -63,7 +63,7 @@ export function toneColors(tone: ChartTone): { line: string; fill: string } {
       return { line: cssVar('--success'), fill: cssVar('--success-soft') }
     case 'warn':
       return { line: cssVar('--warn'), fill: cssVar('--warn-soft') }
-    case 'error':
+    case 'danger':
       return { line: cssVar('--error'), fill: cssVar('--error-soft') }
     case 'muted':
       return { line: cssVar('--text-subtle'), fill: 'transparent' }

@@ -6,7 +6,7 @@ import {
   type UseWriteContractParameters,
 } from 'wagmi'
 import { useToasts } from '../components/ui'
-import { legibleWriteError } from '../utils/contractErrors'
+import { legibleWriteError } from '../lib/contractErrors'
 
 /** Where one write stands: wallet prompt, mining, mined, or failed. */
 export type TxStep = 'idle' | 'signing' | 'confirming' | 'confirmed' | 'error'

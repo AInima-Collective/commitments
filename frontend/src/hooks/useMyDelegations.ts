@@ -5,8 +5,8 @@ import { useAccount, useChainId, useReadContracts } from 'wagmi'
 
 import { getContractAddresses } from '../config/contracts'
 import { hasIndexer, indexerGraphqlData } from '../config/indexer'
-import { type CommitmentWithStatus } from '../utils/commitments'
-import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
+import { type CommitmentWithStatus } from '../lib/commitments'
+import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from '../lib/commitmentReads'
 import { POLL } from './polling'
 
 export interface MyDelegationsResult {

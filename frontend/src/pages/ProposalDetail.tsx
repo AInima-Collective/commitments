@@ -36,7 +36,7 @@ import {
 import { useGovernor } from '../hooks/useGovernor'
 import { useNowSeconds } from '../hooks/useNow'
 import { useProposal, type VotePayload } from '../hooks/useProposal'
-import { proposalTitle } from '../utils/governance'
+import { proposalTitle } from '../lib/governance'
 import { humanizeError, humanizeStep } from '../components/governance/forms/lib'
 import { Countdown } from '../components/protocol/Countdown'
 

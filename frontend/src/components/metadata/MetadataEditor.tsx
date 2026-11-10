@@ -3,12 +3,12 @@ import { Button, CopyButton, Disclosure, Input, Notice, SourceBlock, TokenChip }
 import { useMetadataPin, type MetadataPinResult } from '../../hooks/useMetadataPin'
 import {
   MAX_INLINE_JSON_BYTES,
-  ZERO_HASH,
   computeHashFromJsonText,
   resolveMetadataArgs,
   validateMetadataHash,
   validateMetadataURI,
-} from '../../utils/metadataForm'
+} from '../../lib/metadataForm'
+import { zeroHash } from 'viem'
 
 /**
  * Schemas this editor knows how to author. The schema is a prop so the same
@@ -478,7 +478,7 @@ export function MetadataEditor({ schema, onChange, onStatusChange, disabled = fa
                 setManualHash(e.target.value)
                 invalidate()
               }}
-              placeholder={ZERO_HASH}
+              placeholder={zeroHash}
               disabled={controlsDisabled}
               tone={manualHashValidation.error ? 'danger' : 'neutral'}
               style={{ width: '100%' }}

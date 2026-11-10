@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { type Abi, type Address } from "viem";
+import { type Abi, type Address, zeroAddress } from "viem";
 import { useAccount, useChainId, useReadContracts } from "wagmi";
 import { ClaimableYieldPanel } from "../components/commitment/ClaimableYieldPanel";
 import { CommitmentsTable } from "../components/commitment/CommitmentsTable";
@@ -71,7 +71,6 @@ import {
 } from "../lib/commitmentFilters";
 import { bigintToUsd } from "../lib/format";
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 interface TokenLedger {
   free: bigint;
   encumbered: bigint;
@@ -83,7 +82,8 @@ export default function Dashboard() {
   const viewAddress = useViewAddress();
   const { isConnected, address: connectedAddress } = useAccount();
   const { commitmentManager: managerAddress, commitmentsVault: vaultAddress } = getContractAddresses(chainId);
-  const { vaults } = useVaults();
+  const { vaults, vaultFor } = useVaults();
+  const vaultDescriptor = vaultFor(vaultAddress);
   const position = useVaultPosition({ vaultAddress, viewAddress });
   const { push } = useToasts();
 
@@ -117,8 +117,8 @@ export default function Dashboard() {
     [rawClaimable, claimedIds],
   );
 
-  const assetDecimals = position.assetDecimals;
-  const assetSymbol = position.assetSymbol;
+  const assetDecimals = position.assetDecimals ?? vaultDescriptor?.assetDecimals;
+  const assetSymbol = position.assetSymbol ?? vaultDescriptor?.assetSymbol;
 
   // Drawer is proposal-only; commitment rows deep-link to /commitments/:id so
   // the URL is shareable. The route state lets the detail page return here.
@@ -162,7 +162,7 @@ export default function Dashboard() {
     for (const p of indexedPositions) {
       const k = p.token.toLowerCase();
       if (!byAddr.has(k)) {
-        byAddr.set(k, { token: p.token, adapter: ZERO_ADDRESS, label: "Backing token", isVaultShare: false });
+        byAddr.set(k, { token: p.token, adapter: zeroAddress, label: "Backing token", isVaultShare: false });
       }
     }
     return [...byAddr.values()];
@@ -504,6 +504,8 @@ export default function Dashboard() {
   const events = ((): ActivityEvent[] => {
     const out: ActivityEvent[] = [];
 
+    const vaultAmount = (assets: bigint) =>
+      assetDecimals === undefined ? "—" : <TokenAmount amount={assets} decimals={assetDecimals} symbol={assetSymbol} />;
     for (const a of vaultActivity.data ?? []) {
       // No block timestamp means no time to show: 0 renders "—" and sorts last.
       const ts = a.timestamp !== undefined ? Number(a.timestamp) : 0;
@@ -516,7 +518,7 @@ export default function Dashboard() {
           title: "Deposit",
           meta: (
             <span>
-              <TokenAmount amount={a.assets} decimals={assetDecimals ?? 6} symbol={assetSymbol ?? ""} />
+              {vaultAmount(a.assets)}
               {" deposited"}
             </span>
           ),
@@ -528,7 +530,7 @@ export default function Dashboard() {
           timestamp: ts,
           txHash: a.txHash,
           title: "Withdrawal",
-          meta: <TokenAmount amount={a.assets} decimals={assetDecimals ?? 6} symbol={assetSymbol ?? ""} />,
+          meta: vaultAmount(a.assets),
         });
       }
     }
@@ -870,7 +872,7 @@ export default function Dashboard() {
         open={detailRow !== null}
         onClose={() => setDetailRow(null)}
         row={detailRow}
-        managerAddress={(managerAddress as `0x${string}` | undefined) ?? "0x0000000000000000000000000000000000000000"}
+        managerAddress={(managerAddress as `0x${string}` | undefined) ?? zeroAddress}
         isConnected={isConnected}
         onActed={() => {
           refetch();
@@ -1371,7 +1373,7 @@ function ActivityMeta({ row }: { row: UnifiedRow }) {
 }
 
 function WelcomeCard({ assetSymbol }: { assetSymbol: string | undefined }) {
-  const symbol = assetSymbol ?? "USDC";
+  const symbol = assetSymbol ?? "assets";
   const steps: WelcomeStep[] = [
     {
       status: "done",

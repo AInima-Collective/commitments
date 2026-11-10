@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { useChainId } from "wagmi";
 import { type Address } from "viem";
 import { Card, EmptyState, EntityLogo, Notice, StatBlock, UsdAmount } from "../components/ui";
-import { PageHeader, useServiceMeta } from "../components/protocol";
+import { PageHeader } from "../components/protocol";
+import { useServiceMeta } from "../hooks/useServiceMeta";
 import { hostnameOf, twitterHandle } from "../lib/metadata";
 import { chainName } from "../lib/chainName";
 import { getContractAddresses, getServiceRegistry, type ServiceDescriptor } from "../config/contracts";
@@ -135,7 +136,6 @@ function ServiceListRow({
               <UsdAmount
                 amount={totalCommittedUsd}
                 size="default"
-                tone={totalCommittedUsd === null ? "unavailable" : "neutral"}
                 compact
               />
             }

@@ -1,7 +1,7 @@
 import { useReadContracts } from 'wagmi'
 import { type Address, type ReadContractReturnType } from 'viem'
 import { operatorRegistryAbi } from '../generated'
-import { type OperatorInfo, deriveOperatorStatus, type OperatorStatus } from '../utils/mesh'
+import { type OperatorInfo, deriveOperatorStatus, type OperatorStatus } from '../lib/mesh'
 import { POLL } from './polling'
 
 /** ABI-derived shape of `getOperator`'s returned struct. */

@@ -1,6 +1,5 @@
-import { keccak256, toBytes, type Hex } from 'viem'
+import { keccak256, toBytes, type Hex, zeroHash } from 'viem'
 
-export const ZERO_HASH: Hex = '0x0000000000000000000000000000000000000000000000000000000000000000'
 export const EMPTY_URI = ''
 const URI_MAX_BYTES = 512
 const HASH_HEX_LENGTH = 66 // '0x' + 64 hex chars
@@ -45,7 +44,7 @@ export function validateMetadataURI(uri: string): MetadataValidation {
 
 export function validateMetadataHash(hash: string): MetadataValidation {
   if (hash.length === 0) return { error: null, warning: null }
-  if (hash === ZERO_HASH) return { error: null, warning: null }
+  if (hash === zeroHash) return { error: null, warning: null }
   const hex = /^0x[0-9a-fA-F]{64}$/
   if (hash.length !== HASH_HEX_LENGTH || !hex.test(hash)) {
     return { error: 'INVALID HASH — MUST BE 32-BYTE HEX', warning: null }
@@ -82,6 +81,6 @@ export function buildDataJsonUri(json: string): string {
 export function resolveMetadataArgs(uri: string, hash: string): { uri: string; hash: Hex } {
   const resolvedUri = uri.trim().length === 0 ? EMPTY_URI : uri
   const resolvedHash: Hex =
-    hash.trim().length === 0 ? ZERO_HASH : (hash as Hex)
+    hash.trim().length === 0 ? zeroHash : (hash as Hex)
   return { uri: resolvedUri, hash: resolvedHash }
 }

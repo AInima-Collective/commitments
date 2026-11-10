@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { isAddress, type Address } from 'viem'
+import { isAddress, type Address, zeroHash } from 'viem'
 import { useChainId } from 'wagmi'
 import { getBackingOptions } from '../../config/contracts'
 import { useAmountInput } from '../../hooks/useAmountInput'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useCreateCommitmentFlow } from '../../hooks/useCreateCommitmentFlow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
+import { useVaults } from '../../hooks/useVaults'
 import {
   SELF_ARBITER_ID,
   getArbiterDescriptor,
@@ -13,9 +14,8 @@ import {
   resolveArbiterAddress,
 } from '../../config/arbiters'
 import { buildCustomParams } from '../../lib/customCommitmentParams'
-import { formatBps } from '../../utils/commitments'
-import { legibleWriteError } from '../../utils/contractErrors'
-import { ZERO_HASH } from '../../utils/metadataForm'
+import { formatBps } from '../../lib/commitments'
+import { legibleWriteError } from '../../lib/contractErrors'
 import {
   Button,
   Disclosure,
@@ -105,7 +105,8 @@ export function CreateCommitmentForm({
   // canonical vault share leads the list and stays the default. The selected
   // token's own decimals/symbol drive parsing + display, and the user's
   // per-(token) manager-ledger free balance gates the amount.
-  const backingOptions = getBackingOptions(chainId)
+  const { vaults } = useVaults()
+  const backingOptions = getBackingOptions(chainId, vaults)
   const [backingToken, setBackingToken] = useState<Address | undefined>(backingOptions[0]?.token)
   const backing = backingOptions.find((o) => o.token === backingToken) ?? backingOptions[0]
 
@@ -157,7 +158,7 @@ export function CreateCommitmentForm({
   const [pickerKey, setPickerKey] = useState(0)
 
   const [metadataURI, setMetadataURI] = useState('')
-  const [metadataHash, setMetadataHash] = useState<string>(ZERO_HASH)
+  const [metadataHash, setMetadataHash] = useState<string>(zeroHash)
   const [expiryValue, setExpiryValue] = useState('')
 
   // Authoring status from the inline MetadataEditor; `dirty` blocks submit so a
@@ -194,7 +195,7 @@ export function CreateCommitmentForm({
       setCustomSeconds('')
       setExpiryValue('')
       setMetadataURI('')
-      setMetadataHash(ZERO_HASH)
+      setMetadataHash(zeroHash)
       setMetadataStatus('empty')
       setMetadataKey((k) => k + 1)
       setStrategyState({ bindings: [], ready: true })
@@ -591,7 +592,7 @@ export function CreateCommitmentForm({
                   disabled={disabled}
                   onChange={(v) => {
                     setMetadataURI(v?.metadataURI ?? '')
-                    setMetadataHash(v?.metadataHash ?? ZERO_HASH)
+                    setMetadataHash(v?.metadataHash ?? zeroHash)
                   }}
                   onStatusChange={setMetadataStatus}
                 />

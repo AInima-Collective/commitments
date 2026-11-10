@@ -1,16 +1,7 @@
 import { type Address } from 'viem'
 
 import { getContractAddresses } from './contracts'
-
-/** Kind of contract sitting at `commitment.arbiter`: the trust assumption. */
-export type MarketArbiterKind =
-  | 'eoa'
-  | 'multisig'
-  | 'committee'
-  | 'service'
-  | 'optimistic'
-  | 'zk'
-  | 'self'
+import { anvil } from './anvil'
 
 /** Sentinel id for the "you arbitrate this yourself" option. */
 export const SELF_ARBITER_ID = 'self'
@@ -28,7 +19,8 @@ export interface ArbiterDescriptor {
    *  connected wallet at the call site (config can't see the wallet). */
   address: Address | undefined
   name: string
-  kind: MarketArbiterKind
+  /** Mechanism name from the profile; absent for the self entry. */
+  mechanism?: string
   /** One-line, plain-language trust assumption shown under the picker. */
   trustAssumption: string
   recommended?: boolean
@@ -85,17 +77,17 @@ export function getConfiguredArbiterProfiles(chainId: number): ConfiguredArbiter
     env.defaultArbiter
       ? {
           address: env.defaultArbiter,
-          displayName: chainId === 31337 ? 'Demo arbiter' : 'Shared arbiter',
-          mechanism: chainId === 31337 ? 'Single-key manual arbitration' : 'Configured manual arbitration',
-          mechanismId: chainId === 31337 ? 'direct' : 'manual',
+          displayName: chainId === anvil.id ? 'Demo arbiter' : 'Shared arbiter',
+          mechanism: chainId === anvil.id ? 'Single-key manual arbitration' : 'Configured manual arbitration',
+          mechanismId: chainId === anvil.id ? 'direct' : 'manual',
           decisionSummary:
-            chainId === 31337
+            chainId === anvil.id
               ? 'A configured development account decides and calls the manager directly.'
               : 'A configured controller reviews evidence and dispatches manager actions.',
           contestKind: 'no-generic-action',
           contestSummary:
             'Contact the configured arbiter under its published policy. The manager execution delay does not create a generic on-chain challenge transaction.',
-          expectedAddressForm: chainId === 31337 ? 'EOA' : undefined,
+          expectedAddressForm: chainId === anvil.id ? 'EOA' : undefined,
         }
       : undefined,
   )
@@ -177,20 +169,6 @@ export function findConfiguredArbiterProfile(
 }
 
 /**
- * Human label for an arbiter kind. Also the single source of truth that fixes
- * the raw-enum print on the marketplace offer detail page.
- */
-export const ARBITER_KIND_LABEL: Record<MarketArbiterKind, string> = {
-  self: 'Self-arbitrated',
-  eoa: 'Single key',
-  multisig: 'Multisig',
-  committee: 'Committee',
-  service: 'Operator service',
-  optimistic: 'Optimistic',
-  zk: 'ZK-verified',
-}
-
-/**
  * One deployed OptimisticInsuranceArbiter instance. Claim bonds must be
  * denominated in the market's payout asset, so each bond denomination gets
  * its own arbiter instance — never reuse a USDC-bonded arbiter for a DAI
@@ -233,51 +211,38 @@ export function findOptimisticInsuranceArbiter(
 }
 
 /**
- * Curated arbiter list for the connected chain. The `self` option is always
- * first and recommended; the deployed reference arbiters are appended in
- * descending trust-delegation order, dropping any whose env address is unset
- * (mirrors `getBackingOptions` in `./contracts`).
+ * Arbiter list for the create-commitment picker: the `self` option first and
+ * recommended, then every configured profile from
+ * {@link getConfiguredArbiterProfiles}, so the picker and the profile pages
+ * describe an address the same way. Mutual arbiters are left out: a commitment
+ * reaches one by joining a mutual, not by naming it here.
  */
 export function getArbiterRegistry(chainId: number): ArbiterDescriptor[] {
-  const env = getContractAddresses(chainId)
-  const out: ArbiterDescriptor[] = [
-    {
-      id: SELF_ARBITER_ID,
-      address: undefined,
-      name: 'You arbitrate this yourself',
-      kind: 'self',
-      trustAssumption:
-        'You decide the outcome. The counterparty must trust you directly — best for self-imposed or reputation-backed commitments.',
-      recommended: true,
-    },
-  ]
-  if (env.defaultArbiter) {
-    out.push({
-      id: env.defaultArbiter,
-      address: env.defaultArbiter,
-      name: 'Shared arbiter',
-      kind: 'multisig',
-      trustAssumption: 'A neutral third party resolves disputes between the two sides.',
-    })
+  const self: ArbiterDescriptor = {
+    id: SELF_ARBITER_ID,
+    address: undefined,
+    name: 'You arbitrate this yourself',
+    trustAssumption:
+      'You decide the outcome. The counterparty must trust you directly — best for self-imposed or reputation-backed commitments.',
+    recommended: true,
   }
-  for (const optimistic of getOptimisticInsuranceArbiters(chainId)) {
-    out.push({
-      id: optimistic.address,
-      address: optimistic.address,
-      name: optimistic.label,
-      kind: 'optimistic',
-      trustAssumption:
-        'Claims auto-finalize after a timeout unless someone challenges within the window.',
-    })
-  }
-  return out
+  const configured = getConfiguredArbiterProfiles(chainId)
+    .filter((profile) => profile.mechanismId !== 'optimistic-mutual')
+    .map((profile) => ({
+      id: profile.address,
+      address: profile.address,
+      name: profile.displayName,
+      mechanism: profile.mechanism,
+      trustAssumption: profile.decisionSummary,
+    }))
+  return [self, ...configured]
 }
 
 /** `<Select>`-shaped options for the arbiter picker. */
 export function getArbiterOptions(chainId: number): { value: string; label: string }[] {
   return getArbiterRegistry(chainId).map((a) => ({
     value: a.id,
-    label: a.recommended ? `${a.name} (recommended)` : `${a.name} · ${ARBITER_KIND_LABEL[a.kind]}`,
+    label: a.recommended ? `${a.name} (recommended)` : `${a.name} · ${a.mechanism}`,
   }))
 }
 
