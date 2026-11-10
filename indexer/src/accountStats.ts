@@ -18,20 +18,33 @@ export async function bumpAccount(
     releasedDelta?: number
   }
 ) {
-  const existing = await db.find(accountStats, { address: addr })
-  const next = {
-    address: addr,
-    commitmentsOut: (existing?.commitmentsOut ?? 0) + (patch.commitmentsOut ?? 0),
-    commitmentsIn: (existing?.commitmentsIn ?? 0) + (patch.commitmentsIn ?? 0),
-    convictionOut: (existing?.convictionOut ?? 0n) + (patch.convictionOut ?? 0n),
-    convictionIn: (existing?.convictionIn ?? 0n) + (patch.convictionIn ?? 0n),
-    activeCount: (existing?.activeCount ?? 0) + (patch.activeDelta ?? 0),
-    forfeitedCount: (existing?.forfeitedCount ?? 0) + (patch.forfeitedDelta ?? 0),
-    releasedCount: (existing?.releasedCount ?? 0) + (patch.releasedDelta ?? 0),
-  }
-  if (existing) {
-    await db.update(accountStats, { address: addr }).set(next)
-  } else {
-    await db.insert(accountStats).values(next)
-  }
+  await db
+    .insert(accountStats)
+    .values({
+      address: addr,
+      commitmentsOut: patch.commitmentsOut ?? 0,
+      commitmentsIn: patch.commitmentsIn ?? 0,
+      convictionOut: patch.convictionOut ?? 0n,
+      convictionIn: patch.convictionIn ?? 0n,
+      activeCount: patch.activeDelta ?? 0,
+      forfeitedCount: patch.forfeitedDelta ?? 0,
+      releasedCount: patch.releasedDelta ?? 0,
+    })
+    .onConflictDoUpdate((row: {
+      commitmentsOut: number
+      commitmentsIn: number
+      convictionOut: bigint
+      convictionIn: bigint
+      activeCount: number
+      forfeitedCount: number
+      releasedCount: number
+    }) => ({
+      commitmentsOut: row.commitmentsOut + (patch.commitmentsOut ?? 0),
+      commitmentsIn: row.commitmentsIn + (patch.commitmentsIn ?? 0),
+      convictionOut: row.convictionOut + (patch.convictionOut ?? 0n),
+      convictionIn: row.convictionIn + (patch.convictionIn ?? 0n),
+      activeCount: row.activeCount + (patch.activeDelta ?? 0),
+      forfeitedCount: row.forfeitedCount + (patch.forfeitedDelta ?? 0),
+      releasedCount: row.releasedCount + (patch.releasedDelta ?? 0),
+    }))
 }

@@ -98,7 +98,6 @@ test('optional address arrays default to empty', () => {
 test('optional addresses and address arrays pass through', () => {
   const manifest = fixtureCopy()
   Object.assign(manifest, {
-    tokenWeighting: '0x0000000000000000000000000000000000000010',
     governorFactory: '0x0000000000000000000000000000000000000011',
     mutualRegistry: '0x0000000000000000000000000000000000000012',
     optimisticMutualArbiter: '0x0000000000000000000000000000000000000013',

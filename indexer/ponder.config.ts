@@ -67,6 +67,7 @@ const governorDeployedEvent = parseAbiItem(
   'event GovernorDeployed(address indexed governor, address indexed timelock, address indexed shim, address source, string name)'
 )
 
+const optional = (address: `0x${string}` | undefined) => (address ? [address] : [])
 
 export default createConfig({
   chains: {
@@ -122,9 +123,7 @@ export default createConfig({
       abi: optimisticMutualArbiterAbi,
       chain: {
         [CORE_CHAIN]: {
-          address: deployments.optimisticMutualArbiter
-            ? [deployments.optimisticMutualArbiter]
-            : [],
+          address: optional(deployments.optimisticMutualArbiter),
         },
       },
       startBlock,
@@ -230,80 +229,55 @@ export default createConfig({
       chain: { [CORE_CHAIN]: { address: agentIdentityRegistries } },
       startBlock,
     },
-    ...(deployments.governorFactory
-      ? {
-          GovernorFactory: {
-            abi: governorFactoryAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.governorFactory } },
-            startBlock,
-          },
-          CommitmentsGovernor: {
-            abi: commitmentsGovernorAbi,
-            chain: {
-              [CORE_CHAIN]: {
-                address: factory({
-                  address: deployments.governorFactory,
-                  event: governorDeployedEvent,
-                  parameter: 'governor',
-                }),
-              },
-            },
-            startBlock,
-          },
-        }
-      : {}),
-    // Synthetic Mutual (Mutual) market — only bound when the seed has
-    // deployed the registry (absent in PROD until launch). The mutual event
-    // surface itself is on the always-bound CommitmentManager; this binding adds
-    // the MutualRegistry so MutualRegistered annotations are indexed and
-    // the registry's `manager()` getter is chain-readable. The optimistic
-    // mutual arbiter is always declared above (with an empty address list when
-    // absent) so its own case events can be normalized independently.
-    ...(deployments.mutualRegistry
-      ? {
-          MutualRegistry: {
-            abi: mutualRegistryAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.mutualRegistry } },
-            startBlock,
-          },
-        }
-      : {}),
-    // LinkedMutualPolicy (cover/standby premium router) — bound best-effort
-    // when the seed has deployed it (absent until launch). Its CoverBound /
-    // StandbyFunded / BindingExpired events feed the premium index; the §G
-    // premium events themselves are on the always-bound CommitmentManager. Gated
-    // independently of the registry so either can ship first.
-    ...(deployments.linkedMutualPolicy
-      ? {
-          LinkedMutualPolicy: {
-            abi: linkedMutualPolicyAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.linkedMutualPolicy } },
-            startBlock,
-          },
-        }
-      : {}),
+    // The contracts below may be absent from a deployment (PROD until launch).
+    // Each is bound unconditionally with a possibly-empty address list so the
+    // handler event types always generate; Ponder watches nothing for an empty
+    // list, factory children included. Never pass `undefined`: Ponder reads an
+    // undefined address as "every address".
+    GovernorFactory: {
+      abi: governorFactoryAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.governorFactory) } },
+      startBlock,
+    },
+    CommitmentsGovernor: {
+      abi: commitmentsGovernorAbi,
+      chain: {
+        [CORE_CHAIN]: {
+          address: factory({
+            address: optional(deployments.governorFactory),
+            event: governorDeployedEvent,
+            parameter: 'governor',
+          }),
+        },
+      },
+      startBlock,
+    },
+    // MutualRegistered annotates the manager's mutual rows with cover terms.
+    MutualRegistry: {
+      abi: mutualRegistryAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.mutualRegistry) } },
+      startBlock,
+    },
+    // Cover/standby premium router: CoverBound / BindingExpired feed the
+    // premium index; the §G premium events are on the manager.
+    LinkedMutualPolicy: {
+      abi: linkedMutualPolicyAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.linkedMutualPolicy) } },
+      startBlock,
+    },
     // Underwritten agent vault (agent-bonds use case): the fee-skimming strategy
     // (YieldSkimmed / OperatorFeePaid / PremiumRouted → the vault's coverage-fee
     // ledger) and the keyless VaultCoverConduit (PremiumFunded → the
-    // vault↔mutual association + funded-stream rows). Both gated on the seed
-    // deploying them, independently of the mutual periphery.
-    ...(deployments.skimmingStrategy
-      ? {
-          SkimmingStrategy: {
-            abi: skimmingMockStrategyAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.skimmingStrategy } },
-            startBlock,
-          },
-        }
-      : {}),
-    ...(deployments.vaultCoverConduit
-      ? {
-          VaultCoverConduit: {
-            abi: vaultCoverConduitAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.vaultCoverConduit } },
-            startBlock,
-          },
-        }
-      : {}),
+    // vault↔mutual association + funded-stream rows).
+    SkimmingStrategy: {
+      abi: skimmingMockStrategyAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.skimmingStrategy) } },
+      startBlock,
+    },
+    VaultCoverConduit: {
+      abi: vaultCoverConduitAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.vaultCoverConduit) } },
+      startBlock,
+    },
   },
 })

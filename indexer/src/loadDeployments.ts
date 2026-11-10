@@ -39,8 +39,6 @@ export type DeploymentManifestV1 = {
   operatorRegistries: Hex[]
   stakeRegistry: Hex
   meshFactory: Hex
-  // Known TokenWeighting sinks (optional — factory children also tracked via NodeDeployed).
-  tokenWeighting?: Hex
   // Governance — the GovernorFactory address. Governor instances are factory-spawned
   // via GovernorDeployed events and discovered by Ponder dynamically.
   governorFactory?: Hex
@@ -87,7 +85,6 @@ export type CommitmentsDeployments = DeploymentManifestV1
 const REQUIRED_ADDRESS_FIELDS = ['vaultFactory', 'stakeRegistry', 'meshFactory'] as const
 const REQUIRED_ADDRESS_ARRAY_FIELDS = ['commitmentManagers', 'operatorRegistries'] as const
 const OPTIONAL_ADDRESS_FIELDS = [
-  'tokenWeighting',
   'governorFactory',
   'mutualRegistry',
   'optimisticMutualArbiter',
@@ -205,7 +202,6 @@ type DeploymentsKey =
   | 'vaultFactory'
   | 'stakeRegistry'
   | 'meshFactory'
-  | 'tokenWeighting'
   | 'governorFactory'
   | 'mutualRegistry'
   | 'optimisticMutualArbiter'
@@ -223,7 +219,6 @@ const SINGLE_NAME_MAP: Record<string, DeploymentsKey> = {
   VaultFactory: 'vaultFactory',
   OperatorServiceRegistry: 'stakeRegistry',
   MeshFactory: 'meshFactory',
-  TokenWeighting: 'tokenWeighting',
   GovernorFactory: 'governorFactory',
   MutualRegistry: 'mutualRegistry',
   OptimisticMutualArbiter: 'optimisticMutualArbiter',
