@@ -34,7 +34,7 @@ import {
 import { bumpAccount } from './accountStats'
 import { bumpEncumbered, recordFlow, type FlowEvent } from './ledgerFlow'
 
-import { commitmentManagerAbi, linkedMutualPolicyAbi, mutualRegistryAbi } from './abis'
+import { commitmentManagerAbi, mutualRegistryAbi } from './abis'
 import { loadDeployments } from './loadDeployments'
 import { CHAIN_ID } from './env'
 
@@ -521,6 +521,8 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
       }
     }
   }
+  // The settle moves settledTotal, activeCover and the premium accumulator.
+  await refreshMutual(context, manager, mutualId, event.block.number)
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -538,9 +540,19 @@ ponder.on('CommitmentManager:MemberExitRequested', async ({ event, context }) =>
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
   if (row) {
-    await context.db
-      .update(membership, { id })
-      .set({ status: 'exitRequested', updatedBlock: event.block.number })
+    // requestMutualExit banks the member's accrued premium — re-read it.
+    const mem = await readMembership(context, manager, commitmentId)
+    await context.db.update(membership, { id }).set({
+      status: 'exitRequested',
+      ...(mem
+        ? {
+            premiumWeight: mem.premiumWeight,
+            premiumSnapshot: mem.premiumSnapshot,
+            rewardBank: mem.rewardBank,
+          }
+        : {}),
+      updatedBlock: event.block.number,
+    })
   }
   await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'exitRequested', event })
 })
@@ -942,19 +954,8 @@ if (MUTUAL_REGISTRY_ENABLED) {
 }
 
 // ----------------------------------------------------------------------------
-// LinkedMutualPolicy (optional) — cover bindings + standby premium funding.
+// LinkedMutualPolicy (optional) — cover bindings.
 // ----------------------------------------------------------------------------
-
-// The CommitmentManager a LinkedMutualPolicy funds premium into (StandbyFunded
-// reconstructs the mutual PK `${manager}-${mutualId}` from it, since the event lacks it).
-const managerByPolicy = new Map<string, Hex>()
-async function resolvePolicyManager(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  policy: Hex,
-): Promise<Hex | null> {
-  return resolveManagerCached(managerByPolicy, context, policy, linkedMutualPolicyAbi)
-}
 
 const coverBindingKey = (policy: Hex, bindingId: bigint) =>
   `${policy.toLowerCase()}-${bindingId.toString()}`
@@ -978,22 +979,9 @@ if (LINKED_POLICY_ENABLED) {
     })
   })
 
-  ponder.on('LinkedMutualPolicy:StandbyFunded', async ({ event, context }) => {
-    const { mutualId, funder, premiumPaid } = event.args
-    const policy = event.log.address as Hex
-    // Standby funding lands on the mutual's premium stream — refresh the mutual
-    // (resolve its manager from the policy) and append a standby funding row.
-    const manager = await resolvePolicyManager(context, policy)
-    if (manager) await refreshMutual(context, manager, mutualId as bigint, event.block.number)
-    await recordPremiumFunding(context, {
-      manager: manager ?? policy,
-      mutualId: mutualId as bigint,
-      kind: 'standby',
-      actor: funder as Hex,
-      amount: premiumPaid as bigint,
-      event,
-    })
-  })
+  // StandbyFunded is not indexed: the policy funds through
+  // `manager.fundMutualPremium`, so the same transaction's MutualPremiumFunded
+  // already writes the `funded` row and refreshes the mutual.
 
   ponder.on('LinkedMutualPolicy:BindingExpired', async ({ event, context }) => {
     const { bindingId } = event.args

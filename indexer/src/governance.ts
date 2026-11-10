@@ -21,8 +21,10 @@ import {
   proposalAction as proposalActionTable,
   vote as voteTable,
 } from 'ponder:schema'
+import { keccak256, toHex } from 'viem'
 
 import { decodeProposalAction, rollupProposalKind, type RawAction } from './decode/governanceActions'
+import { commitmentsGovernorAbi, commitmentsTimelockAbi } from './governance-abis'
 
 // Governance contracts are configured only when a deployment is present.
 // Keep registration permissive across configs with and without governance;
@@ -53,7 +55,7 @@ ponder.on('GovernorFactory:GovernorDeployed', async ({ event, context }) => {
   const govAddr = governor as `0x${string}`
   const cfg = await readGovernorConfig(context, govAddr)
   const tlAddr = timelock as `0x${string}`
-  const tlMinDelay = await safeReadBigInt(context, tlAddr, 'getMinDelay', [], 0n)
+  const tlMinDelay = await safeReadBigInt(context, commitmentsTimelockAbi, tlAddr, 'getMinDelay', [], 0n)
 
   await context.db.insert(governorTable).values({
     address: govAddr,
@@ -70,7 +72,7 @@ ponder.on('GovernorFactory:GovernorDeployed', async ({ event, context }) => {
     votingPeriod: cfg.votingPeriod,
     proposalThreshold: cfg.proposalThreshold,
     quorumNumerator: cfg.quorumNumerator,
-    quorumDenominator: 100n, // OZ default; overridable per Governor.quorumDenominator()
+    quorumDenominator: cfg.quorumDenominator,
     timelockMinDelay: tlMinDelay,
   })
 })
@@ -104,6 +106,7 @@ ponder.on('CommitmentsGovernor:ProposalCreated', async ({ event, context }) => {
   // OK to be approximate, the frontend uses it as a target indicator).
   const quorum = await safeReadBigInt(
     context,
+    commitmentsGovernorAbi,
     governorAddr,
     'quorum',
     [voteStart as bigint],
@@ -270,10 +273,6 @@ async function persistVote(
 function hashDescription(description: string): `0x${string}` {
   // OZ Governor uses keccak256(bytes(description)) as descriptionHash for
   // hashProposal. Compute via viem so the indexer's stored value matches.
-  // viem's `keccak256` works on either a Hex or a string-as-bytes.
-  // We use stringToHex to avoid a dynamic require on viem's keccak helper.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { keccak256, toHex } = require('viem') as typeof import('viem')
   return keccak256(toHex(description))
 }
 
@@ -282,6 +281,7 @@ interface GovernorConfig {
   votingPeriod: bigint
   proposalThreshold: bigint
   quorumNumerator: bigint
+  quorumDenominator: bigint
 }
 
 async function readGovernorConfig(
@@ -289,18 +289,23 @@ async function readGovernorConfig(
   context: any,
   governorAddr: `0x${string}`,
 ): Promise<GovernorConfig> {
-  const [votingDelay, votingPeriod, proposalThreshold, quorumNumerator] = await Promise.all([
-    safeReadBigInt(context, governorAddr, 'votingDelay', [], 0n),
-    safeReadBigInt(context, governorAddr, 'votingPeriod', [], 0n),
-    safeReadBigInt(context, governorAddr, 'proposalThreshold', [], 0n),
-    safeReadBigInt(context, governorAddr, 'quorumNumerator', [], 0n),
-  ])
-  return { votingDelay, votingPeriod, proposalThreshold, quorumNumerator }
+  const abi = commitmentsGovernorAbi
+  const [votingDelay, votingPeriod, proposalThreshold, quorumNumerator, quorumDenominator] =
+    await Promise.all([
+      safeReadBigInt(context, abi, governorAddr, 'votingDelay', [], 0n),
+      safeReadBigInt(context, abi, governorAddr, 'votingPeriod', [], 0n),
+      safeReadBigInt(context, abi, governorAddr, 'proposalThreshold', [], 0n),
+      safeReadBigInt(context, abi, governorAddr, 'quorumNumerator', [], 0n),
+      // OZ default 100 if the read fails.
+      safeReadBigInt(context, abi, governorAddr, 'quorumDenominator', [], 100n),
+    ])
+  return { votingDelay, votingPeriod, proposalThreshold, quorumNumerator, quorumDenominator }
 }
 
 async function safeReadBigInt(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
+  abi: readonly unknown[],
   address: `0x${string}`,
   functionName: string,
   args: unknown[],
@@ -309,13 +314,7 @@ async function safeReadBigInt(
   try {
     const result = (await context.client.readContract({
       address,
-      // The Governor + Timelock ABIs are loaded into the runtime via
-      // ponder.config.ts; readContract auto-resolves by address+function.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      abi: (context.contracts as any).CommitmentsGovernor?.abi
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ?? (context.contracts as any).GovernorFactory?.abi
-        ?? [],
+      abi,
       functionName,
       args,
     })) as bigint | number

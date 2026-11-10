@@ -4,6 +4,7 @@ import { db, publicClients } from 'ponder:api'
 import schema from 'ponder:schema'
 import { erc20Abi, pad, type Hex } from 'viem'
 import { CHAIN_NAME } from '../env'
+import { parseLimit } from './http'
 
 // Per-process cache of (chainId, asset address) → resolved asset symbol.
 // Asset symbols are immutable for the canonical mock + production tokens we
@@ -67,8 +68,7 @@ const app = new Hono()
  */
 app.get('/agreements', async (c) => {
   const addr = c.req.query('address')?.toLowerCase() as `0x${string}` | undefined
-  const rawLimit = Number(c.req.query('limit') ?? 500)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 500, 1), 1000)
+  const limit = parseLimit(c, 500, 1000)
 
   const commitments = addr
     ? await db

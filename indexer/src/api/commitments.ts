@@ -11,6 +11,7 @@ import {
   parseArbitrationRequest,
   serializeArbitrationEvent,
 } from './arbitration'
+import { jsonBig, parseId, parseLimit } from './http'
 
 const app = new Hono()
 
@@ -53,8 +54,7 @@ app.get('/urgent', async (c) => {
   const statusParam = c.req.query('status')
   const managerParam = c.req.query('manager')?.toLowerCase() as `0x${string}` | undefined
   const vaultParam = c.req.query('vault')?.toLowerCase() as `0x${string}` | undefined
-  const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 100)
+  const limit = parseLimit(c, 100, 100)
   const rawOffset = Number(c.req.query('offset') ?? 0)
   const offset = Math.max(Number.isSafeInteger(rawOffset) ? rawOffset : 0, 0)
 
@@ -117,8 +117,8 @@ app.get('/urgent', async (c) => {
   const aggregate = aggregateRows[0]
   const total = Number(aggregate?.total ?? '0')
 
-  return c.json({
-    rows: rows.map(serializeCommitment),
+  return jsonBig(c, {
+    rows,
     counts: {
       // A live proposal is the only generic manager state that merits review
       // by the arbiter. Merely being able to decide an ACTIVE commitment does
@@ -271,17 +271,12 @@ app.get('/:id/arbitration', async (c) => {
  * matching agreement row (if any) so the detail surface can render the
  * paired-with linkage without a second round trip.
  *
- * 404 when the id doesn't decode as bigint or isn't found.
+ * 400 on a malformed id, 404 when it isn't found.
  */
 app.get('/:id', async (c) => {
-  const raw = c.req.param('id')
+  const id = parseId(c.req.param('id'))
+  if (id === null) return c.json({ error: 'invalid id' }, 400)
   const managerParam = c.req.query('manager')?.toLowerCase() as `0x${string}` | undefined
-  let id: bigint
-  try {
-    id = BigInt(raw)
-  } catch {
-    return c.json({ error: 'invalid id' }, 400)
-  }
 
   // Multi-manager: id is per-manager so the (id) alone is ambiguous. Accept
   // an optional ?manager= query param for exact lookup; without it, return
@@ -316,8 +311,8 @@ app.get('/:id', async (c) => {
       : 'B'
     : null
 
-  return c.json({
-    row: serializeCommitment(row),
+  return jsonBig(c, {
+    row,
     agreement: ent
       ? {
           id: ent.id.toString(),
@@ -330,23 +325,6 @@ app.get('/:id', async (c) => {
   })
 })
 
-function serializeCommitment(c: typeof schema.commitment.$inferSelect) {
-  return {
-    ...c,
-    id: c.id.toString(),
-    amount: c.amount.toString(),
-    forfeitChallengeEnd: c.forfeitChallengeEnd?.toString() ?? null,
-    forfeitInitiatedAt: c.forfeitInitiatedAt?.toString() ?? null,
-    forfeitSharesExecuted: c.forfeitSharesExecuted?.toString() ?? null,
-    unbondInitiatedAt: c.unbondInitiatedAt?.toString() ?? null,
-    unbondMaturesAt: c.unbondMaturesAt?.toString() ?? null,
-    expiresAt: c.expiresAt?.toString() ?? null,
-    createdBlock: c.createdBlock.toString(),
-    createdAt: c.createdAt?.toString() ?? null,
-    updatedBlock: c.updatedBlock.toString(),
-  }
-}
-
 /**
  * GET /commitments/:id/contributions
  *
@@ -354,8 +332,9 @@ function serializeCommitment(c: typeof schema.commitment.$inferSelect) {
  * Use `?limit=N` to override the default of 100. v2.5 Part B.
  */
 app.get('/:id/contributions', async (c) => {
-  const id = BigInt(c.req.param('id'))
-  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100), 1), 500)
+  const id = parseId(c.req.param('id'))
+  if (id === null) return c.json({ error: 'invalid id' }, 400)
+  const limit = parseLimit(c, 100, 500)
 
   const rows = await db
     .select()
@@ -364,7 +343,7 @@ app.get('/:id/contributions', async (c) => {
     .orderBy(desc(schema.contribution.blockNumber))
     .limit(limit)
 
-  return c.json(rows)
+  return jsonBig(c, rows)
 })
 
 export default app

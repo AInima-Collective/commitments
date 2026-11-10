@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'ponder'
 import { db } from 'ponder:api'
 import schema from 'ponder:schema'
 import { isAddress } from 'viem'
+import { parseLimit } from './http'
 
 const app = new Hono()
 
@@ -463,8 +464,7 @@ app.get('/stats', async (c) => {
  */
 app.get('/leaderboard', async (c) => {
   const metric = c.req.query('metric') ?? 'arbiter'
-  const rawLimit = Number(c.req.query('limit') ?? 10)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 10, 1), 50)
+  const limit = parseLimit(c, 10, 50)
 
   if (metric === 'arbiter') {
     const rows = await db

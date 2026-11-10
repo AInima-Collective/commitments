@@ -7,6 +7,7 @@ import type { Hex } from 'viem'
 import { commitmentManagerAbi } from '../abis'
 import { CHAIN_NAME } from '../env'
 import { foldFlows } from './balanceHistoryMath'
+import { jsonBig, parseLimit } from './http'
 
 // Loose typing — Ponder shapes the runtime publicClient; the readContract
 // overload we use (pendingMemberPremium) is stable across viem 2.x.
@@ -70,34 +71,11 @@ app.get('/:address', async (c) => {
   // GraphQL (`agents(where: { owner_in })`) — this is the dossier view.
   const agents = await db.select().from(schema.agent).where(eq(schema.agent.owner, address))
 
-  return c.json({
+  return jsonBig(c, {
     address,
-    stats: stats
-      ? {
-          ...stats,
-          convictionOut: stats.convictionOut.toString(),
-          convictionIn: stats.convictionIn.toString(),
-        }
-      : null,
-    commitments: commitments.map(serializeCommitment),
-    operator: op
-      ? {
-          ...op,
-          weight: op.weight.toString(),
-          selfStake: op.selfStake.toString(),
-          selfStakeCommitmentId: op.selfStakeCommitmentId?.toString() ?? null,
-          totalDelegatedStake: op.totalDelegatedStake.toString(),
-          registeredBlock: op.registeredBlock.toString(),
-          // registeredAt is a bigint (unix seconds) — the frontend renders it as a
-          // date. Missing this .toString() left a raw BigInt in the payload, so
-          // c.json() threw "Do not know how to serialize a BigInt" and the whole
-          // /account response 500'd for any address that is a registered operator
-          // (same class as the expiresAt fix). Every bigint operator field must be
-          // stringified here.
-          registeredAt: op.registeredAt.toString(),
-          updatedBlock: op.updatedBlock.toString(),
-        }
-      : null,
+    stats: stats ?? null,
+    commitments,
+    operator: op ?? null,
     ledgerPositions: positions.map((p) => ({
       token: p.token,
       encumbered: p.encumbered.toString(),
@@ -121,22 +99,6 @@ app.get('/:address', async (c) => {
     }),
   })
 })
-
-function serializeCommitment(c: typeof schema.commitment.$inferSelect) {
-  return {
-    ...c,
-    id: c.id.toString(),
-    amount: c.amount.toString(),
-    forfeitChallengeEnd: c.forfeitChallengeEnd?.toString() ?? null,
-    forfeitSharesExecuted: c.forfeitSharesExecuted?.toString() ?? null,
-    unbondInitiatedAt: c.unbondInitiatedAt?.toString() ?? null,
-    unbondMaturesAt: c.unbondMaturesAt?.toString() ?? null,
-    expiresAt: c.expiresAt?.toString() ?? null,
-    createdBlock: c.createdBlock.toString(),
-    createdAt: c.createdAt?.toString() ?? null,
-    updatedBlock: c.updatedBlock.toString(),
-  }
-}
 
 /**
  * GET /account/:address/claimable-yield
@@ -179,7 +141,7 @@ app.get('/:address/claimable-yield', async (c) => {
     .orderBy(desc(schema.distribution.blockNumber))
     .limit(100)
 
-  return c.json({
+  return jsonBig(c, {
     bindings: bindings
       .map((b) => {
         const parent = byCommitment.get(`${b.manager.toLowerCase()}-${b.commitmentId}`)
@@ -189,17 +151,11 @@ app.get('/:address/claimable-yield', async (c) => {
           commitmentId: b.commitmentId.toString(),
           strategy: b.strategy,
           strategyParams: b.strategyParams,
-          commitment: serializeCommitment(parent),
+          commitment: parent,
         }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null),
-    distributions: distributions.map((d) => ({
-      ...d,
-      amount: d.amount.toString(),
-      commitmentId: d.commitmentId.toString(),
-      blockNumber: d.blockNumber.toString(),
-      blockTimestamp: d.blockTimestamp.toString(),
-    })),
+    distributions,
   })
 })
 
@@ -409,8 +365,7 @@ app.get('/:address/balance-history', async (c) => {
 
 app.get('/:address/activity', async (c) => {
   const address = c.req.param('address').toLowerCase() as `0x${string}`
-  const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 500)
+  const limit = parseLimit(c, 100, 500)
 
   // Mutuals the address is a member of — the loss-attribution set. The (manager,
   // mutualId) pair is the real key; mutualId alone is ambiguous across managers.

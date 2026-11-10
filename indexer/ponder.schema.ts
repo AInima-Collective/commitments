@@ -1176,7 +1176,7 @@ export const mutual = onchainTable(
     // ---- Premium index (reward side, §G premium) — refreshed via getMutualPremiumState ----
     premiumPerShareStored: t.bigint().notNull().default(0n), // Pi — 1e18-scaled cumulative premium-per-share
     activeCover: t.bigint().notNull().default(0n), // uint128 on chain; the streaming reward denominator
-    settledTotal: t.bigint().notNull().default(0n), // Σ premium streamed-and-banked so far
+    settledTotal: t.bigint().notNull().default(0n), // Σ settled loss units (owed) so far
     rewardRate: t.bigint().notNull().default(0n), // uint128 on chain; premium/sec of the live stream
     lastUpdate: t.bigint().notNull().default(0n), // uint64 on chain; last Pi accrual timestamp
     periodFinish: t.bigint().notNull().default(0n), // uint64 on chain; stream end timestamp
@@ -1304,13 +1304,13 @@ export const mutualEvent = onchainTable(
 /**
  * Per-event premium inflow / outflow ledger for a Mutual's reward side.
  * Mirrors the `mutualEvent` shape but scoped to the §G premium index. One row per
- * `MutualPremiumFunded` / `StandbyFunded` / `PremiumReclaimed` / `MutualPremiumSwept`.
+ * `MutualPremiumFunded` / `PremiumReclaimed` / `MutualPremiumSwept`.
  *
  * `kind`:
  *   'funded'    — a policyholder funded/extended the stream (`MutualPremiumFunded`);
  *                 `amount` is the MEASURED received delta; rewardRate/periodFinish post-funding.
- *   'standby'   — the LinkedMutualPolicy funded standby premium (`StandbyFunded`);
- *                 `actor` is the funder, `amount` the premium paid (rewardRate/periodFinish NULL).
+ *                 Premium routed through a LinkedMutualPolicy (bind or standby) lands here
+ *                 too, with `actor` = the policy contract.
  *   'reclaimed' — the policyholder-of-record reclaimed the unstreamed remainder
  *                 (`PremiumReclaimed`); `amount` is the unstreamed reclaim, `actor` the recipient.
  *   'swept'     — terminal sweep of a wound-down mutual's residual reserve
@@ -1322,7 +1322,7 @@ export const premiumFunding = onchainTable(
     id: t.text().primaryKey(), // `${mutualId}-${blockNumber}-${logIndex}`
     manager: t.hex().notNull(),
     mutualId: t.bigint().notNull(),
-    kind: t.text().notNull(), // 'funded' | 'standby' | 'reclaimed' | 'swept'
+    kind: t.text().notNull(), // 'funded' | 'reclaimed' | 'swept'
     actor: t.hex(), // funder / recipient where the event identifies one
     amount: t.bigint().notNull(),
     rewardRate: t.bigint(), // post-funding stream rate (funded only); NULL otherwise
@@ -1368,8 +1368,8 @@ export const premiumClaim = onchainTable(
 /**
  * Per-binding cover sold by a LinkedMutualPolicy against a Mutual. One
  * row per `CoverBound` (active=true); flipped to active=false by `BindingExpired`.
- * `StandbyFunded` does NOT create a binding — it is a `premiumFunding` kind='standby'
- * row. Keyed by `${policy}-${bindingId}` (the policy is the binding's namespace).
+ * `StandbyFunded` does NOT create a binding; its premium is the `funded` row the
+ * manager's `MutualPremiumFunded` writes. Keyed by `${policy}-${bindingId}` (the policy is the binding's namespace).
  */
 export const coverBinding = onchainTable(
   'cover_binding',

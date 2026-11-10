@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'hono'
+import { Hono } from 'hono'
 import { and, asc, desc, eq } from 'ponder'
 import { db, publicClients } from 'ponder:api'
 import schema from 'ponder:schema'
@@ -6,6 +6,7 @@ import type { Hex } from 'viem'
 
 import { commitmentManagerAbi } from '../abis'
 import { CHAIN_NAME } from '../env'
+import { jsonBig, parseId, parseLimit } from './http'
 
 // Loose typing — getMutualPremiumState returns a flat 9-tuple of named outputs.
 interface MinimalManagerClient {
@@ -28,17 +29,6 @@ function getManagerClient(): MinimalManagerClient | null {
   return clients[CHAIN_NAME] ?? null
 }
 
-/** Parse the `:id` path param as a numeric mutualId, or null when missing/malformed. */
-function parseMutualId(c: Context): bigint | null {
-  const raw = c.req.param('id')
-  if (raw === undefined) return null
-  try {
-    return BigInt(raw)
-  } catch {
-    return null
-  }
-}
-
 const app = new Hono()
 
 /**
@@ -59,15 +49,6 @@ const app = new Hono()
 // 1e18 — the fixed-point scale of the cumulative-loss fraction (Lambda) and
 // every per-member loss snapshot. See MutualLib.LAMBDA_ONE.
 const ONE = 1_000_000_000_000_000_000n
-
-// Convert every bigint field on a row to its string form; pass other types through.
-function serialize<T extends Record<string, unknown>>(row: T): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(row)) {
-    out[k] = typeof v === 'bigint' ? v.toString() : v
-  }
-  return out
-}
 
 /**
  * GET /mutuals
@@ -162,7 +143,7 @@ app.get('/', async (c) => {
  * markdown at the mutual's current Lambda, mirroring MutualLib.pendingMemberLoss.
  */
 app.get('/:id/members', async (c) => {
-  const mutualId = parseMutualId(c)
+  const mutualId = parseId(c.req.param('id'))
   if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
 
   const [members, exitEvents, mutualRows] = await Promise.all([
@@ -233,10 +214,9 @@ app.get('/:id/members', async (c) => {
  * default 100).
  */
 app.get('/:id/ledger', async (c) => {
-  const mutualId = parseMutualId(c)
+  const mutualId = parseId(c.req.param('id'))
   if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
-  const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 500)
+  const limit = parseLimit(c, 100, 500)
 
   const [mutualRows, members, events] = await Promise.all([
     db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1),
@@ -254,11 +234,11 @@ app.get('/:id/ledger', async (c) => {
       .limit(limit),
   ])
 
-  return c.json({
+  return jsonBig(c, {
     mutualId: mutualId.toString(),
-    mutual: mutualRows[0] ? serialize(mutualRows[0]) : null,
-    members: members.map(serialize),
-    events: events.map(serialize),
+    mutual: mutualRows[0] ?? null,
+    members,
+    events,
     counts: {
       members: members.length,
       events: events.length,
@@ -270,7 +250,7 @@ app.get('/:id/ledger', async (c) => {
  * GET /mutuals/:id/premium
  *
  * The mutual's §G premium feed: the premium funding/outflow ledger
- * (`premiumFunding` — funded / standby / reclaimed / swept), the member claim
+ * (`premiumFunding` — funded / reclaimed / swept), the member claim
  * history (`premiumClaim`), and the cover bindings sold against it
  * (`coverBinding`). Each list is newest-first (claims/funding) or active-first
  * (bindings) and capped by `?limit=N` (1..500, default 100).
@@ -280,10 +260,9 @@ app.get('/:id/ledger', async (c) => {
  * read fails; the indexed `mutual` row carries the last-persisted copy regardless.
  */
 app.get('/:id/premium', async (c) => {
-  const mutualId = parseMutualId(c)
+  const mutualId = parseId(c.req.param('id'))
   if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
-  const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 500)
+  const limit = parseLimit(c, 100, 500)
 
   const [mutualRows, funding, claims, bindings] = await Promise.all([
     db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1),
@@ -348,13 +327,13 @@ app.get('/:id/premium', async (c) => {
     }
   }
 
-  return c.json({
+  return jsonBig(c, {
     mutualId: mutualId.toString(),
-    mutual: mutual ? serialize(mutual) : null,
+    mutual: mutual ?? null,
     premiumState,
-    funding: funding.map(serialize),
-    claims: claims.map(serialize),
-    bindings: bindings.map(serialize),
+    funding,
+    claims,
+    bindings,
     counts: {
       funding: funding.length,
       claims: claims.length,
