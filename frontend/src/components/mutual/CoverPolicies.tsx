@@ -1,7 +1,7 @@
 import { Notice, Skeleton, TokenAmount } from '../ui'
 import { OperatorIdentity } from '../protocol'
-import { useNowSeconds } from '../../hooks/useNow'
-import { formatDuration, formatTokenAmount } from '../../lib/format'
+import { useDisplayNow } from '../../hooks/useDisplayNow'
+import { formatDuration } from '../../lib/format'
 import type { MutualCoverBinding } from '../../hooks/useMutualCover'
 
 interface CoverPoliciesProps {
@@ -28,7 +28,7 @@ export function CoverPolicies({
   isError,
   unavailable,
 }: CoverPoliciesProps) {
-  const now = useNowSeconds()
+  const now = useDisplayNow()
 
   if (unavailable) {
     return (
@@ -67,7 +67,7 @@ export function CoverPolicies({
   return (
     <div className="ds-stack ds-stack-2" aria-label="Cover policies">
       {bindings.map((b) => {
-        const remaining = Number(b.expiry) - Number(now)
+        const remaining = Number(b.expiry) - now
         const expired = !b.active || remaining <= 0
         return (
           <div
@@ -85,16 +85,12 @@ export function CoverPolicies({
               <OperatorIdentity address={b.policyholder} size="sm" />
               <span className="ds-text-xs ds-subtle">
                 premium{' '}
-                <span title={formatTokenAmount(b.premiumPaid, decimals).full}>
-                  <TokenAmount amount={b.premiumPaid} decimals={decimals} symbol={symbol} compact size="inline" />
-                </span>{' '}
+                <TokenAmount amount={b.premiumPaid} decimals={decimals} symbol={symbol} compact size="inline" />{' '}
                 · {expired ? 'expired' : `expires in ${formatDuration(remaining)}`}
               </span>
             </span>
             <span className="ds-stack ds-stack-1" style={{ alignItems: 'flex-end', flexShrink: 0 }}>
-              <span title={formatTokenAmount(b.notional, decimals).full}>
-                <TokenAmount amount={b.notional} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={b.notional} decimals={decimals} symbol={symbol} compact />
               <span className={`ds-badge ${expired ? 'ds-badge--muted' : 'ds-badge--success'}`}>
                 {expired ? 'expired' : 'active'}
               </span>

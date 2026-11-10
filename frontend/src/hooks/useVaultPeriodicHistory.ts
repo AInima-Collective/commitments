@@ -55,25 +55,17 @@ interface UseVaultPeriodicHistoryParams {
 }
 
 /**
- * Snapshots for one vault from the indexer's `/vaults/:vault/periodic`, which
- * serves the `vaultSnapshot` table downsampled to hourly (up to 7 days) or
- * daily points. Polls every 60s. Returns `data: undefined` until the indexer
- * responds; rows are newest-first.
+ * Query options for one vault's snapshots from the indexer's
+ * `/vaults/:vault/periodic`, which serves the `vaultSnapshot` table
+ * downsampled to hourly (up to 7 days) or daily points. Polls every 60s; rows
+ * are newest-first. Shared by {@link useVaultPeriodicHistory} and list pages
+ * that read several vaults at once.
  */
-export function useVaultPeriodicHistory({
-  vaultAddress,
-  days = 7,
-  latest = false,
-}: UseVaultPeriodicHistoryParams): {
-  data: PeriodicHistory | undefined
-  isLoading: boolean
-  error: unknown
-} {
-  const enabled = hasIndexer && Boolean(vaultAddress)
-  const query = useQuery<PeriodicHistory>({
-    enabled,
+export function vaultPeriodicQuery({ vaultAddress, days = 7, latest = false }: UseVaultPeriodicHistoryParams) {
+  return {
+    enabled: hasIndexer && Boolean(vaultAddress),
     queryKey: ['vault-periodic-history', vaultAddress, latest ? 'latest' : days],
-    queryFn: async () => {
+    queryFn: async (): Promise<PeriodicHistory> => {
       if (!vaultAddress) throw new Error('vaultAddress required')
       const wire = await indexerJson<PeriodicHistoryWire>(
         `/vaults/${vaultAddress.toLowerCase()}/periodic?${latest ? 'latest=1' : `days=${days}`}`,
@@ -98,6 +90,15 @@ export function useVaultPeriodicHistory({
       }
     },
     refetchInterval: POLL.idle,
-  })
+  }
+}
+
+/** Snapshots for one vault; `data: undefined` until the indexer responds. */
+export function useVaultPeriodicHistory(params: UseVaultPeriodicHistoryParams): {
+  data: PeriodicHistory | undefined
+  isLoading: boolean
+  error: unknown
+} {
+  const query = useQuery(vaultPeriodicQuery(params))
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

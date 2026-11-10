@@ -6,7 +6,7 @@ import { type Address, parseUnits } from 'viem'
 import { Button, Input, Notice, StatBlock, TokenAmount } from '../ui'
 import { linkedMutualPolicyAbi, premiumSchedulerAbi } from '../../generated'
 import { useBuyCoverFlow } from '../../hooks/useBuyCoverFlow'
-import { formatTokenAmount } from '../../lib/format'
+import { POLL } from '../../hooks/polling'
 import { legibleWriteError } from '../../utils/contractErrors'
 
 interface BuyCoverPanelProps {
@@ -87,7 +87,7 @@ export function BuyCoverPanel({
     functionName: 'getActiveNotionalSold',
     address: policyAddress,
     args: [mutualId],
-    query: { enabled: Boolean(policyAddress), refetchInterval: 20_000 },
+    query: { enabled: Boolean(policyAddress), refetchInterval: POLL.fast },
   })
 
   const flow = useBuyCoverFlow({
@@ -181,9 +181,7 @@ export function BuyCoverPanel({
           loading={quoting}
           value={
             premium !== undefined ? (
-              <span title={formatTokenAmount(premium, decimals).full}>
-                <TokenAmount amount={premium} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={premium} decimals={decimals} symbol={symbol} compact />
             ) : (
               '—'
             )
@@ -198,9 +196,7 @@ export function BuyCoverPanel({
           label={`your ${symbol} balance`}
           value={
             balance !== undefined ? (
-              <span title={formatTokenAmount(balance, decimals).full}>
-                <TokenAmount amount={balance} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={balance} decimals={decimals} symbol={symbol} compact />
             ) : (
               '—'
             )

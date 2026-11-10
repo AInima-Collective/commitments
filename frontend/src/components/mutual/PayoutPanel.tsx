@@ -5,7 +5,6 @@ import { OperatorIdentity } from '../protocol'
 import { claimRouterAbi, commitmentManagerAbi } from '../../generated'
 import { useWriteAction } from '../../hooks/useWriteAction'
 import { type ClaimPayout } from '../../hooks/useClaimPayout'
-import { formatTokenAmount } from '../../lib/format'
 
 interface PayoutPanelProps {
   /** The mutual's beneficiary — the ClaimRouter the collect writes target. */
@@ -139,9 +138,7 @@ export function PayoutPanel({
               label="recovered · awaiting collection"
               tone={payout.collectable > 0n ? 'accent' : 'neutral'}
               value={
-                <span title={formatTokenAmount(payout.collectable, decimals).full}>
-                  <TokenAmount amount={payout.collectable} decimals={decimals} symbol={symbol} compact />
-                </span>
+                <TokenAmount amount={payout.collectable} decimals={decimals} symbol={symbol} compact />
               }
               meta="settled shares held by the claim router"
             />
@@ -149,9 +146,7 @@ export function PayoutPanel({
               label="not yet settled"
               tone={owedOutstanding > 0n ? 'neutral' : 'positive'}
               value={
-                <span title={formatTokenAmount(owedOutstanding, decimals).full}>
-                  <TokenAmount amount={owedOutstanding} decimals={decimals} symbol={symbol} compact />
-                </span>
+                <TokenAmount amount={owedOutstanding} decimals={decimals} symbol={symbol} compact />
               }
               meta={
                 owedOutstanding > 0n

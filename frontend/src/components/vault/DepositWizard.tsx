@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { type Address } from 'viem'
 import { useAmountInput } from '../../hooks/useAmountInput'
 import { useDepositFlow } from '../../hooks/useDepositFlow'
-import { BalanceLine, Notice, TokenAmount, Tooltip, useToasts } from '../ui'
+import { BalanceLine, Button, Notice, TokenAmount, Tooltip, useToasts } from '../ui'
 import { DepositStepper } from './DepositStepper'
 import { deriveDepositSteps } from './depositSteps'
 import { legibleWriteError } from '../../utils/contractErrors'
@@ -204,14 +204,9 @@ export function DepositWizard({
         <Notice tone="danger" size="sm" title="EXCEEDS BALANCE" />
       )}
 
-      <button
-        type="button"
-        className="ds-btn ds-btn--primary ds-btn--full"
-        onClick={handleAction}
-        disabled={actionDisabled}
-      >
+      <Button variant="primary" fullWidth onClick={handleAction} disabled={actionDisabled}>
         {actionLabel}
-      </button>
+      </Button>
     </div>
   )
 }

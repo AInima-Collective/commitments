@@ -63,12 +63,15 @@ export function useVaults(): UseVaultsReturn {
     () => (query.isSuccess ? query.data.map(toDescriptor) : getVaultRegistry(chainId)),
     [query.isSuccess, query.data, chainId],
   )
-  const byAddress = useMemo(() => new Map(vaults.map((v) => [v.address.toLowerCase(), v])), [vaults])
-  const vaultFor = (address: string | null | undefined) => (address ? byAddress.get(address.toLowerCase()) : undefined)
-  return {
-    vaults,
-    vaultFor,
-    vaultName: (address) => vaultFor(address)?.name ?? `vault ${truncateAddress(address)}`,
-    isLoading: hasIndexer && query.isLoading,
-  }
+  const isLoading = hasIndexer && query.isLoading
+  return useMemo(() => {
+    const byAddress = new Map(vaults.map((v) => [v.address.toLowerCase(), v]))
+    const vaultFor = (address: string | null | undefined) => (address ? byAddress.get(address.toLowerCase()) : undefined)
+    return {
+      vaults,
+      vaultFor,
+      vaultName: (address: Address) => vaultFor(address)?.name ?? `vault ${truncateAddress(address)}`,
+      isLoading,
+    }
+  }, [vaults, isLoading])
 }

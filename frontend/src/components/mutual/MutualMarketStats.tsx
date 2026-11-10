@@ -4,7 +4,6 @@ import {
   LAMBDA_SCALE,
   formatLambdaPercent,
   formatPercent,
-  formatTokenAmount,
 } from '../../lib/format'
 
 interface MutualMarketStatsProps {
@@ -66,13 +65,9 @@ export function MutualMarketStats({
           tone={showLiveCover ? 'accent' : 'neutral'}
           value={
             showLiveCover ? (
-              <span title={formatTokenAmount(liveCapacity, decimals).full}>
-                <TokenAmount amount={liveCapacity} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={liveCapacity} decimals={decimals} symbol={symbol} compact />
             ) : (
-              <span title={formatTokenAmount(subscribed, decimals).full}>
-                <TokenAmount amount={subscribed} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={subscribed} decimals={decimals} symbol={symbol} compact />
             )
           }
           meta={showLiveCover ? 'after accrued loss share' : 'nominal — loss not yet applied'}

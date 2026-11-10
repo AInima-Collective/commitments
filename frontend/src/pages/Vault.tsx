@@ -21,6 +21,7 @@ import {
   type VaultCurator,
   type VaultStrategy,
 } from '../components/protocol'
+import { commitmentDetailPath } from '../lib/arbitrationRoutes'
 import { getBlockExplorer } from '../lib/blockExplorer'
 import { CommitmentsTable } from '../components/commitment/CommitmentsTable'
 import { DepositWizard } from '../components/vault/DepositWizard'
@@ -32,7 +33,7 @@ import { VaultCoverageCard } from '../components/vault/VaultCoverageCard'
 import { VaultApyChart } from '../components/vault/VaultApyChart'
 import { VaultStrategyRisk } from '../components/vault/VaultStrategyRisk'
 import { VaultTvlChart } from '../components/vault/VaultTvlChart'
-import { getContractAddresses } from '../config/contracts'
+import { getContractAddresses, getVaultDescription } from '../config/contracts'
 import { useAssetPrices } from '../hooks/useAssetPrices'
 import { useForfeitLedger } from '../hooks/useForfeitLedger'
 import { useVaultActivity } from '../hooks/useVaultActivity'
@@ -121,7 +122,7 @@ export default function Vault() {
   const navigate = useNavigate()
   // Every row here is a commitment (proposals are filtered out above), so the
   // click handler always deep-links to the shareable per-commitment detail page.
-  const openCommitmentRow = (row: UnifiedRow) => navigate(`/app/commitments/${row.id.toString()}`)
+  const openCommitmentRow = (row: UnifiedRow) => navigate(commitmentDetailPath(row.id))
   const ledger = useForfeitLedger({ vaultAddress })
   const vaultMetadata = useVaultMetadata(vaultAddress)
   const curator = readCurator(vaultMetadata.content)
@@ -175,7 +176,7 @@ export default function Vault() {
   const heroName = metaName ?? descriptor?.name ?? `${symbol} Vault`
   const description =
     metaDescription ??
-    descriptor?.description ??
+    getVaultDescription(vaultAddress) ??
     'Yield-bearing ERC-4626 vault. Shares stay liquid in your wallet; deposit them into the manager to back commitments. Vault exits are instant.'
 
   // Pause state is signaled by the deposit/withdraw badges + the Notice
@@ -394,7 +395,7 @@ export default function Vault() {
               <div className="ds-stack ds-stack-2">
                 <header className="ds-section-header">
                   <h3 className="ds-section-title">TVL</h3>
-                  <span className="ds-section-eyebrow">snapshots every 5m</span>
+                  <span className="ds-section-eyebrow">last 30 days</span>
                 </header>
                 <VaultTvlChart
                   vaultAddress={vaultAddress}

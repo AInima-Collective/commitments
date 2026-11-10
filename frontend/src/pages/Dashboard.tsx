@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { type Abi, type Address, type Hex } from "viem";
-import { useAccount, useChainId, useReadContract, useReadContracts } from "wagmi";
+import { type Abi, type Address } from "viem";
+import { useAccount, useChainId, useReadContracts } from "wagmi";
 import { ClaimableYieldPanel } from "../components/commitment/ClaimableYieldPanel";
 import { CommitmentsTable } from "../components/commitment/CommitmentsTable";
 import { type CommitmentsResolveContext } from "../components/commitment/commitmentCells";
@@ -23,6 +23,7 @@ import { useCommitmentLabelContext } from "../hooks/useCommitmentLabelContext";
 import { commitmentLabel, type CommitmentLabelContext } from "../lib/commitmentLabel";
 import {
   AddressDisplay,
+  Button,
   EmptyState,
   FilterBar,
   MediaRow,
@@ -35,23 +36,18 @@ import {
   useToasts,
   type SectionNavItem,
 } from "../components/ui";
-import {
-  getBackingOptions,
-  getContractAddresses,
-  getVaultDescriptor,
-  getVaultRegistry,
-  type BackingOption,
-} from "../config/contracts";
-import { commitmentManagerAbi, commitmentsVaultAbi } from "../generated";
+import { getBackingOptions, getContractAddresses, type BackingOption } from "../config/contracts";
+import { commitmentManagerAbi } from "../generated";
 import { useAccountActivity } from "../hooks/useAccountActivity";
 import { useAssetPrices, type PriceEntry } from "../hooks/useAssetPrices";
-import { useClaimableUsd } from "../hooks/useClaimableUsd";
+import { useClaimableUsd, type AssetAmount } from "../hooks/useClaimableUsd";
 import { useClaimableYield, type ClaimableYieldEntry } from "../hooks/useClaimableYield";
 import { useClaimAllQueue } from "../hooks/useClaimAllQueue";
 import { useClaimAllPremium } from "../hooks/useClaimAllPremium";
 import { useLedgerPositions } from "../hooks/useLedgerPositions";
 import { useMyMutualLosses, useMyMutualPremium } from "../hooks/useMyMemberships";
 import { useTokenMeta, useTokenMetaMap } from "../hooks/useTokenMeta";
+import { useVaults } from "../hooks/useVaults";
 import { POLL } from "../hooks/polling";
 import { commitmentDetailPath } from "../lib/arbitrationRoutes";
 import {
@@ -76,23 +72,6 @@ import {
 import { bigintToUsd } from "../lib/format";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-const EMPTY_CLAIM_DATA = "0x" as Hex;
-
-// Per-(backing token) priced snapshot reported up by AssetRow → Dashboard. The
-// `*Priced` quantities are denominated in `priceSymbol`'s units (`priceDecimals`
-// places): for a raw ERC-20 they equal the token amounts; for a vault share they
-// are the convertToAssets-valued underlying. The PortfolioHero USD aggregator
-// multiplies each by that asset's USD price.
-interface AssetSnapshot {
-  symbol: string;
-  decimals: number;
-  priceSymbol: string;
-  priceDecimals: number;
-  totalPriced: bigint;
-  freePriced: bigint;
-  encumberedPriced: bigint;
-}
-
 interface TokenLedger {
   free: bigint;
   encumbered: bigint;
@@ -104,7 +83,7 @@ export default function Dashboard() {
   const viewAddress = useViewAddress();
   const { isConnected, address: connectedAddress } = useAccount();
   const { commitmentManager: managerAddress, commitmentsVault: vaultAddress } = getContractAddresses(chainId);
-  const vaults = useMemo(() => getVaultRegistry(chainId), [chainId]);
+  const { vaults } = useVaults();
   const position = useVaultPosition({ vaultAddress, viewAddress });
   const { push } = useToasts();
 
@@ -173,7 +152,7 @@ export default function Dashboard() {
   // share is one token among others. Candidate tokens are the union of the
   // configured backing options and any token the indexer reports an encumbered
   // position in (forward-compat for arbitrary ERC-20/4626 backing).
-  const backingOptions = useMemo(() => getBackingOptions(chainId), [chainId]);
+  const backingOptions = useMemo(() => getBackingOptions(chainId, vaults), [chainId, vaults]);
   const { positions: indexedPositions, refetch: refetchLedgerPositions } = useLedgerPositions({
     address: viewAddress,
   });
@@ -287,85 +266,6 @@ export default function Dashboard() {
     accountActivity.refetch();
   }, [refetch, position, refetchLedger, refetchLedgerPositions, vaultActivity, refetchClaimable, accountActivity]);
 
-  // ── Per-token snapshots — lifted up from AssetRow so the hero can compute a
-  //    single USD figure across tokens of different decimals/underlyings. ─────
-  const [assetSnapshots, setAssetSnapshots] = useState<Record<string, AssetSnapshot>>({});
-  const reportAssetSnapshot = useCallback((token: string, snap: AssetSnapshot) => {
-    const key = token.toLowerCase();
-    setAssetSnapshots((prev) => {
-      const existing = prev[key];
-      if (
-        existing &&
-        existing.symbol === snap.symbol &&
-        existing.decimals === snap.decimals &&
-        existing.priceSymbol === snap.priceSymbol &&
-        existing.priceDecimals === snap.priceDecimals &&
-        existing.totalPriced === snap.totalPriced &&
-        existing.freePriced === snap.freePriced &&
-        existing.encumberedPriced === snap.encumberedPriced
-      ) {
-        return prev;
-      }
-      return { ...prev, [key]: snap };
-    });
-  }, []);
-
-  // ── USD prices via the indexer's /prices endpoint ───────────────────────
-  // Seed with the vault-registry asset symbols (so prices load before the
-  // on-chain symbol reads resolve), then fold in every priced snapshot symbol.
-  const requestedSymbols = useMemo(() => {
-    const set = new Set<string>();
-    for (const v of vaults) if (v.assetSymbol) set.add(v.assetSymbol);
-    for (const snap of Object.values(assetSnapshots)) if (snap.priceSymbol) set.add(snap.priceSymbol);
-    return [...set];
-  }, [vaults, assetSnapshots]);
-  const { getPrice, indexerOffline: pricesIndexerOffline } = useAssetPrices({
-    symbols: requestedSymbols,
-  });
-
-  // ── USD aggregates ──────────────────────────────────────────────────────
-  // Sum each token's priced quantity × that asset's USD price. Returns null for
-  // a field if any visible position is in an asset whose price isn't available —
-  // partial pricing renders as "PRICE UNAVAILABLE" rather than a misleadingly
-  // small number. Snapshots not yet reported (reads in flight) are skipped
-  // WITHOUT flagging missing, so loading doesn't masquerade as unavailable.
-  const portfolioUsd = useMemo(() => {
-    let total = 0n;
-    let free = 0n;
-    let encumbered = 0n;
-    let priceMissing = false;
-    for (const o of heldCandidates) {
-      const snap = assetSnapshots[o.token.toLowerCase()];
-      if (!snap || snap.totalPriced === 0n) continue;
-      const price = getPrice(snap.priceSymbol);
-      if (!price) {
-        priceMissing = true;
-        continue;
-      }
-      const totalUsd = bigintToUsd(snap.totalPriced, snap.priceDecimals, price.usd);
-      const freeUsd = bigintToUsd(snap.freePriced, snap.priceDecimals, price.usd);
-      const encUsd = bigintToUsd(snap.encumberedPriced, snap.priceDecimals, price.usd);
-      if (totalUsd === null || freeUsd === null || encUsd === null) {
-        priceMissing = true;
-        continue;
-      }
-      total += totalUsd;
-      free += freeUsd;
-      encumbered += encUsd;
-    }
-    return {
-      total: priceMissing ? null : total,
-      free: priceMissing ? null : free,
-      encumbered: priceMissing ? null : encumbered,
-    };
-  }, [heldCandidates, assetSnapshots, getPrice]);
-
-  // Token-aware USD valuation for the claimable-yield panel. Each entry can be
-  // backed by a different token (raw ERC-20 or vault share), so the panel
-  // headline must sum per-row USD — never a raw cross-decimal share sum. The
-  // hook owns its own per-token pricing (share→asset conversion + price feed).
-  const { usdFor: claimableUsdFor } = useClaimableUsd(claimableEntries);
-
   // ── Mutual yield (premium) + losses, folded into the portfolio hero ───────
   // Earn-side premium and accrued markdown across the viewer's mutual
   // memberships, lifted from the (now-removed) Yield & Losses section so the
@@ -381,36 +281,80 @@ export default function Dashboard() {
     refetch: refetchPremium,
   } = useMyMutualPremium({ managerAddress, commitments: memberCommitments });
 
-  // Shape loss/premium tokens as claimable entries so useClaimableUsd can value
-  // them (only token/vault/amount matter to it).
-  const lossPricingEntries = useMemo<ClaimableYieldEntry[]>(
-    () =>
-      lossEntries.map((e) => ({
-        commitmentId: e.commitmentId,
-        committer: ZERO_ADDRESS,
-        amount: e.owed,
-        token: e.token,
-        vault: e.vault,
-        strategy: ZERO_ADDRESS,
-        claimData: EMPTY_CLAIM_DATA,
-      })),
-    [lossEntries],
+  // One valuation for every token on the page: held backing, claimable yield,
+  // premium and losses. A vault share is restated in its underlying asset
+  // (share → asset conversion) and priced by that asset's symbol.
+  const valuedTokens = useMemo(
+    () => [
+      ...heldCandidates.map((o) => ({ token: o.token, vault: o.isVaultShare ? o.token : undefined })),
+      ...claimableEntries,
+      ...lossEntries,
+      ...premiumEntries,
+    ],
+    [heldCandidates, claimableEntries, lossEntries, premiumEntries],
   );
-  const { usdFor: lossUsdFor } = useClaimableUsd(lossPricingEntries);
-  const premiumPricingEntries = useMemo<ClaimableYieldEntry[]>(
-    () =>
-      premiumEntries.map((e) => ({
-        commitmentId: e.commitmentId,
-        committer: ZERO_ADDRESS,
-        amount: e.claimable,
-        token: e.token,
-        vault: e.vault,
-        strategy: ZERO_ADDRESS,
-        claimData: EMPTY_CLAIM_DATA,
-      })),
-    [premiumEntries],
-  );
-  const { usdFor: premiumUsdFor } = useClaimableUsd(premiumPricingEntries);
+  const { usdFor, inAsset } = useClaimableUsd(valuedTokens);
+  // Each held token's ledger restated in its priced asset; absent while the
+  // share rate is in flight.
+  const heldInAsset = useMemo(() => {
+    const map = new Map<string, { total: AssetAmount; free: bigint }>();
+    for (const o of heldCandidates) {
+      const key = o.token.toLowerCase();
+      const ledger = ledgerByToken.get(key);
+      const total = ledger && inAsset(o.token, ledger.free + ledger.encumbered);
+      if (ledger && total) map.set(key, { total, free: inAsset(o.token, ledger.free)?.amount ?? 0n });
+    }
+    return map;
+  }, [heldCandidates, ledgerByToken, inAsset]);
+
+  // ── USD prices via the indexer's /prices endpoint ───────────────────────
+  // Seed with the vault asset symbols (so prices load before the on-chain
+  // symbol reads resolve), then fold in every held asset's priced symbol.
+  const requestedSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of vaults) if (v.assetSymbol) set.add(v.assetSymbol);
+    for (const { total } of heldInAsset.values()) set.add(total.symbol);
+    return [...set];
+  }, [vaults, heldInAsset]);
+  const { getPrice, indexerOffline: pricesIndexerOffline } = useAssetPrices({
+    symbols: requestedSymbols,
+  });
+
+  // ── USD aggregates ──────────────────────────────────────────────────────
+  // Sum each token's priced quantity × that asset's USD price. Returns null for
+  // a field if any visible position is in an asset whose price isn't available —
+  // partial pricing renders as "PRICE UNAVAILABLE" rather than a misleadingly
+  // small number. Snapshots not yet reported (reads in flight) are skipped
+  // WITHOUT flagging missing, so loading doesn't masquerade as unavailable.
+  const portfolioUsd = useMemo(() => {
+    let total = 0n;
+    let free = 0n;
+    let encumbered = 0n;
+    let priceMissing = false;
+    for (const { total: t, free: f } of heldInAsset.values()) {
+      if (t.amount === 0n) continue;
+      const price = getPrice(t.symbol);
+      if (!price) {
+        priceMissing = true;
+        continue;
+      }
+      const totalUsd = bigintToUsd(t.amount, t.decimals, price.usd);
+      const freeUsd = bigintToUsd(f, t.decimals, price.usd);
+      const encUsd = bigintToUsd(t.amount - f, t.decimals, price.usd);
+      if (totalUsd === null || freeUsd === null || encUsd === null) {
+        priceMissing = true;
+        continue;
+      }
+      total += totalUsd;
+      free += freeUsd;
+      encumbered += encUsd;
+    }
+    return {
+      total: priceMissing ? null : total,
+      free: priceMissing ? null : free,
+      encumbered: priceMissing ? null : encumbered,
+    };
+  }, [heldInAsset, getPrice]);
 
   // Combined claimable yield = strategy yield + underwriting premium, summed in
   // USD across every backing token. sumUsd degrades the whole headline to null
@@ -419,14 +363,14 @@ export default function Dashboard() {
   const claimableUsd = useMemo(
     () =>
       sumUsd([
-        ...claimableEntries.map((e) => claimableUsdFor(e.token, e.amount)),
-        ...[...premiumByToken].map(([token, amt]) => premiumUsdFor(token, amt)),
+        ...claimableEntries.map((e) => usdFor(e.token, e.amount)),
+        ...[...premiumByToken].map(([token, amt]) => usdFor(token, amt)),
       ]),
-    [claimableEntries, claimableUsdFor, premiumByToken, premiumUsdFor],
+    [claimableEntries, premiumByToken, usdFor],
   );
   const lossesUsd = useMemo(
-    () => sumUsd([...lossByToken].map(([token, owed]) => lossUsdFor(token, owed))),
-    [lossByToken, lossUsdFor],
+    () => sumUsd([...lossByToken].map(([token, owed]) => usdFor(token, owed))),
+    [lossByToken, usdFor],
   );
   // Member commitments with a non-zero claimable premium balance — the ids the
   // premium queue claims as part of the combined "Claim yield" action.
@@ -438,14 +382,11 @@ export default function Dashboard() {
   // Tag the headline with the price source when any value came from the
   // fallback table — the user knows the number isn't a live feed.
   const priceFallbackInUse = useMemo(() => {
-    for (const o of heldCandidates) {
-      const snap = assetSnapshots[o.token.toLowerCase()];
-      if (!snap || snap.totalPriced === 0n) continue;
-      const price = getPrice(snap.priceSymbol);
-      if (price?.source === "fallback") return true;
+    for (const { total } of heldInAsset.values()) {
+      if (total.amount > 0n && getPrice(total.symbol)?.source === "fallback") return true;
     }
     return false;
-  }, [heldCandidates, assetSnapshots, getPrice]);
+  }, [heldInAsset, getPrice]);
 
   // ── Claim-all queue ─────────────────────────────────────────────────────
   const markClaimed = useCallback((commitmentId: bigint) => {
@@ -523,10 +464,10 @@ export default function Dashboard() {
   const isOwnDashboard =
     !!connectedAddress && !!viewAddress && viewAddress.toLowerCase() === connectedAddress.toLowerCase();
 
-  // Pricing facts for the allocation Sankey. The per-asset snapshots already
-  // carry the holding valued in the PRICED asset's units (for a vault share:
-  // the underlying, via convertToAssets), so pairing each with its raw ledger
-  // total gives the diagram an exact conversion without a further chain read.
+  // Pricing facts for the allocation Sankey. The held totals are already
+  // valued in the PRICED asset's units (for a vault share: the underlying), so
+  // pairing each with its raw ledger total gives the diagram an exact
+  // conversion without a further chain read.
   // Without it the Sankey priced `cvUSDC` by its own symbol, found no quote,
   // and fell back to raw token units — which is what made it disclaim that its
   // widths were not comparable.
@@ -536,19 +477,19 @@ export default function Dashboard() {
       { priceSymbol: string; priceDecimals: number; pricedTotal: bigint; rawTotal: bigint }
     >();
     for (const [token, ledger] of ledgerByToken) {
-      const snap = assetSnapshots[token];
-      if (!snap) continue;
+      const held = heldInAsset.get(token);
+      if (!held) continue;
       const rawTotal = ledger.free + ledger.encumbered;
       if (rawTotal === 0n) continue;
       map.set(token, {
-        priceSymbol: snap.priceSymbol,
-        priceDecimals: snap.priceDecimals,
-        pricedTotal: snap.totalPriced,
+        priceSymbol: held.total.symbol,
+        priceDecimals: held.total.decimals,
+        pricedTotal: held.total.amount,
         rawTotal,
       });
     }
     return map;
-  }, [ledgerByToken, assetSnapshots]);
+  }, [ledgerByToken, heldInAsset]);
 
   // ── Section: needs attention ────────────────────────────────────────────
   const pending = useMemo(() => rows.filter((r) => r.status === "PENDING" || r.status === "FORFEIT_PENDING"), [rows]);
@@ -758,9 +699,8 @@ export default function Dashboard() {
         title="Dashboard"
         lead="Your window into the world of commitments."
         actions={
-          <button
-            type="button"
-            className="ds-btn ds-btn--primary"
+          <Button
+            variant="primary"
             onClick={() => setCreateOpen(true)}
             // `isOwnDashboard`, not `isConnected`: while viewing someone
             // else's address a commitment created here would be the visitor's
@@ -775,7 +715,7 @@ export default function Dashboard() {
             }
           >
             Create commitment
-          </button>
+          </Button>
         }
       />
       <SectionNav items={navItems} aria-label="Dashboard sections" />
@@ -817,14 +757,9 @@ export default function Dashboard() {
             />
           }
           primaryAction={
-            <button
-              type="button"
-              className="ds-btn ds-btn--sm"
-              onClick={() => openDeposit()}
-              disabled={!isOwnDashboard || !managerAddress}
-            >
+            <Button size="sm" onClick={() => openDeposit()} disabled={!isOwnDashboard || !managerAddress}>
               Deposit →
-            </button>
+            </Button>
           }
           claimAllAction={
             claimableEntries.length > 0 || claimablePremiumIds.length > 0
@@ -849,7 +784,7 @@ export default function Dashboard() {
         <YourAssets
           candidates={heldCandidates}
           ledgerByToken={ledgerByToken}
-          reportSnapshot={reportAssetSnapshot}
+          heldInAsset={heldInAsset}
           getPrice={getPrice}
           onDeposit={openDeposit}
           onWithdraw={openWithdraw}
@@ -896,7 +831,7 @@ export default function Dashboard() {
             managerAddress={managerAddress}
             connectedAddress={connectedAddress}
             viewAddress={viewAddress}
-            usdFor={claimableUsdFor}
+            usdFor={usdFor}
             isConnected={isConnected}
             isLoading={claimableLoading}
             error={claimableError}
@@ -1053,7 +988,7 @@ export default function Dashboard() {
 function YourAssets({
   candidates,
   ledgerByToken,
-  reportSnapshot,
+  heldInAsset,
   getPrice,
   onDeposit,
   onWithdraw,
@@ -1061,7 +996,7 @@ function YourAssets({
 }: {
   candidates: BackingOption[];
   ledgerByToken: Map<string, TokenLedger>;
-  reportSnapshot: (token: string, snap: AssetSnapshot) => void;
+  heldInAsset: Map<string, { total: AssetAmount }>;
   getPrice: (symbol: string | undefined) => PriceEntry | undefined;
   onDeposit: (option?: BackingOption) => void;
   onWithdraw: (option: BackingOption) => void;
@@ -1072,9 +1007,9 @@ function YourAssets({
       <div className="ds-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 className="ds-section-title">Your assets</h2>
         {canDeposit && (
-          <button type="button" className="ds-btn ds-btn--sm ds-btn--ghost" onClick={() => onDeposit()}>
+          <Button size="sm" variant="ghost" onClick={() => onDeposit()}>
             Add assets →
-          </button>
+          </Button>
         )}
       </div>
       {candidates.length === 0 ? (
@@ -1083,9 +1018,9 @@ function YourAssets({
           description="Deposit a vault share or any supported ERC-20 into the manager to back commitments. Free balance backs new commitments and receives forfeit proceeds."
           action={
             canDeposit ? (
-              <button type="button" className="ds-btn ds-btn--sm" onClick={() => onDeposit()}>
+              <Button size="sm" onClick={() => onDeposit()}>
                 Add assets →
-              </button>
+              </Button>
             ) : undefined
           }
         />
@@ -1114,7 +1049,7 @@ function YourAssets({
                     option={option}
                     free={ledger.free}
                     encumbered={ledger.encumbered}
-                    onSnapshot={reportSnapshot}
+                    priced={heldInAsset.get(option.token.toLowerCase())?.total}
                     getPrice={getPrice}
                     onDeposit={onDeposit}
                     onWithdraw={onWithdraw}
@@ -1134,7 +1069,7 @@ function AssetRow({
   option,
   free,
   encumbered,
-  onSnapshot,
+  priced,
   getPrice,
   onDeposit,
   onWithdraw,
@@ -1143,18 +1078,15 @@ function AssetRow({
   option: BackingOption;
   free: bigint;
   encumbered: bigint;
-  onSnapshot: (token: string, snap: AssetSnapshot) => void;
+  /** The position in the asset it is priced in (a vault share's underlying). */
+  priced: AssetAmount | undefined;
   getPrice: (symbol: string | undefined) => PriceEntry | undefined;
   onDeposit: (option?: BackingOption) => void;
   onWithdraw: (option: BackingOption) => void;
   canDeposit: boolean;
 }) {
   const navigate = useNavigate();
-  const chainId = useChainId();
-  const descriptor = useMemo(
-    () => (option.isVaultShare ? getVaultDescriptor(chainId, option.token) : undefined),
-    [option.isVaultShare, option.token, chainId],
-  );
+  const descriptor = useVaults().vaultFor(option.isVaultShare ? option.token : undefined);
 
   // Backing-token metadata (the share or raw ERC-20 the position is held in).
   const tokenMeta = useTokenMeta(option.token);
@@ -1162,58 +1094,11 @@ function AssetRow({
   const symbol = tokenMeta.symbol;
   const total = free + encumbered;
 
-  // Vault-share underlying valuation: read the vault's asset + convertToAssets
-  // so we can price the position in the underlying's USD feed. Raw ERC-20s price
-  // directly by their own symbol (factor 1).
-  const { data: assetAddress } = useReadContract({
-    abi: commitmentsVaultAbi,
-    functionName: "asset",
-    address: option.token,
-    query: { enabled: option.isVaultShare },
-  });
-  const assetMeta = useTokenMeta(option.isVaultShare ? (assetAddress as Address | undefined) : undefined);
-  const { data: underlyingTotalRaw } = useReadContract({
-    abi: commitmentsVaultAbi,
-    functionName: "convertToAssets",
-    address: option.token,
-    args: total > 0n ? [total] : undefined,
-    query: { enabled: option.isVaultShare && total > 0n, refetchInterval: POLL.slow },
-  });
-  const underlyingTotal = (underlyingTotalRaw as bigint | undefined) ?? 0n;
-
-  // Prefer the registry's asset symbol (known synchronously) over the in-flight
-  // on-chain read so pricing seeds correctly before the multicall resolves.
-  const priceSymbol = option.isVaultShare
-    ? assetMeta.symbol !== "TOKEN"
-      ? assetMeta.symbol
-      : (descriptor?.assetSymbol ?? assetMeta.symbol)
-    : symbol;
-  const priceDecimals = option.isVaultShare ? assetMeta.decimals : decimals;
-  const totalPriced = option.isVaultShare ? underlyingTotal : total;
-  const freePriced = option.isVaultShare ? (total > 0n ? (free * underlyingTotal) / total : 0n) : free;
-  const encumberedPriced = option.isVaultShare ? totalPriced - freePriced : encumbered;
-
-  useEffect(() => {
-    onSnapshot(option.token, {
-      symbol,
-      decimals,
-      priceSymbol,
-      priceDecimals,
-      totalPriced,
-      freePriced,
-      encumberedPriced,
-    });
-  }, [
-    option.token,
-    symbol,
-    decimals,
-    priceSymbol,
-    priceDecimals,
-    totalPriced,
-    freePriced,
-    encumberedPriced,
-    onSnapshot,
-  ]);
+  // Prefer the vault's asset symbol (known synchronously) while the valuation
+  // is still in flight, so the icon resolves before the share rate lands.
+  const priceSymbol = priced?.symbol ?? descriptor?.assetSymbol ?? symbol;
+  const priceDecimals = priced?.decimals ?? decimals;
+  const totalPriced = priced?.amount ?? 0n;
 
   const usdPosition = useMemo(() => {
     const price = getPrice(priceSymbol);
@@ -1281,27 +1166,27 @@ function AssetRow({
         {canDeposit && (
           <span className="ds-row ds-row-2" style={{ justifyContent: "flex-end" }}>
             {free > 0n && (
-              <button
-                type="button"
-                className="ds-btn ds-btn--sm ds-btn--ghost"
+              <Button
+                size="sm"
+                variant="ghost"
                 onClick={(e) => {
                   e.stopPropagation();
                   onWithdraw(option);
                 }}
               >
                 Withdraw
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
-              className="ds-btn ds-btn--sm ds-btn--ghost"
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={(e) => {
                 e.stopPropagation();
                 onDeposit(option);
               }}
             >
               {total > 0n ? "Add" : "Deposit"}
-            </button>
+            </Button>
           </span>
         )}
       </td>
@@ -1349,9 +1234,9 @@ function YourCommitments({
     <section className="ds-section">
       <div className="ds-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 className="ds-section-title">Your commitments</h2>
-        <Link to="/app/explorer" className="ds-btn ds-btn--sm ds-btn--ghost">
+        <Button as={Link} to="/app/explorer" size="sm" variant="ghost">
           open full view →
-        </Link>
+        </Button>
       </div>
       <FilterBar
         size="sm"
@@ -1530,9 +1415,9 @@ function WelcomeCard({ assetSymbol }: { assetSymbol: string | undefined }) {
               </span>
               <span className="ds-text-sm ds-subtle">{step.body}</span>
               {step.cta && (
-                <Link to={step.cta.to} className="ds-btn ds-btn--sm" style={{ alignSelf: "flex-start" }}>
+                <Button as={Link} to={step.cta.to} size="sm" style={{ alignSelf: "flex-start" }}>
                   {step.cta.label} →
-                </Link>
+                </Button>
               )}
             </div>
           </li>

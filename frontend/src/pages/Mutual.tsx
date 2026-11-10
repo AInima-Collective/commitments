@@ -23,7 +23,6 @@ import {
   PageHeader,
   PendingLossNotice,
   MutualStatusBadge,
-  type MutualLifecycle,
 } from '../components/protocol'
 import { ResolveActionRow } from '../components/commitment/actions/ResolveActionRow'
 import { BuyCoverPanel } from '../components/mutual/BuyCoverPanel'
@@ -46,7 +45,7 @@ import {
   type ResolveActionKind,
 } from '../utils/resolveActions'
 import { useClaimPayout } from '../hooks/useClaimPayout'
-import { useMutual } from '../hooks/useMutual'
+import { useMutual, type MutualHeader } from '../hooks/useMutual'
 import { useMutualPremium } from '../hooks/useMutualPremium'
 import { useMutualRoster } from '../hooks/useMutualRoster'
 import { useMutualCover } from '../hooks/useMutualCover'
@@ -56,12 +55,14 @@ import { useLedgerBalance } from '../hooks/useLedgerBalance'
 import { useMutualListings } from '../hooks/useMutualListings'
 import { useMutuals } from '../hooks/useMutuals'
 import { useTokenMetaMap } from '../hooks/useTokenMeta'
-import { useNowSeconds } from '../hooks/useNow'
+import { useDisplayNow } from '../hooks/useDisplayNow'
 import { useOperatorNames } from '../hooks/useOperatorNames'
 import { POLL, refetchUntil } from '../hooks/polling'
 import { useWriteAction } from '../hooks/useWriteAction'
 import { useViewAddress } from '../hooks/useViewAddress'
+import { commitmentDetailPath } from '../lib/arbitrationRoutes'
 import { formatDuration, formatTokenAmount } from '../lib/format'
+import { buildJoinMutualParams, mutualLifecycle } from '../lib/mutual'
 import { parsePerilURI, perilLabel } from '../lib/peril'
 
 /** Which action modal is open, if any. */
@@ -78,8 +79,6 @@ const MUTUAL_ACTION_KINDS = new Set<ResolveActionKind>([
   'request-mutual-exit',
   'release-mutual-member',
 ])
-
-const EMPTY_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000' as const
 
 /** Max live `pendingMemberLoss` reads verifying the roster's owed list. */
 const LIVE_OWED_READ_CAP = 40
@@ -218,8 +217,6 @@ export default function Mutual() {
   const numeraire = mutual?.numeraire ?? listing?.numeraire
   const { metaFor } = useTokenMetaMap([numeraire])
   const meta = metaFor(numeraire)
-
-  const nowSec = useNowSeconds()
 
   // Viewer's free numeraire balance in the manager ledger — bounds the join.
   const ledger = useLedgerBalance({ managerAddress, token: numeraire, user: viewAddress })
@@ -418,13 +415,11 @@ export default function Mutual() {
   // their loss share after an executed loss stay `active` (the pool keeps covering) —
   // `someOwed` drives a footnote instead of a distinct badge.
   const someOwed = rosterMembers.some((m) => m.owedUnits > 0n)
-  const status: MutualLifecycle = mutual?.terminal
-    ? 'terminated'
-    : hasPendingLoss
-      ? 'loss-pending'
-      : mutual?.active
-        ? 'active'
-        : 'pending'
+  const status = mutualLifecycle({
+    terminal: mutual?.terminal ?? false,
+    active: mutual?.active ?? false,
+    hasPendingLoss,
+  })
 
   function onClaimPremium(commitmentId: bigint) {
     if (!managerAddress) return
@@ -460,19 +455,7 @@ export default function Mutual() {
         functionName: 'joinMutual',
         args: [
           mutualId!,
-          {
-            arbiter: mutual.arbiter,
-            counterparty: mutual.beneficiary,
-            token: numeraire,
-            adapter: erc20Adapter,
-            amount,
-            maxPenaltyBps: 10_000,
-            challengeWindow: mutual.challengeWindow,
-            expiresAt: listing?.termEnd ?? 0n,
-            strategies: [],
-            metadataURI: '',
-            metadataHash: EMPTY_HASH,
-          },
+          buildJoinMutualParams({ mutual, numeraire, adapter: erc20Adapter, amount, termEnd: listing?.termEnd }),
         ],
       },
       {
@@ -481,8 +464,6 @@ export default function Mutual() {
     )
   }
 
-  const challengeElapsed = proposal ? Number(nowSec - proposal.initiatedAt) : 0
-  const challengeTotal = mutual ? Number(mutual.challengeWindow) : 0
   const declared = proposal?.lossNumeraire ?? 0n
 
   // Mutual-wide settlement aggregates. "Settled" means a member that HAD
@@ -577,12 +558,7 @@ export default function Mutual() {
                   was proposed by <OperatorIdentity address={proposal.proposer} size="sm" hideAddress />. New
                   commitments and cover are paused until it executes or is cancelled.
                 </span>
-                <Countdown
-                  label="challenge window"
-                  elapsed={challengeElapsed}
-                  total={challengeTotal}
-                  tone={challengeElapsed >= challengeTotal ? 'success' : 'warn'}
-                />
+                <ChallengeCountdown initiatedAt={proposal.initiatedAt} window={mutual.challengeWindow} />
               </div>
             </Notice>
           )}
@@ -632,7 +608,6 @@ export default function Mutual() {
               claimablePremium={claimablePremiumTotal}
               owed={owedTotal}
               coverHeld={myCover}
-              now={Number(nowSec)}
               decimals={meta.decimals}
               symbol={meta.symbol}
               onManage={() => openModal('manage')}
@@ -797,18 +772,14 @@ export default function Mutual() {
                         <StatBlock
                           label="premium pool"
                           value={
-                            <span title={formatTokenAmount(premium.stream.premiumPool, meta.decimals).full}>
-                              <TokenAmount amount={premium.stream.premiumPool} decimals={meta.decimals} symbol={meta.symbol} compact />
-                            </span>
+                            <TokenAmount amount={premium.stream.premiumPool} decimals={meta.decimals} symbol={meta.symbol} compact />
                           }
                           meta="unstreamed reserve"
                         />
                         <StatBlock
                           label="earned to date"
                           value={
-                            <span title={formatTokenAmount(premium.stream.bankedTotal, meta.decimals).full}>
-                              <TokenAmount amount={premium.stream.bankedTotal} decimals={meta.decimals} symbol={meta.symbol} compact />
-                            </span>
+                            <TokenAmount amount={premium.stream.bankedTotal} decimals={meta.decimals} symbol={meta.symbol} compact />
                           }
                           meta="lifetime premium to members"
                         />
@@ -1055,115 +1026,19 @@ export default function Mutual() {
                 {/* Exit / release lifecycle, per member. */}
                 <div className="ds-stack ds-stack-3">
                   <h4 className="ds-section-eyebrow">Exit</h4>
-                  {myMembers.map((m) => {
-                    // Release is open only while deallocationWindow <= elapsed < 2 * deallocationWindow
-                    // from the request; after that the request has lapsed and must be made again.
-                    const requested = m.unbondRequestedAt > 0n
-                    const windowOpensAt = m.unbondRequestedAt + mutual.deallocationWindow
-                    const windowClosesAt = windowOpensAt + mutual.deallocationWindow
-                    const lapsed = requested && nowSec >= windowClosesAt
-                    const exitRequested = requested && !lapsed
-                    const slashableWindow = Number(mutual.deallocationWindow)
-                    const slashableElapsed = exitRequested ? Number(nowSec - m.unbondRequestedAt) : 0
-                    const windowElapsed = exitRequested && nowSec >= windowOpensAt
-                    // Contract gate (INV-G5): release requires the member be settled
-                    // to the live Λ. If Λ moved since the member last settled, the
-                    // accrued slice must be settled first.
-                    const needsSettle = m.lossSnapshot !== mutual.cumulativeLoss
-                    // What release returns to your free balance: the live residual
-                    // (`amount_join − settledUnits`) less the loss share you must
-                    // still settle before release (`owedUnits`). When nothing is
-                    // owed this is just the residual. Clamp ≥ 0 against read skew.
-                    const expectedReturn =
-                      m.liveAmount > m.owedUnits ? m.liveAmount - m.owedUnits : 0n
-                    const memberActions = getAvailableActions({
-                      commitment: m.commitment,
-                      // Members can't have a forfeit/unbond in flight (exits run
-                      // through the mutual lifecycle) — pass empty contexts.
-                      forfeit: { state: 'NONE', initiatedAt: 0n, deadline: 0n },
-                      unbond: { unbondInitiatedAt: 0n, unbondingPeriod: 0n },
-                      pendingYield: 0n,
-                      viewerRole: deriveViewerRole(m.commitment, viewAddress),
-                      isConnected: Boolean(viewAddress),
-                      nowSec,
-                      mutual: {
-                        isMember: true,
-                        lossPending: hasPendingLoss,
-                        unsettled: needsSettle,
-                        owedUnits: m.owedUnits,
-                        // A lapsed request reads as no request: offer the request again, not release.
-                        exitRequestedAt: exitRequested ? m.unbondRequestedAt : 0n,
-                        deallocationWindow: mutual.deallocationWindow,
-                      },
-                    }).filter((a) => MUTUAL_ACTION_KINDS.has(a.kind))
-                    return (
-                      <div key={m.commitmentId.toString()} className="ds-stack ds-stack-2">
-                        <div className="ds-row ds-row-2" style={{ justifyContent: 'space-between' }}>
-                          <span className="ds-text-sm" style={{ fontWeight: 600 }}>
-                            Commitment #{m.commitmentId.toString()}
-                          </span>
-                          <Link
-                            className="ds-text-xs"
-                            to={`/app/commitments/${m.commitmentId.toString()}`}
-                          >
-                            full detail →
-                          </Link>
-                        </div>
-
-                        <PendingLossNotice
-                          owedUnits={m.owedUnits}
-                          decimals={meta.decimals}
-                          symbol={meta.symbol}
-                          exitRequested={exitRequested}
-                          slashableElapsed={slashableElapsed}
-                          slashableWindow={slashableWindow}
-                        />
-
-                        {exitRequested && (
-                          <span className="ds-text-xs ds-subtle">
-                            {windowElapsed
-                              ? `Exit window open — closes in ${formatDuration(Number(windowClosesAt - nowSec))}.`
-                              : `Exit window opens in ${formatDuration(Number(windowOpensAt - nowSec))} and stays open ${formatDuration(slashableWindow)}.`}
-                          </span>
-                        )}
-                        {lapsed && (
-                          <Notice tone="warn" size="sm" title="Exit request lapsed">
-                            The exit window closed {formatDuration(Number(nowSec - windowClosesAt))} ago without a
-                            release. Request exit again to open a new window.
-                          </Notice>
-                        )}
-
-                        {/* Window elapsed and releasable — preview what comes back. */}
-                        {exitRequested && windowElapsed && !hasPendingLoss && (
-                          <StatBlock
-                            label="expected return on exit"
-                            tone="accent"
-                            value={
-                              <TokenAmount amount={expectedReturn} decimals={meta.decimals} symbol={meta.symbol} />
-                            }
-                            meta={
-                              needsSettle
-                                ? 'estimate — after settling your accrued loss share; a new loss declared before you release would reduce it'
-                                : 'residual collateral returned to your free balance'
-                            }
-                          />
-                        )}
-
-                        {memberActions.map((action) => (
-                          <ResolveActionRow
-                            key={action.kind}
-                            action={action}
-                            commitment={m.commitment}
-                            managerAddress={managerAddress}
-                            decimals={meta.decimals}
-                            symbol={meta.symbol}
-                            owedLossUnits={m.owedUnits}
-                            onActed={onMemberActed}
-                          />
-                        ))}
-                      </div>
-                    )
-                  })}
+                  {myMembers.map((m) => (
+                    <MemberExit
+                      key={m.commitmentId.toString()}
+                      member={m}
+                      mutual={mutual}
+                      hasPendingLoss={hasPendingLoss}
+                      viewAddress={viewAddress}
+                      managerAddress={managerAddress}
+                      decimals={meta.decimals}
+                      symbol={meta.symbol}
+                      onActed={onMemberActed}
+                    />
+                  ))}
                 </div>
               </div>
             )}
@@ -1171,6 +1046,142 @@ export default function Mutual() {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * One of the viewer's memberships in the manage modal: its exit window and the
+ * member-lifecycle action cards. Owns the clock, so only an open modal ticks,
+ * and on anvil the gating follows the chain's time.
+ */
+function MemberExit({
+  member: m,
+  mutual,
+  hasPendingLoss,
+  viewAddress,
+  managerAddress,
+  decimals,
+  symbol,
+  onActed,
+}: {
+  member: MyMember
+  mutual: MutualHeader
+  hasPendingLoss: boolean
+  viewAddress: Address | undefined
+  managerAddress: Address
+  decimals: number
+  symbol: string
+  onActed: () => void
+}) {
+  const nowSec = BigInt(useDisplayNow())
+  // Release is open only while deallocationWindow <= elapsed < 2 * deallocationWindow
+  // from the request; after that the request has lapsed and must be made again.
+  const requested = m.unbondRequestedAt > 0n
+  const windowOpensAt = m.unbondRequestedAt + mutual.deallocationWindow
+  const windowClosesAt = windowOpensAt + mutual.deallocationWindow
+  const lapsed = requested && nowSec >= windowClosesAt
+  const exitRequested = requested && !lapsed
+  const slashableWindow = Number(mutual.deallocationWindow)
+  const slashableElapsed = exitRequested ? Number(nowSec - m.unbondRequestedAt) : 0
+  const windowElapsed = exitRequested && nowSec >= windowOpensAt
+  // Contract gate (INV-G5): release requires the member be settled
+  // to the live Λ. If Λ moved since the member last settled, the
+  // accrued slice must be settled first.
+  const needsSettle = m.lossSnapshot !== mutual.cumulativeLoss
+  // What release returns to your free balance: the live residual
+  // (`amount_join − settledUnits`) less the loss share you must
+  // still settle before release (`owedUnits`). When nothing is
+  // owed this is just the residual. Clamp ≥ 0 against read skew.
+  const expectedReturn = m.liveAmount > m.owedUnits ? m.liveAmount - m.owedUnits : 0n
+  const memberActions = getAvailableActions({
+    commitment: m.commitment,
+    // Members can't have a forfeit/unbond in flight (exits run
+    // through the mutual lifecycle) — pass empty contexts.
+    forfeit: { state: 'NONE', initiatedAt: 0n, deadline: 0n },
+    unbond: { unbondInitiatedAt: 0n, unbondingPeriod: 0n },
+    pendingYield: 0n,
+    viewerRole: deriveViewerRole(m.commitment, viewAddress),
+    isConnected: Boolean(viewAddress),
+    nowSec,
+    mutual: {
+      isMember: true,
+      lossPending: hasPendingLoss,
+      unsettled: needsSettle,
+      owedUnits: m.owedUnits,
+      // A lapsed request reads as no request: offer the request again, not release.
+      exitRequestedAt: exitRequested ? m.unbondRequestedAt : 0n,
+      deallocationWindow: mutual.deallocationWindow,
+    },
+  }).filter((a) => MUTUAL_ACTION_KINDS.has(a.kind))
+  return (
+    <div className="ds-stack ds-stack-2">
+      <div className="ds-row ds-row-2" style={{ justifyContent: 'space-between' }}>
+        <span className="ds-text-sm" style={{ fontWeight: 600 }}>
+          Commitment #{m.commitmentId.toString()}
+        </span>
+        <Link className="ds-text-xs" to={commitmentDetailPath(m.commitmentId)}>
+          full detail →
+        </Link>
+      </div>
+
+      <PendingLossNotice
+        owedUnits={m.owedUnits}
+        decimals={decimals}
+        symbol={symbol}
+        exitRequested={exitRequested}
+        slashableElapsed={slashableElapsed}
+        slashableWindow={slashableWindow}
+      />
+
+      {exitRequested && (
+        <span className="ds-text-xs ds-subtle">
+          {windowElapsed
+            ? `Exit window open — closes in ${formatDuration(Number(windowClosesAt - nowSec))}.`
+            : `Exit window opens in ${formatDuration(Number(windowOpensAt - nowSec))} and stays open ${formatDuration(slashableWindow)}.`}
+        </span>
+      )}
+      {lapsed && (
+        <Notice tone="warn" size="sm" title="Exit request lapsed">
+          The exit window closed {formatDuration(Number(nowSec - windowClosesAt))} ago without a
+          release. Request exit again to open a new window.
+        </Notice>
+      )}
+
+      {/* Window elapsed and releasable — preview what comes back. */}
+      {exitRequested && windowElapsed && !hasPendingLoss && (
+        <StatBlock
+          label="expected return on exit"
+          tone="accent"
+          value={<TokenAmount amount={expectedReturn} decimals={decimals} symbol={symbol} />}
+          meta={
+            needsSettle
+              ? 'estimate — after settling your accrued loss share; a new loss declared before you release would reduce it'
+              : 'residual collateral returned to your free balance'
+          }
+        />
+      )}
+
+      {memberActions.map((action) => (
+        <ResolveActionRow
+          key={action.kind}
+          action={action}
+          commitment={m.commitment}
+          managerAddress={managerAddress}
+          decimals={decimals}
+          symbol={symbol}
+          owedLossUnits={m.owedUnits}
+          onActed={onActed}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ChallengeCountdown({ initiatedAt, window }: { initiatedAt: bigint; window: bigint }) {
+  const elapsed = useDisplayNow() - Number(initiatedAt)
+  const total = Number(window)
+  return (
+    <Countdown label="challenge window" elapsed={elapsed} total={total} tone={elapsed >= total ? 'success' : 'warn'} />
   )
 }
 

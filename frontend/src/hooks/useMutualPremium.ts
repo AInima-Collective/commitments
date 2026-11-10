@@ -3,7 +3,7 @@ import { type Address } from 'viem'
 
 import { commitmentManagerAbi } from '../generated'
 import { premiumAprBps } from './useMutuals'
-import { useNowSeconds } from './useNow'
+import { useDisplayNowSelect } from './useDisplayNow'
 import { POLL } from './polling'
 
 /**
@@ -72,10 +72,6 @@ export function useMutualPremium({
   enabled,
 }: UseMutualPremiumParams): UseMutualPremiumReturn {
   const queryEnabled = !!managerAddress && mutualId !== undefined && enabled !== false
-  // useNowSeconds returns a bigint; the countdown math below is in plain
-  // numbers, so coerce once here to avoid mixing BigInt and Number.
-  const now = Number(useNowSeconds())
-
   const {
     data: stateRaw,
     isLoading: stateLoading,
@@ -107,7 +103,13 @@ export function useMutualPremium({
   const aprBps = stream ? premiumAprBps(stream.rewardRate, stream.activeCover) : undefined
 
   const periodFinish = stream ? Number(stream.periodFinish) : 0
-  const secondsRemaining = Math.max(0, periodFinish - now)
+  // On the chain clock (an anvil warp moves it), floored to the minute above
+  // 60 s: `formatDuration` shows no seconds there, so the caller re-renders
+  // once a minute rather than every second.
+  const secondsRemaining = useDisplayNowSelect((now) => {
+    const s = Math.max(0, periodFinish - now)
+    return s < 60 ? s : s - (s % 60)
+  })
   const isStreaming = !!stream && stream.rewardRate > 0n && secondsRemaining > 0
 
   return {

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { type Address, erc20Abi } from 'viem'
 import { useReadContracts } from 'wagmi'
 
-import { BalanceLine, Notice, StatBlock, TokenAmount, useToasts } from '../ui'
+import { BalanceLine, Button, Notice, StatBlock, TokenAmount, useToasts } from '../ui'
 import { useAmountInput } from '../../hooks/useAmountInput'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useManagerLedgerFlow } from '../../hooks/useManagerLedgerFlow'
@@ -172,14 +172,9 @@ export function BackingWithdrawForm({
         <Notice tone="danger" size="sm" title="EXCEEDS FREE BALANCE" />
       )}
 
-      <button
-        type="button"
-        className="ds-btn ds-btn--primary ds-btn--full"
-        onClick={handleWithdraw}
-        disabled={actionDisabled}
-      >
+      <Button variant="primary" fullWidth onClick={handleWithdraw} disabled={actionDisabled}>
         {inProgress ? 'WITHDRAWING…' : 'WITHDRAW'}
-      </button>
+      </Button>
     </div>
   )
 }

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { type Address, parseUnits } from 'viem'
-import { useReadContract, useWriteContract } from 'wagmi'
+import { useReadContract } from 'wagmi'
 import { commitmentsVaultAbi } from '../../generated'
 import { formatTokenAmount } from '../../lib/format'
-import { legibleWriteError } from '../../utils/contractErrors'
-import { BalanceLine, Notice, TokenAmount, useToasts } from '../ui'
+import { useWriteAction } from '../../hooks/useWriteAction'
+import { BalanceLine, Button, Notice, TokenAmount } from '../ui'
 
 interface WithdrawFormProps {
   vaultAddress: Address | undefined
@@ -42,8 +42,6 @@ export function WithdrawForm({
   const aDecimals = assetDecimals ?? 18
   const symbol = assetSymbol ?? 'TOKEN'
 
-  const { push } = useToasts()
-
   function handleInputChange(value: string) {
     setInputValue(value)
     if (!value) {
@@ -79,39 +77,20 @@ export function WithdrawForm({
     query: { enabled: previewEnabled },
   })
 
-  const { writeContract, isPending, isSuccess, isError, error, reset } = useWriteContract()
-
-  useEffect(() => {
-    if (isSuccess) {
-      const submittedShares = parsedShares ?? 0n
-      push({
-        tone: 'success',
-        title: 'WITHDRAWAL COMPLETE',
-        body: (
-          <>
-            Redeemed <TokenAmount amount={submittedShares} decimals={sDecimals} size="inline" /> shares.
-          </>
-        ),
-      })
+  const redeem = useWriteAction({
+    successTitle: 'WITHDRAWAL COMPLETE',
+    successBody: (
+      <>
+        Redeemed <TokenAmount amount={parsedShares ?? 0n} decimals={sDecimals} size="inline" /> shares.
+      </>
+    ),
+    onSuccess: () => {
       onWithdrawSuccess()
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine (post-tx form reset); see frontend/docs/eslint-disable-rationale.md §Pattern-1
       setInputValue('')
       setParsedShares(undefined)
-      reset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  useEffect(() => {
-    if (isError) {
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body: legibleWriteError(error),
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isError])
+    },
+  })
+  const isPending = redeem.isPending || redeem.isConfirming
 
   const actionDisabled =
     !isConnected ||
@@ -125,7 +104,7 @@ export function WithdrawForm({
   function handleAction() {
     if (!vaultAddress || !parsedShares || !userAddress) return
     // redeem(shares, receiver, owner) — burn the caller's shares, asset to wallet.
-    writeContract({
+    redeem.write({
       abi: commitmentsVaultAbi,
       address: vaultAddress,
       functionName: 'redeem',
@@ -185,14 +164,9 @@ export function WithdrawForm({
         <Notice tone="danger" size="sm" title="EXCEEDS YOUR SHARES" />
       )}
 
-      <button
-        type="button"
-        className="ds-btn ds-btn--primary ds-btn--full"
-        onClick={handleAction}
-        disabled={actionDisabled}
-      >
+      <Button variant="primary" fullWidth onClick={handleAction} disabled={actionDisabled}>
         REDEEM
-      </button>
+      </Button>
     </div>
   )
 }

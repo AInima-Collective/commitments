@@ -3,6 +3,7 @@ import { type Address } from 'viem'
 
 import {
   BalanceLine,
+  Button,
   Card,
   Notice,
   TokenAmount,
@@ -395,35 +396,20 @@ export function BackingFlow({
           </Notice>
         )}
 
-        <button
-          type="button"
-          className="ds-btn ds-btn--primary ds-btn--full"
-          onClick={handleAction}
-          disabled={actionDisabled}
-        >
+        <Button variant="primary" fullWidth onClick={handleAction} disabled={actionDisabled}>
           {actionLabel()}
-        </button>
+        </Button>
 
         {/* Phase navigation (vault-share only). */}
         {isVaultShare && phase === 'mint' && (
-          <button
-            type="button"
-            className="ds-btn ds-btn--sm ds-btn--ghost ds-btn--full"
-            onClick={skipToBack}
-            disabled={inProgress}
-          >
+          <Button size="sm" variant="ghost" fullWidth onClick={skipToBack} disabled={inProgress}>
             Skip — I already hold shares
-          </button>
+          </Button>
         )}
         {isVaultShare && phase === 'back' && (
-          <button
-            type="button"
-            className="ds-btn ds-btn--sm ds-btn--ghost ds-btn--full"
-            onClick={skipToMint}
-            disabled={inProgress}
-          >
+          <Button size="sm" variant="ghost" fullWidth onClick={skipToMint} disabled={inProgress}>
             ← Mint more shares first
-          </button>
+          </Button>
         )}
       </div>
     </Card>

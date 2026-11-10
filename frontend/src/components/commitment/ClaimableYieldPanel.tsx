@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
-import { useChainId } from 'wagmi'
 import {
   AddressDisplay,
+  Button,
   DataTable,
   Disclosure,
   EmptyState,
@@ -15,8 +15,9 @@ import {
 } from '../ui'
 import type { ClaimableYieldEntry } from '../../hooks/useClaimableYield'
 import { useTokenMetaMap } from '../../hooks/useTokenMeta'
+import { commitmentDetailPath } from '../../lib/arbitrationRoutes'
 import { claimableEntryKey, sumUsd } from '../../lib/claimableYield'
-import { getVaultDescriptor } from '../../config/contracts'
+import { useVaults } from '../../hooks/useVaults'
 import { ClaimYieldButton } from './ClaimYieldButton'
 
 interface ClaimableYieldPanelProps {
@@ -61,7 +62,7 @@ export function ClaimableYieldPanel({
   onClaimed,
   usdFor,
 }: ClaimableYieldPanelProps) {
-  const chainId = useChainId()
+  const { vaultFor } = useVaults()
 
   // v2: each entry's `amount` is denominated in its commitment's own backing
   // token. Resolve per-token decimals/symbol; the USD column stays the common
@@ -95,7 +96,7 @@ export function ClaimableYieldPanel({
         header: 'vault',
         width: '120px',
         render: (row) => {
-          const descriptor = getVaultDescriptor(chainId, row.vault)
+          const descriptor = vaultFor(row.vault)
           if (!descriptor) return <span className="ds-subtle">—</span>
           return (
             <span className="ds-row ds-row-1" style={{ alignItems: 'center' }}>
@@ -115,7 +116,7 @@ export function ClaimableYieldPanel({
         header: 'commitment',
         render: (row) => (
           <Link
-            to={`/app/commitments/${row.commitmentId.toString()}`}
+            to={commitmentDetailPath(row.commitmentId)}
             state={{ commitmentOrigin: 'dashboard' }}
             className="ds-mono-num"
             style={{ color: 'var(--text-muted)' }}
@@ -174,7 +175,7 @@ export function ClaimableYieldPanel({
       },
     ],
     [
-      chainId,
+      vaultFor,
       tokenMeta,
       managerAddress,
       isConnected,
@@ -194,9 +195,9 @@ export function ClaimableYieldPanel({
           size="sm"
           title="FAILED TO LOAD"
           actions={
-            <button type="button" className="ds-btn ds-btn--sm" onClick={refetch}>
+            <Button size="sm" onClick={refetch}>
               RETRY
-            </button>
+            </Button>
           }
         >
           {error.message ?? 'Check your connection and try again.'}

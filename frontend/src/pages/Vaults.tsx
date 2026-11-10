@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useChainId, useReadContract } from "wagmi";
-import type { Address } from "viem";
+import { useQueries } from "@tanstack/react-query";
+import { useChainId, useReadContracts } from "wagmi";
+import { erc20Abi, type Abi, type Address } from "viem";
 import {
   DataTable,
   EmptyState,
@@ -14,12 +15,14 @@ import {
   type DataTableSort,
 } from "../components/ui";
 import { PageHeader } from "../components/protocol";
-import { getContractAddresses, getVaultRegistry, type VaultDescriptor } from "../config/contracts";
-import { commitmentsVaultAbi } from "../generated";
+import { getContractAddresses, type VaultDescriptor } from "../config/contracts";
+import { commitmentManagerAbi, commitmentsVaultAbi } from "../generated";
 import { useAssetPrices, type PriceEntry } from "../hooks/useAssetPrices";
-import { useVaultApy } from "../hooks/useVaultApy";
 import { useVaultMetadata } from "../hooks/useIndexerMetadata";
-import { useVaultPosition } from "../hooks/useVaultPosition";
+import { IMMUTABLE, POLL } from "../hooks/polling";
+import { useTokenMetaMap } from "../hooks/useTokenMeta";
+import { vaultPeriodicQuery } from "../hooks/useVaultPeriodicHistory";
+import { useVaults } from "../hooks/useVaults";
 import { useViewAddress } from "../hooks/useViewAddress";
 import { bigintToUsd, formatPercent, formatTokenAmount } from "../lib/format";
 
@@ -55,8 +58,6 @@ interface VaultRowData {
   shareDecimals: number | undefined;
   assetSymbol: string;
   paused: boolean;
-  /** Off-chain metadata fields surfaced from indexer (vault.v1). */
-  metaName: string | undefined;
 }
 
 /** Everything the holder owns in this vault, wherever it currently sits. */
@@ -76,11 +77,6 @@ function totalShares(r: VaultRowData): bigint {
 function toUnderlying(r: VaultRowData, shares: bigint): bigint | undefined {
   if (r.sharePrice === undefined) return undefined;
   return (shares * r.sharePrice) / SHARE_PROBE;
-}
-
-/** Full-precision share count for the position breakdown tooltip. */
-function fmtShares(raw: bigint, decimals: number): string {
-  return formatTokenAmount(raw, decimals).full;
 }
 
 /** `part` as a whole-number percentage of `total`, for the row's sub-label. */
@@ -108,21 +104,15 @@ function usdOf(
 }
 
 /**
- * /vaults — multi-vault index page. Reads the vault registry and renders a
- * sortable DataTable with one row per vault. Click a row → /vaults/:address.
- *
- * The page mounts a hidden <VaultRowFetcher> per registry entry; each
- * fetcher calls the read hooks for its vault and lifts the resulting row
- * data into the parent's state map. The rendered DataTable consumes the
- * collected rows. This swaps the old fixed-5-vault hook unroll for an
- * unbounded N — the registry can grow without further code changes.
+ * /vaults — multi-vault index page. Lists every vault from {@link useVaults}
+ * in a sortable DataTable, one row per vault, read in one batch per source.
+ * Click a row → /vaults/:address.
  */
 export default function Vaults() {
-  const chainId = useChainId();
   const viewAddress = useViewAddress();
   const navigate = useNavigate();
-
-  const vaults = useMemo(() => getVaultRegistry(chainId), [chainId]);
+  const { vaults } = useVaults();
+  const rows = useVaultRows(vaults, viewAddress);
 
   // Prices for every asset in the registry, so TVL and positions can be
   // compared across vaults at all. Requested once here rather than per row.
@@ -137,7 +127,7 @@ export default function Vaults() {
         render: (r) => (
           <span className="ds-row ds-row-2" style={{ alignItems: "center" }}>
             <TokenIcon symbol={r.assetSymbol} size="sm" />
-            <span>{r.metaName ?? r.descriptor.name ?? `${r.assetSymbol} Vault`}</span>
+            <VaultName row={r} />
           </span>
         ),
       },
@@ -211,13 +201,9 @@ export default function Vaults() {
                 // breakdown of WHERE the position sits, and the ledger holds
                 // shares. Spelled out so the two numbers don't read as a
                 // contradiction.
-                title={`Vault shares — in wallet: ${fmtShares(
-                  r.shares ?? 0n,
-                  dec,
-                )} · free in manager: ${fmtShares(r.free ?? 0n, dec)} · backing commitments: ${fmtShares(
-                  committed,
-                  dec,
-                )}`}
+                title={`Vault shares — in wallet: ${formatTokenAmount(r.shares ?? 0n, dec).full} · free in manager: ${
+                  formatTokenAmount(r.free ?? 0n, dec).full
+                } · backing commitments: ${formatTokenAmount(committed, dec).full}`}
               >
                 {committed > 0n ? `${percentOf(committed, total)}% committed` : "all withdrawable"}
               </span>
@@ -254,8 +240,7 @@ export default function Vaults() {
       <PageHeader eyebrow="capital" title="Vaults" lead="Earn yield by depositing assets into vaults." />
 
       <VaultsTable
-        vaults={vaults}
-        viewAddress={viewAddress}
+        rows={rows}
         columns={columns}
         getPrice={getPrice}
         onRowClick={(r) => navigate(`/app/vaults/${r.descriptor.address}`)}
@@ -265,45 +250,13 @@ export default function Vaults() {
 }
 
 interface VaultsTableProps {
-  vaults: VaultDescriptor[];
-  viewAddress: ReturnType<typeof useViewAddress>;
+  rows: VaultRowData[];
   columns: DataTableColumn<VaultRowData>[];
   getPrice: (symbol: string | undefined) => PriceEntry | undefined;
   onRowClick: (r: VaultRowData) => void;
 }
 
-/**
- * Mounts one <VaultRowFetcher> per descriptor to call the read hooks per
- * vault, collects their results into a Map keyed by address, and renders the
- * DataTable from the assembled rows. Unbounded N — the registry is small
- * (1–5 today) and per-vault hook calls are cheap; if the registry ever grows
- * past ~50 we'd want to chunk into a smaller number of useReadContracts
- * calls to stay under RPC batch limits.
- */
-function VaultsTable({ vaults, viewAddress, columns, getPrice, onRowClick }: VaultsTableProps) {
-  const [rowMap, setRowMap] = useState<Map<Address, VaultRowData>>(() => new Map());
-
-  const handleRowData = useCallback((address: Address, row: VaultRowData | null) => {
-    setRowMap((prev) => {
-      if (row === null) {
-        if (!prev.has(address)) return prev;
-        const next = new Map(prev);
-        next.delete(address);
-        return next;
-      }
-      const existing = prev.get(address);
-      if (existing && rowDataEqual(existing, row)) return prev;
-      const next = new Map(prev);
-      next.set(address, row);
-      return next;
-    });
-  }, []);
-
-  const unsorted = useMemo(
-    () => vaults.map((v) => rowMap.get(v.address)).filter((r): r is VaultRowData => Boolean(r)),
-    [vaults, rowMap],
-  );
-
+function VaultsTable({ rows: unsorted, columns, getPrice, onRowClick }: VaultsTableProps) {
   // DataTable renders the sort affordance but explicitly does not sort ("pass
   // already-prepared data"). Nobody was, so clicking a header only flipped an
   // arrow while the rows stayed in registry order. Sorting happens here now,
@@ -332,14 +285,6 @@ function VaultsTable({ vaults, viewAddress, columns, getPrice, onRowClick }: Vau
 
   return (
     <>
-      {vaults.map((descriptor) => (
-        <VaultRowFetcher
-          key={descriptor.address}
-          descriptor={descriptor}
-          viewAddress={viewAddress}
-          onRowData={handleRowData}
-        />
-      ))}
       {/* Totals first. Four rows under a bare heading gave the page no answer
         * to "how big is this, and how much of it is mine" without reading and
         * adding up every row by hand. */}
@@ -406,106 +351,78 @@ function sortRows(
   });
 }
 
-/** Field-by-field equality check so we don't re-render the table on identical
- *  hook-result re-fetches. Compares only the fields rendered in columns. */
-function rowDataEqual(a: VaultRowData, b: VaultRowData): boolean {
-  return (
-    a.descriptor.address === b.descriptor.address &&
-    a.tvl === b.tvl &&
-    a.netApyBps === b.netApyBps &&
-    a.shares === b.shares &&
-    a.free === b.free &&
-    a.encumbered === b.encumbered &&
-    a.sharePrice === b.sharePrice &&
-    a.assetDecimals === b.assetDecimals &&
-    a.shareDecimals === b.shareDecimals &&
-    a.assetSymbol === b.assetSymbol &&
-    a.paused === b.paused &&
-    a.metaName === b.metaName
-  );
+/** The vault's metadata name, else its indexed or configured name. */
+function VaultName({ row }: { row: VaultRowData }) {
+  const meta = useVaultMetadata(row.descriptor.address);
+  const metaName = typeof meta.content?.name === "string" && meta.content.name.length > 0 ? meta.content.name : undefined;
+  return <span>{metaName ?? row.descriptor.name ?? `${row.assetSymbol} Vault`}</span>;
 }
 
-interface VaultRowFetcherProps {
-  descriptor: VaultDescriptor;
-  viewAddress: ReturnType<typeof useViewAddress>;
-  onRowData: (address: Address, row: VaultRowData | null) => void;
-}
+// Wide element type (abi: Abi, functionName: string) so wagmi's per-element
+// inference does not blow the instantiation depth on a mixed-ABI batch.
+type Call = { abi: Abi; address: Address | undefined; functionName: string; args?: readonly unknown[] };
 
 /**
- * Hidden per-vault component that calls the read hooks and lifts the
- * resulting row data into the parent. Renders nothing — purely a
- * hook-host so the parent can call hooks per registry entry without
- * violating the rules of hooks.
+ * Every vault's row: one batch for each vault's asset and share decimals, the
+ * asset's metadata (cached per token), one polling batch for the live chain
+ * state and the viewer's position, and one indexer query per vault for APY.
  */
-function VaultRowFetcher({ descriptor, viewAddress, onRowData }: VaultRowFetcherProps) {
+function useVaultRows(vaults: VaultDescriptor[], viewAddress: Address | undefined): VaultRowData[] {
   const chainId = useChainId();
-  const { commitmentManager: managerAddress } = getContractAddresses(chainId);
-  const position = useVaultPosition({
-    vaultAddress: descriptor.address,
-    viewAddress,
-    managerAddress,
-  });
-  const { data: tvlData } = useReadContract({
-    abi: commitmentsVaultAbi,
-    functionName: "totalAssets",
-    address: descriptor.address,
-    query: { enabled: true, refetchInterval: 30_000 },
-  });
-  // Share price, for turning the holder's share counts into asset amounts.
-  const { data: sharePrice } = useReadContract({
-    abi: commitmentsVaultAbi,
-    functionName: "convertToAssets",
-    address: descriptor.address,
-    args: [SHARE_PROBE],
-    query: { refetchInterval: 30_000 },
-  });
-  // Each row fetches its OWN realized APY from the indexer snapshot pipeline —
-  // no fabricated defaults, no descriptor overrides. `netBps` is null until a
-  // real rolling-window rate exists, which the table renders as "accruing".
-  const apy = useVaultApy(descriptor.address);
-  const meta = useVaultMetadata(descriptor.address);
+  const { commitmentManager: manager } = getContractAddresses(chainId);
 
-  const metaName =
-    typeof meta.content?.name === "string" && meta.content.name.length > 0 ? meta.content.name : undefined;
+  const { data: fixed } = useReadContracts({
+    contracts: vaults.flatMap((v): Call[] => [
+      { abi: commitmentsVaultAbi as Abi, address: v.address, functionName: "asset" },
+      { abi: commitmentsVaultAbi as Abi, address: v.address, functionName: "decimals" },
+    ]),
+    query: { enabled: vaults.length > 0, ...IMMUTABLE },
+  });
+  const assets = vaults.map((_, i) => fixed?.[i * 2]?.result as Address | undefined);
+  const assetMeta = useTokenMetaMap(assets);
 
-  const row: VaultRowData = useMemo(
-    () => ({
+  // Per vault: the three vault-wide reads, then the viewer's three holdings
+  // when there is a viewer and a manager.
+  const mine = viewAddress && manager ? viewAddress : undefined;
+  const perVault = mine ? 6 : 3;
+  const { data: live } = useReadContracts({
+    contracts: vaults.flatMap((v): Call[] => [
+      { abi: commitmentsVaultAbi as Abi, address: v.address, functionName: "totalAssets" },
+      { abi: commitmentsVaultAbi as Abi, address: v.address, functionName: "convertToAssets", args: [SHARE_PROBE] },
+      { abi: commitmentsVaultAbi as Abi, address: v.address, functionName: "depositsPaused" },
+      ...(mine
+        ? [
+            { abi: erc20Abi as Abi, address: v.address, functionName: "balanceOf", args: [mine] },
+            { abi: commitmentManagerAbi as Abi, address: manager, functionName: "freeBalance", args: [v.address, mine] },
+            { abi: commitmentManagerAbi as Abi, address: manager, functionName: "encumberedBalance", args: [v.address, mine] },
+          ]
+        : []),
+    ]),
+    query: { enabled: vaults.length > 0, refetchInterval: POLL.fast },
+  });
+
+  // Each vault's realized rolling APY from the indexer's snapshots (7d, else
+  // 30d) — no fabricated defaults; null until one exists ("accruing").
+  const apy = useQueries({
+    queries: vaults.map((v) => vaultPeriodicQuery({ vaultAddress: v.address, latest: true })),
+  });
+
+  return vaults.map((descriptor, i) => {
+    const at = (k: number) => live?.[i * perVault + k]?.result;
+    const meta = assets[i] ? assetMeta.byAddress[assets[i].toLowerCase()] : undefined;
+    const latest = apy[i]?.data?.rows[0];
+    return {
       descriptor,
-      tvl: (tvlData as bigint | undefined) ?? undefined,
-      // Real per-vault realized APY (bps), or null while still accruing.
-      netApyBps: apy.netBps,
-      shares: position.shares,
-      free: position.free,
-      encumbered: position.encumbered,
-      sharePrice: sharePrice as bigint | undefined,
-      assetDecimals: position.assetDecimals,
-      shareDecimals: position.shareDecimals,
-      assetSymbol: position.assetSymbol ?? descriptor.assetSymbol,
-      paused: position.depositsPaused,
-      metaName,
-    }),
-    [
-      descriptor,
-      tvlData,
-      apy.netBps,
-      position.shares,
-      position.free,
-      position.encumbered,
-      sharePrice,
-      position.assetDecimals,
-      position.shareDecimals,
-      position.assetSymbol,
-      position.depositsPaused,
-      metaName,
-    ],
-  );
-
-  // Lift the assembled row into the parent's row map. The parent's setState
-  // is gated by a field-by-field equality check, so identical re-fetches
-  // don't trigger a table re-render.
-  useEffect(() => {
-    onRowData(descriptor.address, row);
-  }, [descriptor.address, row, onRowData]);
-
-  return null;
+      tvl: at(0) as bigint | undefined,
+      netApyBps: latest?.apy7d ?? latest?.apy30d ?? null,
+      shares: mine ? (at(3) as bigint | undefined) : undefined,
+      free: mine ? (at(4) as bigint | undefined) : undefined,
+      encumbered: mine ? (at(5) as bigint | undefined) : undefined,
+      sharePrice: at(1) as bigint | undefined,
+      assetDecimals: meta?.decimals,
+      shareDecimals: fixed?.[i * 2 + 1]?.result as number | undefined,
+      assetSymbol: meta?.symbol ?? descriptor.assetSymbol,
+      paused: at(2) === true,
+    };
+  });
 }
