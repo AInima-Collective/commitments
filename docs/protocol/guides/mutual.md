@@ -101,6 +101,9 @@ At join the member freezes two quantities: `forfeitableUnits` (`E_i =
 amount × maxPenaltyBps / 10000`, the most they can ever lose) and `creditedValue`
 (their share of `totalShares`). Both equal `E_i`.
 
+A mutual whose Λ has reached `1e18` is wiped out. `joinMutual` reverts
+`MutualExhausted`.
+
 ## 3. Premium: fund the stream, members claim
 
 A policyholder buys cover, which funds a premium stream over a duration. The
@@ -132,6 +135,9 @@ manager.claimMembersPremium(commitmentIds);
 
 Premium funding is solvency-guarded: a stream can never promise more than the
 reserve holds, and its rate can only be increased, never griefed downward.
+While a stream is live its end never moves earlier: the new end is
+`max(periodFinish, now + duration)`. Funding reverts `MutualExhausted` once Λ is
+at `1e18`.
 
 ## 4. A claim: propose → challenge → execute → settle → collect
 
@@ -160,10 +166,13 @@ manager.settleMembers(commitmentIds);        // batch
 vm.prank(policyholder);
 uint256 paid = claimRouter.settleAndCollect(commitmentIds, address(usdc), policyholder);
 
-// An unchallenged proposer reclaims their bond.
-vm.prank(proposer);
+// Anyone returns an unchallenged proposer's bond; it always goes to the proposer.
 arbiter.reclaimBond(mutualId);
 ```
+
+A new `proposeLoss` first refunds a prior claim whose manager proposal has
+executed or been cancelled. It reverts `ClaimActive` only while the prior
+proposal is still pending in the manager.
 
 Executing a loss bumps Λ by `applied × 1e18 / totalShares`, clamped so Λ never
 exceeds `1e18`. Each member then owes `forfeitableUnits × (Λ − lossSnapshot)`,
@@ -185,10 +194,16 @@ manager.settleMemberLoss(commitmentId);           // settle any pending loss fir
 manager.releaseMutualMember(commitmentId);        // frees remaining backing, auto-pays premium
 ```
 
+Release is open from one `deallocationWindow` after the request until two
+(pause-adjusted). At or after the end, `releaseMutualMember` reverts
+`ExitRequestLapsed`. The member then calls `requestMutualExit` again, which
+starts a fresh window.
+
 `releaseMutualMember` removes exactly the `creditedValue` the member added,
 returns their remaining backing to their free balance, and pays out any accrued
 premium. When the last member leaves, the mutual sweeps its premium reserve to
-the beneficiary and terminates. Exit is blocked while a loss is pending.
+the beneficiary and terminates. Exit requests and release are blocked while a loss
+is pending, so a request can lapse while a loss is pending.
 
 ## Accounting notes
 

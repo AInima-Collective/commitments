@@ -16,7 +16,6 @@ Keeping these concerns separate prevents consumer-specific topology policy from 
 | TokenWeighting | Applies governance-set basis-point weights to denominated stake and exposes historical voting power through IVotingPowerSource |
 | FanOutNode | Allocates one provider and denomination across bounded consumer outflows |
 | FanInNode | Aggregates registered provider denominations into a consumer denomination |
-| FlowPathLib | Walks a composed topology for read-only discovery with depth and cycle protection |
 
 Mesh nodes account for stake; they do not custody manager tokens or execute commitment forfeits.
 

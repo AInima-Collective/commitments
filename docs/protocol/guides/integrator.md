@@ -102,6 +102,11 @@ emitting `DistributionPaid`), because the movement pipeline can only ever source
 value from the committer's encumbrance or the strategy's own escrow — never from
 the counterparty. That's the only way to express a counterparty-funded flow.
 
+All four inherit `StrategyBase` (`src/distributions/StrategyBase.sol`). It holds
+the immutable manager binding, the manager-only gate, a measured pull, and no-op
+lifecycle hooks. A new strategy can inherit it and override only the hooks that
+move value.
+
 ## Building a backing adapter
 
 An adapter is a stateless, view-only pricer for a category of backing token. It
@@ -241,35 +246,17 @@ ITokenWeighting(weighting).updateWeight(keccak256("wstETH"), 10000);
 ITokenWeighting(weighting).updateWeight(keccak256("rETH"),    8000);
 ```
 
-### Walking the graph
-
-Discover a topology through `IFlowQuery`:
-
-```solidity
-IFlowQuery node = IFlowQuery(someAddress);
-
-bytes32 kind = node.nodeType();          // FAN_IN / FAN_OUT / TOKEN_WEIGHTING (bytes32 constants)
-string memory name = node.nodeTypeName(); // human-readable label
-ProviderInfo[] memory provs = node.providers();
-ConsumerInfo[] memory cons = node.consumers();
-AvailableDenom[] memory denoms = node.availableDenoms();
-```
-
-`nodeType()` returns a `bytes32` for stable dispatch (see `FlowNodeTypes`);
-`nodeTypeName()` is the display string. Paginated variants
-(`providersPaged`, …) exist for large nodes.
-
 ## Consuming the operator registry
 
 The registry's service-compatible views can be read by any framework:
 
 ```solidity
 bool valid = operatorRegistry.isOperator(operatorAddr);
-uint256 stake = operatorRegistry.getOperatorStake(operatorAddr);
 address[] memory operators = operatorRegistry.getOperatorSet();
 
 IOperatorRegistry.Operator memory op = operatorRegistry.getOperator(operatorAddr);
-if (op.belowMinStake) {
+uint256 stake = op.totalDelegatedStake;
+if (stake < operatorRegistry.minOperatorStake()) {
     // handle a degraded operator...
 }
 ```

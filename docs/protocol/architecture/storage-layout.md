@@ -25,10 +25,10 @@ The vendored ERC-8004 registry retains its upstream namespace under src/vendor/e
 
 CommitmentManagerStorage owns every state value used by Core, Agreements, and Mutuals because AgreementLib and MutualLib execute by delegatecall in the manager context. The layout includes:
 
-- the free, encumbered, strategy-escrow, mutual-premium, and mutual-junior custody partitions and their per-token aggregates;
+- the free, encumbered, strategy-escrow, and mutual-premium custody partitions and their per-token aggregates;
 - commitment lifecycle, strategy bindings, exposure, forfeit, unbond, pause, and hook-recovery state;
 - agreement proposals, per-leg bindings, linked commitment pairs, settlement caps, and contribution flags;
-- mutual headers, memberships, loss proposals, premium reserves, and heterogeneous-mode configuration.
+- mutual headers, memberships, loss proposals, and premium reserves.
 
 Extension libraries must use the canonical manager storage accessor. They must not introduce a competing namespace for state that belongs to the deployed manager composition.
 

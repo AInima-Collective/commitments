@@ -51,7 +51,7 @@ contract MutualRegistry {
     }
 
     /// @notice Create a Mutual and register its coverage terms. The caller chooses the mutual
-    ///         arbiter (e.g. an OptimisticMutualArbiter) and the valuationAuthority (0 = homogeneous).
+    ///         arbiter (e.g. an OptimisticMutualArbiter).
     ///         Reverts `URITooLong` if `perilURI` exceeds `MAX_PERIL_URI_LENGTH` bytes.
     function registerMutual(
         ICommitmentManager.MutualParams calldata params,

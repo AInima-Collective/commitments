@@ -34,8 +34,7 @@ src/                Solidity contracts (single foundry.toml, solc 0.8.27, cancun
                     the canonical ERC-8004 registry
 
 test/               Foundry tests by subsystem (not a mirror of src/). Conformance
-                    suites: test/{manager,mesh,registry,services}/conformance/
-                    and test/conformance/ (rewards)
+                    suites: test/{manager,registry,rewards,services}/conformance/
 script/             DeploySepolia.s.sol (testnet stack), Simulate.s.sol
                     (full-stack anvil seeder), and Node tooling
 verification/       Certora + Halmos + Medusa formal verification stack
@@ -145,7 +144,7 @@ the same broadcast files via `loadDeployments(chainId)` in `ponder.config.ts`.
 **Key invariants** (INV-1 and INV-3 are fuzz-locked in
 `test/manager/conformance/PartitionInvariant.t.sol`; INV-4 in
 `test/manager/MovementValidation.t.sol`):
-- INV-1 partition: `Σ(free+encumbered) + Σescrow == balanceOf(manager)` per token
+- INV-1 partition: `Σ(free+encumbered) + Σescrow + Σmutual premium == balanceOf(manager)` per token
   (O(1) aggregates).
 - INV-3 magnitude allocation: `totalForfeitable ≤ totalEncumbered` per (user, token).
 - INV-4 movement cap: strategy debits bounded by the bound commitment's `amount`.
@@ -158,10 +157,12 @@ the same broadcast files via `loadDeployments(chainId)` in `ponder.config.ts`.
 (`CommitmentManagerStorage.sol`, `CommitmentsVaultStorage.sol`,
 `OperatorRegistryStorage.sol`, `OperatorServiceRegistryStorage.sol`, and the
 Rewards snapshot/coordinator storage modules). Two
-EIP-7201 slot calculations were wrong historically — `test/StorageSlots.t.sol`
-(periphery + vault) and `test/manager/StorageSlots.t.sol` (manager layout
-offsets) exist specifically to lock the slots and prevent regressions. Always
-run both after touching storage layout.
+EIP-7201 slot calculations were wrong historically. `test/StorageSlots.t.sol`
+locks the slots and layouts of the vault, the operator registry, the Merkle
+snapshot and the rewards coordinator. `test/manager/StorageSlots.t.sol` locks
+the manager's slot and layout offsets and the coordinator's layout.
+`OperatorServiceRegistryStorage` and the shared `FactoryStorage` have no slot
+test. Always run both tests after touching storage layout.
 
 **Proxy pattern**: UUPS for the singletons (CommitmentManager,
 OperatorRegistry, OperatorServiceRegistry, Rewards coordinator/snapshot).
@@ -435,8 +436,7 @@ discovery. `IPFS_GATEWAY` is the gateway the metadata fetcher resolves
 **Solidity**:
 - One contract per file, storage in a sibling `*Storage.sol` (EIP-7201).
 - Tests are grouped by subsystem under `test/`, not by `src/` path.
-  Conformance suites live in `test/{manager,mesh,registry,services}/conformance/`
-  and, for Rewards, `test/conformance/`.
+  Conformance suites live in `test/{manager,registry,rewards,services}/conformance/`.
 - NatSpec on every public/external function — `forge doc` builds the
   reference site from it.
 - `forge fmt` line length 120.
@@ -450,7 +450,7 @@ discovery. `IPFS_GATEWAY` is the gateway the metadata fetcher resolves
 **Testing**:
 - Node 22.6 or later (`engines` in each `package.json`); CI runs Node 22.
 - Foundry: 256 fuzz runs (`foundry.toml`). `invariant_` suites live in
-  `test/{manager,registry,services}/conformance/` and `test/conformance/`;
+  `test/{manager,registry,rewards,services}/conformance/`;
   there are none under `test/vault`.
 - **`npx tsc --noEmit` in `frontend/` checks NOTHING.** That tsconfig is a
   solution file (`"files": []` plus project references), so the command exits

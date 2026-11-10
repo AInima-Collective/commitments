@@ -25,14 +25,13 @@
  *      IYieldStrategy.totalAssets() (an external, non-monotone oracle the vault
  *      does not control) PLUS idle balance; with no strategy it is exactly the
  *      vault's own token balance. The default / canonical deployment is the
- *      IDLE vault (no strategy — CLAUDE.md: "none shipped by default … idle
- *      until set"), and share-price preservation is a statement about the
- *      vault's OWN accounting, not about a third-party oracle's honesty. So the
- *      PPS + inflation rules REQUIRE yieldStrategy() == 0. The strategy-set case
+ *      IDLE vault (the deploy scripts pass no strategy), and share-price
+ *      preservation is a statement about the vault's OWN accounting, not
+ *      about a third-party oracle's honesty. So the PPS + inflation rules REQUIRE yieldStrategy() == 0. The strategy-set case
  *      (where a lying/again non-monotone strategy can move NAV arbitrarily) is a
  *      documented gap: its safety reduces to "the strategy reports honest,
  *      monotone NAV", which is the strategy's own obligation, not the vault's,
- *      and is exercised by Fuzz/Medusa against the concrete IdleStrategy. See
+ *      and is exercised by Foundry tests against the MockStrategy double. See
  *      the `strategyIsIdle` filter below.
  *
  *  A2. ROUNDING rules (P3-ROUND) are strategy-agnostic: they compare a mint/burn

@@ -23,15 +23,18 @@ const app = new Hono()
  *   ORDER BY
  *     CASE status
  *       WHEN 'forfeitPending' THEN 0
- *       WHEN 'active'       THEN 1
- *       ELSE 2
+ *       WHEN 'unbonding'    THEN 1
+ *       WHEN 'active'       THEN 2
+ *       ELSE 3
  *     END,
  *     COALESCE(forfeitChallengeEnd, 9e18) ASC, -- nominal ordering hint only
  *     id DESC
  *
  * Rationale:
  *   - FORFEIT_PENDING rows sit at the top so committers see manager enforcement first.
- *   - ACTIVE rows fall next; rows with imminent forfeitChallengeEnd float upward, so as more
+ *   - UNBONDING rows come next: the depositor is mid-flow and the matures-at countdown is
+ *     the next thing they act on.
+ *   - ACTIVE rows follow; rows with imminent forfeitChallengeEnd float upward, so as more
  *     commitments enter forfeitPending the urgent ones surface naturally.
  *   - RELEASED / FORFEITED / EXPIRED end up at the bottom, newest first.
  *
@@ -40,7 +43,7 @@ const app = new Hono()
  *   ?arbiter=0x... — arbiter matches (case-insensitive). Powers the arbitration
  *                    queue UI ("commitments where I am the arbiter"). Combinable
  *                    with the other filters (AND-ed together).
- *   ?status=active|forfeitPending|forfeited|released|expired — exact match.
+ *   ?status=active|unbonding|forfeitPending|forfeited|released|expired — exact match.
  *   ?manager=0x... — restrict to commitments emitted by a specific CommitmentManager.
  *                    Useful for multi-manager deployments (e.g. USDC + WETH stacks).
  *   ?vault=0x... — restrict to commitments backed by a specific vault.

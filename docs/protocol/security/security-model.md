@@ -25,7 +25,7 @@ Users choose their arbiter, strategies, adapter, counterparty, and optional exte
 
 ## Custody invariants
 
-For each token, manager custody is partitioned into free, encumbered, strategy escrow, mutual premium reserve, and mutual junior reserve. Aggregate counters must equal the manager token balance. A transition updates both the individual ledger entry and aggregate in the same operation.
+For each token, manager custody is partitioned into free, encumbered, strategy escrow, and mutual premium reserve. Aggregate counters must equal the manager token balance. A transition updates both the individual ledger entry and aggregate in the same operation.
 
 A commitment cannot allocate more forfeitable exposure than its encumbered amount. Closing a commitment removes its exposure exactly once. Forfeiture credits the beneficiary free balance rather than pushing an arbitrary external call.
 

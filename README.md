@@ -29,7 +29,7 @@ The design favors composition over a universal market contract:
 - **Backing adapter** — stateless pricer that lets any ERC-20 or appreciating ERC-4626 share serve as commitment backing
 - **Distribution strategy** — pluggable contract that moves value (yield, fees, premiums) via a validated movement pipeline, bounded by the commitment it's bound to
 - **Two-phase forfeit** — initiate, then a challenge window (minimum one day) before execution; payouts are pull-payment
-- **Partition invariant** — `Σ(free + encumbered) + Σescrow == balanceOf(manager)` per token, fuzz-locked in the conformance suite
+- **Partition invariant** — `Σ(free + encumbered) + Σescrow + Σmutual premium == balanceOf(manager)` per token, fuzz-locked in the conformance suite
 - **Magnitude allocation** — `totalForfeitable ≤ totalEncumbered` per (user, token); prevents over-commitment
 - **Mesh topology** — composable FanIn/FanOut/Weighting graph for stake aggregation and governance integration
 - **Mutual coverage** — groups share losses several-liability via a loss index Λ while premiums stream to underwriters
@@ -155,7 +155,7 @@ just fv-medusa 3600       # hour-long coverage-guided fuzz campaign
 | Standard | Usage |
 |----------|-------|
 | [ERC-4626](https://eips.ethereum.org/EIPS/eip-4626) | Yield-bearing vaults; canonical commitment backing via the ERC4626Adapter |
-| [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201) | Namespaced storage on every long-lived contract (slot layouts locked by tests) |
+| [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201) | Namespaced storage on every long-lived contract (slot tests cover the manager, vault, operator registry and rewards contracts) |
 | [EIP-1153](https://eips.ethereum.org/EIPS/eip-1153) | Transient-storage reentrancy guard on the manager's ledger and lifecycle flows |
 | [ERC-1967](https://eips.ethereum.org/EIPS/eip-1967) / UUPS | Upgradeable singletons (manager, registries) and per-asset vault proxies |
 | [EIP-1167](https://eips.ethereum.org/EIPS/eip-1167) | Minimal proxy clones for mesh node deployment |
@@ -172,7 +172,7 @@ src/
   periphery/       Agents, arbiters, governance, and vault products
   shared/          Arbitration, factories, interfaces, registries, utilities
   vendor/          Byte-preserved third-party Solidity (ERC-8004 registry)
-test/              Foundry tests by subsystem; conformance suites in test/<subsystem>/conformance/ and test/conformance/
+test/              Foundry tests by subsystem; conformance suites in test/<subsystem>/conformance/
 verification/      Certora + Halmos + Medusa formal verification stack
 script/            DeploySepolia.s.sol, Simulate.s.sol (full-stack anvil seeder), and Node tooling
 docs/              Standards, current protocol docs, and design drafts

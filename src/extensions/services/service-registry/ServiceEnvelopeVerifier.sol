@@ -14,10 +14,9 @@ import {IServiceManager} from "src/extensions/services/interfaces/IServiceManage
 ///               `block.chainid` + the verifying instance address, so a
 ///               signature minted for one chain/instance cannot be replayed on
 ///               another.
-/// @dev Both core consumers (`AttestationArbiter`, `MerkleSnapshotAdapter`)
-///      inherit this so their verification logic can never drift apart. The
-///      consumed set lives in plain storage; both consumers are non-upgradeable
-///      singletons/clones so no namespaced (EIP-7201) layout is required.
+/// @dev `AttestationArbiter` inherits this. The consumed set lives in plain
+///      storage; the consumer is a non-upgradeable contract, so no namespaced
+///      (EIP-7201) layout is required.
 abstract contract ServiceEnvelopeVerifier {
     /// @notice The bound service manager that validates envelope signatures.
     /// @dev Immutable; set once at construction.

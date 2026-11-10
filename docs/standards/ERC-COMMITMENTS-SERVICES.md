@@ -19,7 +19,7 @@ This ERC extends the core [`ERC-COMMITMENTS`](./ERC-COMMITMENTS.md) standard wit
 2. **`IVotingPowerSource`** — the narrow, checkpointed read surface (current and at-a-past-block voting power, per address and in aggregate) a service consumes to read its operator set's weight without importing the full mesh or registry interface.
 3. **`IServiceManager`** + [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) — stake-weighted signature validation: signing-key management, absolute-threshold and quorum-fraction configuration, sorted-signer envelopes, and a **reference-block staleness** rule (`maxReferenceBlockAge`) that forces every validation against a recent operator-set snapshot.
 
-This document is the normative home of the operator registry (`IOperatorRegistry`) and the service-manager layer (`IServiceManager` + `IOperatorServiceRegistry`). The [mesh extension](./ERC-COMMITMENTS-MESH.md) references the registry interface specified here rather than redefining it, and supplies the aggregation topology (`IFlowQuery`, `ITokenWeighting`) an `IVotingPowerSource` composes over.
+This document is the normative home of the operator registry (`IOperatorRegistry`) and the service-manager layer (`IServiceManager` + `IOperatorServiceRegistry`). The [mesh extension](./ERC-COMMITMENTS-MESH.md) references the registry interface specified here rather than redefining it, and supplies the aggregation topology (`IFanIn`, `IFanOut`, `ITokenWeighting`) an `IVotingPowerSource` composes over.
 
 ## Motivation
 
@@ -35,7 +35,7 @@ Three concerns motivate a dedicated standard:
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119 and RFC 8174.
 
-Terms not defined here — **committer**, **counterparty**, **arbiter**, **backing token**, **commitment manager**, **commitment**, **exposure allocation**, **distribution strategy**, **unbond** — are defined in the core standard. **Voting power**, **denom**, and the mesh node interfaces (`IFlowQuery`, `ITokenWeighting`) are defined in the [mesh extension](./ERC-COMMITMENTS-MESH.md). The manager referenced throughout is an `ERC-COMMITMENTS` Part A/C/D conformant commitment manager.
+Terms not defined here — **committer**, **counterparty**, **arbiter**, **backing token**, **commitment manager**, **commitment**, **exposure allocation**, **distribution strategy**, **unbond** — are defined in the core standard. **Voting power**, **denom**, and the mesh node interfaces (`IFanIn`, `IFanOut`, `ITokenWeighting`) are defined in the [mesh extension](./ERC-COMMITMENTS-MESH.md). The manager referenced throughout is an `ERC-COMMITMENTS` Part A/C/D conformant commitment manager.
 
 An **operator service** is any system that derives crypto-economic security from a set of commitments naming a shared arbiter. An **operator set** is that set of commitments, plus the operators and delegators behind them.
 
