@@ -124,6 +124,7 @@ struct Mutual {
     uint64  challengeWindow;    // >= MUTUAL_MIN_CHALLENGE_WINDOW
     bool    active;             // set by the arbiter; members can only join an active mutual
     bool    terminal;           // wound down: no new joins / losses
+    bool    exhausted;          // a loss took all the cover that was left (or all but dust): no new joins / premium
     address numeraire;          // the token every member posts; unit of E_i, L and premium
     uint64  deallocationWindow; // post-exit-request slashable window; >= challengeWindow
     address beneficiary;        // who settled units pay to (typically a ClaimRouter) — REQUIRED
@@ -225,7 +226,7 @@ A conforming implementation defines the following constants (reference values in
 - `MIN_REINIT_INTERVAL` (1 hour) — minimum spacing between *re*-initiations (rate-limits
   initiate→cancel→re-initiate capital-freeze griefing).
 - `LAMBDA_ONE` (1e18) — the fully-attributed loss fraction (the loss index `Lambda` scale).
-- `EXHAUSTION_DUST` (1e9) — a mutual with no more than this much of the loss fraction left (a billionth of its cover) is exhausted: `joinMutual` and `fundMutualPremium` revert `MutualExhausted`.
+- `EXHAUSTION_DUST` (1e9) — an executed loss that leaves no more than this much of the loss fraction (a billionth of the cover) marks the mutual `exhausted` (§3.4).
 - `MAX_TOTAL_SHARES` (`type(uint128).max`) — the `totalShares` / `activeCover` ceiling enforced
   at join.
 - `PI_ONE` (1e27) — the premium-per-cover index `Pi` scale (§6). Higher than `LAMBDA_ONE`
@@ -361,11 +362,10 @@ join the same mutual more than once; each join creates an independent commitment
 membership. The manager MUST enforce, in order:
 
 1. Mutual exists (`MutualNotFound`), is active and non-terminal (`MutualNotActive`), and
-   `LAMBDA_ONE - cumulativeLoss > EXHAUSTION_DUST` (`MutualExhausted`) — a wiped-out mutual takes no
-   new members, since a joiner at `Lambda = 1e18` could never owe anything. The test is on dust, not
-   on equality: each executed loss rounds its `Lambda` step down, so a mutual wiped out by several
-   declarations ends a few units short of `1e18`. It is not made terminal: existing members still
-   settle, claim premium, and release.
+   not `exhausted` (`MutualExhausted`) — a wiped-out mutual takes no new members, since a joiner
+   there could owe next to nothing while earning on its whole stake. `exhausted` is set when a loss
+   executes (§3.4), not read off `Lambda`. It is not terminal: existing members still settle, claim
+   premium, and release.
 2. No loss is pending (`MutualLossPending`) — capacity is frozen during a declaration.
 3. `params.arbiter == mutual.arbiter` (`MutualArbiterMismatch`).
 4. `params.counterparty == mutual.beneficiary` (`MutualBeneficiaryMismatch`) — **no
@@ -411,6 +411,15 @@ global `forfeiturePaused` circuit breaker MUST be false (`ForfeitureIsPaused`). 
 the proposal `executed`, then applies the §2.1 index bump (or the §2.3 empty-mutual terminal
 path). Emits `MutualLossShortfall` if clamped, then `MutualLossExecuted(mutualId, applied,
 cumulativeLoss)`. `Lambda` bumps **only here**, exactly once per declaration.
+
+The same step marks the mutual **`exhausted`** when the declared loss meets or exceeds the headroom
+(it took everything the index could still deliver), or when it leaves
+`LAMBDA_ONE - cumulativeLoss <= EXHAUSTION_DUST`. From then on `joinMutual` and `fundMutualPremium`
+revert `MutualExhausted`. The flag exists because `Lambda` alone cannot say "wiped out": each loss
+rounds its `Lambda` step down, so several losses that add up to the whole pool end a few units
+short of `1e18`; and on a small pool the last step's rounding is lost in whole numeraire units,
+which can leave `Lambda` far short of `1e18` with zero headroom. A consumer deciding whether a
+mutual can still pay MUST read `exhausted`, not compare `cumulativeLoss` with `1e18`.
 
 **`cancelMutualLoss`.** Arbiter-only cancel of a pending declaration; sets `cancelled`, emits
 `MutualLossCancelled(mutualId, false)`.
@@ -701,7 +710,7 @@ stream, `newFinish = now + duration`. The manager sets only a future *rate*; pri
 entirely in the periphery. It reverts:
 
 - `MutualIsTerminal` on a wound-down mutual;
-- `MutualExhausted` when `LAMBDA_ONE - cumulativeLoss <= EXHAUSTION_DUST` (no cover left to pay for);
+- `MutualExhausted` when the mutual is `exhausted` (no cover left to pay for);
 - `StreamDurationOutOfBounds` when `duration ∉ [MIN_STREAM_DURATION, MAX_STREAM_DURATION]`
   (1 minute … 365 days) **or** the new `periodFinish` would overflow `uint64`;
 - `NoActiveCover` when `activeCover == 0` (no live cover to distribute to);

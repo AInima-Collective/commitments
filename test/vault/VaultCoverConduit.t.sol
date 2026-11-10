@@ -213,6 +213,22 @@ contract VaultCoverConduitTest is Test {
         assertEq(dai.balanceOf(address(conduit)), 0);
     }
 
+    /// A wiped-out mutual takes no premium; the conduit skips and keeps the shares.
+    function test_poke_exhaustedMutualSkips() public {
+        dai.mint(address(this), 100e18);
+        dai.approve(address(arbiter), 100e18);
+        arbiter.proposeLoss(mutualId, 1e30, bytes32("e"), 100e18);
+        vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
+        manager.executeMutualLoss(mutualId);
+        assertTrue(manager.getMutual(mutualId).exhausted);
+
+        _fundConduit(10e18);
+        (uint256 premium, uint64 duration) = conduit.poke();
+        assertEq(premium, 0);
+        assertEq(duration, 0);
+        assertGt(vault.balanceOf(address(conduit)), 0);
+    }
+
     function test_poke_durationCappedByMaxStream() public {
         _fundConduit(1_000e18); // huge budget: uncapped inversion would exceed the per-poke cap
         (, uint64 duration) = conduit.poke();

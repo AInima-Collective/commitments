@@ -164,6 +164,7 @@ interface ICommitmentManager {
         uint64 challengeWindow; // >= MUTUAL_MIN_CHALLENGE_WINDOW (longer than the per-commitment floor)
         bool active; // set by the arbiter; members can only join an active mutual
         bool terminal; // wound down: no new joins / losses
+        bool exhausted; // a loss took all the cover that was left (or all but dust): no new joins / premium
         address numeraire; // the token every member posts; unit of E_i, L and premium
         uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
         address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
@@ -551,7 +552,7 @@ interface ICommitmentManager {
     error DeallocationWindowActive();
     error ExitNotRequested();
     error ExitRequestLapsed(); // release at or past 2 * deallocationWindow; request again
-    error MutualExhausted(); // Lambda within dust of its cap: no new joins or premium
+    error MutualExhausted(); // the mutual is `exhausted`: no new joins or premium
     error InvalidCreditedValue();
     error NumeraireMismatch();
     error MutualArbiterMismatch();
@@ -811,7 +812,7 @@ interface ICommitmentManager {
 
     /// @notice Create a fresh commitment and join it to `mutualId` atomically, freezing its weight
     ///         `E_i` (emitted as `MemberJoined.creditedValue`). `params.token` must be the mutual's numeraire. Reverts
-    ///         `MutualExhausted` once Lambda is within a billionth of its cap (1e18).
+    ///         `MutualExhausted` once the mutual is `exhausted` (a loss left it no cover to give).
     function joinMutual(uint256 mutualId, CommitmentParams calldata params) external returns (uint256 commitmentId);
 
     /// @notice Phase 1 (mutual arbiter only): declare a loss `lossNumeraire`, starting the mutual
@@ -858,7 +859,7 @@ interface ICommitmentManager {
     ///         `StreamDurationOutOfBounds` when `duration` is outside [1 minutes, 365 days] (or the
     ///         uint64 deadline would overflow), `PremiumRateDecreased` when a live stream's rate
     ///         would drop (permissionless funding may only maintain or raise the rate), and
-    ///         `MutualExhausted` once Lambda is within a billionth of its cap. While a stream is live its end never moves
+    ///         `MutualExhausted` once the mutual is `exhausted`. While a stream is live its end never moves
     ///         earlier: the new end is `max(periodFinish, now + duration)` and premium plus leftover
     ///         is spread over the time to it.
     function fundMutualPremium(uint256 mutualId, uint256 amount, uint64 duration) external;

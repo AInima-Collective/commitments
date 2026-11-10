@@ -210,6 +210,31 @@ contract MutualRegressionsTest is MutualE2ETest {
         _proposeAndExecute(gid, 100e18);
         _proposeAndExecute(gid, 200e18);
         assertEq(manager.getMutual(gid).cumulativeLoss, 1e18 - 1, "one unit short of the cap");
+        assertTrue(manager.getMutual(gid).exhausted, "exhausted");
+
+        vm.expectRevert(ICM.MutualExhausted.selector);
+        _join(gid, u2, 100e18);
+
+        usdc.mint(address(this), 1e18);
+        usdc.approve(address(manager), 1e18);
+        vm.expectRevert(ICM.MutualExhausted.selector);
+        manager.fundMutualPremium(gid, 1e18, 30 days);
+    }
+
+    /// On a small mutual the last loss's rounding is lost in whole numeraire units, which leaves
+    /// Lambda far short of the cap with nothing left to deliver. It is exhausted all the same.
+    function test_exhaustedSmallMutualRejectsJoinAndFunding() public {
+        uint256 gid = _registerMutual();
+        _join(gid, u1, 3e6);
+        _proposeAndExecute(gid, 1e6);
+        assertFalse(manager.getMutual(gid).exhausted, "a partial loss leaves cover");
+        _join(gid, u2, 1e6); // still joinable after a partial loss
+        _proposeAndExecute(gid, 1e24); // clamped: takes all the headroom there is
+
+        ICM.Mutual memory g = manager.getMutual(gid);
+        assertGt(1e18 - g.cumulativeLoss, 1e9, "Lambda is far from its cap");
+        assertEq(((1e18 - g.cumulativeLoss) * g.totalShares) / 1e18, 0, "and nothing is left to deliver");
+        assertTrue(g.exhausted, "exhausted");
 
         vm.expectRevert(ICM.MutualExhausted.selector);
         _join(gid, u2, 100e18);

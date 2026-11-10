@@ -956,6 +956,7 @@ export const commitmentManagerAbi = [
           { name: 'challengeWindow', internalType: 'uint64', type: 'uint64' },
           { name: 'active', internalType: 'bool', type: 'bool' },
           { name: 'terminal', internalType: 'bool', type: 'bool' },
+          { name: 'exhausted', internalType: 'bool', type: 'bool' },
           { name: 'numeraire', internalType: 'address', type: 'address' },
           {
             name: 'deallocationWindow',

@@ -81,6 +81,7 @@ contract ManagerStorageHarness {
         g.challengeWindow = 301;
         g.active = true;
         g.terminal = true;
+        g.exhausted = true;
         g.numeraire = address(0xD2);
         g.deallocationWindow = 302;
         g.beneficiary = address(0xD3);
@@ -286,6 +287,7 @@ contract ManagerStorageSlotsTest is Test {
         assertEq(uint64(w >> 160), 301, "challengeWindow @0 bits 160..223");
         assertEq(uint8(w >> 224), 1, "active @0 bits 224..231");
         assertEq(uint8(w >> 232), 1, "terminal @0 bits 232..239");
+        assertEq(uint8(w >> 240), 1, "exhausted @0 bits 240..247");
         w = _word(a, 1, 25, 1);
         assertEq(address(uint160(w)), address(0xD2), "numeraire @1");
         assertEq(uint64(w >> 160), 302, "deallocationWindow @1 bits 160..223");

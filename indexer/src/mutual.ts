@@ -471,6 +471,25 @@ ponder.on('CommitmentManager:MemberExitRequested', async ({ event, context }) =>
   await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'exitRequested', event })
 })
 
+// A lapsed exit request, cleared by whoever settled the member next. The member is ordinary
+// cover again and has to ask again to leave.
+ponder.on('CommitmentManager:MemberExitLapsed', async ({ event, context }) => {
+  const { mutualId, commitmentId } = event.args
+  const manager = event.log.address
+  const id = membershipKey(manager, commitmentId)
+  const row = await context.db.find(membership, { id })
+  if (row) {
+    await context.db.update(membership, { id }).set({
+      status: 'active',
+      exitRequestedAt: null,
+      slashableUntil: null,
+      updatedBlock: event.block.number,
+    })
+  }
+  await refreshMutual(context, manager, mutualId, event.block)
+  await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'exitLapsed', event })
+})
+
 ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
   const { mutualId, commitmentId } = event.args
   const manager = event.log.address

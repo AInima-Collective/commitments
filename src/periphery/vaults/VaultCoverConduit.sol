@@ -144,6 +144,11 @@ contract VaultCoverConduit is ReentrancyGuardTransient {
     function _durationFor(uint256 budget) internal view returns (uint64) {
         if (budget == 0) return 0;
 
+        // Wound down or wiped out: the core takes no more premium (`fundMutualPremium` reverts),
+        // and `activeCover` stays large until members settle, so skip here.
+        ICommitmentManager.Mutual memory g = manager.getMutual(mutualId);
+        if (g.terminal || g.exhausted) return 0;
+
         (, uint128 activeCover,,,, uint64 periodFinish,,,) = manager.getMutualPremiumState(mutualId);
         if (activeCover == 0) return 0; // no underwriters: accumulate, cover stays structural
 

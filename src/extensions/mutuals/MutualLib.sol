@@ -32,10 +32,11 @@ import {MeasuredPull} from "src/shared/utilities/MeasuredPull.sol";
 library MutualLib {
     /// @dev 1e18-scaled fully-attributed loss fraction (Lambda == 1 means 100% of every E_i owed).
     uint256 internal constant LAMBDA_ONE = 1e18;
-    /// @dev A mutual is exhausted once no more than this much of the 1e18 loss fraction is left.
-    ///      Each executed loss rounds its Lambda step down, so a mutual wiped out by several
-    ///      declarations ends a few units short of LAMBDA_ONE and an exact comparison would
-    ///      never fire. A billionth of cover is below anything a joiner could usefully owe.
+    /// @dev A loss that leaves no more than this much of the 1e18 loss fraction exhausts the mutual
+    ///      (see `executeMutualLoss`). Each executed loss rounds its Lambda step down, so a mutual
+    ///      wiped out by several declarations ends a few units short of LAMBDA_ONE and an exact
+    ///      comparison would never fire. A billionth of cover is below anything a joiner could
+    ///      usefully owe.
     uint256 internal constant EXHAUSTION_DUST = 1e9;
     /// @dev 1e27 precision for the premium-per-cover index `Pi` (Synthetix-style; higher than Lambda's
     ///      1e18 because premium streams continuously over a possibly-large `activeCover` denominator,
@@ -111,7 +112,7 @@ library MutualLib {
     ) external returns (uint256 commitmentId) {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (!g.active || g.terminal) revert ICM.MutualNotActive();
-        if (_exhausted(g)) revert ICM.MutualExhausted(); // wiped out: a joiner could never owe
+        if (g.exhausted) revert ICM.MutualExhausted(); // wiped out: a joiner could never owe
         if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending(); // capacity frozen during a declaration
         if (params.arbiter != g.arbiter) revert ICM.MutualArbiterMismatch();
         if (params.counterparty != g.beneficiary) revert ICM.MutualBeneficiaryMismatch(); // no forfeit-to-self
@@ -249,6 +250,13 @@ library MutualLib {
         // Cannot pass LAMBDA_ONE: applied <= (LAMBDA_ONE - Lambda) * totalShares / LAMBDA_ONE, and
         // both divisions round down.
         g.cumulativeLoss += (applied * LAMBDA_ONE) / g.totalShares;
+
+        // Wiped out: the loss took everything the index could still deliver, or left no more than
+        // dust of the fraction. From here a joiner could owe next to nothing while earning on its
+        // whole stake, so the mutual takes no joins and no premium; members still settle, claim
+        // and release. Lambda alone cannot say this: the last step's rounding is lost in whole
+        // numeraire units, which on a small mutual leaves a gap far above the dust.
+        if (declared >= headroom || LAMBDA_ONE - g.cumulativeLoss <= EXHAUSTION_DUST) g.exhausted = true;
 
         if (applied < declared) emit ICM.MutualLossShortfall(mutualId, declared - applied);
         emit ICM.MutualLossExecuted(mutualId, applied, g.cumulativeLoss);
@@ -498,7 +506,7 @@ library MutualLib {
     ///         `newFinish - now`), so a dust fund cannot compress it; a live stream's rate may only be
     ///         maintained or raised (PremiumRateDecreased); and the new `periodFinish` is computed in
     ///         uint256 so the uint64 cast can never truncate into the past. Reverts `MutualExhausted`
-    ///         once Lambda is within `EXHAUSTION_DUST` of its cap.
+    ///         once the mutual is `exhausted`.
     function fundMutualPremium(
         CommitmentManagerStorage.Layout storage s,
         uint256 mutualId,
@@ -507,7 +515,7 @@ library MutualLib {
     ) external {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (g.terminal) revert ICM.MutualIsTerminal();
-        if (_exhausted(g)) revert ICM.MutualExhausted(); // no cover left to pay for
+        if (g.exhausted) revert ICM.MutualExhausted(); // no cover left to pay for
         if (duration < MIN_STREAM_DURATION || duration > MAX_STREAM_DURATION) {
             revert ICM.StreamDurationOutOfBounds();
         }
@@ -758,12 +766,6 @@ library MutualLib {
     {
         g = s.mutuals[mutualId];
         if (g.arbiter == address(0)) revert ICM.MutualNotFound();
-    }
-
-    /// @dev True once all but dust of the mutual's cover has been attributed to losses: no joins
-    ///      and no premium from then on. Existing members still settle, claim and release.
-    function _exhausted(ICM.Mutual storage g) private view returns (bool) {
-        return LAMBDA_ONE - g.cumulativeLoss <= EXHAUSTION_DUST;
     }
 
     /// @dev Whether the member's exit request (`unbondRequestedAt != 0`) has run past its exit
