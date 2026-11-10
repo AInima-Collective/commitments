@@ -1,39 +1,12 @@
 import { Hono } from 'hono'
 import { and, desc, eq, sql } from 'ponder'
-import { db, publicClients } from 'ponder:api'
+import { db } from 'ponder:api'
 import schema from 'ponder:schema'
-import type { Hex } from 'viem'
 
-import { commitmentsVaultAbi } from '../abis'
-import { ensureOffchainSchema, readRecent } from './offchainDb'
-import { takeSnapshot } from './snapshot'
-import { clientKey, createRateLimiter } from './rateLimit'
-import { CHAIN_NAME, CHAIN_ID } from '../env'
 import { jsonBig, parseLimit } from './http'
+import { periodicStepSeconds } from './snapshotMath'
 
-// Manual snapshot triggers chain reads + a DB upsert; guard it like the sibling
-// /metadata/pin write endpoint. 10 / minute / IP is plenty for dev + tests.
-const snapshotLimiter = createRateLimiter({ windowMs: 60_000, maxPerWindow: 10 })
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
-
-interface MinimalPublicClient {
-  readContract(args: {
-    address: Hex
-    abi: typeof commitmentsVaultAbi
-    functionName: 'totalAssets' | 'totalSupply'
-  }): Promise<bigint>
-  // Snapshot's default "now" reads the chain clock; the real viem client has this.
-  getBlock(): Promise<{ timestamp: bigint }>
-}
-
-function getPublicClient(): MinimalPublicClient {
-  const clients = publicClients as Record<string, MinimalPublicClient | undefined>
-  const client = clients[CHAIN_NAME]
-  if (!client) {
-    throw new Error(`publicClient not found for chain "${CHAIN_NAME}"`)
-  }
-  return client
-}
 
 const app = new Hono()
 
@@ -291,97 +264,44 @@ app.get('/:vault/forfeit-ledger', async (c) => {
 
 /**
  * GET /vaults/:vault/periodic?days=N
+ * GET /vaults/:vault/periodic?latest=1
  *
- * Time-series snapshots for the vault, newest first. Default 7 days, max 90.
- * Returns rows from `offchain.vault_periodic_snapshot`. APY columns are null
- * until the relevant window of history accumulates.
+ * Vault snapshots written by the `VaultSnapshot` block handler, newest first.
+ * `days` (default 7, max 90) is counted back from the newest snapshot, so it
+ * follows the chain clock. The series is downsampled to the newest snapshot
+ * per hour for up to 7 days and per day beyond, so at most ~170 rows.
+ * `latest=1` returns only the newest snapshot (the APY headline).
  *
- * BigInt fields are serialized as strings for JSON.
+ * APY columns are null until half the window of history exists. Bigints
+ * serialize as strings.
  */
 app.get('/:vault/periodic', async (c) => {
-  await ensureOffchainSchema()
   const vault = c.req.param('vault').toLowerCase() as `0x${string}`
+  if (!ADDRESS_RE.test(vault)) return c.json({ error: 'invalid vault address' }, 400)
+  const t = schema.vaultSnapshot
   const rawDays = Number(c.req.query('days') ?? 7)
-  const days = Math.min(Math.max(Number.isFinite(rawDays) ? rawDays : 7, 1), 90)
-  const now = BigInt(Math.floor(Date.now() / 1000))
-  const rows = await readRecent(vault, days, now)
+  const days = Math.min(Math.max(Number.isFinite(rawDays) ? Math.trunc(rawDays) : 7, 1), 90)
 
-  return c.json({
-    vault,
-    days,
-    rows: rows.map((r) => ({
-      vault: r.vault,
-      timestamp: r.timestamp.toString(),
-      sharePrice: r.sharePrice.toString(),
-      totalAssets: r.totalAssets.toString(),
-      totalSupply: r.totalSupply.toString(),
-      apy7d: r.apy7d,
-      apy30d: r.apy30d,
-      totalForfeitable: r.totalForfeitable.toString(),
-      totalEncumberedShares: r.totalEncumberedShares.toString(),
-      activeCommitmentCount: r.activeCommitmentCount,
-      forfeitPendingCount: r.forfeitPendingCount,
-    })),
-  })
-})
-
-/**
- * POST /vaults/:vault/periodic/snapshot
- *
- * Manual trigger for the snapshot job. Useful in dev (no need to wait for the
- * next interval tick) and for tests. Returns the result envelope including
- * the row that would have been written when status='created'.
- *
- * The :vault param selects which VaultFactory child to snapshot (v2 deploys one
- * vault per backing asset).
- */
-app.post('/:vault/periodic/snapshot', async (c) => {
-  const key = clientKey(c.req.header('x-forwarded-for'), c.req.header('x-real-ip'))
-  if (snapshotLimiter.limited(key)) {
-    return c.json({ error: 'Too many snapshot requests; slow down.' }, 429)
+  if (c.req.query('latest') === '1') {
+    const rows = await db.select().from(t).where(eq(t.vault, vault)).orderBy(desc(t.timestamp)).limit(1)
+    return jsonBig(c, { vault, days, rows })
   }
 
-  const raw = c.req.param('vault')
-  if (!ADDRESS_RE.test(raw)) {
-    return c.json({ error: 'vault must be a 0x-prefixed 20-byte address.' }, 400)
-  }
-  const vault = raw.toLowerCase() as `0x${string}`
+  // DISTINCT ON needs the same expression in ORDER BY; the step is a constant
+  // we chose, so it is inlined rather than bound twice as two parameters.
+  const bucket = sql`div(${t.timestamp}, ${sql.raw(String(periodicStepSeconds(days)))})`
+  const rows = await db
+    .selectDistinctOn([bucket])
+    .from(t)
+    .where(
+      and(
+        eq(t.vault, vault),
+        sql`${t.timestamp} >= (select max(${t.timestamp}) from ${t} where ${t.vault} = ${vault}) - ${days * 86_400}`,
+      ),
+    )
+    .orderBy(desc(bucket), desc(t.timestamp))
 
-  // Optionally pin the clock from the body. Default is on-chain block time, so
-  // the manual trigger naturally captures a warped price without a body; this
-  // is only for callers that want to anchor "now" explicitly (e.g. backfills).
-  let nowSeconds: bigint | undefined
-  try {
-    const body = (await c.req.json().catch(() => null)) as { nowSeconds?: string | number } | null
-    if (body?.nowSeconds !== undefined && body.nowSeconds !== null) {
-      nowSeconds = BigInt(body.nowSeconds)
-    }
-  } catch {
-    return c.json({ error: 'nowSeconds must be an integer.' }, 400)
-  }
-
-  const result = await takeSnapshot({
-    vault,
-    ...(nowSeconds !== undefined ? { nowSeconds } : {}),
-    publicClient: getPublicClient(),
-    chainId: CHAIN_ID,
-  })
-  return c.json({
-    ...result,
-    vault: result.vault,
-    timestamp: result.timestamp.toString(),
-    data: result.data
-      ? {
-          ...result.data,
-          timestamp: result.data.timestamp.toString(),
-          sharePrice: result.data.sharePrice.toString(),
-          totalAssets: result.data.totalAssets.toString(),
-          totalSupply: result.data.totalSupply.toString(),
-          totalForfeitable: result.data.totalForfeitable.toString(),
-          totalEncumberedShares: result.data.totalEncumberedShares.toString(),
-        }
-      : undefined,
-  })
+  return jsonBig(c, { vault, days, rows })
 })
 
 export default app

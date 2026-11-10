@@ -24,7 +24,7 @@ docs live in the matching `src/api/<group>.ts`.
 - `/commitments` — `urgent` (canonical urgency-ordered list; see "Canonical sort orders" below), `/:id`, `/:id/contributions`, `/:id/arbitration`, `arbitration/activity`
 - `/agreements/:id/settlements`
 - `/mutuals` — list, `/:id/members`, `/:id/ledger`, `/:id/premium`, `/:id/history?days=7|30|90` (daily premium APR, capital, cover sold)
-- `/vaults/:vault` — `forfeit-ledger`, `donations`, `coverage`, `periodic` (and `POST periodic/snapshot`)
+- `/vaults/:vault` — `forfeit-ledger`, `donations`, `coverage`, `periodic?days=N` (hourly up to 7 days, daily beyond) and `periodic?latest=1` (newest snapshot; see "Vault snapshots" below)
 - `/services/:address/stake-summary`
 - `/protocol` — `stats`, `arbiters`, `cases`, `leaderboard`, `mechanism-activity`
 - `/governors` — list, `/:address`, `/:address/proposals`, `/:address/proposals/:id`, `/:address/proposals/:id/votes`
@@ -37,6 +37,19 @@ docs live in the matching `src/api/<group>.ts`.
 strategy bindings on active commitments where the address is the counterparty,
 so the caller can read `manager.pending(commitmentId, strategy, claimData)`
 live, and the address's realized `DistributionPaid` rows.
+
+## Vault snapshots
+
+The `VaultSnapshot` block source in `ponder.config.ts` fires every 25 blocks
+on Sepolia and mainnet (~5 minutes) and every 15 blocks on the local chain
+(~30 seconds). Its handler, `src/vaultSnapshot.ts`, writes one `vaultSnapshot`
+row per indexed vault: `totalAssets`, `totalSupply` and the share price read
+at that block, that vault's commitment and encumbrance aggregates in its own
+share units, and the 7d and 30d APY against the oldest row in each window.
+APY is null until half the window of history exists. History is indexed like
+any other table: it backfills from the start block, follows reorgs, and is
+rebuilt on a re-index. On mainnet the chain reads at past blocks need an
+archive RPC.
 
 ## Metadata fetch network policy
 

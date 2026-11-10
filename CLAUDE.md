@@ -377,8 +377,8 @@ Forfeit rows come from the `forfeitEvent` log table (one row per
 `blockTimestamp` and `txHash`; the `commitment` row holds only the latest
 forfeit state.
 
-`GET /vaults/:vault/periodic?days=N` serves vault snapshots from the offchain
-schema; default 7 days, max 90.
+`GET /vaults/:vault/periodic?days=N` serves vault snapshots, default 7 days,
+max 90; `?latest=1` returns only the newest one.
 
 **Operator-name resolution**: arbiter / counterparty addresses are stored as
 raw addresses in commitment rows. To render names without N+1 fetches, the
@@ -394,30 +394,20 @@ indexed `vault` table), and is NULL for plain ERC-20 backing. NULL rows belong
 to no vault's ledger. The settlement and contribution handlers also re-read
 `getCommitment` to refresh `commitment.amount`.
 
-**Offchain snapshot pipeline**: `indexer/offchain.schema.ts` defines a single
-`offchain.vault_periodic_snapshot` table that lives in a dedicated `offchain`
-PG schema (so Ponder's per-build namespace versioning doesn't touch it).
-`src/api/snapshot.ts` reads `totalAssets/totalSupply` from chain via the
-`ponder:api` publicClient, aggregates indexer state via Drizzle queries on
-the readonly DB, computes 7d/30d APY by comparing share price against the
-oldest snapshot in the trailing window, and upserts an idempotent row keyed
-by `(vault, 5-minute bucket)`. The job fires once on boot and every 5 min
-via `setInterval` registered in `src/api/index.ts`. APY columns emit `null`
-until at least half the window of history has accumulated — the frontend's
-`VaultApyChart` reads `null` as "not yet available" and shows an info
-notice instead of a flat 0% line. Manual trigger for dev:
-
-```bash
-curl -X POST http://localhost:65422/vaults/<vault>/periodic/snapshot
-```
-
-The offchain table is created via raw SQL DDL in
-`src/api/offchainDb.ts:ensureOffchainSchema` because `drizzle-orm/pg-core`
-isn't a direct dep of `@commitments/indexer` (transitive of ponder, blocked
-by pnpm strict resolution). Writes use `PONDER_DATABASE.adminQB.raw` from
-`globalThis` since the `db` exported from `ponder:api` is read-only — keep
-this path narrow; if a future ponder bump renames that global, the
-snapshot pipeline will fail loudly at startup and we revisit.
+**Vault snapshots**: a Ponder block source, `VaultSnapshot` in
+`ponder.config.ts`, fires every 25 blocks on Sepolia and mainnet (~5 minutes)
+and every 15 blocks locally (~30 seconds, so the admin "simulate yield" flow
+gets a post-warp point without a trigger). The handler in
+`src/vaultSnapshot.ts` writes one `vaultSnapshot` row per indexed vault, keyed
+`(vault, timestamp)`: `totalAssets` / `totalSupply` / share price read at that
+block, the vault's own commitment and encumbrance aggregates in its share
+units, and `apy7d` / `apy30d` in bps against the oldest row in each trailing
+window (`snapshotMath.ts`). APY is `null` until half the window of history
+exists; the frontend reads `null` as "not yet available". Being an ordinary
+`onchainTable`, the history backfills, follows reorgs and is rebuilt on
+re-index. `GET /vaults/:vault/periodic` returns the newest row per hour (up to
+7 days) or per day (beyond), counting back from the newest row so it follows
+the chain clock; `useVaultApy` reads `?latest=1`.
 
 **Environment**: `DEPLOY_ENV` selects `LOCAL` (anvil 31337, the default),
 `SEPOLIA` (11155111) or `PROD` (Ethereum mainnet). Sepolia reads

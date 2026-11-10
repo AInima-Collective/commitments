@@ -1438,3 +1438,37 @@ export const vaultYieldFee = onchainTable(
     recipientIdx: index().on(t.recipient),
   }),
 )
+
+/**
+ * One row per vault per `VaultSnapshot` block tick (`src/vaultSnapshot.ts`),
+ * keyed by the sampled block's timestamp. Every figure is read or aggregated
+ * AT that block, so a re-index rebuilds the same history with no gaps.
+ *
+ * Units: `totalAssets` in the vault's underlying asset; `totalSupply`,
+ * `totalForfeitable` and `totalEncumberedShares` in the vault's shares;
+ * `sharePrice` is assets per 1e18 shares. `apy7d` / `apy30d` are basis points
+ * against the oldest row in the trailing window, null until that row is at
+ * least half the window old.
+ */
+export const vaultSnapshot = onchainTable(
+  'vault_snapshot',
+  (t) => ({
+    vault: t.hex().notNull(),
+    timestamp: t.bigint().notNull(),
+    sharePrice: t.bigint().notNull(),
+    totalAssets: t.bigint().notNull(),
+    totalSupply: t.bigint().notNull(),
+    // Double, not integer: an annualised rate off a short window can exceed int4.
+    apy7d: t.doublePrecision(),
+    apy30d: t.doublePrecision(),
+    /** Σ amount × maxPenaltyBps / 10000 over this vault's active, unbonding and forfeitPending commitments. */
+    totalForfeitable: t.bigint().notNull(),
+    /** Σ ledgerPosition.encumbered for this vault's share token. */
+    totalEncumberedShares: t.bigint().notNull(),
+    activeCommitmentCount: t.integer().notNull(),
+    forfeitPendingCount: t.integer().notNull(),
+  }),
+  (t) => ({
+    pk: primaryKey({ columns: [t.vault, t.timestamp] }),
+  }),
+)

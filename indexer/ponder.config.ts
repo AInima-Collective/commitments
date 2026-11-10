@@ -280,4 +280,15 @@ export default createConfig({
       startBlock,
     },
   },
+  // Vault snapshots (src/vaultSnapshot.ts): one row per vault every `interval`
+  // blocks. 25 blocks is ~5 minutes at 12s; the local chain mines every 2s
+  // (`just dev-up`), so 15 blocks is ~30s and the admin "simulate yield" flow
+  // sees its post-warp point without a manual trigger.
+  blocks: {
+    VaultSnapshot: {
+      chain: CORE_CHAIN,
+      startBlock,
+      interval: IS_PROD || IS_SEPOLIA ? 25 : 15,
+    },
+  },
 })

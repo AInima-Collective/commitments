@@ -50,18 +50,20 @@ interface UseVaultPeriodicHistoryParams {
   vaultAddress: Address | undefined
   /** Trailing window in days. Default 7, max 90. */
   days?: number
+  /** Fetch only the newest snapshot (`?latest=1`); `days` is then ignored. */
+  latest?: boolean
 }
 
 /**
- * Time-series snapshots for one vault, sourced from
- * `offchain.vault_periodic_snapshot` via the indexer's REST endpoint. Polls
- * every 60s — snapshots fire on a 5-minute cadence so faster polling is
- * wasted work. Returns `data: undefined` until the indexer responds; rows
- * are newest-first.
+ * Snapshots for one vault from the indexer's `/vaults/:vault/periodic`, which
+ * serves the `vaultSnapshot` table downsampled to hourly (up to 7 days) or
+ * daily points. Polls every 60s. Returns `data: undefined` until the indexer
+ * responds; rows are newest-first.
  */
 export function useVaultPeriodicHistory({
   vaultAddress,
   days = 7,
+  latest = false,
 }: UseVaultPeriodicHistoryParams): {
   data: PeriodicHistory | undefined
   isLoading: boolean
@@ -70,11 +72,11 @@ export function useVaultPeriodicHistory({
   const enabled = hasIndexer && Boolean(vaultAddress)
   const query = useQuery<PeriodicHistory>({
     enabled,
-    queryKey: ['vault-periodic-history', vaultAddress, days],
+    queryKey: ['vault-periodic-history', vaultAddress, latest ? 'latest' : days],
     queryFn: async () => {
       if (!vaultAddress) throw new Error('vaultAddress required')
       const wire = await indexerJson<PeriodicHistoryWire>(
-        `/vaults/${vaultAddress.toLowerCase()}/periodic?days=${days}`,
+        `/vaults/${vaultAddress.toLowerCase()}/periodic?${latest ? 'latest=1' : `days=${days}`}`,
       )
       const rows: PeriodicSnapshot[] = wire.rows.map((r) => ({
         vault: r.vault as Address,
