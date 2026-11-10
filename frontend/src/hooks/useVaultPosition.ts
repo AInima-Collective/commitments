@@ -50,12 +50,14 @@ export function useVaultPosition({
   const enabled = !!vaultAddress && !!viewAddress
 
   // Immutable: the vault's asset and share decimals, then the asset's metadata.
+  // These do not depend on the viewer, so they load with no wallet connected:
+  // a page that falls back to 18 decimals would show a 6-decimal vault's TVL as ~0.
   const { data: vaultMeta } = useReadContracts({
     contracts: [
       { abi: commitmentsVaultAbi, address: vaultAddress, functionName: 'asset' },
       { abi: commitmentsVaultAbi, address: vaultAddress, functionName: 'decimals' },
     ],
-    query: { enabled, ...IMMUTABLE },
+    query: { enabled: !!vaultAddress, ...IMMUTABLE },
   })
   const assetAddress = vaultMeta?.[0]?.result
   const shareDecimals = vaultMeta?.[1]?.result
@@ -65,7 +67,7 @@ export function useVaultPosition({
       { abi: erc20Abi, address: assetAddress, functionName: 'symbol' },
       { abi: erc20Abi, address: assetAddress, functionName: 'name' },
     ],
-    query: { enabled: enabled && !!assetAddress, ...IMMUTABLE },
+    query: { enabled: !!assetAddress, ...IMMUTABLE },
   })
 
   // Live: wallet shares and the deposit pause flag.
