@@ -251,22 +251,19 @@ the standards that specify them.
 | `0xbcac5af4` | `cancelStaleMutualLoss(uint256)` |
 | `0x033d8afb` | `claimMemberPremium(uint256)` |
 | `0xd6edb779` | `claimMembersPremium(uint256[])` |
-| `0x4cf4a231` | `configureHeterogeneous(uint256,(address,uint64,uint64,uint64,address[],uint64[]))` |
-| `0xe5d41bb9` | `createMutual((address,address,address,address,uint64,uint64))` |
+| `0x66208a18` | `createMutual((address,address,address,uint64,uint64))` |
 | `0xd842ddb8` | `executeMutualLoss(uint256)` |
 | `0xd7163930` | `fundMutualPremium(uint256,uint256,uint64)` |
 | `0x38fbf2c6` | `getMembership(uint256)` |
 | `0x46950e1b` | `getMutual(uint256)` |
-| `0x022fad1c` | `getMutualJuniorPool(uint256)` |
 | `0x96e0f85a` | `getMutualLossProposal(uint256)` |
 | `0xb2ca6d26` | `getMutualPremiumState(uint256)` |
 | `0x9249fe7f` | `initiateMutualLoss(uint256,uint256,bytes32)` |
-| `0x0a8e1158` | `joinMutual(uint256,(address,address,address,address,uint256,uint16,uint64,uint64,(address,bytes)[],string,bytes32),uint128,bytes)` |
+| `0x3dd33b33` | `joinMutual(uint256,(address,address,address,address,uint256,uint16,uint64,uint64,(address,bytes)[],string,bytes32))` |
 | `0x7c2cfb5c` | `pendingMemberLoss(uint256)` |
 | `0x62340abc` | `pendingMemberPremium(uint256)` |
 | `0xd432238d` | `reclaimPremium(uint256)` |
 | `0x307c36ad` | `releaseMutualMember(uint256)` |
-| `0x2819c7ff` | `remark(uint256,uint256)` |
 | `0xaa7aa643` | `requestMutualExit(uint256)` |
 | `0xe2b76d56` | `settleAndClaim(uint256)` |
 | `0xaf81191f` | `settleMemberLoss(uint256)` |
@@ -280,14 +277,9 @@ the standards that specify them.
 | `0xcb822c5c768eef06a96e73295defbfc46e2ab3e498ff258651c0e7eb398a3003` | `MemberJoined(uint256,uint256,address,uint128,uint256)` |
 | `0x60f37e9ed531bc54915d13dcc372b88583ffaa830d8afa84561f5e92ef946152` | `MemberPremiumClaimed(uint256,address,uint256)` |
 | `0x452dda6038fbc3d60af3fa22bb027c7534fa4e0139c5e8580cfa9a252218797d` | `MemberReleased(uint256,uint256)` |
-| `0x5fe2520e6adbb067ca0794dca82d0099343941de3fb0d34503112c19331f2670` | `MemberRemarked(uint256,uint128,uint128)` |
 | `0xcd464cbe0947b45d2f30859f6c2b6a1565e43b7cdd16748760e2edd6be707636` | `MemberSettled(uint256,uint256,uint256,uint256)` |
 | `0x00472971d79a888eeee711359f23a84d8c04824898531260e185247563ebc02e` | `MutualActivated(uint256)` |
-| `0x0c170b3a689c4d47fedb07da4cf64ba5d46658743f6e04b08ea851d323f0a5d7` | `MutualCreated(uint256,address,address,address,address)` |
-| `0x9506471a97a69ae1b8a1a1347d5d46ff1533b2db86fe8162a9f46f2916e3bddd` | `MutualHeterogeneousConfigured(uint256,address,uint64,uint64,uint64)` |
-| `0x533aa876ef8d7eba34f8cdf8eb7cb6f2f2e31c18a486545548e0ea043c9b71d8` | `MutualJuniorDrawn(uint256,uint256)` |
-| `0x24b60a480324ff3c9639c2f5b7913acc1beb9b8cc75eacd680390055a75e8e4a` | `MutualJuniorFunded(uint256,address,uint256)` |
-| `0x528c2cae235e523d4ba778ab4476344f0dc9834decf25e106964f83bcef13823` | `MutualJuniorSwept(uint256,address,uint256)` |
+| `0x6850cd51e55285efc65fd0ab89c6408ae3ec9fa1a454eb309265dd9d623614e6` | `MutualCreated(uint256,address,address,address)` |
 | `0x2e93d0dd5b27b7b0847a7265ba47fd55b8ec8eaf037734c04732fde314d49622` | `MutualLossCancelled(uint256,bool)` |
 | `0x062b0e68f47c67a51df6252476443b6d17f49668666b234c1a13a6121f377531` | `MutualLossExecuted(uint256,uint256,uint256)` |
 | `0xb494ed38a04c2e23df1bd2269fe10a63a1f81ae7e8f3663a292c5ce0c12d2d6e` | `MutualLossInitiated(uint256,uint256,bytes32,address)` |
@@ -305,30 +297,24 @@ the standards that specify them.
 | `0x4adb6f85` | `DeallocationWindowActive()` |
 | `0x12f50c9e` | `DeallocationWindowTooShort()` |
 | `0xd40f0da0` | `ExitNotRequested()` |
-| `0xdc13d18a` | `HeterogeneousPremiumUnsupported()` |
-| `0x3b2903e8` | `InsufficientMutualJunior(uint256,uint256)` |
+| `0x2fbafd87` | `ExitRequestLapsed()` |
 | `0xe0e95f30` | `InsufficientMutualPremium(uint256,uint256)` |
 | `0x64b1e133` | `InvalidCreditedValue()` |
-| `0xe2a0b081` | `InvalidHeteroConfig()` |
-| `0x9a2791cc` | `InvalidValuationAttestation()` |
 | `0x8c7933ae` | `MemberStrategyForbidden()` |
 | `0xb6093cb5` | `MemberUnsettled()` |
-| `0x64fa1441` | `MutualAlreadyActive()` |
-| `0xc29005e9` | `MutualAlreadyConfigured()` |
 | `0x1cdb7bd1` | `MutualArbiterMismatch()` |
 | `0x1d1d4e48` | `MutualBeneficiaryMismatch()` |
 | `0x2e377f89` | `MutualChallengeWindowActive()` |
 | `0xb7b4d8b2` | `MutualChallengeWindowTooShort()` |
+| `0x4209d367` | `MutualExhausted()` |
 | `0x9f550c92` | `MutualIsTerminal()` |
 | `0xb352c1e0` | `MutualLossPending()` |
 | `0x1ec88ab2` | `MutualNotActive()` |
 | `0x4555d8d1` | `MutualNotFound()` |
 | `0xe6c99a1b` | `NoActiveCover()` |
 | `0xbaca7843` | `NoMutualLossPending()` |
-| `0x0e616588` | `NotHeterogeneous()` |
 | `0xcc488837` | `NotMutualArbiter()` |
 | `0x6c985651` | `NotMutualMember()` |
-| `0xdc9fc207` | `NotValuationAuthority()` |
 | `0xd0e1bab8` | `NumeraireMismatch()` |
 | `0x52700180` | `PremiumRateDecreased()` |
 | `0xcd706c87` | `PremiumStreamUnderfunded()` |
@@ -336,15 +322,6 @@ the standards that specify them.
 | `0x5736e150` | `RewardRateOverflow()` |
 | `0x72c36382` | `StreamDurationOutOfBounds()` |
 | `0x26e9a535` | `TotalSharesOverflow()` |
-| `0xe0be1db1` | `ValuationAuthorityIsArbiter()` |
-
-### `IBandValuationAdapter`
-
-#### Function selectors
-
-| Selector | Signature |
-|---|---|
-| `0x0f8b27d7` | `value(address,uint256)` |
 
 ### `ILinkedMutualPolicy`
 
@@ -366,15 +343,7 @@ the standards that specify them.
 
 | Selector | Signature |
 |---|---|
-| `0xb8e2d141` | `availableDenoms()` |
-| `0xb2e54ac5` | `availableDenomsPaged(uint256,uint256)` |
-| `0x435e2980` | `consumers()` |
-| `0xaed26346` | `consumersPaged(uint256,uint256)` |
 | `0x485cc955` | `initialize(address,address)` |
-| `0x3fa9a8de` | `nodeType()` |
-| `0x8af7525d` | `nodeTypeName()` |
-| `0xf8401fe6` | `providers()` |
-| `0x50271343` | `providersPaged(uint256,uint256)` |
 | `0x207a9200` | `registerProvider(address,bytes32,bytes32,uint16,uint64)` |
 | `0xe9dab6d0` | `releaseStake(bytes32,uint256)` |
 | `0x6f37a2c9` | `stake(address,bytes32,uint256)` |
@@ -386,55 +355,15 @@ the standards that specify them.
 
 | Selector | Signature |
 |---|---|
-| `0xb8e2d141` | `availableDenoms()` |
-| `0xb2e54ac5` | `availableDenomsPaged(uint256,uint256)` |
 | `0x5d044b7e` | `claimRewards(bytes32,address)` |
-| `0x435e2980` | `consumers()` |
-| `0xaed26346` | `consumersPaged(uint256,uint256)` |
 | `0x132bb268` | `distributeRewards(bytes32,address,uint256)` |
 | `0xc5799e4a` | `getLien(address,bytes32,address)` |
 | `0x7a0f4072` | `getOutflows(address,bytes32)` |
 | `0x03e044d8` | `getUserInfo(address,bytes32)` |
 | `0x485cc955` | `initialize(address,address)` |
-| `0x3fa9a8de` | `nodeType()` |
-| `0x8af7525d` | `nodeTypeName()` |
-| `0xf8401fe6` | `providers()` |
-| `0x50271343` | `providersPaged(uint256,uint256)` |
 | `0x2b2528d6` | `releaseStake(address,bytes32,uint256)` |
 | `0x1813b921` | `setOutflows(bytes32,(address,uint16,uint256)[])` |
 | `0x8caa5230` | `stake(bytes32,uint256)` |
-
-### `IFlowQuery`
-
-#### Function selectors
-
-| Selector | Signature |
-|---|---|
-| `0xb8e2d141` | `availableDenoms()` |
-| `0xb2e54ac5` | `availableDenomsPaged(uint256,uint256)` |
-| `0x435e2980` | `consumers()` |
-| `0xaed26346` | `consumersPaged(uint256,uint256)` |
-| `0x3fa9a8de` | `nodeType()` |
-| `0x8af7525d` | `nodeTypeName()` |
-| `0xf8401fe6` | `providers()` |
-| `0x50271343` | `providersPaged(uint256,uint256)` |
-
-### `IFlowQueryPath`
-
-#### Function selectors
-
-| Selector | Signature |
-|---|---|
-| `0x9ad46e29` | `MAX_PATH_DEPTH()` |
-| `0xb8e2d141` | `availableDenoms()` |
-| `0xb2e54ac5` | `availableDenomsPaged(uint256,uint256)` |
-| `0x435e2980` | `consumers()` |
-| `0xaed26346` | `consumersPaged(uint256,uint256)` |
-| `0x31af283b` | `denomPath(bytes32,uint16)` |
-| `0x3fa9a8de` | `nodeType()` |
-| `0x8af7525d` | `nodeTypeName()` |
-| `0xf8401fe6` | `providers()` |
-| `0x50271343` | `providersPaged(uint256,uint256)` |
 
 ### `IMeshFactory`
 
@@ -446,8 +375,6 @@ the standards that specify them.
 | `0x4fc48f06` | `deployFanInAt(bytes32,address,address)` |
 | `0xc1f1598a` | `deployFanOut(address,address)` |
 | `0xadbcb26b` | `deployFanOutAt(bytes32,address,address)` |
-| `0x6f05e907` | `deployFanOutWithPenalty(address,address,uint16)` |
-| `0xd3ff9404` | `deployFanOutWithPenaltyAt(bytes32,address,address,uint16)` |
 | `0xc6c329e4` | `deployTokenWeighting(address,address)` |
 | `0xd0345cdd` | `deployTokenWeightingAt(bytes32,address,address)` |
 | `0x0b86a8b4` | `fanInImpl()` |
@@ -469,11 +396,7 @@ the standards that specify them.
 
 | Selector | Signature |
 |---|---|
-| `0xb8e2d141` | `availableDenoms()` |
-| `0xb2e54ac5` | `availableDenomsPaged(uint256,uint256)` |
 | `0x5d044b7e` | `claimRewards(bytes32,address)` |
-| `0x435e2980` | `consumers()` |
-| `0xaed26346` | `consumersPaged(uint256,uint256)` |
 | `0x9fd2f3f4` | `currentStake(address,bytes32)` |
 | `0x7affea87` | `denomCount()` |
 | `0x132bb268` | `distributeRewards(bytes32,address,uint256)` |
@@ -483,10 +406,6 @@ the standards that specify them.
 | `0xeaeded5f` | `getVotingPowerAt(address,uint256)` |
 | `0x485cc955` | `initialize(address,address)` |
 | `0xa9bef2a5` | `isDenomRetired(bytes32)` |
-| `0x3fa9a8de` | `nodeType()` |
-| `0x8af7525d` | `nodeTypeName()` |
-| `0xf8401fe6` | `providers()` |
-| `0x50271343` | `providersPaged(uint256,uint256)` |
 | `0x2b2528d6` | `releaseStake(address,bytes32,uint256)` |
 | `0xd793d929` | `retireDenom(bytes32)` |
 | `0x6f37a2c9` | `stake(address,bytes32,uint256)` |
@@ -543,7 +462,6 @@ the standards that specify them.
 | `0x1a4a7c61` | `getOperatorCount()` |
 | `0x2ee663b8` | `getOperatorMetadata(address)` |
 | `0x3eb22c95` | `getOperatorSet()` |
-| `0xe4e88de8` | `getOperatorStake(address)` |
 | `0xc53a0292` | `increaseNonce()` |
 | `0x6d70f7ae` | `isOperator(address)` |
 | `0x67c1def9` | `isStrategyAllowed(address)` |
@@ -553,13 +471,13 @@ the standards that specify them.
 | `0x8bf9af4f` | `onDelegationReleased(uint256,uint256)` |
 | `0x8c7405a0` | `operatorFanIn(address)` |
 | `0xb5cdfa9c` | `operatorForCommitment(uint256)` |
+| `0xf68b84f7` | `reconcile(uint256)` |
 | `0xf207564e` | `register(uint256)` |
 | `0xe9f45373` | `registerWithSig(address,uint256,uint256,uint256,bytes)` |
 | `0xca15d3db` | `setMeshWiring(address,address)` |
 | `0xfac9d381` | `setOperatorMetadata(string,bytes32)` |
 | `0x56a13690` | `setStrategyAllowed(address,bool)` |
 | `0xf990ccd7` | `sigNonces(address)` |
-| `0x800190aa` | `stakeAt(address,uint64,uint256)` |
 | `0x938bbb67` | `stakeDenom()` |
 | `0xdf3d665f` | `sweepForfeitProceeds(address,uint256,address)` |
 | `0x9a039718` | `tightenPolicy(uint16)` |
@@ -576,14 +494,15 @@ the standards that specify them.
 | `0x5fc718b93b69cdc1f6eaa224945c43d2fed38b347c1e2dec7224f03fa8170888` | `DelegationReleased(address,address,uint256,uint256)` |
 | `0xc5bb2099531ead43de8d78c85a3c0b9e37125f06e85fed645293ac621034228d` | `ForfeitRecipientPending(address,uint256,uint256)` |
 | `0x44e4593b24b930fec954b8faf7b405dd7d60250bda2b24f2ed47f585fa0d38c6` | `ForfeitRecipientSwept(address,address,uint256)` |
+| `0x03f684200ae70f5d0fb94dc5819b42eb183c29d9df166bfdb777e78959d78ec7` | `MaxDelegationsPerOperatorUpdated(uint256,uint256)` |
 | `0xb5657d8ef32a3157e386285cdc1cb660249f5a397be4e2f066001876b7fe0b1e` | `MeshWired(address,address)` |
+| `0xf6eefd49a83d72df0cc9ddb5557cfa6a047393b8d4a85163a8cefe7aa490a30f` | `MinOperatorStakeUpdated(uint256,uint256)` |
 | `0xfc69110dd11eb791755e4abd6b7d281bae236de95736d38a23782814be5e10db` | `NonceIncreased(address,uint256)` |
 | `0xbb04adc59760b78a6dc21adb47a87a0a10bbfef3c56a6a2d1eac39ff2d091402` | `OperatorBelowMinStake(address,uint256,uint256)` |
 | `0x6dd4ca66565fb3dee8076c654634c6c4ad949022d809d0394308617d6791218d` | `OperatorDeregistered(address)` |
 | `0x1dcb8baca72aad6cc1cc9c707f6585754f8a287d386d3563d20c293416c5993d` | `OperatorFanInDeployed(address,address,bytes32)` |
 | `0xa999aefed31c97e6504590dbba8f7166ca2fa7d8b5775da168afba82ad260232` | `OperatorMetadataUpdated(address,string,bytes32,uint64)` |
 | `0x2d45a98f9905b134cf6865a4353130b6928e3bc644f9f98382d3a8c4dd3e7278` | `OperatorRegistered(address,uint256,uint256)` |
-| `0x90fc2c02fae8a66cdeb7b2862854bd9a945c9d5c939613868366c9eb35c8fe10` | `StakeCheckpointed(address,uint64,uint256)` |
 | `0x6d6b32867e11fd93560ef473cd0783f2cdada733078ebb1d21e473d8b444a1cd` | `StrategyAllowlistUpdated(address,bool)` |
 
 #### Error selectors
@@ -593,6 +512,9 @@ the standards that specify them.
 | `0xfe7b7cca` | `ActiveDelegationsExist()` |
 | `0x3a81d6fc` | `AlreadyRegistered()` |
 | `0x69aa9522` | `CommitmentAlreadyDelegated()` |
+| `0xe7584546` | `CommitmentClosed()` |
+| `0x0906c21a` | `CommitmentNotTracked()` |
+| `0xafa5a317` | `CommitmentStillOpen()` |
 | `0x45be0a26` | `InsufficientStake(uint256,uint256)` |
 | `0x756688fe` | `InvalidNonce()` |
 | `0x8baa579f` | `InvalidSignature()` |
@@ -607,7 +529,6 @@ the standards that specify them.
 | `0x241cfeb5` | `RegistryNotWired(address)` |
 | `0x8e47e406` | `SameBlockToggle()` |
 | `0x0819bdcd` | `SignatureExpired()` |
-| `0x587db00f` | `StakeCheckpointOverflow()` |
 | `0xd34941f0` | `StrategiesNotAllowed()` |
 | `0x8b8d204c` | `URITooLong()` |
 | `0x5c427cd9` | `UnauthorizedCaller()` |
@@ -632,7 +553,6 @@ the standards that specify them.
 | `0xec7fbb31` | `operatorRegistered(address)` |
 | `0x58c2225b` | `operatorRegistry()` |
 | `0x84e038e2` | `setVotingPowerSource(address)` |
-| `0x492ec79f` | `totalOperators()` |
 | `0x6dc7458d` | `updateOperatorSigningKey(address,bytes)` |
 | `0xa7748a30` | `votingPowerSource()` |
 | `0x4845b77b` | `withdrawServiceOperator(address)` |
@@ -643,7 +563,7 @@ the standards that specify them.
 |---|---|
 | `0x739254a9462c078e4156959e45a30a34977d1067c7f0568843ed70d438e4c9bf` | `MaxReferenceBlockAgeUpdated(uint96,uint96)` |
 | `0x6dd4ca66565fb3dee8076c654634c6c4ad949022d809d0394308617d6791218d` | `OperatorDeregistered(address)` |
-| `0xbc11617e575d658c74e921c8df22f8e48566072fa78145a6cfe18420bf8d0c4e` | `OperatorRegistered(address,uint256)` |
+| `0x4d0eb1f4bac8744fd2be119845e23b3befc88094b42bcda1204c65694a00f9e5` | `OperatorRegistered(address)` |
 | `0xc05080fd447442c3e67d448efd658261f295a7827b151cc246e1faa46c70e2be` | `OperatorSigningKeyUpdated(address,address,address)` |
 | `0x99c5af1f811b150d39d592621f8f23f4df7e5664642f227684973847eb2888be` | `StakeThresholdUpdated(uint256)` |
 | `0xdf0b542f723b7a3b71971a581414abc14ab527874b63d1be08be517eee70bad7` | `VotingPowerSourceUpdated(address,address)` |
@@ -752,15 +672,12 @@ the standards that specify them.
 | Selector | Signature |
 |---|---|
 | `0x5289653e` | `AlreadyFrozen()` |
-| `0x0dc149f0` | `AlreadyInitialized()` |
 | `0xf1e4190b` | `ClaimsFrozen()` |
 | `0x19169b62` | `CumulativeRegression()` |
-| `0xf4d678b8` | `InsufficientBalance()` |
 | `0x09bde339` | `InvalidProof()` |
 | `0x00219cf1` | `NoOp()` |
 | `0x8208cbe5` | `NotFrozen()` |
 | `0xa8b00c9a` | `NotService()` |
-| `0x1b14174b` | `RootDisabled()` |
 | `0x332f684a` | `RootNotActive()` |
 | `0xd92e233d` | `ZeroAddress()` |
 | `0x1f2a2005` | `ZeroAmount()` |
@@ -779,14 +696,11 @@ the standards that specify them.
 | `0x5c36901c` | `isActive(bytes32)` |
 | `0x88b06baa` | `minActivationDelay()` |
 | `0xb4ff314b` | `pendingUpdater()` |
-| `0xca2869a0` | `rootAt(uint256)` |
 | `0x65c0240b` | `rootById(bytes32)` |
-| `0x21111bb4` | `rootCount()` |
 | `0xd598d4c9` | `service()` |
 | `0x96b896eb` | `setActivationDelay(uint64)` |
 | `0x83401c40` | `stageUpdater(address)` |
 | `0xd33a28b2` | `submitRoot(bytes32)` |
-| `0xdf034cd0` | `updater()` |
 
 #### Event topic0
 
@@ -804,7 +718,6 @@ the standards that specify them.
 | Selector | Signature |
 |---|---|
 | `0x4f1fe399` | `ActivationDelayBelowFloor()` |
-| `0x0dc149f0` | `AlreadyInitialized()` |
 | `0xd5d0cac0` | `NoStagedUpdater()` |
 | `0xa8b00c9a` | `NotService()` |
 | `0x9a280f39` | `NotUpdater()` |

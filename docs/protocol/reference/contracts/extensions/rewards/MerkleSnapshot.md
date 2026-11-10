@@ -163,24 +163,6 @@ Root metadata by content hash.
 function rootById(bytes32 rootId) external view returns (RewardsRoot memory);
 ```
 
-### rootCount
-
-Total number of roots ever submitted (active or otherwise).
-
-
-```solidity
-function rootCount() external view returns (uint256);
-```
-
-### rootAt
-
-Submission-order rootId at index. O(1).
-
-
-```solidity
-function rootAt(uint256 index) external view returns (bytes32);
-```
-
 ### isActive
 
 True if the root exists, is not disabled, and `block.timestamp >= activeAt`.
@@ -238,15 +220,6 @@ The staged (but not yet activated) updater, if any.
 
 ```solidity
 function pendingUpdater() external view returns (address newUpdater, uint64 effectiveAt);
-```
-
-### updater
-
-Alias of `activeUpdater()`. Retained for source compatibility.
-
-
-```solidity
-function updater() external view returns (address);
 ```
 
 ### _authorizeUpgrade

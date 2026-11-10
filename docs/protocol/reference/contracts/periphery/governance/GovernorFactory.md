@@ -24,7 +24,7 @@ CANCELLER_ROLE on the Timelock and grants EXECUTOR_ROLE to address(0)
 Timelock self-administers from that point forward.
 
 
-## Constants
+## State Variables
 ### governorImpl
 The Governor implementation pointed at by every ERC-1967 proxy this factory deploys.
 
@@ -43,34 +43,21 @@ address public immutable timelockImpl
 ```
 
 
-## State Variables
-### _allGovernors
-ordered list of every governor deployed by this factory.
+### deployer
+The account that deployed this factory; the only caller of `setCanonicalGovernor`.
 
 
 ```solidity
-address[] private _allGovernors
+address public immutable deployer
 ```
 
 
-### _byGovernor
-per-governor lookup of the linked DAO components.
+### _deployed
+governors deployed by this factory; `setCanonicalGovernor` accepts only these.
 
 
 ```solidity
-mapping(address governor => DAODeployment) private _byGovernor
-```
-
-
-### _governorsBySource
-per-source list of every governor instance reading from it.
-A TokenWeighting only has ONE governance writer (the
-tw.governance() slot); this map tracks every governor
-configured to *read* from the source via its shim.
-
-
-```solidity
-mapping(address source => address[]) private _governorsBySource
+mapping(address governor => bool) private _deployed
 ```
 
 
@@ -105,41 +92,12 @@ function deploy(DAOConfig calldata cfg) external returns (DAODeployment memory d
 ### setCanonicalGovernor
 
 Mark a previously-deployed governor as the canonical / reference DAO.
-Set-once: callable only when no canonical has been set. Permissionless;
-the very first caller wins, so a deployer typically does this in the
-same transaction as deploy() to lock the choice.
+Set-once, and only by the factory's `deployer`: `deploy` is permissionless,
+so an open setter would let anyone claim the slot with a junk DAO.
 
 
 ```solidity
 function setCanonicalGovernor(address governor) external;
-```
-
-### deploymentCount
-
-
-```solidity
-function deploymentCount() external view returns (uint256);
-```
-
-### governorAt
-
-
-```solidity
-function governorAt(uint256 i) external view returns (address);
-```
-
-### getDeployment
-
-
-```solidity
-function getDeployment(address governor) external view returns (DAODeployment memory dao);
-```
-
-### governorsBySource
-
-
-```solidity
-function governorsBySource(address source) external view returns (address[] memory);
 ```
 
 ### canonicalGovernor
@@ -181,6 +139,12 @@ error CanonicalAlreadySet();
 
 ```solidity
 error UnknownGovernor();
+```
+
+### NotDeployer
+
+```solidity
+error NotDeployer();
 ```
 
 ## Structs

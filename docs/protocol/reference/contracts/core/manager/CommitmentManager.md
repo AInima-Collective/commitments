@@ -24,7 +24,7 @@ orchestration, events, and registry hooks live in external delegatecall librarie
 preserve `msg.sender`, `address(this)`, and event sourcing.
 
 
-## Constants
+## State Variables
 ### PAUSER_ROLE
 
 ```solidity
@@ -581,43 +581,23 @@ function createMutual(ICM.MutualParams calldata params) external nonReentrant re
 
 ### activateMutual
 
-Arbiter activates a mutual once capacity is filled.
+Arbiter activates a mutual; members can only join an active one.
 
 
 ```solidity
 function activateMutual(uint256 mutualId) external nonReentrant;
 ```
 
-### configureHeterogeneous
-
-Configure heterogeneous mode (valuationAuthority-only, pre-activation, immutable). See lib.
-
-
-```solidity
-function configureHeterogeneous(uint256 mutualId, ICM.HeteroConfig calldata config) external nonReentrant;
-```
-
-### remark
-
-Permissionless down-only re-mark of a member's premium weight (heterogeneous only). See lib.
-
-
-```solidity
-function remark(uint256 mutualId, uint256 commitmentId) external nonReentrant;
-```
-
 ### joinMutual
 
-Create a fresh commitment and join it to `mutualId`, freezing the capacity weight.
+Create a fresh commitment and join it to `mutualId`, freezing its weight (`E_i`).
 
 
 ```solidity
-function joinMutual(
-    uint256 mutualId,
-    ICM.CommitmentParams calldata params,
-    uint128 creditedValue,
-    bytes calldata attestation
-) external nonReentrant returns (uint256 commitmentId);
+function joinMutual(uint256 mutualId, ICM.CommitmentParams calldata params)
+    external
+    nonReentrant
+    returns (uint256 commitmentId);
 ```
 
 ### initiateMutualLoss
@@ -799,15 +779,6 @@ Premium currently claimable by `commitmentId` if claimed now (banked + simulated
 function pendingMemberPremium(uint256 commitmentId) external view returns (uint256 claimable);
 ```
 
-### getMutualJuniorPool
-
-Junior shortfall absorber reserve (`funded − drawn`) for a mutual, in its numeraire.
-
-
-```solidity
-function getMutualJuniorPool(uint256 mutualId) external view returns (uint256 juniorPool);
-```
-
 ### createCommitmentFor
 
 Create a commitment on behalf of `committer` using an EIP-712 signature over the
@@ -952,10 +923,9 @@ function escrowOf(address token, address strategy) external view returns (uint25
 ### ledgerTotals
 
 Per-token aggregate counters for the base O(1) partition check (ERC §A.5). The full
-partition closes over five compartments — `free + encumbered + escrow +
-mutualPremium + mutualJunior == IERC20(token).balanceOf(manager)` (INV-P13); this
-getter exposes the base three. The two mutual compartments are read via
-`totalMutualPremium` / `totalMutualJunior`.
+partition closes over four compartments — `free + encumbered + escrow +
+mutualPremium == IERC20(token).balanceOf(manager)` (INV-P1); this getter exposes
+the base three. The mutual compartment is read via `totalMutualPremium`.
 
 
 ```solidity

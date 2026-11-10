@@ -113,20 +113,11 @@ Returns the linked OperatorRegistry address (the eligibility source).
 function operatorRegistry() external view returns (address);
 ```
 
-### totalOperators
-
-Returns the total number of registered operators.
-
-
-```solidity
-function totalOperators() external view returns (uint256);
-```
-
 ## Events
 ### OperatorRegistered
 
 ```solidity
-event OperatorRegistered(address indexed operator, uint256 weight);
+event OperatorRegistered(address indexed operator);
 ```
 
 ### OperatorDeregistered

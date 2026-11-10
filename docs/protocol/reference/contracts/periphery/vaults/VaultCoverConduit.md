@@ -23,11 +23,14 @@ would buy the vault nothing enforceable, while ratcheting `activeNotionalSold` (
 no early un-bind) and distorting the scheduler's utilization price. Standby funding is
 the exact fit: the vault pays the underwriters' reservation fee on the pool's
 offered-but-unallocated capacity.
-`poke()` is permissionless and NEVER reverts on economic edge cases — it skips and
-accumulates instead. When `activeCover == 0` (no underwriters) premium accrual pauses
-and funds pool up here; members that later join are paid from the backlog on the next
-poke. Note the members remain slashable throughout — a premium-stream lapse pauses
-underwriter pay, never the cover itself.
+`poke()` is permissionless and skips rather than reverts when there is nothing to fund
+(dust, no budget, no underwriters, no standby capacity, a duration under the floor). It
+does revert when the vault refuses the deposit leg (deposits paused, or over the
+strategy's cap), even if a share budget is already waiting.
+When `activeCover == 0` (no underwriters) premium accrual pauses and funds pool up
+here; members that later join are paid from the backlog on the next poke. Note the
+members remain slashable throughout — a premium-stream lapse pauses underwriter pay,
+never the cover itself.
 Funding math: the budget (this contract's vault-share balance, after depositing any
 underlying it holds) is converted to a stream duration by inverting the scheduler's
 quote, which is linear in duration: `duration = budget · 1y / quoteStandby(1y)`. While
@@ -38,16 +41,7 @@ No admin, no owner: the immutable (vault, policy, mutualId) triple is the whole 
 surface, mirroring `ForfeitDonationBeneficiary`.
 
 
-## Constants
-### MIN_STREAM_DURATION
-Core stream-duration floor (MutualLib.MIN_STREAM_DURATION); pokes below this skip.
-
-
-```solidity
-uint64 internal constant MIN_STREAM_DURATION = 1 minutes
-```
-
-
+## State Variables
 ### ONE_YEAR
 Scheduler quote horizon used for the budget→duration inversion.
 
@@ -71,7 +65,7 @@ The covered vault; also the mutual's numeraire token (shares).
 
 
 ```solidity
-CommitmentsVault public immutable vault
+ICommitmentsVault public immutable vault
 ```
 
 
@@ -167,29 +161,6 @@ function poke() external nonReentrant returns (uint256 premium, uint64 duration)
 |`premium`|`uint256`|Numeraire (share) premium pulled into the stream this poke.|
 |`duration`|`uint64`|Stream duration funded this poke.|
 
-
-### previewPoke
-
-Preview the next poke: underlying awaiting deposit, the post-deposit share budget,
-and the stream (duration, premium) it would fund. `duration == 0` means the poke
-would skip the funding leg.
-
-
-```solidity
-function previewPoke()
-    external
-    view
-    returns (uint256 assetsPending, uint256 shareBudget, uint64 duration, uint256 premium);
-```
-
-### _plan
-
-Post-deposit budget + duration plan for `poke()`.
-
-
-```solidity
-function _plan() internal view returns (uint256 budget, uint64 duration);
-```
 
 ### _durationFor
 

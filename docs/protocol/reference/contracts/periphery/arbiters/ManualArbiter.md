@@ -6,7 +6,7 @@ generated: true
 ---
 # ManualArbiter
 **Inherits:**
-[IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter), Ownable2Step
+[ArbiterBase](/docs/protocol/reference/contracts/shared/arbitration/ArbiterBase), Ownable2Step
 
 **Title:**
 ManualArbiter
@@ -21,18 +21,6 @@ Intended for demos, bootstrap deployments, and services with a trusted
 admin. Production AVS services should prefer `AttestationArbiter` (or
 another policy-encoded arbiter) where the policy is auditable from
 on-chain code alone.
-
-
-## Constants
-### manager
-CommitmentManager this arbiter dispatches to. Immutable to
-preserve the trust model — users who name this contract as
-their arbiter rely on the manager binding not changing.
-
-
-```solidity
-ICommitmentManager public immutable manager
-```
 
 
 ## State Variables
@@ -51,19 +39,7 @@ string private _metadataURI
 
 
 ```solidity
-constructor(address owner_, address manager_) Ownable(owner_);
-```
-
-### commitmentManager
-
-Returns the CommitmentManager this arbiter dispatches to.
-
-Implementations should make this immutable to preserve the trust
-model commitments opt into when naming this contract as arbiter.
-
-
-```solidity
-function commitmentManager() external view returns (address);
+constructor(address owner_, address manager_) Ownable(owner_) ArbiterBase(manager_);
 ```
 
 ### arbiterCapabilities
@@ -99,19 +75,6 @@ Set the off-chain metadata pointer surfaced via [arbiterMetadataURI](/docs/proto
 
 ```solidity
 function setMetadataURI(string calldata uri) external onlyOwner;
-```
-
-### supportsInterface
-
-Returns true if this contract implements the interface defined by
-`interfaceId`. See the corresponding
-https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section]
-to learn more about how these ids are created.
-This function call must use less than 30 000 gas.
-
-
-```solidity
-function supportsInterface(bytes4 interfaceId) external pure returns (bool);
 ```
 
 ### initiateForfeit
@@ -216,30 +179,6 @@ Cancel (veto) a pending mutual loss during its challenge window.
 
 ```solidity
 function cancelMutualLoss(uint256 mutualId) external onlyOwner;
-```
-
-### executeForfeit
-
-Finalize a pending forfeit after the challenge window has passed.
-
-Ownerless by design — mirrors `CommitmentManager.executeForfeit` auth.
-The security property is the challenge window, not the caller.
-
-
-```solidity
-function executeForfeit(uint256 commitmentId) external;
-```
-
-### executeMutualLoss
-
-Finalize a pending mutual loss after its challenge window elapses.
-
-Ownerless — mirrors `CommitmentManager.executeMutualLoss` auth. Λ
-bumps once here; members then settle their several shares.
-
-
-```solidity
-function executeMutualLoss(uint256 mutualId) external;
 ```
 
 ## Events

@@ -19,7 +19,7 @@ TokenWeighting mesh node). A future BLS service manager can reuse the
 same source.
 
 
-## Constants
+## State Variables
 ### DEFAULT_MAX_REFERENCE_BLOCK_AGE
 Default `maxReferenceBlockAge` when storage is unset.
 256 blocks ≈ 1h on a 12s chain — a window large enough for honest
@@ -283,15 +283,6 @@ Returns the linked OperatorRegistry address (the eligibility source).
 function operatorRegistry() external view returns (address);
 ```
 
-### totalOperators
-
-Returns the total number of registered operators.
-
-
-```solidity
-function totalOperators() external view returns (uint256);
-```
-
 ### updateStakeThreshold
 
 Update the minimum absolute voting power threshold.
@@ -315,7 +306,8 @@ function updateQuorum(uint256 quorumNumerator, uint256 quorumDenominator) extern
 Update the max age (in blocks) accepted for `referenceBlock`
 in `validate()` and `isValidSignature()`.
 
-Setting to 0 restores the protocol default (256 blocks ≈ 1h at 12s/block).
+Reverts `ZeroAmount` on 0. Until first set, the default of 256 blocks (≈ 1h at
+12s/block) applies.
 
 
 ```solidity
@@ -351,7 +343,7 @@ function _getOperatorForSigningKey(
     OperatorServiceRegistryStorage.Layout storage s,
     address signingKey,
     uint32 referenceBlock
-) internal view returns (address);
+) internal view returns (address operator);
 ```
 
 ### _getOperatorPower
@@ -373,36 +365,6 @@ function _validateThresholdStake(
     uint256 signedWeight,
     uint32 referenceBlock
 ) internal view;
-```
-
-### _getTotalPower
-
-
-```solidity
-function _getTotalPower(OperatorServiceRegistryStorage.Layout storage s, uint32 referenceBlock)
-    internal
-    view
-    returns (uint256);
-```
-
-### _getThresholdStake
-
-
-```solidity
-function _getThresholdStake(OperatorServiceRegistryStorage.Layout storage s, uint32 referenceBlock)
-    internal
-    view
-    returns (uint256);
-```
-
-### _getQuorum
-
-
-```solidity
-function _getQuorum(OperatorServiceRegistryStorage.Layout storage s, uint32 referenceBlock)
-    internal
-    view
-    returns (uint256, uint256);
 ```
 
 ### _updateStakeThreshold

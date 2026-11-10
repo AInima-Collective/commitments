@@ -72,8 +72,8 @@ the event. `safeTransferFrom` semantics; reverts on failure.
 
 Funding semantics are off-chain : the coordinator does NOT
 track per-root obligations. The updater is responsible for not
-over-promising; an under-funded coordinator reverts payouts with
-`InsufficientBalance` rather than fail-closed at submit.
+over-promising; an under-funded coordinator's payout reverts in the
+token transfer rather than fail-closed at submit.
 
 
 ```solidity
@@ -105,7 +105,7 @@ function processClaim(bytes32 rootId, address token, uint256 cumulativeAmount, b
 
 |Name|Type|Description|
 |----|----|-----------|
-|`amountPaidOut`|`uint256`|Equals `cumulativeAmount - claimed[caller][token]`. Reverts `NoOp` if zero. Reverts `InsufficientBalance` if the coordinator does not hold enough of `token`.|
+|`amountPaidOut`|`uint256`|Equals `cumulativeAmount - claimed[caller][token]`. Reverts `NoOp` if zero. Reverts in the token transfer if the coordinator does not hold enough of `token`.|
 
 
 ### freeze
@@ -172,23 +172,4 @@ function service() external view returns (address);
 
 ```solidity
 function _authorizeUpgrade(address) internal view override onlyService;
-```
-
-## Events
-### DistributionPaid
-ERC-COMMITMENTS §D.7 uniform payout event, emitted by whichever contract
-executes the payout — here, this coordinator's own `processClaim`.
-`commitmentId = 0`: merkle leaves carry no per-commitment attribution;
-indexers reconstruct it from `CommitmentBoundToStrategy`.
-
-
-```solidity
-event DistributionPaid(
-    address indexed strategy,
-    address indexed recipient,
-    address indexed token,
-    uint256 amount,
-    uint256 commitmentId,
-    bytes32 context
-);
 ```

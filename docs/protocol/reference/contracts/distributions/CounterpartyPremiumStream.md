@@ -6,7 +6,7 @@ generated: true
 ---
 # CounterpartyPremiumStream
 **Inherits:**
-[IDistributionStrategy](/docs/protocol/reference/contracts/core/interfaces/IDistributionStrategy), ReentrancyGuardTransient
+[StrategyBase](/docs/protocol/reference/contracts/distributions/StrategyBase), ReentrancyGuardTransient
 
 **Title:**
 CounterpartyPremiumStream
@@ -36,14 +36,6 @@ counterparty caps their total exposure purely by how much they fund; unstreamed 
 recoverable via `reclaimUnstreamed` once the policy has ended.
 
 
-## Constants
-### manager
-
-```solidity
-address public immutable manager
-```
-
-
 ## State Variables
 ### streamOf
 
@@ -57,14 +49,7 @@ mapping(uint256 commitmentId => Stream) public streamOf
 
 
 ```solidity
-constructor(address manager_) ;
-```
-
-### onlyManager
-
-
-```solidity
-modifier onlyManager() ;
+constructor(address manager_) StrategyBase(manager_);
 ```
 
 ### fundPremium
@@ -169,56 +154,12 @@ Pending amount claimable by the implied recipient.
 function pending(ClaimContext calldata ctx, bytes calldata) external view returns (uint256);
 ```
 
-### distribute
-
-Permissionlessly advance accrual state. Called by the manager from
-`manager.distribute(id, strategy)`; reverts bubble to the caller.
-Allowed kinds: FromEncumberedToEscrow, FromEncumberedToExternal.
-
-Accrual is computed on read (time-based), so there is nothing to advance and no
-movement to emit — premium lives in this contract, never in manager escrow.
-
-
-```solidity
-function distribute(DistributeContext calldata) external view onlyManager returns (TokenMovement[] memory);
-```
-
-### onCommitmentReleased
-
-Manager-only; called under guarded semantics (ERC §D.6) BEFORE the committer's
-remaining encumbrance is freed, so the strategy can take its final accrual sweep.
-Allowed kinds: FromEncumberedToEscrow, FromEscrowToExternal, FromEscrowToFree.
-
-No-op: the stream freezes at close via the live `manager.closedAt` read, so the release
-hook has no sweep to take. Kept a no-op (not reverting) so it never parks the release.
-
-
-```solidity
-function onCommitmentReleased(LifecycleContext calldata)
-    external
-    view
-    onlyManager
-    returns (TokenMovement[] memory);
-```
-
-### onCommitmentForfeited
-
-Manager-only; called under guarded semantics (ERC §D.6), strictly AFTER the
-manager-internal forfeit transfer. Disposes of strategy-side in-flight accrual only;
-cannot affect the forfeit itself. `FromEncumbered*` caps run against the post-forfeit
-residual. Allowed kinds: FromEncumberedToEscrow, FromEscrowToExternal, FromEscrowToFree.
-
-No-op for the same reason as `onCommitmentReleased`.
-
-
-```solidity
-function onCommitmentForfeited(ForfeitContext calldata) external view onlyManager returns (TokenMovement[] memory);
-```
-
 ### _earned
 
 Premium accrued to the committer by `endTime`: `ratePerSecond * elapsed`, capped by the
 counterparty's cumulative deposits. `endTime` is either now or the commitment's close.
+Saturates at `funded` before multiplying, so an unbounded committer-chosen rate cannot
+overflow.
 
 
 ```solidity
@@ -254,36 +195,6 @@ event PremiumReclaimed(uint256 indexed commitmentId, address indexed counterpart
 ```
 
 ## Errors
-### OnlyManager
-
-```solidity
-error OnlyManager();
-```
-
-### AlreadyBound
-
-```solidity
-error AlreadyBound();
-```
-
-### NotBound
-
-```solidity
-error NotBound();
-```
-
-### NotAuthorized
-
-```solidity
-error NotAuthorized();
-```
-
-### NothingToClaim
-
-```solidity
-error NothingToClaim();
-```
-
 ### StreamEnded
 
 ```solidity
@@ -296,12 +207,6 @@ error StreamEnded();
 error StreamActive();
 ```
 
-### ZeroAmount
-
-```solidity
-error ZeroAmount();
-```
-
 ## Structs
 ### Stream
 
@@ -311,6 +216,7 @@ struct Stream {
     uint256 funded;
     uint256 claimed;
     address token;
+    address counterparty;
     uint64 startTime;
     bool bound;
 }
@@ -324,5 +230,6 @@ struct Stream {
 |`funded`|`uint256`|Cumulative premium the counterparty has deposited for this commitment.|
 |`claimed`|`uint256`|Cumulative premium already paid out to the committer.|
 |`token`|`address`|Backing token of the commitment (the premium is paid in the same token).|
+|`counterparty`|`address`|The commitment's counterparty (the insured), who funds and reclaims.|
 |`startTime`|`uint64`|Binding timestamp; accrual is measured from here.|
 |`bound`|`bool`|Set once at binding; distinguishes a real (possibly zero-rate) stream from an unbound id.|

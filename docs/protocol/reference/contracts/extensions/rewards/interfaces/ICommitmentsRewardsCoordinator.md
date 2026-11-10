@@ -42,8 +42,8 @@ the event. `safeTransferFrom` semantics; reverts on failure.
 
 Funding semantics are off-chain : the coordinator does NOT
 track per-root obligations. The updater is responsible for not
-over-promising; an under-funded coordinator reverts payouts with
-`InsufficientBalance` rather than fail-closed at submit.
+over-promising; an under-funded coordinator's payout reverts in the
+token transfer rather than fail-closed at submit.
 
 
 ```solidity
@@ -74,7 +74,7 @@ function processClaim(bytes32 rootId, address token, uint256 cumulativeAmount, b
 
 |Name|Type|Description|
 |----|----|-----------|
-|`amountPaidOut`|`uint256`|Equals `cumulativeAmount - claimed[caller][token]`. Reverts `NoOp` if zero. Reverts `InsufficientBalance` if the coordinator does not hold enough of `token`.|
+|`amountPaidOut`|`uint256`|Equals `cumulativeAmount - claimed[caller][token]`. Reverts `NoOp` if zero. Reverts in the token transfer if the coordinator does not hold enough of `token`.|
 
 
 ### freeze
@@ -190,12 +190,6 @@ error ZeroAddress();
 error NotService();
 ```
 
-### RootDisabled
-
-```solidity
-error RootDisabled();
-```
-
 ### RootNotActive
 
 ```solidity
@@ -218,18 +212,6 @@ error CumulativeRegression();
 
 ```solidity
 error NoOp();
-```
-
-### InsufficientBalance
-
-```solidity
-error InsufficientBalance();
-```
-
-### AlreadyInitialized
-
-```solidity
-error AlreadyInitialized();
 ```
 
 ### ClaimsFrozen

@@ -9,8 +9,8 @@ generated: true
 IMerkleSnapshot
 
 Reusable on-chain root storage for cumulative-merkle distribution. The
-snapshot is intentionally narrow: it stores roots, gates submit on the
-coordinator's active updater, and gates disable on the service. It is the
+snapshot is intentionally narrow: it stores roots, gates submit on its
+own active updater, and gates disable on the service. It is the
 "dumb storage" half of the snapshot/coordinator separation locked in
 .
 The snapshot is reusable beyond rewards — the same primitive backs
@@ -126,24 +126,6 @@ Root metadata by content hash.
 function rootById(bytes32 rootId) external view returns (RewardsRoot memory);
 ```
 
-### rootCount
-
-Total number of roots ever submitted (active or otherwise).
-
-
-```solidity
-function rootCount() external view returns (uint256);
-```
-
-### rootAt
-
-Submission-order rootId at index. O(1).
-
-
-```solidity
-function rootAt(uint256 index) external view returns (bytes32);
-```
-
 ### isActive
 
 True if the root exists, is not disabled, and `block.timestamp >= activeAt`.
@@ -201,15 +183,6 @@ The staged (but not yet activated) updater, if any.
 
 ```solidity
 function pendingUpdater() external view returns (address newUpdater, uint64 effectiveAt);
-```
-
-### updater
-
-Alias of `activeUpdater()`. Retained for source compatibility.
-
-
-```solidity
-function updater() external view returns (address);
 ```
 
 ## Events
@@ -304,12 +277,6 @@ error ZeroAddress();
 error ActivationDelayBelowFloor();
 ```
 
-### AlreadyInitialized
-
-```solidity
-error AlreadyInitialized();
-```
-
 ### NoStagedUpdater
 
 ```solidity
@@ -330,12 +297,11 @@ error StagedUpdaterAlreadyExists();
 
 ## Structs
 ### RewardsRoot
-Per-root metadata. `merkleRoot` doubles as the rootId.
+Per-root metadata, keyed by the root itself (rootId == merkleRoot).
 
 
 ```solidity
 struct RewardsRoot {
-    bytes32 merkleRoot;
     uint64 submittedAt;
     uint64 activeAt;
     bool disabled;

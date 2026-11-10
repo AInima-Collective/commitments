@@ -19,7 +19,7 @@ its meaning across releases. `pure`, no storage, zero deployment cost
 (fully inlined).
 
 
-## Constants
+## State Variables
 ### NONE
 No capabilities (a pure marker / discovery-only arbiter).
 
