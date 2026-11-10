@@ -1,9 +1,7 @@
+import { useReadContract } from 'wagmi'
 import { type Address, zeroAddress } from 'viem'
 
-import {
-  useReadCommitmentManagerGetMutual,
-  useReadCommitmentManagerGetMutualLossProposal,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
 import { lambdaToFraction } from '../lib/format'
 import { useMutuals } from './useMutuals'
 import { POLL } from './polling'
@@ -93,7 +91,9 @@ export function useMutual({
     isError: mutualIsError,
     error: mutualError,
     refetch: refetchMutual,
-  } = useReadCommitmentManagerGetMutual({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMutual',
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
     query: { enabled: queryEnabled, refetchInterval: POLL.fast },
@@ -105,7 +105,9 @@ export function useMutual({
     isError: proposalIsError,
     error: proposalError,
     refetch: refetchProposal,
-  } = useReadCommitmentManagerGetMutualLossProposal({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMutualLossProposal',
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
     query: { enabled: queryEnabled, refetchInterval: POLL.fast },

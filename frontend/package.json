@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "wagmi generate && vite",
+    "dev": "vite",
     "build": "wagmi generate && tsc -b && vite build",
     "generate": "wagmi generate",
     "lint": "eslint .",

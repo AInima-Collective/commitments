@@ -36,16 +36,10 @@ import { PayoutPanel } from '../components/mutual/PayoutPanel'
 import { SettlementProgress } from '../components/mutual/SettlementProgress'
 import { YourPositionSummary } from '../components/mutual/YourPositionSummary'
 import { MutualRoster, type RosterMember } from '../components/mutual/MutualRoster'
-import {
-  commitmentManagerAbi,
-  useWriteCommitmentManagerClaimMemberPremium,
-  useWriteCommitmentManagerJoinMutual,
-  useWriteCommitmentManagerSettleMembers,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
 import { getContractAddresses } from '../config/contracts'
 import { buildCommitmentWithStatus } from '../hooks/commitmentReads'
 import { type CommitmentWithStatus } from '../utils/commitments'
-import { legibleWriteError } from '../utils/contractErrors'
 import {
   deriveViewerRole,
   getAvailableActions,
@@ -65,7 +59,7 @@ import { useTokenMetaMap } from '../hooks/useTokenMeta'
 import { useNowSeconds } from '../hooks/useNow'
 import { useOperatorNames } from '../hooks/useOperatorNames'
 import { POLL, refetchUntil } from '../hooks/polling'
-import { useTxReceipt } from '../hooks/useTxReceipt'
+import { useWriteAction } from '../hooks/useWriteAction'
 import { useViewAddress } from '../hooks/useViewAddress'
 import { formatDuration, formatTokenAmount } from '../lib/format'
 import { parsePerilURI, perilLabel } from '../lib/peril'
@@ -355,16 +349,10 @@ export default function Mutual() {
   // The per-member exit lifecycle (settle loss → request exit → release) is
   // NOT wired here: it runs through ResolveActionRow/useWriteAction in the
   // manage modal, sharing the resolve modal's copy, toasts, and error decode.
-  const join = useWriteCommitmentManagerJoinMutual()
-  const settle = useWriteCommitmentManagerSettleMembers()
-  const claimPremium = useWriteCommitmentManagerClaimMemberPremium()
-
-  // Receipt watchers: toast + refetch + reset on confirmation, via the shared
-  // useTxReceipt helper (one source of truth for the receipt→toast→reset cycle).
-  const joinReceipt = useTxReceipt({
-    hash: join.data,
+  // Each write toasts on submit (below), on confirmation, and on failure.
+  const join = useWriteAction({
     successTitle: 'UNDERWRITE CONFIRMED',
-    reset: join.reset,
+    errorTitle: 'UNDERWRITE FAILED',
     onSuccess: () => {
       setAmountText('')
       setConsented(false)
@@ -377,21 +365,19 @@ export default function Mutual() {
       void ledger.refetch()
     },
   })
-  const settleReceipt = useTxReceipt({
-    hash: settle.data,
+  const settle = useWriteAction({
     successTitle: 'SETTLE CONFIRMED',
-    reset: settle.reset,
+    errorTitle: 'SETTLE FAILED',
     onSuccess: () => {
       refetchMutual()
       roster.refetch()
       void refetchMemberships()
     },
   })
-  const claimPremiumReceipt = useTxReceipt({
-    hash: claimPremium.data,
+  const claimPremium = useWriteAction({
     successTitle: 'PREMIUM CLAIMED',
     successBody: 'Premium credited to your free balance.',
-    reset: claimPremium.reset,
+    errorTitle: 'CLAIM FAILED',
     onSuccess: () => {
       void refetchMemberships()
       void ledger.refetch()
@@ -442,15 +428,19 @@ export default function Mutual() {
 
   function onClaimPremium(commitmentId: bigint) {
     if (!managerAddress) return
-    claimPremium.writeContract(
-      { address: managerAddress, args: [commitmentId] },
+    claimPremium.write(
+      {
+        abi: commitmentManagerAbi,
+        address: managerAddress,
+        functionName: 'claimMemberPremium',
+        args: [commitmentId],
+      },
       {
         onSuccess: () => push({ tone: 'info', title: 'CLAIM SUBMITTED', body: 'Awaiting confirmation…' }),
-        onError: (e) => push({ tone: 'danger', title: 'CLAIM FAILED', body: legibleWriteError(e) }),
       },
     )
   }
-  const claimPending = claimPremium.isPending || claimPremiumReceipt.isLoading
+  const claimPending = claimPremium.isPending || claimPremium.isConfirming
 
   // Shared refresh for the manage modal's member-lifecycle action cards.
   function onMemberActed() {
@@ -463,9 +453,11 @@ export default function Mutual() {
   function onJoin() {
     if (!managerAddress || !numeraire || !erc20Adapter || !mutual || !viewAddress) return
     if (amount === undefined || !amountValid) return
-    join.writeContract(
+    join.write(
       {
+        abi: commitmentManagerAbi,
         address: managerAddress,
+        functionName: 'joinMutual',
         args: [
           mutualId!,
           {
@@ -485,7 +477,6 @@ export default function Mutual() {
       },
       {
         onSuccess: () => push({ tone: 'info', title: 'UNDERWRITE SUBMITTED', body: 'Awaiting confirmation…' }),
-        onError: (e) => push({ tone: 'danger', title: 'UNDERWRITE FAILED', body: legibleWriteError(e) }),
       },
     )
   }
@@ -931,12 +922,12 @@ export default function Mutual() {
                         !consented ||
                         !amountValid ||
                         join.isPending ||
-                        joinReceipt.isLoading ||
+                        join.isConfirming ||
                         mutual.terminal ||
                         hasPendingLoss
                       }
                     >
-                      {join.isPending || joinReceipt.isLoading
+                      {join.isPending || join.isConfirming
                         ? 'Underwriting…'
                         : hasPendingLoss
                           ? 'Underwriting paused (loss pending)'
@@ -1042,17 +1033,21 @@ export default function Mutual() {
                     <Button
                       onClick={() => {
                         if (!managerAddress) return
-                        settle.writeContract(
-                          { address: managerAddress, args: [myMembers.map((m) => m.commitmentId)] },
+                        settle.write(
+                          {
+                            abi: commitmentManagerAbi,
+                            address: managerAddress,
+                            functionName: 'settleMembers',
+                            args: [myMembers.map((m) => m.commitmentId)],
+                          },
                           {
                             onSuccess: () => push({ tone: 'info', title: 'SETTLE SUBMITTED', body: 'Awaiting confirmation…' }),
-                            onError: (e) => push({ tone: 'danger', title: 'SETTLE FAILED', body: legibleWriteError(e) }),
                           },
                         )
                       }}
-                      disabled={settle.isPending || settleReceipt.isLoading}
+                      disabled={settle.isPending || settle.isConfirming}
                     >
-                      {settle.isPending || settleReceipt.isLoading ? 'Settling…' : 'Settle all my members'}
+                      {settle.isPending || settle.isConfirming ? 'Settling…' : 'Settle all my members'}
                     </Button>
                   </div>
                 )}

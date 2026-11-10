@@ -291,8 +291,10 @@ contract reference pages are nested by final source path under
 
 ### Wagmi codegen
 
-`pnpm generate` (or part of `dev`/`build`) runs `wagmi generate`, producing
-`src/generated.ts` from contract ABIs. Do **not** hand-edit it. If you change
+`pnpm generate` (also run by `build`, not by `dev`) runs `wagmi generate`,
+producing `src/generated.ts`: one `…Abi` constant per included contract, no
+hooks. Read with `useReadContract` / `useReadContracts` and write with
+`useWriteAction`, passing the ABI. Do **not** hand-edit it. If you change
 contract ABIs, rerun `forge build` then `pnpm generate`.
 
 ### Naming a commitment

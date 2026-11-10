@@ -2,14 +2,9 @@ import { type Address } from 'viem'
 
 import { Button, Card, Notice, StatBlock, TokenAmount, useToasts } from '../ui'
 import { OperatorIdentity } from '../protocol'
-import {
-  useWriteClaimRouterCollect,
-  useWriteClaimRouterSettleAndCollect,
-  useWriteCommitmentManagerSettleMembers,
-} from '../../generated'
-import { useTxReceipt } from '../../hooks/useTxReceipt'
+import { claimRouterAbi, commitmentManagerAbi } from '../../generated'
+import { useWriteAction } from '../../hooks/useWriteAction'
 import { type ClaimPayout } from '../../hooks/useClaimPayout'
-import { legibleWriteError } from '../../utils/contractErrors'
 import { formatTokenAmount } from '../../lib/format'
 
 interface PayoutPanelProps {
@@ -61,52 +56,46 @@ export function PayoutPanel({
 }: PayoutPanelProps) {
   const { push } = useToasts()
 
-  const settleAndCollect = useWriteClaimRouterSettleAndCollect()
-  const collect = useWriteClaimRouterCollect()
-  // Exactly one of the two writes fires per click; watch both hashes.
-  const activeHash = settleAndCollect.data ?? collect.data
-  const receipt = useTxReceipt({
-    hash: activeHash,
+  // One write per click: `settleAndCollect` or `collect`.
+  const collect = useWriteAction({
     successTitle: 'PAYOUT COLLECTED',
     successBody: 'Recovered funds transferred to your wallet.',
-    reset: () => {
-      settleAndCollect.reset()
-      collect.reset()
-    },
+    errorTitle: 'COLLECT FAILED',
     onSuccess: () => {
       payout.refetch()
       onCollected?.()
     },
   })
-  const busy = settleAndCollect.isPending || collect.isPending || receipt.isLoading
+  const busy = collect.isPending || collect.isConfirming
 
   // Settle-only crank for non-claimants: `manager.settleMembers` is
   // permissionless, so any connected wallet can pay the gas to force the
   // outstanding shares into the router. Only `collect` is claimant-gated.
-  const settleOnly = useWriteCommitmentManagerSettleMembers()
-  const settleReceipt = useTxReceipt({
-    hash: settleOnly.data,
+  const settleOnly = useWriteAction({
     successTitle: 'MEMBERS SETTLED',
     successBody: 'The outstanding shares moved into the claim router.',
-    reset: settleOnly.reset,
+    errorTitle: 'SETTLE FAILED',
     onSuccess: () => {
       payout.refetch()
       onCollected?.()
     },
   })
-  const settleBusy = settleOnly.isPending || settleReceipt.isLoading
+  const settleBusy = settleOnly.isPending || settleOnly.isConfirming
 
   const needsSettle = unsettledIds.length > 0
   const nothingToCollect = payout.collectable === 0n && !needsSettle
 
   function onSettleOnly() {
-    settleOnly.writeContract(
-      { address: managerAddress, args: [unsettledIds] },
+    settleOnly.write(
+      {
+        abi: commitmentManagerAbi,
+        address: managerAddress,
+        functionName: 'settleMembers',
+        args: [unsettledIds],
+      },
       {
         onSuccess: () =>
           push({ tone: 'info', title: 'SETTLE SUBMITTED', body: 'Awaiting confirmation…' }),
-        onError: (e) =>
-          push({ tone: 'danger', title: 'SETTLE FAILED', body: legibleWriteError(e) }),
       },
     )
   }
@@ -115,16 +104,22 @@ export function PayoutPanel({
     const callbacks = {
       onSuccess: () =>
         push({ tone: 'info' as const, title: 'COLLECT SUBMITTED', body: 'Awaiting confirmation…' }),
-      onError: (e: unknown) =>
-        push({ tone: 'danger' as const, title: 'COLLECT FAILED', body: legibleWriteError(e) }),
     }
     if (needsSettle) {
-      settleAndCollect.writeContract(
-        { address: routerAddress, args: [unsettledIds, token, viewAddress] },
+      collect.write(
+        {
+          abi: claimRouterAbi,
+          address: routerAddress,
+          functionName: 'settleAndCollect',
+          args: [unsettledIds, token, viewAddress],
+        },
         callbacks,
       )
     } else {
-      collect.writeContract({ address: routerAddress, args: [token, viewAddress] }, callbacks)
+      collect.write(
+        { abi: claimRouterAbi, address: routerAddress, functionName: 'collect', args: [token, viewAddress] },
+        callbacks,
+      )
     }
   }
 

@@ -1,3 +1,4 @@
+import { useReadContract } from 'wagmi'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Address } from 'viem'
 
@@ -6,10 +7,7 @@ import { bigintToUsd } from '../../lib/format'
 import { useBalanceHistory, type BalancePoint } from '../../hooks/useBalanceHistory'
 import { useTokenMetaMap } from '../../hooks/useTokenMeta'
 import { useVaultPeriodicHistory } from '../../hooks/useVaultPeriodicHistory'
-import {
-  useReadCommitmentsVaultAsset,
-  useReadCommitmentsVaultConvertToAssets,
-} from '../../generated'
+import { commitmentsVaultAbi } from '../../generated'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
 import type { PriceEntry } from '../../hooks/useAssetPrices'
 import type { BackingOption } from '../../config/contracts'
@@ -391,7 +389,7 @@ function VaultValuationProbe({
   // and returns `assetDecimals: undefined`. It appeared to work only when the
   // assets table had already populated the same react-query cache key — which
   // made this a race, and the vault that lost it was silently valued at zero.
-  const { data: assetAddress } = useReadCommitmentsVaultAsset({ address: vaultAddress })
+  const { data: assetAddress } = useReadContract({ abi: commitmentsVaultAbi, functionName: 'asset', address: vaultAddress })
   // `byAddress`, not `metaFor` — the latter substitutes an 18-decimal 'TOKEN'
   // placeholder for a token it hasn't resolved yet, and valuing 6-decimal USDC
   // at 18 decimals is far worse than declining to value it. An absent entry has
@@ -404,7 +402,9 @@ function VaultValuationProbe({
   // snapshot job would otherwise value every vault share at zero and understate
   // the whole portfolio without saying so. convertToAssets(1e18) is the same
   // quantity the snapshot stores, read straight from the vault.
-  const { data: liveSharePrice } = useReadCommitmentsVaultConvertToAssets({
+  const { data: liveSharePrice } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'convertToAssets',
     address: vaultAddress,
     args: [SHARE_PRICE_SCALE],
   })

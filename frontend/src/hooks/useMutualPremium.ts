@@ -1,8 +1,7 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
 
-import {
-  useReadCommitmentManagerGetMutualPremiumState,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
 import { premiumAprBps } from './useMutuals'
 import { useNowSeconds } from './useNow'
 import { POLL } from './polling'
@@ -81,7 +80,9 @@ export function useMutualPremium({
     data: stateRaw,
     isLoading: stateLoading,
     refetch: refetchState,
-  } = useReadCommitmentManagerGetMutualPremiumState({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMutualPremiumState',
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
     query: { enabled: queryEnabled, refetchInterval: POLL.fast },

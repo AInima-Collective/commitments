@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useChainId } from "wagmi";
+import { useChainId, useReadContract } from "wagmi";
 import type { Address } from "viem";
 import {
   DataTable,
@@ -15,10 +15,7 @@ import {
 } from "../components/ui";
 import { PageHeader } from "../components/protocol";
 import { getContractAddresses, getVaultRegistry, type VaultDescriptor } from "../config/contracts";
-import {
-  useReadCommitmentsVaultConvertToAssets,
-  useReadCommitmentsVaultTotalAssets,
-} from "../generated";
+import { commitmentsVaultAbi } from "../generated";
 import { useAssetPrices, type PriceEntry } from "../hooks/useAssetPrices";
 import { useVaultApy } from "../hooks/useVaultApy";
 import { useVaultMetadata } from "../hooks/useIndexerMetadata";
@@ -448,12 +445,16 @@ function VaultRowFetcher({ descriptor, viewAddress, onRowData }: VaultRowFetcher
     viewAddress,
     managerAddress,
   });
-  const { data: tvlData } = useReadCommitmentsVaultTotalAssets({
+  const { data: tvlData } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: "totalAssets",
     address: descriptor.address,
     query: { enabled: true, refetchInterval: 30_000 },
   });
   // Share price, for turning the holder's share counts into asset amounts.
-  const { data: sharePrice } = useReadCommitmentsVaultConvertToAssets({
+  const { data: sharePrice } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: "convertToAssets",
     address: descriptor.address,
     args: [SHARE_PROBE],
     query: { refetchInterval: 30_000 },

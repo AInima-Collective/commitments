@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { type Address, parseUnits } from 'viem'
-import {
-  useReadCommitmentsVaultPreviewRedeem,
-  useWriteCommitmentsVaultRedeem,
-} from '../../generated'
+import { useReadContract, useWriteContract } from 'wagmi'
+import { commitmentsVaultAbi } from '../../generated'
 import { formatTokenAmount } from '../../lib/format'
+import { legibleWriteError } from '../../utils/contractErrors'
 import { BalanceLine, Notice, TokenAmount, useToasts } from '../ui'
 
 interface WithdrawFormProps {
@@ -72,14 +71,15 @@ export function WithdrawForm({
 
   const previewEnabled =
     !!vaultAddress && !!parsedShares && parsedShares > 0n && !exceedsBalance
-  const { data: previewAssets } = useReadCommitmentsVaultPreviewRedeem({
+  const { data: previewAssets } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'previewRedeem',
     address: vaultAddress,
     args: parsedShares ? [parsedShares] : undefined,
     query: { enabled: previewEnabled },
   })
 
-  const { writeContract, isPending, isSuccess, isError, error, reset } =
-    useWriteCommitmentsVaultRedeem()
+  const { writeContract, isPending, isSuccess, isError, error, reset } = useWriteContract()
 
   useEffect(() => {
     if (isSuccess) {
@@ -107,7 +107,7 @@ export function WithdrawForm({
       push({
         tone: 'danger',
         title: 'TRANSACTION FAILED',
-        body: error?.message?.split('\n')[0] ?? 'Unknown error.',
+        body: legibleWriteError(error),
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,7 +125,12 @@ export function WithdrawForm({
   function handleAction() {
     if (!vaultAddress || !parsedShares || !userAddress) return
     // redeem(shares, receiver, owner) — burn the caller's shares, asset to wallet.
-    writeContract({ address: vaultAddress, args: [parsedShares, userAddress, userAddress] })
+    writeContract({
+      abi: commitmentsVaultAbi,
+      address: vaultAddress,
+      functionName: 'redeem',
+      args: [parsedShares, userAddress, userAddress],
+    })
   }
 
   const stepGlyph: '[ ]' | '[…]' = isPending ? '[…]' : '[ ]'

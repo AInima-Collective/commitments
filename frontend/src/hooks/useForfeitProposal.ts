@@ -1,9 +1,6 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerForfeitProposalTtl,
-  useReadCommitmentManagerGetForfeitProposal,
-  useReadCommitmentManagerPauseState,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
 import {
   calculateForfeitEnforcement,
   type ForfeitEnforcement,
@@ -42,7 +39,9 @@ export function useForfeitProposal({
   const now = BigInt(useDisplayNow())
   const queryEnabled =
     !!managerAddress && commitmentId !== undefined && enabled !== false
-  const { data, isLoading, error: proposalError, refetch } = useReadCommitmentManagerGetForfeitProposal({
+  const { data, isLoading, error: proposalError, refetch } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getForfeitProposal',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
     query: {
@@ -55,7 +54,9 @@ export function useForfeitProposal({
     isLoading: pauseLoading,
     error: pauseError,
     refetch: refetchPause,
-  } = useReadCommitmentManagerPauseState({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'pauseState',
     address: managerAddress,
     query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
@@ -64,7 +65,9 @@ export function useForfeitProposal({
     isLoading: ttlLoading,
     error: ttlError,
     refetch: refetchTtl,
-  } = useReadCommitmentManagerForfeitProposalTtl({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'FORFEIT_PROPOSAL_TTL',
     address: managerAddress,
     query: { enabled: queryEnabled },
   })

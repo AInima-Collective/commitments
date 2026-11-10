@@ -1,12 +1,10 @@
+import { useReadContract } from 'wagmi'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { type Address, parseUnits } from 'viem'
 
 import { Button, Input, Notice, StatBlock, TokenAmount } from '../ui'
-import {
-  useReadLinkedMutualPolicyGetActiveNotionalSold,
-  useReadPremiumSchedulerQuote,
-} from '../../generated'
+import { linkedMutualPolicyAbi, premiumSchedulerAbi } from '../../generated'
 import { useBuyCoverFlow } from '../../hooks/useBuyCoverFlow'
 import { formatTokenAmount } from '../../lib/format'
 import { legibleWriteError } from '../../utils/contractErrors'
@@ -74,7 +72,9 @@ export function BuyCoverPanel({
 
   // Live premium quote for the prospective cover. Returns premium in numeraire
   // (vault-share) units, paid up-front to fund the stream over `duration`.
-  const quote = useReadPremiumSchedulerQuote({
+  const quote = useReadContract({
+    abi: premiumSchedulerAbi,
+    functionName: 'quote',
     address: schedulerAddress,
     args: inputsValid ? [mutualId, notional, duration] : undefined,
     query: { enabled: Boolean(schedulerAddress) && inputsValid },
@@ -82,7 +82,9 @@ export function BuyCoverPanel({
   const premium = quote.data as bigint | undefined
 
   // Total active cover already sold against this mutual — fresh on-chain read.
-  const activeSold = useReadLinkedMutualPolicyGetActiveNotionalSold({
+  const activeSold = useReadContract({
+    abi: linkedMutualPolicyAbi,
+    functionName: 'getActiveNotionalSold',
     address: policyAddress,
     args: [mutualId],
     query: { enabled: Boolean(policyAddress), refetchInterval: 20_000 },

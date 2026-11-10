@@ -1,10 +1,6 @@
 import { type Address, erc20Abi } from 'viem'
-import { useReadContracts } from 'wagmi'
-import {
-  commitmentManagerAbi,
-  commitmentsVaultAbi,
-  useReadCommitmentsVaultConvertToAssets,
-} from '../generated'
+import { useReadContract, useReadContracts } from 'wagmi'
+import { commitmentManagerAbi, commitmentsVaultAbi } from '../generated'
 import { IMMUTABLE, POLL } from './polling'
 
 export interface VaultPosition {
@@ -99,7 +95,9 @@ export function useVaultPosition({
 
   // convertToAssets depends on balanceOf result — second render pass
   const { data: underlyingValue, isLoading: underlyingLoading, refetch: refetchUnderlying } =
-    useReadCommitmentsVaultConvertToAssets({
+    useReadContract({
+      abi: commitmentsVaultAbi,
+      functionName: 'convertToAssets',
       address: vaultAddress,
       args: shares !== undefined ? [shares] : undefined,
       query: {

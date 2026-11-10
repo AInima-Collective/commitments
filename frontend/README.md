@@ -13,7 +13,7 @@ alongside it.
 ## Commands
 
 ```bash
-pnpm dev        # wagmi generate + vite dev server
+pnpm dev        # vite dev server (does not regenerate ABIs)
 pnpm build      # wagmi generate + tsc -b + vite build
 pnpm generate   # regenerate src/generated.ts from contract ABIs (wagmi codegen)
 pnpm lint       # eslint

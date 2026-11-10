@@ -1,13 +1,11 @@
 import type { ReactNode } from 'react'
-import { useChainId } from 'wagmi'
+import { useChainId, useReadContract } from 'wagmi'
 import { type Address } from 'viem'
 import { AddressDisplay } from '../ui'
 import {
-  useReadCommitmentManagerDefaultAdminRole,
-  useReadCommitmentManagerMinChallengeWindow,
-  useReadCommitmentManagerUnbondingPeriod,
-  useReadCommitmentsVaultDefaultAdminRole,
-  useReadOperatorRegistryDefaultAdminRole,
+  commitmentManagerAbi,
+  commitmentsVaultAbi,
+  operatorRegistryAbi,
 } from '../../generated'
 import { getBlockExplorer } from '../../lib/blockExplorer'
 import { useRoleHolders } from '../../hooks/useRoleHolders'
@@ -129,24 +127,34 @@ export function VaultStrategyRisk({
   // chains, which would otherwise drop the ↗ link entirely.
   const explorer = getBlockExplorer(chainId) || 'https://etherscan.io'
 
-  const { data: minChallengeWindow } = useReadCommitmentManagerMinChallengeWindow({
+  const { data: minChallengeWindow } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'MIN_CHALLENGE_WINDOW',
     address: managerAddress,
     query: { enabled: !!managerAddress },
   })
 
-  const { data: vaultAdminRole } = useReadCommitmentsVaultDefaultAdminRole({
+  const { data: vaultAdminRole } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'DEFAULT_ADMIN_ROLE',
     address: vaultAddress,
     query: { enabled: !!vaultAddress },
   })
-  const { data: managerAdminRole } = useReadCommitmentManagerDefaultAdminRole({
+  const { data: managerAdminRole } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'DEFAULT_ADMIN_ROLE',
     address: managerAddress,
     query: { enabled: !!managerAddress },
   })
-  const { data: registryAdminRole } = useReadOperatorRegistryDefaultAdminRole({
+  const { data: registryAdminRole } = useReadContract({
+    abi: operatorRegistryAbi,
+    functionName: 'DEFAULT_ADMIN_ROLE',
     address: registryAddress,
     query: { enabled: !!registryAddress },
   })
-  const { data: unbondingPeriod } = useReadCommitmentManagerUnbondingPeriod({
+  const { data: unbondingPeriod } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'unbondingPeriod',
     address: managerAddress,
     query: { enabled: !!managerAddress },
   })

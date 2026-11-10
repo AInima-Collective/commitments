@@ -1,14 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { parseUnits, type Address, type Hex } from 'viem'
-import { useAccount } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
 
-import {
-  useReadOptimisticInsuranceArbiterActiveClaimOf,
-  useReadOptimisticInsuranceArbiterAnswerTimeout,
-  useReadOptimisticInsuranceArbiterBondFloor,
-  useReadOptimisticInsuranceArbiterBondToken,
-} from '../../generated'
+import { optimisticInsuranceArbiterAbi } from '../../generated'
 import { useProposeClaimFlow } from '../../hooks/useProposeClaimFlow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { formatTokenAmount } from '../../lib/format'
@@ -118,19 +113,27 @@ function ProposeClaimBody({
   const evidenceHash: Hex = evidenceText.length > 0 ? computeHashFromJsonText(evidenceText) : ZERO_HASH
 
   // ── Arbiter reads ─────────────────────────────────────────────────────────
-  const { data: activeClaimId } = useReadOptimisticInsuranceArbiterActiveClaimOf({
+  const { data: activeClaimId } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'activeClaimOf',
     address: arbiterAddress,
     args: [commitmentId],
     query: { refetchInterval: 15_000 },
   })
-  const { data: answerTimeout } = useReadOptimisticInsuranceArbiterAnswerTimeout({
+  const { data: answerTimeout } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'answerTimeout',
     address: arbiterAddress,
   })
-  const { data: bondToken } = useReadOptimisticInsuranceArbiterBondToken({
+  const { data: bondToken } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'bondToken',
     address: arbiterAddress,
   })
   const validBps = amountBps >= 1 && amountBps <= maxPenaltyBps
-  const { data: bondFloor } = useReadOptimisticInsuranceArbiterBondFloor({
+  const { data: bondFloor } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'bondFloor',
     address: arbiterAddress,
     args: [commitmentId, amountBps],
     query: { enabled: validBps },

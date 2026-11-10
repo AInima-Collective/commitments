@@ -1,9 +1,7 @@
+import { useReadContract } from 'wagmi'
 import { useMemo, useState } from 'react'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerForfeitProposalTtl,
-  useReadCommitmentManagerPauseState,
-} from '../../generated'
+import { commitmentManagerAbi } from '../../generated'
 
 import { useArbiterCommitments, type ArbiterCommitment } from '../../hooks/useArbiterCommitments'
 import { useDisplayNow, useDisplayNowSelect } from '../../hooks/useDisplayNow'
@@ -99,11 +97,15 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     limit: pageSize,
     offset: page * pageSize,
   })
-  const { data: pauseRaw } = useReadCommitmentManagerPauseState({
+  const { data: pauseRaw } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'pauseState',
     address: managerAddress,
     query: { enabled: Boolean(managerAddress), refetchInterval: POLL.fast },
   })
-  const { data: ttl } = useReadCommitmentManagerForfeitProposalTtl({
+  const { data: ttl } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'FORFEIT_PROPOSAL_TTL',
     address: managerAddress,
     query: { enabled: Boolean(managerAddress) },
   })

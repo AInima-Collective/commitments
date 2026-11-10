@@ -4,6 +4,7 @@ import { useChainId } from 'wagmi'
 
 import { Input, Notice } from '../ui'
 import { formatBps } from '../../utils/commitments'
+import { legibleWriteError } from '../../utils/contractErrors'
 import { getContractAddresses } from '../../config/contracts'
 import { useFundStrategy } from '../../hooks/useFundStrategy'
 import {
@@ -224,7 +225,7 @@ export function StrategyBindingPicker({
               )}
               {funding.step === 'error' && funding.error && (
                 <Notice tone="danger" size="sm">
-                  {funding.error.message.split('\n')[0]}
+                  {legibleWriteError(funding.error)}
                 </Notice>
               )}
             </div>

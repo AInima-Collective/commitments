@@ -1,7 +1,6 @@
 import { type Address, type Hex } from 'viem'
-import { useReadContracts } from 'wagmi'
+import { useReadContract, useReadContracts } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
-import { useReadCommitmentManagerStrategiesOf } from '../generated'
 import { POLL } from './polling'
 
 export interface CommitmentYieldEntry {
@@ -47,7 +46,9 @@ export function useCommitmentYield({
     data: strategiesData,
     isLoading: strategiesLoading,
     refetch: refetchStrategies,
-  } = useReadCommitmentManagerStrategiesOf({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'strategiesOf',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
     query: { enabled, refetchInterval: POLL.fast },

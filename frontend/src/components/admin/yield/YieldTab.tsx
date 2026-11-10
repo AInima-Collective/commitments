@@ -1,13 +1,8 @@
 import { useState } from 'react'
-import { useChainId, useReadContracts } from 'wagmi'
+import { useChainId, useReadContract, useReadContracts } from 'wagmi'
 import { type Address, type Hex, encodeAbiParameters, erc20Abi, parseUnits } from 'viem'
 import { AddressDisplay, Button, Card, Input, Notice, Select, Skeleton, TokenAmount } from '../../ui'
-import {
-  commitmentManagerAbi,
-  commitmentsVaultAbi,
-  useReadCommitmentManagerGetCommitment,
-  useReadCommitmentManagerStrategiesOf,
-} from '../../../generated'
+import { commitmentManagerAbi, commitmentsVaultAbi } from '../../../generated'
 import {
   getContractAddresses,
   getDefaultBacking,
@@ -340,14 +335,18 @@ function InspectYieldPanel({ manager }: { manager: Address }) {
 
   const enabled = id !== undefined
 
-  const { data: commitment } = useReadCommitmentManagerGetCommitment({
+  const { data: commitment } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getCommitment',
     address: manager,
     args: id !== undefined ? [id] : undefined,
     query: { enabled, refetchInterval: 15_000 },
   })
 
   const { data: strategiesData, isLoading: strategiesLoading } =
-    useReadCommitmentManagerStrategiesOf({
+    useReadContract({
+      abi: commitmentManagerAbi,
+      functionName: 'strategiesOf',
       address: manager,
       args: id !== undefined ? [id] : undefined,
       query: { enabled, refetchInterval: 15_000 },

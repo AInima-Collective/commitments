@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type Abi, type Address, type Hex } from "viem";
-import { useAccount, useChainId, useReadContracts } from "wagmi";
+import { useAccount, useChainId, useReadContract, useReadContracts } from "wagmi";
 import { ClaimableYieldPanel } from "../components/commitment/ClaimableYieldPanel";
 import { CommitmentsTable } from "../components/commitment/CommitmentsTable";
 import { type CommitmentsResolveContext } from "../components/commitment/commitmentCells";
@@ -42,11 +42,7 @@ import {
   getVaultRegistry,
   type BackingOption,
 } from "../config/contracts";
-import {
-  commitmentManagerAbi,
-  useReadCommitmentsVaultAsset,
-  useReadCommitmentsVaultConvertToAssets,
-} from "../generated";
+import { commitmentManagerAbi, commitmentsVaultAbi } from "../generated";
 import { useAccountActivity } from "../hooks/useAccountActivity";
 import { useAssetPrices, type PriceEntry } from "../hooks/useAssetPrices";
 import { useClaimableUsd } from "../hooks/useClaimableUsd";
@@ -1169,12 +1165,16 @@ function AssetRow({
   // Vault-share underlying valuation: read the vault's asset + convertToAssets
   // so we can price the position in the underlying's USD feed. Raw ERC-20s price
   // directly by their own symbol (factor 1).
-  const { data: assetAddress } = useReadCommitmentsVaultAsset({
+  const { data: assetAddress } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: "asset",
     address: option.token,
     query: { enabled: option.isVaultShare },
   });
   const assetMeta = useTokenMeta(option.isVaultShare ? (assetAddress as Address | undefined) : undefined);
-  const { data: underlyingTotalRaw } = useReadCommitmentsVaultConvertToAssets({
+  const { data: underlyingTotalRaw } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: "convertToAssets",
     address: option.token,
     args: total > 0n ? [total] : undefined,
     query: { enabled: option.isVaultShare && total > 0n, refetchInterval: POLL.slow },

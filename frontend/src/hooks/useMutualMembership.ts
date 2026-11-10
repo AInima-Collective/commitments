@@ -1,10 +1,6 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerGetMembership,
-  useReadCommitmentManagerGetMutual,
-  useReadCommitmentManagerGetMutualLossProposal,
-  useReadCommitmentManagerPendingMemberLoss,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
 import { POLL } from './polling'
 
 export interface MutualMembership {
@@ -53,7 +49,9 @@ export function useMutualMembership({
     data: membership,
     isLoading: membershipLoading,
     refetch: refetchMembership,
-  } = useReadCommitmentManagerGetMembership({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMembership',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
     query: { enabled, refetchInterval: POLL.fast },
@@ -63,20 +61,26 @@ export function useMutualMembership({
   const mutualId = membership !== undefined ? BigInt(membership.mutualId) : undefined
   const isMember = mutualId !== undefined && mutualId !== 0n
 
-  const { data: mutual, refetch: refetchMutual } = useReadCommitmentManagerGetMutual({
+  const { data: mutual, refetch: refetchMutual } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMutual',
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
     query: { enabled: isMember, refetchInterval: POLL.fast },
   })
 
   const { data: lossProposal, refetch: refetchLoss } =
-    useReadCommitmentManagerGetMutualLossProposal({
+    useReadContract({
+      abi: commitmentManagerAbi,
+      functionName: 'getMutualLossProposal',
       address: managerAddress,
       args: mutualId !== undefined ? [mutualId] : undefined,
       query: { enabled: isMember, refetchInterval: POLL.fast },
     })
 
-  const { data: owedRaw, refetch: refetchOwed } = useReadCommitmentManagerPendingMemberLoss({
+  const { data: owedRaw, refetch: refetchOwed } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'pendingMemberLoss',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
     query: { enabled: isMember, refetchInterval: POLL.fast },

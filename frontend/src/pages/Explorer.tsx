@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useChainId } from 'wagmi'
+import { useChainId, useReadContract } from 'wagmi'
 import { isAddress, type Address } from 'viem'
 
 import { CommitmentsGraph } from '../components/graph/CommitmentsGraph'
@@ -33,7 +33,7 @@ import {
 } from '../hooks/useProtocolLeaderboards'
 import { useProtocolArbitersList, useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
 import { useTokenMeta, useTokenMetaMap } from '../hooks/useTokenMeta'
-import { useReadCommitmentsVaultAsset } from '../generated'
+import { commitmentsVaultAbi } from '../generated'
 import { deriveOperatorStatus } from '../utils/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
 import { arbiterProfilePath } from '../lib/arbitrationRoutes'
@@ -98,7 +98,9 @@ export default function Explorer() {
   }, [stakeRegistryAddress, indexed.operators, service.serviceOperators, service.totalPower])
 
   const vaultStats = useVaultStats(primaryVault)
-  const { data: primaryVaultAsset } = useReadCommitmentsVaultAsset({
+  const { data: primaryVaultAsset } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'asset',
     address: primaryVault,
     query: { enabled: !!primaryVault, staleTime: Infinity },
   })

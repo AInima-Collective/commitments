@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useChainId } from 'wagmi'
+import { useChainId, useReadContract } from 'wagmi'
 import { type Address, erc20Abi, keccak256, parseUnits, toHex } from 'viem'
 import { Input, Notice, Select, TokenAmount } from '../../ui'
 import {
@@ -9,7 +9,6 @@ import {
   mockStrategyAbi,
   optimisticMutualArbiterAbi,
   skimmingMockStrategyAbi,
-  useReadSkimmingMockStrategyPendingSkim,
   vaultCoverConduitAbi,
 } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
@@ -373,7 +372,9 @@ function SkimPokePanel({ env }: { env: Env }) {
   const conduit = env.vaultCoverConduit
   const ready = Boolean(strategy && conduit)
 
-  const pending = useReadSkimmingMockStrategyPendingSkim({
+  const pending = useReadContract({
+    abi: skimmingMockStrategyAbi,
+    functionName: 'pendingSkim',
     address: strategy,
     query: { enabled: Boolean(strategy), refetchInterval: 15_000 },
   })
