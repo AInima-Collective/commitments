@@ -31,8 +31,8 @@ import { IS_PROD, IS_SEPOLIA, CHAIN_NAME as CORE_CHAIN, CHAIN_ID as chainId } fr
 const deployments = loadDeployments(chainId)
 // Sepolia: never crawl from genesis — set PONDER_START_BLOCK_11155111 to the
 // block the deploy tx landed in (printed by `forge script`, also recoverable
-// from broadcast/**/11155111/run-latest.json). Falls back to the address
-// source's startBlock (0 unless DEPLOYMENTS_JSON sets it).
+// from broadcast/**/11155111/run-latest.json). Falls back to the deployment
+// manifest's startBlock (0 unless the manifest sets it).
 const sepoliaStartBlock = process.env.PONDER_START_BLOCK_11155111
   ? Number(process.env.PONDER_START_BLOCK_11155111)
   : deployments.startBlock
@@ -40,9 +40,9 @@ const startBlock = IS_SEPOLIA ? sepoliaStartBlock : deployments.startBlock
 
 // ERC-8004 IdentityRegistry (issue #33). The canonical registry lives at the
 // SAME address on 20+ chains (Ethereum mainnet included), so PROD binds it directly;
-// dev/sepolia resolve the ERC8004IdentityRegistryDev proxy from the broadcast.
-// Array-shaped (like managers/registries) for forward-compat — empty when the
-// local broadcast predates the agent-bond seed, in which case Ponder simply
+// dev/sepolia resolve the ERC8004IdentityRegistryDev proxy from the deployment
+// manifest. Array-shaped (like managers/registries) for forward-compat — empty
+// when the manifest lists none, in which case Ponder simply
 // watches nothing but the handler event types still generate.
 const AGENT_IDENTITY_REGISTRY_CANONICAL = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432' as const
 const agentIdentityRegistries = IS_PROD
