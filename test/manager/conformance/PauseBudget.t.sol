@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
@@ -58,14 +58,7 @@ contract PauseBudgetTest is Test {
 
     /// @dev Fresh manager with an explicit budget (so the maxPauseDuration==0 test can redeploy).
     function _deploy(uint64 budget) internal {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, budget))
-                )
-            )
-        );
+        manager = deployManager(admin, UNBONDING, budget);
         // PAUSER/UNPAUSER are separate roles (a single compromised key cannot both pause and refuse
         // to unpause); grant both to the same test `pauser` since we drive both sides.
         vm.startPrank(admin);

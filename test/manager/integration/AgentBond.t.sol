@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
@@ -65,14 +66,7 @@ contract AgentBondTest is Test {
 
     function setUp() public {
         // Custody root.
-        CommitmentManager cmImpl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(cmImpl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
+        manager = deployManager(admin, UNBONDING, 14 days);
 
         // Productive backing: idle-strategy vault over USDC, priced by the 4626 adapter.
         usdc = new MockERC20("USD Coin", "USDC", 6);

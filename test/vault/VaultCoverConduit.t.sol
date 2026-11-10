@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
@@ -48,12 +49,7 @@ contract VaultCoverConduitTest is Test {
     uint256 internal mutualId;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         dai = new MockERC20("Dai Stablecoin", "DAI", 18);
         CommitmentsVault vaultImpl = new CommitmentsVault();
         vault = CommitmentsVault(

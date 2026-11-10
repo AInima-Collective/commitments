@@ -207,13 +207,13 @@ contract RegistryDelegation is HalmosBase {
     }
 
     // =========================================================================
-    // Underflow safety when the manager over-reports (defense-in-depth clamp)
+    // Release decrements the credited snapshot, never the reported amount
     // =========================================================================
 
-    /// @notice The hook must NEVER underflow even if the manager reports a decrement larger
-    ///         than the operator's live stake. We drive the hook on a delegation whose frozen
-    ///         snapshot exceeds the operator's remaining stake by first releasing the
-    ///         self-stake, then releasing the delegation: the second decrement clamps to 0.
+    /// @notice Each close removes exactly the amount credited at register/delegate (the
+    ///         registry ignores the amount the manager reports), so releasing every routed
+    ///         commitment in turn takes the stake to exactly 0 and never underflows. We release
+    ///         the self-stake first, then the delegation.
     function check_onDelegationReleased_clampsToZeroNeverUnderflows(uint256 amount) public {
         vm.assume(amount >= 1 && amount <= FUND);
 
@@ -224,7 +224,7 @@ contract RegistryDelegation is HalmosBase {
         // Release the self-stake first: stake -> `amount`.
         vm.prank(address(manager));
         registry.onDelegationReleased(selfCommitmentId, SELF_STAKE);
-        // Then release the delegation: stake -> 0, exactly, clamped, never underflowing.
+        // Then release the delegation: stake -> 0, exactly, never underflowing.
         vm.prank(address(manager));
         registry.onDelegationReleased(delId, amount);
 

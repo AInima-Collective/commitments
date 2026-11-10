@@ -10,7 +10,7 @@ import {OperatorServiceRegistry} from "src/extensions/services/service-registry/
 import {IOperatorServiceRegistry} from "src/extensions/services/interfaces/IOperatorServiceRegistry.sol";
 import {IServiceManager} from "src/extensions/services/interfaces/IServiceManager.sol";
 import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandler.sol";
-import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
+import {MockVotingPowerSource} from "../helpers/Mocks.sol";
 
 /// @dev Minimal mock OperatorRegistry — only implements eligibility.
 contract MockOperatorRegistry {
@@ -26,50 +26,6 @@ contract MockOperatorRegistry {
 
     function isOperator(address op) external view returns (bool) {
         return activeOperators[op];
-    }
-}
-
-/// @dev Mock voting-power source backing the registry. Tests set per-operator power
-///      directly; historical queries return the live value (tests that need historical
-///      divergence set values at specific blocks).
-contract MockVotingPowerSource is IVotingPowerSource {
-    mapping(address => uint256) public power;
-    mapping(address => mapping(uint256 => uint256)) public powerAt;
-    uint256 public total;
-    mapping(uint256 => uint256) public totalAt;
-
-    function setPower(address who, uint256 v) external {
-        uint256 old = power[who];
-        power[who] = v;
-        total = total + v - old;
-    }
-
-    /// @dev Set a historical snapshot; useful when a test needs to validate a
-    ///      past reference block without advancing chain state.
-    function setPowerAt(address who, uint256 blockNumber, uint256 v) external {
-        powerAt[who][blockNumber] = v;
-    }
-
-    function setTotalAt(uint256 blockNumber, uint256 v) external {
-        totalAt[blockNumber] = v;
-    }
-
-    function getVotingPower(address who) external view returns (uint256) {
-        return power[who];
-    }
-
-    function getVotingPowerAt(address who, uint256 blockNumber) external view returns (uint256) {
-        uint256 snapshot = powerAt[who][blockNumber];
-        return snapshot == 0 ? power[who] : snapshot;
-    }
-
-    function getTotalPower() external view returns (uint256) {
-        return total;
-    }
-
-    function getTotalPowerAt(uint256 blockNumber) external view returns (uint256) {
-        uint256 snapshot = totalAt[blockNumber];
-        return snapshot == 0 ? total : snapshot;
     }
 }
 

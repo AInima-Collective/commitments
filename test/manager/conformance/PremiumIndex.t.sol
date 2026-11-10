@@ -2,40 +2,13 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
-
-/// @dev Fee-on-transfer / deflationary ERC-20: every non-mint/non-burn transfer skims `feeBps`
-///      to a sink, so the recipient receives strictly less than `value`. Used to prove the
-///      measured-receipt funding path (INV-P1) credits the delta that ARRIVED, not the amount
-///      requested.
-contract FeeOnTransferToken is ERC20 {
-    address internal constant SINK = address(0xFEE);
-    uint256 public immutable feeBps;
-
-    constructor(uint256 feeBps_) ERC20("Fee", "FEE") {
-        feeBps = feeBps_;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0) && feeBps != 0) {
-            uint256 fee = (value * feeBps) / 10_000;
-            super._update(from, to, value - fee);
-            if (fee != 0) super._update(from, SINK, fee);
-        } else {
-            super._update(from, to, value);
-        }
-    }
-}
+import {FeeOnTransferERC20} from "../../helpers/Mocks.sol";
 
 /// @title PremiumIndexTest
 /// @notice INV-P0..P10 of the Mutual premium index (Π) asserted as CHECKED properties.
@@ -82,12 +55,7 @@ contract PremiumIndexTest is Test {
     }
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         token = new MockERC20("Numeraire", "NUM", 18);
         other = new MockERC20("Other", "OTH", 18);
 
@@ -641,7 +609,7 @@ contract PremiumIndexTest is Test {
     // =========================================================================
 
     function test_feeOnTransfer_fundingCreditsMeasuredDelta() public {
-        FeeOnTransferToken fot = new FeeOnTransferToken(1_000); // 10% fee
+        FeeOnTransferERC20 fot = new FeeOnTransferERC20(1_000); // 10% fee
 
         // u1 posts FOT collateral (deposit also credits the measured delta).
         fot.mint(u1, 1_000e18);

@@ -7,24 +7,10 @@ import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol
 import {EnvelopeSig} from "../../helpers/EnvelopeSig.sol";
 
 import {OperatorServiceRegistry} from "src/extensions/services/service-registry/OperatorServiceRegistry.sol";
-import {IOperatorServiceRegistry} from "src/extensions/services/interfaces/IOperatorServiceRegistry.sol";
 import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandler.sol";
 import {IServiceManager} from "src/extensions/services/interfaces/IServiceManager.sol";
 import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
-
-/// @dev Eligibility gate for the service manager. The §2 registry is mocked here; the §2
-///      accounting itself is covered by `test/registry/conformance/OperatorRegistryInvariant`.
-contract MockEligibility {
-    mapping(address => bool) public ok;
-
-    function setOperator(address op, bool v) external {
-        ok[op] = v;
-    }
-
-    function isOperator(address op) external view returns (bool) {
-        return ok[op];
-    }
-}
+import {MockEligibility} from "../../helpers/Mocks.sol";
 
 /// @dev A genuinely block-checkpointed voting-power source (the spec §3 requirement that
 ///      `getVotingPowerAt` / `getTotalPowerAt` return the value *as of* a past block, not the

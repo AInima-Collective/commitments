@@ -40,7 +40,7 @@ contract MutualMathSmokeTest is HalmosBase {
     uint256 internal constant DEPOSIT = 1_000e18;
     uint256 internal constant MEMBER_AMOUNT = 400e18;
     uint16 internal constant MEMBER_PENALTY_BPS = 5_000; // E_i = 200e18 per member
-    uint256 internal constant MEMBER_EI = 200e18; // exposure per member (== creditedValue, homogeneous)
+    uint256 internal constant MEMBER_EI = 200e18; // exposure per member (== creditedValue)
 
     uint64 internal constant MUTUAL_WINDOW = 2 days; // == MUTUAL_MIN_CHALLENGE_WINDOW
     uint64 internal constant COMMIT_WINDOW = 86_400; // per-commitment DEFAULT_MIN_CHALLENGE_WINDOW
@@ -72,7 +72,7 @@ contract MutualMathSmokeTest is HalmosBase {
         vm.prank(FUNDER);
         token.approve(address(manager), type(uint256).max);
 
-        // Oracle-free mutual: creditedValue == E_i, no adapter.
+        // Oracle-free mutual: creditedValue == E_i; the adapter address is never consulted.
         ICM.MutualParams memory mp = ICM.MutualParams({
             arbiter: ARBITER,
             numeraire: address(token),
@@ -153,8 +153,8 @@ contract MutualMathSmokeTest is HalmosBase {
     ///         member's cumulative `settledUnits` never exceeds its frozen `forfeitableUnits` (E_i).
     ///         The settle path draws `owed = min(E_i*(Λ−snap)/1e18, E_i−settled, c.amount)`, so the
     ///         Belt-1 clamp `owed <= E_i − settledUnits` is the load-bearing bound under test.
-    /// @dev BOUND: `declared <= 1_000e18`. Uses the batch `settleMembers` entrypoint (matches the
-    ///      conformance driver) over the single member A.
+    /// @dev BOUND: `declared <= 1_000e18`. Uses the batch `settleMembers` entrypoint over the single
+    ///      member A.
     function check_INVG6_settledNeverExceedsForfeitable(uint256 declared) public {
         vm.assume(declared >= 1 && declared <= 1_000e18);
 
@@ -174,7 +174,7 @@ contract MutualMathSmokeTest is HalmosBase {
     // =========================================================================
 
     /// @notice INV-G3 (delta form): a `joinMutual` credits `totalShares` by EXACTLY the value it adds
-    ///         (`creditedValue == E_i` in homogeneous mode), and the membership row records that same
+    ///         (`creditedValue == E_i`), and the membership row records that same
     ///         value. Verified as the per-operation delta rather than the full running sum: a third
     ///         member C joins with a SYMBOLIC lien `amount`, and we assert
     ///         `totalShares' − totalShares == creditedValue_C == E_i(amount, bps)`.
@@ -205,7 +205,7 @@ contract MutualMathSmokeTest is HalmosBase {
         uint256 cidC = manager.joinMutual(mutualId, p);
 
         uint256 sharesPost = manager.getMutual(mutualId).totalShares;
-        uint256 expectedEi = (amount * 5_000) / 10_000; // == creditedValue in homogeneous mode
+        uint256 expectedEi = (amount * 5_000) / 10_000; // == creditedValue
 
         ICM.Membership memory mc = manager.getMembership(cidC);
         assert(mc.creditedValue == expectedEi); // membership records the exact credited value

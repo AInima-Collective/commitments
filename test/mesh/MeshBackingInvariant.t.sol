@@ -9,7 +9,6 @@ import {MeshFactory} from "src/extensions/mesh/MeshFactory.sol";
 import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
-import {ITokenWeighting} from "src/extensions/mesh/interfaces/ITokenWeighting.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
@@ -292,7 +291,7 @@ contract MeshBackingInvariantTest is ManagerTestBase {
         p.arbiter = arbiter;
         p.counterparty = address(reg2);
         p.token = token2;
-        p.adapter = address(staticAdapter);
+        p.adapter = address(adapter);
         p.amount = amount;
         p.maxPenaltyBps = PENALTY;
         p.challengeWindow = WINDOW;

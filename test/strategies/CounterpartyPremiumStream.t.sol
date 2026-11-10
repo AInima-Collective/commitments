@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding, DistributeContext} from "src/core/interfaces/IDistributionStrategy.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
@@ -45,12 +45,7 @@ contract CounterpartyPremiumStreamTest is Test {
         // Start well past t=0 so accrual math has room below `startTime`.
         vm.warp(1_000_000);
 
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         token = new MockERC20("mUSDC", "mUSDC", 18);
         adapter = new MockStaticAdapter();
         strategy = new CounterpartyPremiumStream(address(manager));

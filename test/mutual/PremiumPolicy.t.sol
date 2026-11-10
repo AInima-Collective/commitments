@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {PremiumScheduler} from "src/extensions/mutuals/PremiumScheduler.sol";
@@ -55,12 +55,7 @@ contract PremiumPolicyTest is Test {
     uint256 internal constant MAX_LEV = 50_000; // 5x
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         usdc = new MockERC20("USD Coin", "USDC", 18);
         bondTok = new MockERC20("Bond", "BOND", 18);
 

@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding, TokenMovement, MovementKind} from "src/core/interfaces/IDistributionStrategy.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
@@ -570,14 +570,7 @@ contract PartitionInvariantTest is Test {
     MockERC20[] internal tokens;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (makeAddr("admin"), 7 days, 14 days))
-                )
-            )
-        );
+        manager = deployManager(makeAddr("admin"), 7 days, 14 days);
 
         tokens.push(new MockERC20("Backing A", "BCKA", 18));
         tokens.push(new MockERC20("Backing B", "BCKB", 6));

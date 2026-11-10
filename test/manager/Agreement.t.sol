@@ -2,9 +2,8 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {
     IDistributionStrategy,
@@ -12,45 +11,18 @@ import {
     TokenMovement,
     MovementKind
 } from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {RecordingStrategy, RevertingStrategy, MOCK_DISTRIBUTE} from "./mocks/StrategyMocks.sol";
 
-contract AgreementTestBase is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
-
-    address internal admin = makeAddr("admin");
+contract AgreementTestBase is ManagerTestBase {
     address internal alice = makeAddr("alice"); // proposer
     address internal bob = makeAddr("bob"); // acceptor
     address internal carol = makeAddr("carol"); // shared arbiter
 
-    uint64 internal constant UNBONDING = 7 days;
-    uint64 internal constant WINDOW = 2 days;
-
-    function setUp() public virtual {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
-
-        token.mint(alice, 1_000e18);
-        token.mint(bob, 1_000e18);
-        vm.startPrank(alice);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
-        vm.startPrank(bob);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
+    function setUp() public virtual override {
+        super.setUp();
+        _fund(alice, 1_000e18);
+        _fund(bob, 1_000e18);
     }
 
     function _eparams() internal view returns (ICM.AgreementParams memory p) {

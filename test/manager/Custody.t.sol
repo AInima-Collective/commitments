@@ -3,60 +3,22 @@ pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {MockERC20} from "../helpers/MockERC20.sol";
 import {MockERC20Permit} from "../helpers/MockERC20Permit.sol";
+import {FeeOnTransferERC20} from "../helpers/Mocks.sol";
 
-/// @dev Fee-on-transfer mock: skims `feeBps` on every transfer. Used to prove the
-///      measured-delta rule keeps the ledger honest (ERC §A.2).
-contract FeeOnTransferERC20 is ERC20 {
-    uint16 public feeBps;
-
-    constructor(uint16 feeBps_) ERC20("Fee", "FEE") {
-        feeBps = feeBps_;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0)) {
-            uint256 fee = (value * feeBps) / 10_000;
-            super._update(from, address(0xdead), fee);
-            super._update(from, to, value - fee);
-        } else {
-            super._update(from, to, value);
-        }
-    }
-}
-
-contract CustodyTest is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-
-    address internal admin = makeAddr("admin");
+contract CustodyTest is ManagerTestBase {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal strategy = makeAddr("strategy");
     address internal pauser = makeAddr("pauser");
     address internal unpauser = makeAddr("unpauser");
 
-    uint64 internal constant UNBONDING = 7 days;
-
-    function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
+    function setUp() public override {
+        super.setUp();
 
         token.mint(alice, 1_000e18);
         token.mint(bob, 1_000e18);

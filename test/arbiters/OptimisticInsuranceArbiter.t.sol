@@ -6,7 +6,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {OptimisticInsuranceArbiter} from "src/periphery/arbiters/OptimisticInsuranceArbiter.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {ManagerTestBase, MockIndexAdapter} from "../helpers/ManagerTestBase.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
+import {MockIndexAdapter} from "../helpers/Mocks.sol";
 import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 
 // =============================================================================

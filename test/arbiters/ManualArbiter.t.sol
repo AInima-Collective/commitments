@@ -47,8 +47,8 @@ contract ManualArbiterTest is ManagerTestBase {
     function _entParams() internal view returns (ICM.AgreementParams memory p) {
         p.arbiter = address(arbiter);
         p.acceptor = acceptor;
-        p.proposerLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
-        p.acceptorLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.proposerLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.acceptorLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
         p.challengeWindow = WINDOW;
         p.proposalDuration = 1 days;
         p.metadataURI = "";
@@ -307,7 +307,7 @@ contract ManualArbiterTest is ManagerTestBase {
         p.arbiter = address(arbiter);
         p.counterparty = mutualBeneficiary;
         p.token = address(token);
-        p.adapter = address(staticAdapter);
+        p.adapter = address(adapter);
         p.amount = amount;
         p.maxPenaltyBps = MAX_PENALTY_BPS;
         p.challengeWindow = WINDOW;

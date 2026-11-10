@@ -12,52 +12,8 @@ import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {OperatorServiceRegistry} from "src/extensions/services/service-registry/OperatorServiceRegistry.sol";
 import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandler.sol";
 import {IServiceManager} from "src/extensions/services/interfaces/IServiceManager.sol";
-import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
-
-// =============================================================================
-// Mocks
-// =============================================================================
-
-/// @notice Minimal eligibility oracle — just tracks which addresses are operators.
-contract MockEligibility {
-    mapping(address => bool) public ops;
-
-    function set(address op, bool yes) external {
-        ops[op] = yes;
-    }
-
-    function isOperator(address op) external view returns (bool) {
-        return ops[op];
-    }
-}
-
-/// @notice Minimal voting power source — flat per-operator power.
-contract MockVotingPower is IVotingPowerSource {
-    mapping(address => uint256) private _power;
-    uint256 private _total;
-
-    function set(address op, uint256 p) external {
-        _total = _total + p - _power[op];
-        _power[op] = p;
-    }
-
-    function getVotingPower(address op) external view returns (uint256) {
-        return _power[op];
-    }
-
-    function getVotingPowerAt(address op, uint256) external view returns (uint256) {
-        return _power[op];
-    }
-
-    function getTotalPower() external view returns (uint256) {
-        return _total;
-    }
-
-    function getTotalPowerAt(uint256) external view returns (uint256) {
-        return _total;
-    }
-}
+import {MockEligibility, MockVotingPowerSource} from "../helpers/Mocks.sol";
 
 // =============================================================================
 // Tests
@@ -80,7 +36,7 @@ contract AttestationArbiterTest is ManagerTestBase {
 
     OperatorServiceRegistry public sr;
     MockEligibility public eligibility;
-    MockVotingPower public vp;
+    MockVotingPowerSource public vp;
     AttestationArbiter public arbiter;
 
     address public committer = makeAddr("committer");
@@ -106,7 +62,7 @@ contract AttestationArbiterTest is ManagerTestBase {
 
         // ---- Service manager infrastructure ----
         eligibility = new MockEligibility();
-        vp = new MockVotingPower();
+        vp = new MockVotingPowerSource();
 
         OperatorServiceRegistry srImpl = new OperatorServiceRegistry();
         ERC1967Proxy srProxy = new ERC1967Proxy(
@@ -126,8 +82,8 @@ contract AttestationArbiterTest is ManagerTestBase {
             address signAddr = vm.addr(signKey);
             ops[i] = Op(opKey, opAddr, signKey, signAddr);
 
-            eligibility.set(opAddr, true);
-            vp.set(opAddr, 100);
+            eligibility.setOperator(opAddr, true);
+            vp.setPower(opAddr, 100);
 
             vm.prank(opAddr);
             sr.enrollServiceOperator();
@@ -167,8 +123,8 @@ contract AttestationArbiterTest is ManagerTestBase {
         ICM.AgreementParams memory p;
         p.arbiter = address(arbiter);
         p.acceptor = acceptor;
-        p.proposerLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
-        p.acceptorLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.proposerLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.acceptorLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
         p.challengeWindow = WINDOW;
         p.proposalDuration = 1 days;
         p.metadataURI = "";
@@ -705,8 +661,8 @@ contract AttestationArbiterTest is ManagerTestBase {
         ICM.AgreementParams memory p;
         p.arbiter = address(arbiter);
         p.acceptor = acceptor;
-        p.proposerLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
-        p.acceptorLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.proposerLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.acceptorLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
         p.challengeWindow = WINDOW;
         p.proposalDuration = 1 days;
         p.maxFlowProposerToAcceptor = capP2A;
@@ -798,7 +754,7 @@ contract AttestationArbiterTest is ManagerTestBase {
         p.arbiter = address(arbiter);
         p.counterparty = mutualBeneficiary;
         p.token = address(token);
-        p.adapter = address(staticAdapter);
+        p.adapter = address(adapter);
         p.amount = amount;
         p.maxPenaltyBps = MAX_PENALTY_BPS;
         p.challengeWindow = WINDOW;

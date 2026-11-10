@@ -2,12 +2,11 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {NoopStrategy} from "./mocks/StrategyMocks.sol";
 
@@ -81,53 +80,20 @@ contract MockERC1271Wallet {
     }
 }
 
-contract LifecycleTestBase is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
-
-    address internal admin = makeAddr("admin");
+contract LifecycleTestBase is ManagerTestBase {
     address internal alice; // committer (has a known private key for relayer tests)
     uint256 internal aliceKey;
     address internal arbiter = makeAddr("arbiter");
     address internal bob = makeAddr("bob"); // counterparty
 
-    uint64 internal constant UNBONDING = 7 days;
-    uint64 internal constant WINDOW = 2 days;
-
-    function setUp() public virtual {
+    function setUp() public virtual override {
         (alice, aliceKey) = makeAddrAndKey("alice");
-
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
-
-        token.mint(alice, 1_000e18);
-        vm.startPrank(alice);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
+        super.setUp();
+        _fund(alice, 1_000e18);
     }
 
-    function _params(uint256 amount, uint16 maxPenaltyBps) internal view returns (ICM.CommitmentParams memory p) {
-        p.arbiter = arbiter;
-        p.counterparty = bob;
-        p.token = address(token);
-        p.adapter = address(adapter);
-        p.amount = amount;
-        p.maxPenaltyBps = maxPenaltyBps;
-        p.challengeWindow = WINDOW;
-        p.expiresAt = 0;
-        p.strategies = new StrategyBinding[](0);
-        p.metadataURI = "";
-        p.metadataHash = bytes32(0);
+    function _params(uint256 amount, uint16 maxPenaltyBps) internal view returns (ICM.CommitmentParams memory) {
+        return _baseParams(arbiter, bob, amount, maxPenaltyBps);
     }
 
     function _create(uint256 amount, uint16 maxPenaltyBps) internal returns (uint256 id) {
