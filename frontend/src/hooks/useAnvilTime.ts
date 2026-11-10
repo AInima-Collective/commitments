@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import { createTestClient, http, publicActions, type TestClient } from 'viem'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ANVIL_RPC_URL, anvil } from '../config/wagmi'
+import { ANVIL_RPC_URL, anvil } from '../config/anvil'
 
 type AnvilTestClient = TestClient<'anvil'> & ReturnType<typeof publicActions>
 

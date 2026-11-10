@@ -1,18 +1,9 @@
 import { createConfig, http } from 'wagmi'
 import { mainnet, sepolia, type Chain } from 'wagmi/chains'
 import { injected, walletConnect } from 'wagmi/connectors'
+import { ANVIL_RPC_URL, anvil } from './anvil'
 
 const walletConnectProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID
-
-export const ANVIL_RPC_URL: string = import.meta.env.VITE_RPC_URL_ANVIL || 'http://127.0.0.1:8545'
-
-/** The local dev chain. The one declaration: the dev wallet and anvil test client use it too. */
-export const anvil = {
-  id: 31337,
-  name: 'Anvil',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [ANVIL_RPC_URL] } },
-} as const satisfies Chain
 
 export const EXPECTED_CHAIN_ID = Number(import.meta.env.VITE_EXPECTED_CHAIN_ID || mainnet.id)
 

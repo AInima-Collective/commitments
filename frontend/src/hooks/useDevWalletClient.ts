@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { createWalletClient, http, type WalletClient } from 'viem'
 import { useDevWallet } from '../contexts/devWallet'
-import { ANVIL_RPC_URL, anvil } from '../config/wagmi'
+import { ANVIL_RPC_URL, anvil } from '../config/anvil'
 
 /**
  * Returns a viem walletClient bound to the actor currently selected in
