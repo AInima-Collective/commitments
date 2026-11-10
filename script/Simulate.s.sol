@@ -1758,7 +1758,8 @@ contract Simulate is Script {
         agentMutualArbiter.setCoverPolicy(address(mutualPolicy));
         string memory perilURI = _perilURI(
             "cvaDAI Drawdown Floor",
-            "Vault-funded cover for every cvaDAI depositor: the strategy skims part of realized yield as premium; underwriters absorb strategy drawdowns beyond the floor and are paid from the vault's own yield.",
+            // Kept short: the inline data: URI must fit MutualRegistry's 512-byte peril URI cap.
+            "Vault-funded cover for cvaDAI depositors: the strategy skims part of realized yield as premium, and underwriters absorb drawdowns beyond the floor.",
             "cvaDAI NAV/share falls >5% below its post-skim high-water mark; loss = convertToShares(shortfall below floor)"
         );
         ICommitmentManager.MutualParams memory gp = ICommitmentManager.MutualParams({
@@ -2232,6 +2233,10 @@ contract Simulate is Script {
         string memory description,
         string memory label
     ) internal returns (uint256 proposalId) {
+        // OZ Governor reads a proposal whose snapshot block is 0 as nonexistent. On a fresh anvil
+        // the simulation pass starts at block 0 and only vm.roll moves it, so make sure T >= 1.
+        if (block.number == 0) vm.roll(1);
+
         // Block T: propose. voteStart=T, voteEnd=T+1.
         vm.startBroadcast(operators[0].key);
         proposalId = governor.propose(targets, values, calldatas, description);
