@@ -381,6 +381,7 @@
       { "source": "src/shared/factories/FactoryStorage.sol", "declarations": ["FactoryStorage"], "reason": "namespaced storage library" },
       { "source": "src/shared/registries/AddressSetSwapLib.sol", "declarations": ["AddressSetSwapLib"], "reason": "shared implementation helper" },
       { "source": "src/shared/registries/MembershipBase.sol", "declarations": ["MembershipBase"], "reason": "shared implementation helper" },
+      { "source": "src/shared/utilities/MeasuredPull.sol", "declarations": ["MeasuredPull"], "reason": "shared implementation helper" },
       { "source": "src/shared/utilities/Multicallable.sol", "declarations": ["Multicallable"], "reason": "shared implementation helper" },
       { "source": "src/vendor/erc8004/IdentityRegistryUpgradeable.sol", "declarations": ["IdentityRegistryUpgradeable"], "reason": "vendored declaration" },
       { "source": "src/vendor/erc8004/interfaces/IERC8004IdentityRegistry.sol", "declarations": ["IERC8004IdentityRegistry"], "reason": "vendored declaration" }

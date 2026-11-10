@@ -73,6 +73,7 @@ Auto-generated from Solidity NatSpec via `just docs-gen`. Edit the contracts to 
 - [ICommitmentsVault](/docs/protocol/reference/contracts/periphery/vaults/interfaces/ICommitmentsVault) — `periphery/vaults/interfaces/ICommitmentsVault.md`
 - [IYieldStrategy](/docs/protocol/reference/contracts/periphery/vaults/interfaces/IYieldStrategy) — `periphery/vaults/interfaces/IYieldStrategy.md`
 - [PremiumSkimStrategy](/docs/protocol/reference/contracts/periphery/vaults/strategies/PremiumSkimStrategy) — `periphery/vaults/strategies/PremiumSkimStrategy.md`
+- [SkimmingMockStrategy](/docs/protocol/reference/contracts/periphery/vaults/strategies/SkimmingMockStrategy) — `periphery/vaults/strategies/SkimmingMockStrategy.md`
 - [ArbiterBase](/docs/protocol/reference/contracts/shared/arbitration/ArbiterBase) — `shared/arbitration/ArbiterBase.md`
 - [ArbiterCapabilities](/docs/protocol/reference/contracts/shared/arbitration/ArbiterCapabilities) — `shared/arbitration/ArbiterCapabilities.md`
 - [IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter) — `shared/arbitration/interfaces/IArbiter.md`

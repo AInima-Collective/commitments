@@ -25,9 +25,6 @@ the standards that specify them.
 
 | Selector | Signature |
 |---|---|
-| `0x4997402e` | `acceptsContributions(uint256)` |
-| `0xb7696a98` | `batchCreateCommitments((address,address,address,address,uint256,uint16,uint64,uint64,(address,bytes)[],string,bytes32)[])` |
-| `0xa58d4b58` | `batchReleaseCommitments(uint256[])` |
 | `0x2cd19ce0` | `cancelForfeit(uint256)` |
 | `0x26b5f204` | `cancelStaleForfeitProposal(uint256)` |
 | `0x0d6f1fc9` | `cancelUnbond(uint256)` |
@@ -42,19 +39,16 @@ the standards that specify them.
 | `0x12a62cff` | `depositWithPermit(address,uint256,uint256,uint8,bytes32,bytes32)` |
 | `0xe1fa8b02` | `distribute(uint256,address)` |
 | `0x94c176e4` | `distributeAll(uint256)` |
-| `0xf2e51d52` | `distributeAndClaim(uint256,address,bytes)` |
 | `0xce85c6ec` | `encumberedBalance(address,address)` |
 | `0x7d8746f9` | `escrowOf(address,address)` |
 | `0xef3bf569` | `executeForfeit(uint256)` |
 | `0x18117038` | `expireCommitment(uint256)` |
 | `0x291cf6fb` | `finalizeUnbond(uint256)` |
 | `0x4b6df144` | `forfeitedUnitsOf(uint256)` |
-| `0x657654df` | `forfeiturePaused()` |
 | `0x382ba5ba` | `freeBalance(address,address)` |
 | `0x7fb23769` | `fundStrategy(address,address,uint256)` |
 | `0x69bcdb7d` | `getCommitment(uint256)` |
 | `0x95804480` | `getForfeitProposal(uint256)` |
-| `0x29d72b54` | `getUserCommitmentIds(address)` |
 | `0xd9620e8f` | `getUserExposure(address,address)` |
 | `0x575eb3e5` | `hookGasCap()` |
 | `0x7ee1d02e` | `initiateForfeit(uint256,uint16)` |
@@ -78,7 +72,6 @@ the standards that specify them.
 | topic0 | Signature |
 |---|---|
 | `0xd4d6e7f34ebb4f4a5c72d905269ec40aebf16d87c53f82a60aab5608b87edbc0` | `CommitmentBoundToStrategy(uint256,address,bytes)` |
-| `0x26dbfa904ce1f200ccc4cea944c203baec68231a4c854347035d5d8e1b8467f1` | `CommitmentCounterparty(uint256,address)` |
 | `0x3c6eb8b9c2108e844c1af90289be797b54ec9fa33bc0fb90d7140943d484f8d0` | `CommitmentCreated(uint256,address,address,address,address,address,uint256,uint16,uint64,uint64,string,bytes32)` |
 | `0x341988ee052d669244b570da8d1dcf7731f4cf5933df2edf40201222ce62f5cb` | `CommitmentExpired(uint256,address)` |
 | `0x9df20228d91c3065c03ef144e93618b94bbb13bb3efdad1d9e4d95adb874b0f5` | `CommitmentFinalized(uint256)` |
@@ -94,7 +87,6 @@ the standards that specify them.
 | `0xf96187694fceb95ed9c11e01056977b4599cf0620cc9325d769b8cbd903f9826` | `EncumbranceMovedToEscrow(uint256,address,address,uint256)` |
 | `0xe5d6c841a8acde472a42d05f620fb60de25f2d55d1212f4ffbfadd64f8999a7f` | `EncumbrancePaidExternal(uint256,address,address,uint256)` |
 | `0x1faa94b07a3212f75a1f7a4f50553571199bbb365f685c682c72ae697cb5dbaa` | `EncumbranceReleased(uint256,address,address,uint256)` |
-| `0x7511bbb0dab77773635c9da843e8ea1b2753107cb294f7da9c900495ce050e97` | `EncumbranceTransferred(address,address,address,uint256)` |
 | `0x1662447ec31f27dc3766611220d19c8a77c370a9a72b5261458a0b4edcd1708d` | `ForfeitCancelled(uint256)` |
 | `0xee54ccf40930b5c8eea718330c917e825fa81a6ec6bb442671295b18023ad08c` | `ForfeitCancelledStale(uint256)` |
 | `0xf22baa666cf8aaa09fae00e1b3bfd18ed0fd3f492045cc2f8d50862470ddcc62` | `ForfeitExecuted(uint256,uint256,address)` |
@@ -121,7 +113,6 @@ the standards that specify them.
 | `0x20f34bae` | `ContributionsDisabled()` |
 | `0xcc5fde69` | `DuplicateStrategy()` |
 | `0xc2e5347d` | `EmptyBatch()` |
-| `0xb19bf0cb` | `ExposureAllocationExceeded()` |
 | `0x236c6c77` | `ForfeitPending()` |
 | `0x4f4ce8e7` | `ForfeitureIsPaused()` |
 | `0x192de9b3` | `InsufficientEncumberedBalance(uint256,uint256)` |
@@ -132,7 +123,6 @@ the standards that specify them.
 | `0x756688fe` | `InvalidNonce()` |
 | `0x8baa579f` | `InvalidSignature()` |
 | `0xd5b532b3` | `MinChallengeWindowBelowFloor()` |
-| `0xb9fa98b9` | `MovementBlockedByForfeit()` |
 | `0x1f1b0045` | `MovementEscrowRecipientNotStrategy(address,address)` |
 | `0x0653fa01` | `MovementExceedsCommitment(uint256,uint256)` |
 | `0x7faa0984` | `MovementFromEscrowNotOnDistribute()` |
@@ -203,7 +193,6 @@ the standards that specify them.
 | `0xef7639a5` | `getAgreementSettlement(uint256)` |
 | `0x43c89584` | `proposeAgreement((address,address,(address,address,uint256,uint16,(address,bytes)[]),(address,address,uint256,uint16,(address,bytes)[]),uint64,uint64,string,bytes32,uint128,uint128))` |
 | `0x262a384b` | `releaseAgreement(uint256)` |
-| `0x8ac9d58c` | `requestAgreementUnbond(uint256)` |
 | `0xe167c90b` | `settleAgreement(uint256,bool,uint256,bytes32)` |
 
 #### Event topic0
@@ -219,7 +208,6 @@ the standards that specify them.
 | `0x244d23c6a9f65c9999e9390e6f162748a00557f1e579060ffa714e866d9ba75e` | `AgreementProposedTerms(uint256,address,address,address,uint256,uint16,address,address,uint256,uint16,uint64,uint64,uint128,uint128)` |
 | `0x0c43d8cabcbcb3bba7d1d7a1491c66a0a957d6836f82f2b597016ddc8b72e71a` | `AgreementReleased(uint256)` |
 | `0x4790d617bd2f3500e3102f07b53ecd8795905b0ba1f5d8aacdbac0908c871285` | `AgreementSettled(uint256,bool,uint256,uint256,uint256,bytes32)` |
-| `0x19405c9f43902ad41c45eaf5b6d9a9169b24c72b51e6d23747cd02e53f4056ea` | `AgreementUnbondRequested(uint256)` |
 
 #### Error selectors
 
@@ -250,7 +238,6 @@ the standards that specify them.
 | `0x975761d2` | `cancelMutualLoss(uint256)` |
 | `0xbcac5af4` | `cancelStaleMutualLoss(uint256)` |
 | `0x033d8afb` | `claimMemberPremium(uint256)` |
-| `0xd6edb779` | `claimMembersPremium(uint256[])` |
 | `0x66208a18` | `createMutual((address,address,address,uint64,uint64))` |
 | `0xd842ddb8` | `executeMutualLoss(uint256)` |
 | `0xd7163930` | `fundMutualPremium(uint256,uint256,uint64)` |
@@ -265,7 +252,6 @@ the standards that specify them.
 | `0xd432238d` | `reclaimPremium(uint256)` |
 | `0x307c36ad` | `releaseMutualMember(uint256)` |
 | `0xaa7aa643` | `requestMutualExit(uint256)` |
-| `0xe2b76d56` | `settleAndClaim(uint256)` |
 | `0xaf81191f` | `settleMemberLoss(uint256)` |
 | `0xbe0ab14e` | `settleMembers(uint256[])` |
 
@@ -273,6 +259,7 @@ the standards that specify them.
 
 | topic0 | Signature |
 |---|---|
+| `0x21fb793588837a4abd624a2ef31a01cc5900752d3f3e1df350a420c3719069e6` | `MemberExitLapsed(uint256,uint256)` |
 | `0xfa18642e7d835d824f721372ae4d5de7e8ec4d20e4bbec100a65fb9abc4143ad` | `MemberExitRequested(uint256,uint256,uint64)` |
 | `0xcb822c5c768eef06a96e73295defbfc46e2ab3e498ff258651c0e7eb398a3003` | `MemberJoined(uint256,uint256,address,uint128,uint256)` |
 | `0x60f37e9ed531bc54915d13dcc372b88583ffaa830d8afa84561f5e92ef946152` | `MemberPremiumClaimed(uint256,address,uint256)` |
