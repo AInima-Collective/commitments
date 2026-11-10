@@ -7,7 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
-import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
+import {ICommitmentsVault} from "src/periphery/vaults/interfaces/ICommitmentsVault.sol";
 
 /// @title ForfeitDonationBeneficiary
 /// @notice Names a VAULT'S DEPOSITORS as a commitment's counterparty. Forfeit proceeds
@@ -51,18 +51,22 @@ contract ForfeitDonationBeneficiary is ReentrancyGuardTransient {
     IERC4626 public immutable sourceVault;
 
     /// @notice The vault the redeemed assets are donated into (may equal source).
-    CommitmentsVault public immutable targetVault;
+    ICommitmentsVault public immutable targetVault;
+
+    /// @notice The shared underlying of both vaults (checked equal at construction).
+    IERC20 public immutable asset;
 
     constructor(address manager_, address sourceVault_, address targetVault_) {
         if (manager_ == address(0) || sourceVault_ == address(0) || targetVault_ == address(0)) {
             revert ZeroAddress();
         }
         address srcAsset = IERC4626(sourceVault_).asset();
-        address tgtAsset = CommitmentsVault(targetVault_).asset();
+        address tgtAsset = IERC4626(targetVault_).asset();
         if (srcAsset != tgtAsset) revert AssetMismatch(srcAsset, tgtAsset);
         manager = ICommitmentManager(manager_);
         sourceVault = IERC4626(sourceVault_);
-        targetVault = CommitmentsVault(targetVault_);
+        targetVault = ICommitmentsVault(targetVault_);
+        asset = IERC20(tgtAsset);
     }
 
     /// @notice Permissionlessly convert every forfeited share this contract holds into
@@ -79,8 +83,7 @@ contract ForfeitDonationBeneficiary is ReentrancyGuardTransient {
 
         assets = sourceVault.redeem(shares, address(this), address(this));
 
-        IERC20 asset_ = IERC20(targetVault.asset());
-        asset_.forceApprove(address(targetVault), assets);
+        asset.forceApprove(address(targetVault), assets);
         targetVault.donate(assets);
 
         emit ForfeitDonated(shares, assets);

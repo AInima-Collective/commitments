@@ -193,10 +193,9 @@ assets). Per deposit the vault `safeTransfer`s assets to the strategy then calls
 — so `deposit` is a receiver hook (tokens already delivered) and `withdraw` must
 return assets to the vault.
 
-`IdleStrategy` (`src/periphery/vaults/strategies/IdleStrategy.sol`) is the shipped reference: a
-minimal, vault-gated, no-yield strategy that custodies the asset and earns
-nothing. Use it as the authoring template, or as a null-object baseline to fill
-the strategy slot with a known-good contract before a real venue is wired.
+`IYieldStrategy` (`src/periphery/vaults/interfaces/IYieldStrategy.sol`) states
+the handshake each strategy must follow. `PremiumSkimStrategy` is the shipped
+abstract base for strategies that skim a premium from yield.
 
 ## Composing mesh topologies
 

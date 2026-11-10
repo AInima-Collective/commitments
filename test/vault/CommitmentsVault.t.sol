@@ -9,6 +9,7 @@ import {ICommitmentsVault} from "src/periphery/vaults/interfaces/ICommitmentsVau
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 
 /// @title CommitmentsVaultTest
 /// @notice Comprehensive unit tests for the clean ERC-4626 CommitmentsVault: deposits, instant
@@ -131,7 +132,9 @@ contract CommitmentsVaultTest is Test {
         vault.pauseDeposits();
 
         vm.prank(alice);
-        vm.expectRevert(ICommitmentsVault.DepositsPaused.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC4626Upgradeable.ERC4626ExceededMaxDeposit.selector, alice, INITIAL_DEPOSIT, 0)
+        );
         vault.deposit(INITIAL_DEPOSIT, alice);
     }
 
@@ -140,7 +143,7 @@ contract CommitmentsVaultTest is Test {
         vault.pauseDeposits();
 
         vm.prank(alice);
-        vm.expectRevert(ICommitmentsVault.DepositsPaused.selector);
+        vm.expectRevert(abi.encodeWithSelector(ERC4626Upgradeable.ERC4626ExceededMaxMint.selector, alice, 1e18, 0));
         vault.mint(1e18, alice);
     }
 

@@ -2,11 +2,14 @@ import { useMemo } from 'react'
 import { type Address } from 'viem'
 import { useChainId, useReadContract, useReadContracts } from 'wagmi'
 
-import { mutualRegistryAbi } from '../generated'
+import { commitmentManagerAbi, mutualRegistryAbi } from '../generated'
 import { getContractAddresses } from '../config/contracts'
 import { useMutuals } from './useMutuals'
 
-/** A registered Mutual listing (the `getMutualListing` tuple + live capacity). */
+/**
+ * A registered Mutual listing: the `getMutualListing` terms plus the core
+ * `Mutual`'s numeraire, beneficiary and filled capacity.
+ */
 export interface MutualListing {
   mutualId: bigint
   creator: Address
@@ -39,12 +42,13 @@ export interface UseMutualListingsReturn {
  * Indexer-plus-chain merge strategy: when `VITE_INDEXER_URL` is set it
  * pulls the denormalized list from the indexer's `/mutuals` endpoint; either
  * way it reads `allMutualIds` from the on-chain `MutualRegistry` and fans out
- * `getMutualListing` + `capacity` + `isFilled` so the list renders fresh values
- * without waiting on the indexer. Chain reads win where both exist.
+ * `getMutualListing` plus the manager's `getMutual` (numeraire, beneficiary,
+ * `totalShares`) so the list renders fresh values without waiting on the
+ * indexer. Chain reads win where both exist.
  */
 export function useMutualListings(): UseMutualListingsReturn {
   const chainId = useChainId()
-  const registry = getContractAddresses(chainId).mutualRegistry
+  const { mutualRegistry: registry, commitmentManager: manager } = getContractAddresses(chainId)
 
   // Optional indexer enrichment — tolerated absent. The `GET /mutuals` endpoint
   // carries the loss-adjusted `liveCapacity` and the canonical numeraire /
@@ -65,15 +69,14 @@ export function useMutualListings(): UseMutualListingsReturn {
 
   const ids = useMemo(() => (idsRaw as readonly bigint[] | undefined) ?? [], [idsRaw])
 
-  // Three reads per mutual: getMutualListing, capacity (filled/target), isFilled.
+  // Two reads per mutual: the registry's listing and the core Mutual.
   const contracts = useMemo(
     () =>
       ids.flatMap((id) => [
         { abi: mutualRegistryAbi, address: registry, functionName: 'getMutualListing' as const, args: [id] as const },
-        { abi: mutualRegistryAbi, address: registry, functionName: 'capacity' as const, args: [id] as const },
-        { abi: mutualRegistryAbi, address: registry, functionName: 'isFilled' as const, args: [id] as const },
+        { abi: commitmentManagerAbi, address: manager, functionName: 'getMutual' as const, args: [id] as const },
       ]),
-    [ids, registry],
+    [ids, registry, manager],
   )
 
   const {
@@ -82,44 +85,42 @@ export function useMutualListings(): UseMutualListingsReturn {
     refetch: refetchDetail,
   } = useReadContracts({
     contracts,
-    query: { enabled: Boolean(registry) && ids.length > 0, refetchInterval: 20_000 },
+    query: { enabled: Boolean(registry) && Boolean(manager) && ids.length > 0, refetchInterval: 20_000 },
   })
 
   const listings = useMemo<MutualListing[]>(() => {
     return ids.map((id, i) => {
-      const s = detailRaw?.[i * 3]?.result as
+      const s = detailRaw?.[i * 2]?.result as
         | {
-            mutualId: bigint
             creator: Address
-            numeraire: Address
-            beneficiary: Address
             targetCapacity: bigint
             termEnd: bigint
             perilURI: string
             perilHash: `0x${string}`
           }
         | undefined
-      const cap = detailRaw?.[i * 3 + 1]?.result as readonly [bigint, bigint] | undefined
-      const filledFlag = detailRaw?.[i * 3 + 2]?.result as boolean | undefined
+      const core = detailRaw?.[i * 2 + 1]?.result as
+        | { numeraire: Address; beneficiary: Address; totalShares: bigint }
+        | undefined
 
       // Indexer enrichment for the canonical mutual header + live capacity.
       const grp = indexed.byId.get(id)
 
-      const filled = cap?.[0] ?? grp?.totalShares ?? 0n
+      const filled = core?.totalShares ?? grp?.totalShares ?? 0n
       const target = s?.targetCapacity ?? 0n
 
       return {
         mutualId: id,
         creator: (s?.creator ?? ZERO) as Address,
-        numeraire: (s?.numeraire ?? grp?.numeraire ?? ZERO) as Address,
-        beneficiary: (s?.beneficiary ?? grp?.beneficiary ?? ZERO) as Address,
+        numeraire: (core?.numeraire ?? grp?.numeraire ?? ZERO) as Address,
+        beneficiary: (core?.beneficiary ?? grp?.beneficiary ?? ZERO) as Address,
         targetCapacity: target,
         filled,
         liveCapacity: grp?.liveCapacity,
         termEnd: s?.termEnd ?? 0n,
         perilURI: s?.perilURI ?? '',
         perilHash: (s?.perilHash ?? EMPTY_HASH),
-        isFilled: filledFlag ?? (target > 0n && filled >= target),
+        isFilled: s !== undefined && filled >= target,
       }
     })
   }, [ids, detailRaw, indexed.byId])

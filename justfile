@@ -118,7 +118,7 @@ demo-agent-breach:
     echo "demo-agent-breach: vault=$vault mutualId=$G"
     # Idempotency: an arbiter claim already exists (proposer != 0) -> loss already driven.
     proposer=$(cast call --rpc-url "$rpc" "$arb" \
-        "claims(uint256)(address,uint256,uint64,bool,bool,uint256,uint256,uint64,address)" "$G" | head -1 | awk '{print $1}')
+        "claims(uint256)(address,uint64,bool,uint256)" "$G" | head -1 | awk '{print $1}')
     if [ "$(echo "$proposer" | tr 'A-Z' 'a-z')" != "0x0000000000000000000000000000000000000000" ]; then
         echo "  mutual $G already has a loss claim ($proposer) — nothing to do (idempotent skip)"
         exit 0

@@ -907,10 +907,11 @@ ETH-free and the dispute economics swappable without touching the core.
 The following reference contracts compose the core primitive into the *Mutual*
 product. They are off the core custody path and are not part of the normative manager surface.
 
-**`MutualRegistry`** — a thin product wrapper (Position A). `registerMutual` calls
+**`MutualRegistry`** — a thin product wrapper. `registerMutual` calls
 `manager.createMutual` and records the off-chain-meaningful coverage terms 1:1 against the
-returned `mutualId`: `creator`, `numeraire`, `beneficiary`, `targetCapacity`, `termEnd`,
-`perilURI`, `perilHash`. It is the indexer's binding target and the frontend's read surface.
+returned `mutualId`: `creator`, `targetCapacity`, `termEnd`, `perilURI` (at most 512 bytes, else
+`URITooLong`), `perilHash`. The numeraire and beneficiary are read from the core `Mutual`. It is
+the indexer's binding target and the frontend's read surface.
 Capacity / loss accounting all live in the manager's `Mutual`; the registry only annotates
 and exposes a capacity view (`isFilled`, `capacity` read `getMutual(mutualId).totalShares`
 against the recorded target; `allMutualIds`, `mutualCount`). It emits `MutualRegistered`.
@@ -926,11 +927,13 @@ manager's one-active-proposal rule. `reclaimBond` and `reclaimOnCancelled` are p
 always refund the proposer; a new `proposeLoss` also refunds a prior unreclaimed claim whose
 manager proposal executed or was cancelled, so an abandoned bond never blocks the next
 declaration. Only a claim still pending in the manager reverts `ClaimActive`. `activate`
-(owner-gated) flips the mutual active; members can join only after it. Events: `LossProposed`,
-`LossVetoed`, `BondReclaimed`.
+(owner-gated) flips the mutual active; members can join only after it. `proposeLossFor` also
+references a `LinkedMutualPolicy` binding of the same mutual and emits its `{notional, expiry,
+policyholder}` in `CoverBindingSnapshotted`; the snapshot is not stored and gates nothing.
+Events: `LossProposed`, `LossVetoed`, `BondReclaimed`, `CoverBindingSnapshotted`.
 
 **`ClaimRouter`** — the mutual beneficiary. Settled member units land in this contract's
-**free** balance in the manager. Settlement is permissionless: `settle(commitmentIds)` relays to
+**free** balance in the manager. Settlement is permissionless: anyone calls
 `manager.settleMembers`, so a claim can never brick on one uncooperative member. The designated
 immutable `claimant` (policyholder) calls `collect(token, to)` to `withdraw` and transfer out a
 single token, or `settleAndCollect(commitmentIds, token, to)` to do both. The default product is
@@ -943,7 +946,8 @@ claimant performs after collection. The router never swaps. Events: `Settled`, `
 MCR/leverage cap that turns notional cover sold into an annualized rate. `LinkedMutualPolicy` is
 the funding executor: `bindCover(mutualId, notional, duration)` prices the premium off the
 scheduler, pulls it from the caller, and calls `manager.fundMutualPremium`; `fundStandby` funds
-the existing stream with a reservation fee; expired bindings lapse permissionlessly. Pricing lives
+the existing stream with a reservation fee and returns the premium it pulled; expired bindings
+lapse permissionlessly. The policy reads each mutual's numeraire from the core once and caches it. Pricing lives
 entirely here — the custody root only sets a future rate under INV-P2. Events: `CoverBound`,
 `StandbyFunded`, `BindingExpired`.
 

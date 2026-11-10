@@ -33,7 +33,6 @@ interface ICommitmentsVault is IERC4626 {
     event VaultMetadataUpdated(string uri, bytes32 contentHash, uint64 timestamp);
 
     // === Errors ===
-    error DepositsPaused();
     error ZeroAddress();
     error ZeroAmount();
     error StrategyHasAssets(address strategy, uint256 assets);

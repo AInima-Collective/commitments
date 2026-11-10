@@ -12,6 +12,7 @@ import {LinkedMutualPolicy} from "src/extensions/mutuals/LinkedMutualPolicy.sol"
 import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol";
 import {OptimisticMutualArbiter} from "src/extensions/mutuals/OptimisticMutualArbiter.sol";
 import {ClaimRouter} from "src/extensions/mutuals/ClaimRouter.sol";
+import {MutualRegistry} from "src/extensions/mutuals/MutualRegistry.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 
 /// @title PremiumPolicyTest
@@ -290,18 +291,16 @@ contract PremiumPolicyTest is Test {
         // Mutual A: a loss proposed WITH a binding snapshot.
         (uint256 gA, uint256 cA,) = _filledMutual();
         uint256 id = _bind(gA, 100e18, YEAR);
+        ILinkedMutualPolicy.CoverBinding memory b = policy.getCoverBinding(id);
+        // The snapshot is emitted for auditability, but it gates nothing.
+        vm.expectEmit(address(arbiter));
+        emit OptimisticMutualArbiter.CoverBindingSnapshotted(gA, id, 100e18, b.expiry, policyholder);
         vm.prank(proposer);
         arbiter.proposeLossFor(gA, 100e18, bytes32("ev"), MIN_BOND, id);
         vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
         manager.executeMutualLoss(gA);
         manager.settleMemberLoss(cA);
         uint256 owedA = manager.getMembership(cA).settledUnits;
-
-        // The snapshot was recorded on the claim (auditability), but it gated nothing.
-        (,,,,, uint256 bid, uint256 snapNotional,, address snapPh) = arbiter.claims(gA);
-        assertEq(bid, id, "binding id snapshotted");
-        assertEq(snapNotional, 100e18, "notional snapshotted");
-        assertEq(snapPh, policyholder, "policyholder snapshotted");
 
         // Mutual B: a loss proposed with NO binding and NO premium ever funded — still settles identically.
         (uint256 gB, uint256 cB,) = _filledMutual();
@@ -311,10 +310,6 @@ contract PremiumPolicyTest is Test {
         manager.executeMutualLoss(gB);
         manager.settleMemberLoss(cB);
         assertEq(manager.getMembership(cB).settledUnits, owedA, "premium-without-cover settles identically");
-
-        (,,,,, uint256 bidB, uint256 snapNotB,,) = arbiter.claims(gB);
-        assertEq(bidB, 0, "plain proposeLoss leaves snapshot zero");
-        assertEq(snapNotB, 0, "no notional snapshot on the plain path");
     }
 
     // ---------------------------------------------------------------------
@@ -329,10 +324,15 @@ contract PremiumPolicyTest is Test {
         uint256 soldBefore = policy.getActiveNotionalSold(gid);
         (,, uint256 poolBefore) = _poolState(gid);
 
+        uint256 quoted = scheduler.quoteStandby(gid, YEAR);
+        uint256 balBefore = usdc.balanceOf(policyholder);
+
         vm.prank(policyholder);
-        policy.fundStandby(gid, YEAR);
+        uint256 paid = policy.fundStandby(gid, YEAR);
 
         (uint128 rate,, uint256 poolAfter) = _poolState(gid);
+        assertEq(paid, quoted, "returns the quoted standby premium");
+        assertEq(balBefore - usdc.balanceOf(policyholder), paid, "returns what it pulled");
         assertGt(poolAfter, poolBefore, "standby topped up the reserve");
         assertGt(uint256(rate), 0, "stream running");
         assertEq(policy.nextBindingId(), idCounterBefore, "no binding minted");
@@ -341,29 +341,6 @@ contract PremiumPolicyTest is Test {
         // The existing Pi stream distributes it to underwriters (no new index).
         vm.warp(block.timestamp + 30 days);
         assertGt(manager.pendingMemberPremium(c1), 0, "underwriter accrues standby-funded premium");
-    }
-
-    // ---------------------------------------------------------------------
-    // Capture resistance
-    // ---------------------------------------------------------------------
-
-    function test_capture_pricingAuthorityIsArbiter_rejected() public {
-        (uint256 gid,,) = _filledMutual();
-        // A captured scheduler whose owner IS the mutual arbiter, with its own policy.
-        PremiumScheduler cap = new PremiumScheduler(address(manager), address(arbiter));
-        LinkedMutualPolicy capPolicy = new LinkedMutualPolicy(address(manager), address(cap));
-        vm.startPrank(address(arbiter)); // impersonate the contract that owns `cap`
-        cap.setPolicy(address(capPolicy));
-        cap.setDefaultCurve(BASE, SLOPE1, SLOPE2, KINK, MAX_LEV);
-        vm.stopPrank();
-
-        assertFalse(cap.isPricingAuthorityIndependent(gid), "authority == arbiter is captured");
-        vm.prank(policyholder);
-        vm.expectRevert(PremiumScheduler.PricingAuthorityCaptured.selector);
-        capPolicy.bindCover(gid, 100e18, YEAR);
-
-        // The independent default scheduler is NOT captured.
-        assertTrue(scheduler.isPricingAuthorityIndependent(gid), "independent authority ok");
     }
 
     // ---------------------------------------------------------------------
@@ -391,5 +368,16 @@ contract PremiumPolicyTest is Test {
         uint128 coverBefore = _activeCover(gid);
         manager.settleMemberLoss(c1);
         assertLt(_activeCover(gid), coverBefore, "settled loss shrinks deliverable cover");
+    }
+
+    // ---------------------------------------------------------------------
+    // Registry metadata cap
+    // ---------------------------------------------------------------------
+
+    function test_registry_perilURITooLong_reverts() public {
+        MutualRegistry registry = new MutualRegistry(address(manager));
+        ICM.MutualParams memory p; // rejected before the manager is called
+        vm.expectRevert(MutualRegistry.URITooLong.selector);
+        registry.registerMutual(p, 0, 0, string(new bytes(513)), bytes32(0));
     }
 }

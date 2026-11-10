@@ -39,7 +39,7 @@ import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 ///         `test/helpers/SkimmingMockStrategy.sol`.
 ///
 ///         Custody model matches `CommitmentsVault._deposit`/`_withdraw` (push; vault-only moves)
-///         — see `IdleStrategy` for the canonical handshake description. No admin, no upgrade:
+///         — see `IYieldStrategy` for the handshake. No admin, no upgrade:
 ///         the immutable parameter set is the whole trust surface.
 abstract contract PremiumSkimStrategy is IYieldStrategy, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
@@ -184,8 +184,9 @@ abstract contract PremiumSkimStrategy is IYieldStrategy, ReentrancyGuardTransien
         uint256 fee = operatorFee + premiumShare;
         if (fee == 0) revert NothingToSkim();
 
-        // Re-mark BEFORE moving funds: post-skim gains level (G − fee) is fully charged.
-        chargedGains = _currentGains() - fee;
+        // Re-mark BEFORE moving funds: post-skim gains level (G − fee) is fully charged, and
+        // G = chargedGains + newGains, so this needs no second venue valuation.
+        chargedGains += newGains - fee;
         _realizeSkim(fee);
 
         emit YieldSkimmed(newGains, fee);

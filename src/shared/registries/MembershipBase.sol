@@ -4,14 +4,8 @@ pragma solidity ^0.8.27;
 /// @title MembershipBase
 /// @notice The shared public vocabulary for an enumerable set of member addresses:
 ///         `isEntity` / `totalEntities` / `entity(i)` plus a `checkEntity` modifier.
-/// @dev Storage-agnostic on purpose. Two backends implement it:
-///        - `Registry` — backs the set with OZ `EnumerableSet.AddressSet` (for contracts
-///          whose membership storage is not slot-locked, e.g. `VaultFactory`).
-///        - `OperatorRegistry` — overrides the views over its slot-locked
-///          `operatorList`/`operatorListIndex` fields (raw-index convention), so it exposes
-///          the identical surface without retyping any locked slot.
-///      This lets both contracts share one membership vocabulary and one `checkEntity` guard
-///      while keeping incompatible underlying representations.
+/// @dev Storage-agnostic on purpose. `OperatorRegistry` implements it over its slot-locked
+///      `operatorList`/`operatorListIndex` fields (raw-index convention).
 abstract contract MembershipBase {
     /// @notice Thrown when an address expected to be a registered entity is not.
     error NotAnEntity(address account);

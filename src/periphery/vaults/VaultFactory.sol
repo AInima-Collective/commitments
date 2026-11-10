@@ -6,7 +6,6 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
 import {Factory} from "src/shared/factories/Factory.sol";
-import {Registry} from "src/shared/registries/Registry.sol";
 import {Multicallable} from "src/shared/utilities/Multicallable.sol";
 
 /// @title VaultFactory
@@ -17,14 +16,12 @@ import {Multicallable} from "src/shared/utilities/Multicallable.sol";
 ///      Per-asset constraint: exactly one vault per asset address.
 ///      Only the factory owner can deploy new vaults.
 ///
-///      Shares three extracted bases:
+///      Shares two extracted bases:
 ///        - `Factory` — whitelist/blacklist ladder for the vault implementation (the
 ///          implementation is self-verified against `CommitmentsVault.FACTORY_TYPE_ID` at
 ///          construction; the owner can `blacklist` it to freeze new deployments).
-///        - `Registry` — `EnumerableSet.AddressSet` membership backing the deployed-vault
-///          enumeration (`allVaults`/`vaultCount` are thin wrappers over `entity`/`totalEntities`).
 ///        - `Multicallable` — batch several `deployVault` calls in one owner transaction.
-contract VaultFactory is Factory, Registry, Multicallable {
+contract VaultFactory is Factory, Multicallable {
     // =========================================================================
     // Errors
     // =========================================================================
@@ -58,6 +55,9 @@ contract VaultFactory is Factory, Registry, Multicallable {
     /// @notice Maps an asset address to its deployed vault proxy address.
     /// @dev Returns address(0) if no vault has been deployed for the asset.
     mapping(address => address) public vaultByAsset;
+
+    /// @notice Every deployed vault proxy, in deployment order (append-only).
+    address[] public allVaults;
 
     // =========================================================================
     // Constructor
@@ -107,7 +107,7 @@ contract VaultFactory is Factory, Registry, Multicallable {
 
         // Register in registry
         vaultByAsset[asset] = vault;
-        _addEntity(vault);
+        allVaults.push(vault);
 
         emit VaultDeployed(asset, vault);
     }
@@ -116,15 +116,8 @@ contract VaultFactory is Factory, Registry, Multicallable {
     // Registry Views
     // =========================================================================
 
-    /// @notice Returns the vault address at the given index in the enumeration array.
-    /// @dev Thin wrapper over the shared `Registry` membership set.
-    function allVaults(uint256 index) external view returns (address) {
-        return entity(index);
-    }
-
     /// @notice Returns the total number of deployed vaults.
-    /// @dev Thin wrapper over the shared `Registry` membership set.
     function vaultCount() external view returns (uint256) {
-        return totalEntities();
+        return allVaults.length;
     }
 }

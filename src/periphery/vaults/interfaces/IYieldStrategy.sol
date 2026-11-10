@@ -5,7 +5,6 @@ pragma solidity ^0.8.27;
 /// @notice Pluggable yield sink for `CommitmentsVault`. A strategy custodies the vault's idle
 ///         assets and reports their current value. The custody handshake is a **push** model and
 ///         every mutating call is **vault-only** — see the per-function requirements below.
-///         `src/periphery/vaults/strategies/IdleStrategy.sol` is the canonical reference implementation.
 interface IYieldStrategy {
     /// @notice Take `assets` of the underlying into the strategy. PUSH pattern: the vault has
     ///         ALREADY transferred `assets` to this strategy before calling; implementations MUST

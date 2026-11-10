@@ -7,10 +7,10 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 
 /// @title ClaimRouter
-/// @notice The beneficiary of a Mutual (a `Mutual`). Settled member units land
+/// @notice The beneficiary of a Mutual. Settled member units land
 ///         in this contract's FREE balance in the manager; the designated `claimant` (policyholder)
 ///         collects them out. Settlement itself is permissionless — anyone (the claimant, a keeper,
-///         a bounty bot) can drive `settle` — so the O(N) physical movement of a claim can never
+///         a bounty bot) can call the manager's `settleMembers` — so the O(N) physical movement of a claim can never
 ///         brick on a single uncooperative member (ERC-COMMITMENTS-MUTUALS).
 /// @dev Default product is **basket settlement**: the claimant receives the members' raw collateral
 ///      tokens as-is. A swap to a single unit is an explicit, opt-in step the claimant performs
@@ -33,13 +33,6 @@ contract ClaimRouter is ReentrancyGuardTransient {
         if (manager_ == address(0) || claimant_ == address(0)) revert ZeroAddress();
         manager = ICommitmentManager(manager_);
         claimant = claimant_;
-    }
-
-    /// @notice Permissionlessly settle a bounded batch of mutual members into this router. The
-    ///         expected claim path is the claimant or a protocol-funded keeper calling this.
-    function settle(uint256[] calldata commitmentIds) external nonReentrant {
-        manager.settleMembers(commitmentIds);
-        emit Settled(commitmentIds.length);
     }
 
     /// @notice Collect this router's full free balance of `token` to `to` (claimant only). A

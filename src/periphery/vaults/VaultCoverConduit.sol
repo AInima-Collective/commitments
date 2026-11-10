@@ -7,8 +7,9 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {LinkedMutualPolicy} from "src/extensions/mutuals/LinkedMutualPolicy.sol";
+import {MutualLib} from "src/extensions/mutuals/MutualLib.sol";
 import {PremiumScheduler} from "src/extensions/mutuals/PremiumScheduler.sol";
-import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
+import {ICommitmentsVault} from "src/periphery/vaults/interfaces/ICommitmentsVault.sol";
 
 /// @title VaultCoverConduit
 /// @notice The vault's keyless policyholder-of-record in the underwritten-vault pattern
@@ -25,11 +26,15 @@ import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
 ///         the exact fit: the vault pays the underwriters' reservation fee on the pool's
 ///         offered-but-unallocated capacity.
 ///
-///         `poke()` is permissionless and NEVER reverts on economic edge cases — it skips and
-///         accumulates instead. When `activeCover == 0` (no underwriters) premium accrual pauses
-///         and funds pool up here; members that later join are paid from the backlog on the next
-///         poke. Note the members remain slashable throughout — a premium-stream lapse pauses
-///         underwriter pay, never the cover itself.
+///         `poke()` is permissionless and skips rather than reverts when there is nothing to fund
+///         (dust, no budget, no underwriters, no standby capacity, a duration under the floor). It
+///         does revert when the vault refuses the deposit leg (deposits paused, or over the
+///         strategy's cap), even if a share budget is already waiting.
+///
+///         When `activeCover == 0` (no underwriters) premium accrual pauses and funds pool up
+///         here; members that later join are paid from the backlog on the next poke. Note the
+///         members remain slashable throughout — a premium-stream lapse pauses underwriter pay,
+///         never the cover itself.
 ///
 ///         Funding math: the budget (this contract's vault-share balance, after depositing any
 ///         underlying it holds) is converted to a stream duration by inverting the scheduler's
@@ -55,8 +60,6 @@ contract VaultCoverConduit is ReentrancyGuardTransient {
     /// @notice A poke funded the mutual's premium stream.
     event PremiumFunded(uint256 indexed mutualId, uint256 premium, uint64 duration);
 
-    /// @dev Core stream-duration floor (MutualLib.MIN_STREAM_DURATION); pokes below this skip.
-    uint64 internal constant MIN_STREAM_DURATION = 1 minutes;
     /// @dev Scheduler quote horizon used for the budget→duration inversion.
     uint64 internal constant ONE_YEAR = 365 days;
 
@@ -64,7 +67,7 @@ contract VaultCoverConduit is ReentrancyGuardTransient {
     ICommitmentManager public immutable manager;
 
     /// @notice The covered vault; also the mutual's numeraire token (shares).
-    CommitmentsVault public immutable vault;
+    ICommitmentsVault public immutable vault;
 
     /// @notice The vault's underlying asset (what the skim strategy pushes here).
     IERC20 public immutable asset;
@@ -93,13 +96,13 @@ contract VaultCoverConduit is ReentrancyGuardTransient {
     /// @param minFundAssets_ Underlying dust floor for the deposit leg.
     constructor(address vault_, address policy_, uint256 mutualId_, uint64 maxStreamDuration_, uint256 minFundAssets_) {
         if (vault_ == address(0) || policy_ == address(0)) revert ZeroAddress();
-        if (maxStreamDuration_ < MIN_STREAM_DURATION) revert DurationBelowStreamFloor();
+        if (maxStreamDuration_ < MutualLib.MIN_STREAM_DURATION) revert DurationBelowStreamFloor();
 
-        vault = CommitmentsVault(vault_);
+        vault = ICommitmentsVault(vault_);
         policy = LinkedMutualPolicy(policy_);
         manager = LinkedMutualPolicy(policy_).manager();
         scheduler = LinkedMutualPolicy(policy_).scheduler();
-        asset = IERC20(CommitmentsVault(vault_).asset());
+        asset = IERC20(ICommitmentsVault(vault_).asset());
         mutualId = mutualId_;
         maxStreamDuration = maxStreamDuration_;
         minFundAssets = minFundAssets_;
@@ -124,39 +127,15 @@ contract VaultCoverConduit is ReentrancyGuardTransient {
             vault.deposit(assets, address(this));
         }
 
-        uint256 budget;
-        (budget, duration) = _plan();
+        uint256 budget = vault.balanceOf(address(this));
+        duration = _durationFor(budget);
         if (duration == 0) return (0, 0);
 
-        premium = scheduler.quoteStandby(mutualId, duration);
-        if (premium == 0) return (0, 0);
-
-        IERC20(address(vault)).forceApprove(address(policy), premium);
-        policy.fundStandby(mutualId, duration);
+        // The policy pulls exactly the standby quote for `duration`, which floor rounding keeps
+        // at or under `budget`.
+        IERC20(address(vault)).forceApprove(address(policy), budget);
+        premium = policy.fundStandby(mutualId, duration);
         emit PremiumFunded(mutualId, premium, duration);
-    }
-
-    /// @notice Preview the next poke: underlying awaiting deposit, the post-deposit share budget,
-    ///         and the stream (duration, premium) it would fund. `duration == 0` means the poke
-    ///         would skip the funding leg.
-    function previewPoke()
-        external
-        view
-        returns (uint256 assetsPending, uint256 shareBudget, uint64 duration, uint256 premium)
-    {
-        assetsPending = asset.balanceOf(address(this));
-        shareBudget = vault.balanceOf(address(this));
-        uint256 depositable = (assetsPending >= minFundAssets) ? assetsPending : 0;
-        if (depositable > 0) shareBudget += vault.previewDeposit(depositable);
-
-        duration = _durationFor(shareBudget);
-        if (duration > 0) premium = scheduler.quoteStandby(mutualId, duration);
-    }
-
-    /// @dev Post-deposit budget + duration plan for `poke()`.
-    function _plan() internal view returns (uint256 budget, uint64 duration) {
-        budget = vault.balanceOf(address(this));
-        duration = _durationFor(budget);
     }
 
     /// @dev Invert the scheduler's linear-in-duration standby quote into the longest stream the
@@ -179,7 +158,10 @@ contract VaultCoverConduit is ReentrancyGuardTransient {
             if (duration > remaining) duration = remaining;
         }
         if (duration > maxStreamDuration) duration = maxStreamDuration;
-        if (duration < MIN_STREAM_DURATION) return 0;
+        if (duration < MutualLib.MIN_STREAM_DURATION) return 0;
+        // The quote is linear in duration, so this is exactly "the quote for `duration` floors to
+        // zero"; skip rather than let `fundStandby` revert `NoStandbyCapacity`.
+        if (perYear * duration < ONE_YEAR) return 0;
         return uint64(duration);
     }
 }

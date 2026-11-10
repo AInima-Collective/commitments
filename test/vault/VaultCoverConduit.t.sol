@@ -255,20 +255,11 @@ contract VaultCoverConduitTest is Test {
         assertLt(vault.balanceOf(address(conduit)), residue);
     }
 
-    function test_previewPoke_matchesPoke() public {
-        _fundConduit(10e18);
-        (uint256 assetsPending, uint256 shareBudget, uint64 prevDuration, uint256 prevPremium) = conduit.previewPoke();
-        assertEq(assetsPending, 10e18);
-        assertEq(shareBudget, vault.previewDeposit(10e18));
-
-        (uint256 premium, uint64 duration) = conduit.poke();
-        assertEq(duration, prevDuration);
-        assertEq(premium, prevPremium);
-    }
-
     function test_poke_emitsPremiumFunded() public {
         _fundConduit(10e18);
-        (,, uint64 expectedDuration, uint256 expectedPremium) = conduit.previewPoke();
+        uint256 snap = vm.snapshotState();
+        (uint256 expectedPremium, uint64 expectedDuration) = conduit.poke();
+        vm.revertToState(snap);
         vm.expectEmit(true, true, true, true);
         emit VaultCoverConduit.PremiumFunded(mutualId, expectedPremium, expectedDuration);
         conduit.poke();

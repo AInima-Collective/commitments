@@ -235,15 +235,6 @@ export const claimRouterAbi = [
     type: 'function',
     inputs: [
       { name: 'commitmentIds', internalType: 'uint256[]', type: 'uint256[]' },
-    ],
-    name: 'settle',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'commitmentIds', internalType: 'uint256[]', type: 'uint256[]' },
       { name: 'token', internalType: 'address', type: 'address' },
       { name: 'to', internalType: 'address', type: 'address' },
     ],
@@ -5219,7 +5210,7 @@ export const commitmentsVaultAbi = [
       { name: 'receiver', internalType: 'address', type: 'address' },
     ],
     name: 'deposit',
-    outputs: [{ name: 'shares', internalType: 'uint256', type: 'uint256' }],
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'nonpayable',
   },
   {
@@ -5336,7 +5327,7 @@ export const commitmentsVaultAbi = [
       { name: 'receiver', internalType: 'address', type: 'address' },
     ],
     name: 'mint',
-    outputs: [{ name: 'assets', internalType: 'uint256', type: 'uint256' }],
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'nonpayable',
   },
   {
@@ -5796,7 +5787,6 @@ export const commitmentsVaultAbi = [
     inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
     name: 'AddressEmptyCode',
   },
-  { type: 'error', inputs: [], name: 'DepositsPaused' },
   {
     type: 'error',
     inputs: [
@@ -7998,7 +7988,7 @@ export const linkedMutualPolicyAbi = [
       { name: 'duration', internalType: 'uint64', type: 'uint64' },
     ],
     name: 'fundStandby',
-    outputs: [],
+    outputs: [{ name: 'premium', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'nonpayable',
   },
   {
@@ -8835,8 +8825,8 @@ export const mutualRegistryAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'admin',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'MAX_PERIL_URI_LENGTH',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -8858,13 +8848,6 @@ export const mutualRegistryAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'coverPolicy',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
     name: 'getMutualListing',
     outputs: [
@@ -8873,10 +8856,7 @@ export const mutualRegistryAbi = [
         internalType: 'struct MutualRegistry.MutualListing',
         type: 'tuple',
         components: [
-          { name: 'mutualId', internalType: 'uint256', type: 'uint256' },
           { name: 'creator', internalType: 'address', type: 'address' },
-          { name: 'numeraire', internalType: 'address', type: 'address' },
-          { name: 'beneficiary', internalType: 'address', type: 'address' },
           { name: 'targetCapacity', internalType: 'uint128', type: 'uint128' },
           { name: 'termEnd', internalType: 'uint64', type: 'uint64' },
           { name: 'perilURI', internalType: 'string', type: 'string' },
@@ -8915,20 +8895,6 @@ export const mutualRegistryAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
-    name: 'premiumInfo',
-    outputs: [
-      { name: 'activeCover', internalType: 'uint128', type: 'uint128' },
-      { name: 'activeNotionalSold', internalType: 'uint256', type: 'uint256' },
-      { name: 'utilizationBps', internalType: 'uint256', type: 'uint256' },
-      { name: 'rewardRate', internalType: 'uint128', type: 'uint128' },
-      { name: 'periodFinish', internalType: 'uint64', type: 'uint64' },
-      { name: 'premiumPool', internalType: 'uint256', type: 'uint256' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       {
         name: 'params',
@@ -8959,28 +8925,6 @@ export const mutualRegistryAbi = [
     name: 'registerMutual',
     outputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'coverPolicy_', internalType: 'address', type: 'address' },
-    ],
-    name: 'setCoverPolicy',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'coverPolicy',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-    ],
-    name: 'CoverPolicyUpdated',
   },
   {
     type: 'event',
@@ -9038,7 +8982,7 @@ export const mutualRegistryAbi = [
     name: 'MutualRegistered',
   },
   { type: 'error', inputs: [], name: 'AlreadyRegistered' },
-  { type: 'error', inputs: [], name: 'NotAdmin' },
+  { type: 'error', inputs: [], name: 'URITooLong' },
   { type: 'error', inputs: [], name: 'UnknownMutual' },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
 ] as const
@@ -11378,18 +11322,9 @@ export const optimisticMutualArbiterAbi = [
     name: 'claims',
     outputs: [
       { name: 'proposer', internalType: 'address', type: 'address' },
-      { name: 'bond', internalType: 'uint256', type: 'uint256' },
       { name: 'proposedAt', internalType: 'uint64', type: 'uint64' },
-      { name: 'vetoed', internalType: 'bool', type: 'bool' },
       { name: 'resolved', internalType: 'bool', type: 'bool' },
-      { name: 'coverBindingId', internalType: 'uint256', type: 'uint256' },
-      { name: 'snapshotNotional', internalType: 'uint256', type: 'uint256' },
-      { name: 'snapshotExpiry', internalType: 'uint64', type: 'uint64' },
-      {
-        name: 'snapshotPolicyholder',
-        internalType: 'address',
-        type: 'address',
-      },
+      { name: 'bond', internalType: 'uint256', type: 'uint256' },
     ],
     stateMutability: 'view',
   },
@@ -11764,13 +11699,6 @@ export const premiumSchedulerAbi = [
   {
     type: 'function',
     inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
-    name: 'assertNotCaptured',
-    outputs: [],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
     name: 'curveFor',
     outputs: [
       {
@@ -11787,13 +11715,6 @@ export const premiumSchedulerAbi = [
         ],
       },
     ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
-    name: 'isPricingAuthorityIndependent',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -12060,7 +11981,6 @@ export const premiumSchedulerAbi = [
     name: 'OwnableUnauthorizedAccount',
   },
   { type: 'error', inputs: [], name: 'PolicyUnset' },
-  { type: 'error', inputs: [], name: 'PricingAuthorityCaptured' },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
 ] as const
 
@@ -14067,18 +13987,6 @@ export const vaultCoverConduitAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'previewPoke',
-    outputs: [
-      { name: 'assetsPending', internalType: 'uint256', type: 'uint256' },
-      { name: 'shareBudget', internalType: 'uint256', type: 'uint256' },
-      { name: 'duration', internalType: 'uint64', type: 'uint64' },
-      { name: 'premium', internalType: 'uint256', type: 'uint256' },
-    ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'scheduler',
     outputs: [
       { name: '', internalType: 'contract PremiumScheduler', type: 'address' },
@@ -14090,7 +13998,7 @@ export const vaultCoverConduitAbi = [
     inputs: [],
     name: 'vault',
     outputs: [
-      { name: '', internalType: 'contract CommitmentsVault', type: 'address' },
+      { name: '', internalType: 'contract ICommitmentsVault', type: 'address' },
     ],
     stateMutability: 'view',
   },
@@ -14162,7 +14070,7 @@ export const vaultFactoryAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
+    inputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     name: 'allVaults',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
@@ -14187,20 +14095,6 @@ export const vaultFactoryAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'entities',
-    outputs: [{ name: '', internalType: 'address[]', type: 'address[]' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'index', internalType: 'uint256', type: 'uint256' }],
-    name: 'entity',
-    outputs: [{ name: '', internalType: 'address', type: 'address' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'impl', internalType: 'address', type: 'address' }],
     name: 'implementationTypeId',
     outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
@@ -14210,13 +14104,6 @@ export const vaultFactoryAbi = [
     type: 'function',
     inputs: [{ name: 'impl', internalType: 'address', type: 'address' }],
     name: 'isBlacklisted',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
-    name: 'isEntity',
     outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
@@ -14247,13 +14134,6 @@ export const vaultFactoryAbi = [
     name: 'renounceOwnership',
     outputs: [],
     stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'totalEntities',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -14362,11 +14242,6 @@ export const vaultFactoryAbi = [
     type: 'error',
     inputs: [{ name: 'impl', internalType: 'address', type: 'address' }],
     name: 'Blacklisted',
-  },
-  {
-    type: 'error',
-    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
-    name: 'NotAnEntity',
   },
   {
     type: 'error',
@@ -14587,14 +14462,6 @@ export const useWriteClaimRouterCollect = /*#__PURE__*/ createUseWriteContract({
 })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link claimRouterAbi}__ and `functionName` set to `"settle"`
- */
-export const useWriteClaimRouterSettle = /*#__PURE__*/ createUseWriteContract({
-  abi: claimRouterAbi,
-  functionName: 'settle',
-})
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link claimRouterAbi}__ and `functionName` set to `"settleAndCollect"`
  */
 export const useWriteClaimRouterSettleAndCollect =
@@ -14617,15 +14484,6 @@ export const useSimulateClaimRouterCollect =
   /*#__PURE__*/ createUseSimulateContract({
     abi: claimRouterAbi,
     functionName: 'collect',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link claimRouterAbi}__ and `functionName` set to `"settle"`
- */
-export const useSimulateClaimRouterSettle =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: claimRouterAbi,
-    functionName: 'settle',
   })
 
 /**
@@ -21229,12 +21087,13 @@ export const useReadMutualRegistry = /*#__PURE__*/ createUseReadContract({
 })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"admin"`
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"MAX_PERIL_URI_LENGTH"`
  */
-export const useReadMutualRegistryAdmin = /*#__PURE__*/ createUseReadContract({
-  abi: mutualRegistryAbi,
-  functionName: 'admin',
-})
+export const useReadMutualRegistryMaxPerilUriLength =
+  /*#__PURE__*/ createUseReadContract({
+    abi: mutualRegistryAbi,
+    functionName: 'MAX_PERIL_URI_LENGTH',
+  })
 
 /**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"allMutualIds"`
@@ -21252,15 +21111,6 @@ export const useReadMutualRegistryCapacity =
   /*#__PURE__*/ createUseReadContract({
     abi: mutualRegistryAbi,
     functionName: 'capacity',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"coverPolicy"`
- */
-export const useReadMutualRegistryCoverPolicy =
-  /*#__PURE__*/ createUseReadContract({
-    abi: mutualRegistryAbi,
-    functionName: 'coverPolicy',
   })
 
 /**
@@ -21298,15 +21148,6 @@ export const useReadMutualRegistryMutualCount =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"premiumInfo"`
- */
-export const useReadMutualRegistryPremiumInfo =
-  /*#__PURE__*/ createUseReadContract({
-    abi: mutualRegistryAbi,
-    functionName: 'premiumInfo',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link mutualRegistryAbi}__
  */
 export const useWriteMutualRegistry = /*#__PURE__*/ createUseWriteContract({
@@ -21320,15 +21161,6 @@ export const useWriteMutualRegistryRegisterMutual =
   /*#__PURE__*/ createUseWriteContract({
     abi: mutualRegistryAbi,
     functionName: 'registerMutual',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"setCoverPolicy"`
- */
-export const useWriteMutualRegistrySetCoverPolicy =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: mutualRegistryAbi,
-    functionName: 'setCoverPolicy',
   })
 
 /**
@@ -21347,28 +21179,10 @@ export const useSimulateMutualRegistryRegisterMutual =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link mutualRegistryAbi}__ and `functionName` set to `"setCoverPolicy"`
- */
-export const useSimulateMutualRegistrySetCoverPolicy =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: mutualRegistryAbi,
-    functionName: 'setCoverPolicy',
-  })
-
-/**
  * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link mutualRegistryAbi}__
  */
 export const useWatchMutualRegistryEvent =
   /*#__PURE__*/ createUseWatchContractEvent({ abi: mutualRegistryAbi })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link mutualRegistryAbi}__ and `eventName` set to `"CoverPolicyUpdated"`
- */
-export const useWatchMutualRegistryCoverPolicyUpdatedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: mutualRegistryAbi,
-    eventName: 'CoverPolicyUpdated',
-  })
 
 /**
  * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link mutualRegistryAbi}__ and `eventName` set to `"MutualRegistered"`
@@ -23667,30 +23481,12 @@ export const useReadPremiumScheduler = /*#__PURE__*/ createUseReadContract({
 })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link premiumSchedulerAbi}__ and `functionName` set to `"assertNotCaptured"`
- */
-export const useReadPremiumSchedulerAssertNotCaptured =
-  /*#__PURE__*/ createUseReadContract({
-    abi: premiumSchedulerAbi,
-    functionName: 'assertNotCaptured',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link premiumSchedulerAbi}__ and `functionName` set to `"curveFor"`
  */
 export const useReadPremiumSchedulerCurveFor =
   /*#__PURE__*/ createUseReadContract({
     abi: premiumSchedulerAbi,
     functionName: 'curveFor',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link premiumSchedulerAbi}__ and `functionName` set to `"isPricingAuthorityIndependent"`
- */
-export const useReadPremiumSchedulerIsPricingAuthorityIndependent =
-  /*#__PURE__*/ createUseReadContract({
-    abi: premiumSchedulerAbi,
-    functionName: 'isPricingAuthorityIndependent',
   })
 
 /**
@@ -25325,15 +25121,6 @@ export const useReadVaultCoverConduitPolicy =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultCoverConduitAbi}__ and `functionName` set to `"previewPoke"`
- */
-export const useReadVaultCoverConduitPreviewPoke =
-  /*#__PURE__*/ createUseReadContract({
-    abi: vaultCoverConduitAbi,
-    functionName: 'previewPoke',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultCoverConduitAbi}__ and `functionName` set to `"scheduler"`
  */
 export const useReadVaultCoverConduitScheduler =
@@ -25421,22 +25208,6 @@ export const useReadVaultFactoryAllVaults = /*#__PURE__*/ createUseReadContract(
 )
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"entities"`
- */
-export const useReadVaultFactoryEntities = /*#__PURE__*/ createUseReadContract({
-  abi: vaultFactoryAbi,
-  functionName: 'entities',
-})
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"entity"`
- */
-export const useReadVaultFactoryEntity = /*#__PURE__*/ createUseReadContract({
-  abi: vaultFactoryAbi,
-  functionName: 'entity',
-})
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"implementationTypeId"`
  */
 export const useReadVaultFactoryImplementationTypeId =
@@ -25455,14 +25226,6 @@ export const useReadVaultFactoryIsBlacklisted =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"isEntity"`
- */
-export const useReadVaultFactoryIsEntity = /*#__PURE__*/ createUseReadContract({
-  abi: vaultFactoryAbi,
-  functionName: 'isEntity',
-})
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"isWhitelisted"`
  */
 export const useReadVaultFactoryIsWhitelisted =
@@ -25478,15 +25241,6 @@ export const useReadVaultFactoryOwner = /*#__PURE__*/ createUseReadContract({
   abi: vaultFactoryAbi,
   functionName: 'owner',
 })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"totalEntities"`
- */
-export const useReadVaultFactoryTotalEntities =
-  /*#__PURE__*/ createUseReadContract({
-    abi: vaultFactoryAbi,
-    functionName: 'totalEntities',
-  })
 
 /**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link vaultFactoryAbi}__ and `functionName` set to `"vaultByAsset"`

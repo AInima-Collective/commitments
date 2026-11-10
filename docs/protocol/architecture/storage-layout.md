@@ -17,7 +17,6 @@ Upgradeable project contracts use EIP-7201-style namespaced storage. Each storag
 | CommitmentsVault | src/periphery/vaults/storage/CommitmentsVaultStorage.sol |
 | CommitmentsRewardsCoordinator | src/extensions/rewards/storage/CommitmentsRewardsCoordinatorStorage.sol |
 | MerkleSnapshot | src/extensions/rewards/storage/MerkleSnapshotStorage.sol |
-| Shared Registry base | src/shared/registries/RegistryStorage.sol |
 | Shared Factory base | src/shared/factories/FactoryStorage.sol |
 
 The vendored ERC-8004 registry retains its upstream namespace under src/vendor/erc8004/IdentityRegistryUpgradeable.sol.

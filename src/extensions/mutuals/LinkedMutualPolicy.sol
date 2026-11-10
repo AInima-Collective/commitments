@@ -34,7 +34,7 @@ contract LinkedMutualPolicy is ILinkedMutualPolicy, ReentrancyGuardTransient {
 
     /// @notice The custody root whose premium stream this policy funds.
     ICommitmentManager public immutable manager;
-    /// @notice The pricing brain (utilization curve + leverage cap + capture check).
+    /// @notice The pricing brain (utilization curve + leverage cap).
     PremiumScheduler public immutable scheduler;
 
     /// @dev bindingId => cover binding (1-indexed; id 0 is never used).
@@ -43,6 +43,8 @@ contract LinkedMutualPolicy is ILinkedMutualPolicy, ReentrancyGuardTransient {
     uint256 public nextBindingId;
     /// @notice mutualId => Σ notional of ACTIVE bindings (the scheduler's utilization numerator).
     mapping(uint256 => uint256) private _activeNotionalSold;
+    /// @dev mutualId => numeraire, read from the core once (it is fixed at `createMutual`).
+    mapping(uint256 => address) private _numeraire;
 
     event CoverBound(
         uint256 indexed bindingId,
@@ -76,7 +78,7 @@ contract LinkedMutualPolicy is ILinkedMutualPolicy, ReentrancyGuardTransient {
 
     /// @inheritdoc ILinkedMutualPolicy
     /// @notice Price `notional` of cover for `duration`, pull the premium from the caller, fund the
-    ///         core stream, and record the binding. Atomic: any revert (capture, leverage cap,
+    ///         core stream, and record the binding. Atomic: any revert (leverage cap,
     ///         `NoActiveCover`) rolls back the whole call.
     function bindCover(uint256 mutualId, uint256 notional, uint64 duration)
         external
@@ -84,9 +86,6 @@ contract LinkedMutualPolicy is ILinkedMutualPolicy, ReentrancyGuardTransient {
         returns (uint256 bindingId)
     {
         if (notional == 0) revert ZeroNotional();
-
-        // Capture defense: the pricing authority must not be the mutual arbiter/beneficiary.
-        scheduler.assertNotCaptured(mutualId);
 
         uint256 premium = scheduler.quote(mutualId, notional, duration);
         if (premium == 0) revert ZeroPremiumQuote();
@@ -112,12 +111,8 @@ contract LinkedMutualPolicy is ILinkedMutualPolicy, ReentrancyGuardTransient {
     /// @notice Fund the existing `Pi` stream with a standby reservation fee priced on the
     ///         offered-but-unallocated cover. Records no binding and no notional — a pure stream
     ///         top-up that compensates idle capacity (plan standby-dilution mitigation).
-    function fundStandby(uint256 mutualId, uint64 duration) external nonReentrant {
-        // Capture defense, symmetric with bindCover: the pricing authority must not be the mutual
-        // arbiter/beneficiary (harmless here since standby only benefits underwriters, but kept
-        // consistent so the global capture posture has no asymmetric hole).
-        scheduler.assertNotCaptured(mutualId);
-        uint256 premium = scheduler.quoteStandby(mutualId, duration);
+    function fundStandby(uint256 mutualId, uint64 duration) external nonReentrant returns (uint256 premium) {
+        premium = scheduler.quoteStandby(mutualId, duration);
         if (premium == 0) revert NoStandbyCapacity();
         _fund(mutualId, premium, duration);
         emit StandbyFunded(mutualId, msg.sender, premium, duration);
@@ -159,7 +154,11 @@ contract LinkedMutualPolicy is ILinkedMutualPolicy, ReentrancyGuardTransient {
     /// @dev Pull `premium` of the mutual numeraire from the caller into this contract, approve the
     ///      manager for exactly that amount, and fund the core stream. Shared by bind and standby.
     function _fund(uint256 mutualId, uint256 premium, uint64 duration) internal {
-        address numeraire = manager.getMutual(mutualId).numeraire;
+        address numeraire = _numeraire[mutualId];
+        if (numeraire == address(0)) {
+            numeraire = manager.getMutual(mutualId).numeraire;
+            _numeraire[mutualId] = numeraire;
+        }
         IERC20(numeraire).safeTransferFrom(msg.sender, address(this), premium);
         IERC20(numeraire).forceApprove(address(manager), premium);
         manager.fundMutualPremium(mutualId, premium, duration);

@@ -46,7 +46,7 @@ contract MutualRegressionsTest is MutualE2ETest {
 
         assertEq(bondTok.balanceOf(proposer), before + MIN_BOND, "prior proposer refunded");
         assertEq(bondTok.balanceOf(address(arbiter)), MIN_BOND, "only the new bond held");
-        (address who,,,,,,,,) = arbiter.claims(gid);
+        (address who,,,) = arbiter.claims(gid);
         assertEq(who, p2, "new claim recorded");
     }
 

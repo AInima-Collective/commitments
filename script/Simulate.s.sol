@@ -2157,9 +2157,7 @@ contract Simulate is Script {
         console.log("");
     }
 
-    /// @dev Deploy the shared mutual periphery and wire the premium leg. The pricing authority
-    ///      (scheduler owner = admin) is distinct from every mutual's arbiter contract and
-    ///      beneficiary router, so `assertNotCaptured` passes at bind time.
+    /// @dev Deploy the shared mutual periphery and wire the premium leg.
     function _seedMutualPeriphery() internal {
         uint256 minBond = 100 * 1e6; // 100 USDC loss-declaration bond (raw USDC)
         vm.startBroadcast(admin.key);
@@ -2169,12 +2167,11 @@ contract Simulate is Script {
         premiumScheduler = new PremiumScheduler(address(manager), admin.addr);
         mutualPolicy = new LinkedMutualPolicy(address(manager), address(premiumScheduler));
 
-        // Wire: scheduler -> policy, a default utilization curve, and the cover-policy pointers
-        // the registry (utilization reads) and arbiter (loss-claim cover snapshots) reference.
+        // Wire: scheduler -> policy, a default utilization curve, and the cover-policy pointer
+        // the arbiter (loss-claim cover snapshots) references.
         premiumScheduler.setPolicy(address(mutualPolicy));
         // base 2%/yr; +8%/yr below the 80% kink; +50%/yr above; 5x leverage cap.
         premiumScheduler.setDefaultCurve(0.02e18, 0.08e18, 0.5e18, 0.8e18, 50_000);
-        mutualRegistry.setCoverPolicy(address(mutualPolicy));
         optimisticMutualArbiter.setCoverPolicy(address(mutualPolicy));
         vm.stopBroadcast();
 

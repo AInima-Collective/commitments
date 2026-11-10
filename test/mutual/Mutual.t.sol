@@ -189,7 +189,7 @@ contract MutualE2ETest is Test {
         manager.executeMutualLoss(gid);
         uint256[] memory ids = new uint256[](1);
         ids[0] = c1;
-        router.settle(ids); // permissionless settle
+        manager.settleMembers(ids); // permissionless settle
         vm.expectRevert(ClaimRouter.NotClaimant.selector);
         router.collect(address(usdc), address(0xdead));
     }
