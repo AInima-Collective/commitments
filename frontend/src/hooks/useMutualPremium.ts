@@ -3,11 +3,9 @@ import { type Address } from 'viem'
 import {
   useReadCommitmentManagerGetMutualPremiumState,
 } from '../generated'
+import { premiumAprBps } from './useMutuals'
 import { useNowSeconds } from './useNow'
 import { POLL } from './polling'
-
-/** Seconds in a 365-day year — the basis for annualizing the premium stream. */
-const SECONDS_PER_YEAR = 31_536_000n
 
 /**
  * Live §G premium-stream state for a Mutual — the typed
@@ -105,14 +103,7 @@ export function useMutualPremium({
       }
     : undefined
 
-  let premiumAprBps: number | undefined
-  if (stream && stream.activeCover > 0n) {
-    // bps = rewardRate × secondsPerYear × 1e4 / activeCover. Multiply before
-    // dividing to preserve precision on small per-second rates.
-    premiumAprBps = Number(
-      (stream.rewardRate * SECONDS_PER_YEAR * 10_000n) / stream.activeCover,
-    )
-  }
+  const aprBps = stream ? premiumAprBps(stream.rewardRate, stream.activeCover) : undefined
 
   const periodFinish = stream ? Number(stream.periodFinish) : 0
   const secondsRemaining = Math.max(0, periodFinish - now)
@@ -120,7 +111,7 @@ export function useMutualPremium({
 
   return {
     stream,
-    premiumAprBps,
+    premiumAprBps: aprBps,
     isStreaming,
     secondsRemaining,
     isLoading: stateLoading,

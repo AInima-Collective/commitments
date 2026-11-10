@@ -5,6 +5,7 @@ import { useChainId, useReadContract } from 'wagmi'
 import { getContractAddresses } from '../config/contracts'
 import { hasIndexer, indexerGraphqlData } from '../config/indexer'
 import { operatorRegistryAbi } from '../generated'
+import { type OperatorMetadataLite } from '../lib/operatorFilter'
 import { deriveOperatorStatus, type OperatorInfo, type OperatorStatus } from '../utils/mesh'
 
 interface OperatorWithStatus extends OperatorInfo {
@@ -12,6 +13,8 @@ interface OperatorWithStatus extends OperatorInfo {
   belowMinStake: boolean
   /** Service tags from indexed metadataContent.services (Indexer Improvements #1). */
   services: string[]
+  /** Profile name + services from verified metadata; null unless `metadataStatus` is ok. */
+  metadata: OperatorMetadataLite | null
 }
 
 interface UseOperatorsIndexedReturn {
@@ -33,6 +36,8 @@ interface RawOperatorRow {
   services: string[] | null
   registeredBlock: string
   registeredAt: string
+  metadataStatus: string | null
+  metadataContent: Record<string, unknown> | null
 }
 
 const QUERY = /* GraphQL */ `
@@ -48,6 +53,8 @@ const QUERY = /* GraphQL */ `
         services
         registeredBlock
         registeredAt
+        metadataStatus
+        metadataContent
       }
     }
   }
@@ -110,5 +117,20 @@ function toOperatorWithStatus(row: RawOperatorRow, minStake: bigint | undefined)
     registeredAt: BigInt(row.registeredAt),
   }
   const status = deriveOperatorStatus(info, minStake)
-  return { ...info, services: row.services ?? [], status, belowMinStake: status === 'BELOW_MIN_STAKE' }
+  return {
+    ...info,
+    services: row.services ?? [],
+    status,
+    belowMinStake: status === 'BELOW_MIN_STAKE',
+    metadata: toMetadataLite(row),
+  }
+}
+
+function toMetadataLite(row: RawOperatorRow): OperatorMetadataLite | null {
+  const c = row.metadataContent
+  if (row.metadataStatus !== 'ok' || !c || typeof c !== 'object') return null
+  return {
+    name: typeof c.name === 'string' ? c.name : undefined,
+    services: Array.isArray(c.services) ? c.services.filter((s): s is string => typeof s === 'string') : undefined,
+  }
 }

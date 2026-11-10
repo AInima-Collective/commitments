@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useChainId } from "wagmi";
 
 import {
   AllocationBar,
@@ -15,9 +14,9 @@ import {
   TokenAmount,
 } from "../components/ui";
 import { PageHeader, MutualStatusBadge, type MutualLifecycle } from "../components/protocol";
-import { getVaultDescriptor } from "../config/contracts";
 import { useMutualListings, type MutualListing } from "../hooks/useMutualListings";
 import { useMutuals, type MutualIndexed } from "../hooks/useMutuals";
+import { useVaults } from "../hooks/useVaults";
 import { useTokenMetaMap, type TokenMeta } from "../hooks/useTokenMeta";
 import {
   LAMBDA_SCALE,
@@ -89,9 +88,9 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "id", label: "pool ID" },
 ];
 
-/** Available cover for ranking — loss-adjusted live capacity, else nominal filled. */
+/** Available cover for ranking — loss-adjusted live capacity. */
 function coverOf(listing: MutualListing): bigint {
-  return listing.liveCapacity ?? listing.filled;
+  return listing.liveCapacity;
 }
 
 /**
@@ -104,13 +103,11 @@ function coverOf(listing: MutualListing): bigint {
  * render in ONE grid, differentiated by badge + filterable by type — a
  * vault-funded pool is still a coverage pool, not a separate product.
  *
- * The on-chain `MutualRegistry` list (via {@link useMutualListings}) is the
- * canonical spine — it renders even with the indexer down. Loss-adjusted
- * `liveCapacity`, member count, cumulative markdown Λ, premium APR, lifecycle
- * status, and the offering type are indexer enrichment ({@link useMutuals},
- * the same query `useMutualListings` wraps, deduped by react-query). When that
- * enrichment is missing we fall back to the nominal subscribed amount, clearly
- * labeled — never presenting nominal as live cover.
+ * Listings, loss-adjusted `liveCapacity`, member count, cumulative markdown Λ,
+ * premium APR, lifecycle status and the offering type all come from the
+ * indexer's `/mutuals` ({@link useMutualListings} is a projection of
+ * {@link useMutuals}, deduped by react-query). Without an indexer the grid is
+ * empty.
  */
 export default function Marketplace() {
   const navigate = useNavigate();
@@ -342,7 +339,7 @@ interface CoveragePoolCardProps {
 }
 
 function CoveragePoolCard({ listing, mutual, meta, onOpen, onOpenVault }: CoveragePoolCardProps) {
-  const chainId = useChainId();
+  const { vaultName } = useVaults();
   const { decimals, symbol } = meta;
   const status = mutual ? deriveStatus(mutual) : undefined;
   const peril = parsePerilURI(listing.perilURI);
@@ -350,12 +347,8 @@ function CoveragePoolCard({ listing, mutual, meta, onOpen, onOpenVault }: Covera
   const live = listing.liveCapacity;
   const closed = status === "terminated";
   const vaultFunded = mutual?.coveredVault != null;
-  // Name of the covered vault, for the View-vault action — descriptor name on
-  // known chains, truncated address elsewhere.
-  const coveredVaultName = vaultFunded
-    ? getVaultDescriptor(chainId, mutual?.coveredVault ?? undefined)?.name ??
-      `vault ${truncateAddress(mutual?.coveredVault ?? "")}`
-    : undefined;
+  // Name of the covered vault, for the View-vault action.
+  const coveredVaultName = mutual?.coveredVault ? vaultName(mutual.coveredVault) : undefined;
 
   // Subscription meter: filled vs target. Fall back to filled as the total when
   // no target is set so the bar still renders a full segment rather than empty.
@@ -426,34 +419,15 @@ function CoveragePoolCard({ listing, mutual, meta, onOpen, onOpenVault }: Covera
           value={aprBps !== undefined ? formatPercent(aprBps) : "—"}
           meta={aprBps !== undefined ? "to underwriters" : "no active cover"}
         />
-        {live !== undefined ? (
-          <StatBlock
-            label="cover available"
-            value={
-              <span style={{ whiteSpace: "nowrap" }}>
-                <TokenAmount amount={live} decimals={decimals} symbol={symbol} size="inline" compact precision={2} />
-              </span>
-            }
-            meta="loss-adjusted"
-          />
-        ) : (
-          <StatBlock
-            label="cover available"
-            value={
-              <span style={{ whiteSpace: "nowrap" }}>
-                <TokenAmount
-                  amount={listing.filled}
-                  decimals={decimals}
-                  symbol={symbol}
-                  size="inline"
-                  compact
-                  precision={2}
-                />
-              </span>
-            }
-            meta="nominal"
-          />
-        )}
+        <StatBlock
+          label="cover available"
+          value={
+            <span style={{ whiteSpace: "nowrap" }}>
+              <TokenAmount amount={live} decimals={decimals} symbol={symbol} size="inline" compact precision={2} />
+            </span>
+          }
+          meta="loss-adjusted"
+        />
       </div>
 
       <AllocationBar

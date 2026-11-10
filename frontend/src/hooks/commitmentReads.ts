@@ -5,7 +5,7 @@ import { type CommitmentWithStatus, deriveStatus } from '../utils/commitments'
 /**
  * Shared read/decode helpers for commitment enrichment.
  *
- * Several hooks (`useCommitments`, `useArbiterCommitments`,
+ * Several hooks (`useMyDelegations`, `useArbiterCommitments`,
  * `useFullCommitment`) enrich a bare commitment id into
  * a `CommitmentWithStatus` by reading the same four contract calls and applying
  * the same forfeit-proposal/unbond/status derivation. That mapper used to be

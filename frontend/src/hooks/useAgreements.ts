@@ -1,40 +1,10 @@
-import { useMemo } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { getAbiItem, zeroAddress, type Address } from 'viem'
-import { useChainId, usePublicClient, useReadContracts, useWatchContractEvent } from 'wagmi'
-import { commitmentManagerAbi } from '../generated'
-import {
-  type AgreementProposalWithStatus,
-  deriveAgreementStatus,
-} from '../utils/agreements'
-import { POLL } from './polling'
+import { useQuery } from '@tanstack/react-query'
+import { type Address } from 'viem'
+import { useChainId } from 'wagmi'
 
-const agreementProposedEvent = getAbiItem({
-  abi: commitmentManagerAbi,
-  name: 'AgreementProposed',
-})
-const agreementProposedTermsEvent = getAbiItem({
-  abi: commitmentManagerAbi,
-  name: 'AgreementProposedTerms',
-})
-const agreementCancelledEvent = getAbiItem({
-  abi: commitmentManagerAbi,
-  name: 'AgreementProposalCancelled',
-})
-const agreementExpiredCancelledEvent = getAbiItem({
-  abi: commitmentManagerAbi,
-  name: 'AgreementProposalExpiredCancelled',
-})
-// Terminal lifecycle of an *accepted* agreement (keyed by agreementId, not
-// proposalId): forfeiture by the arbiter vs. mutual release.
-const agreementForfeitedEvent = getAbiItem({
-  abi: commitmentManagerAbi,
-  name: 'AgreementForfeited',
-})
-const agreementReleasedEvent = getAbiItem({
-  abi: commitmentManagerAbi,
-  name: 'AgreementReleased',
-})
+import { hasIndexer, indexerGraphqlData } from '../config/indexer'
+import { type AgreementProposalWithStatus, deriveAgreementStatus } from '../utils/agreements'
+import { POLL } from './polling'
 
 interface UseAgreementsParams {
   managerAddress: Address | undefined
@@ -49,363 +19,141 @@ interface UseAgreementsReturn {
   refetch: () => void
 }
 
-/**
- * Event-sourced proposal terms, joined from `AgreementProposed` (parties) +
- * `AgreementProposedTerms` (economic per-leg terms). `getAgreementProposal` was
- * removed from the manager — terms now live only in the emitted event, and
- * acceptance is read live via `agreementOfProposal(id) != 0`.
- */
-interface ProposalRecord {
-  proposalId: bigint
-  proposer: Address
-  acceptor: Address
-  arbiter: Address
-  proposerToken: Address
-  proposerAdapter: Address
-  proposerAmount: bigint
-  proposerMaxPenaltyBps: number
-  acceptorToken: Address
-  acceptorAdapter: Address
-  acceptorAmount: bigint
-  acceptorMaxPenaltyBps: number
-  challengeWindow: bigint
-  expiresAt: bigint
-  maxFlowProposerToAcceptor: bigint
-  maxFlowAcceptorToProposer: bigint
-  cancelled: boolean
-  createdAtBlock?: bigint
+const PROPOSAL_FIELDS = `
+  id proposer acceptor status agreementId proposedBlock arbiter
+  proposerToken proposerAdapter proposerAmount proposerMaxPenaltyBps
+  acceptorToken acceptorAdapter acceptorAmount acceptorMaxPenaltyBps
+  challengeWindow expiresAt maxFlowProposerToAcceptor maxFlowAcceptorToProposer
+`
+
+// Both sides of the viewer's inbox, as two aliased lists (deduped below).
+const PROPOSALS_QUERY = /* GraphQL */ `
+  query ViewerProposals($manager: String!, $viewer: String!) {
+    asProposer: agreementProposals(where: { manager: $manager, proposer: $viewer }, limit: 1000) {
+      items { ${PROPOSAL_FIELDS} }
+    }
+    asAcceptor: agreementProposals(where: { manager: $manager, acceptor: $viewer }, limit: 1000) {
+      items { ${PROPOSAL_FIELDS} }
+    }
+  }
+`
+
+const AGREEMENTS_QUERY = /* GraphQL */ `
+  query ProposalAgreements($manager: String!, $ids: [BigInt!]!) {
+    agreements(where: { manager: $manager, id_in: $ids }, limit: 1000) {
+      items { id status }
+    }
+  }
+`
+
+/** Indexer `agreementProposal` row; bigints as decimal strings, terms null until the terms event lands. */
+interface ProposalWire {
+  id: string
+  proposer: string
+  acceptor: string
+  status: 'open' | 'accepted' | 'cancelled' | 'expired'
+  agreementId: string | null
+  proposedBlock: string
+  arbiter: string | null
+  proposerToken: string | null
+  proposerAdapter: string | null
+  proposerAmount: string | null
+  proposerMaxPenaltyBps: number | null
+  acceptorToken: string | null
+  acceptorAdapter: string | null
+  acceptorAmount: string | null
+  acceptorMaxPenaltyBps: number | null
+  challengeWindow: string | null
+  expiresAt: string | null
+  maxFlowProposerToAcceptor: string | null
+  maxFlowAcceptorToProposer: string | null
 }
 
-export function useAgreements({
-  managerAddress,
-  viewAddress,
-}: UseAgreementsParams): UseAgreementsReturn {
-  const chainId = useChainId()
-  const client = usePublicClient()
+const NONE: AgreementProposalWithStatus[] = []
 
-  // ── Step 1: Event-sourced scan ──────────────────────────────────────────────
-  // Scan AgreementProposed as proposer AND acceptor (both sides of the inbox),
-  // then join the per-leg terms + cancellation state from their companion events.
-  // A failed scan surfaces as `error`: it is otherwise indistinguishable from
-  // "no agreements".
-  async function scanProposals(): Promise<ProposalRecord[]> {
-    const [proposerLogs, acceptorLogs] = await Promise.all([
-      client!.getLogs({
-        address: managerAddress!,
-        event: agreementProposedEvent,
-        args: { proposer: viewAddress },
-        fromBlock: 0n,
-      }),
-      client!.getLogs({
-        address: managerAddress!,
-        event: agreementProposedEvent,
-        args: { acceptor: viewAddress },
-        fromBlock: 0n,
-      }),
-    ])
+async function fetchAgreements(manager: Address, viewer: Address): Promise<AgreementProposalWithStatus[]> {
+  const vars = { manager: manager.toLowerCase(), viewer: viewer.toLowerCase() }
+  const { asProposer, asAcceptor } = await indexerGraphqlData<{
+    asProposer: { items: ProposalWire[] }
+    asAcceptor: { items: ProposalWire[] }
+  }>(PROPOSALS_QUERY, vars)
+  const byId = new Map<string, ProposalWire>()
+  // A proposal without its terms is malformed (both events land in one tx): skip it.
+  for (const p of [...asProposer.items, ...asAcceptor.items]) if (p.arbiter !== null) byId.set(p.id, p)
+  const proposals = [...byId.values()]
 
-    // Dedupe by proposalId, keeping parties + creation block from the event.
-    const seen = new Set<string>()
-    const base = new Map<
-      string,
-      { proposalId: bigint; proposer: Address; acceptor: Address; block?: bigint }
-    >()
-    for (const log of [...proposerLogs, ...acceptorLogs]) {
-      const id = log.args.proposalId
-      const proposer = log.args.proposer
-      const acceptor = log.args.acceptor
-      if (id === undefined || !proposer || !acceptor) continue
-      const key = id.toString()
-      if (seen.has(key)) continue
-      seen.add(key)
-      base.set(key, {
-        proposalId: id,
-        proposer,
-        acceptor,
-        block: log.blockNumber ?? undefined,
-      })
-    }
-
-    const ids = [...base.values()].map((b) => b.proposalId)
-    if (ids.length === 0) return []
-
-    // Terms + cancellations are keyed by the indexed proposalId, so filter
-    // each log query to just the ids we surfaced (OR-filter on the topic).
-    const [termsLogs, cancelledLogs, expiredLogs] = await Promise.all([
-      client!.getLogs({
-        address: managerAddress!,
-        event: agreementProposedTermsEvent,
-        args: { proposalId: ids },
-        fromBlock: 0n,
-      }),
-      client!.getLogs({
-        address: managerAddress!,
-        event: agreementCancelledEvent,
-        args: { proposalId: ids },
-        fromBlock: 0n,
-      }),
-      client!.getLogs({
-        address: managerAddress!,
-        event: agreementExpiredCancelledEvent,
-        args: { proposalId: ids },
-        fromBlock: 0n,
-      }),
-    ])
-
-    const termsMap = new Map<string, (typeof termsLogs)[number]['args']>()
-    for (const log of termsLogs) {
-      const id = log.args.proposalId
-      if (id !== undefined) termsMap.set(id.toString(), log.args)
-    }
-    const cancelledSet = new Set<string>()
-    for (const log of [...cancelledLogs, ...expiredLogs]) {
-      const id = log.args.proposalId
-      if (id !== undefined) cancelledSet.add(id.toString())
-    }
-
-    const next: ProposalRecord[] = []
-    for (const [key, b] of base) {
-      const t = termsMap.get(key)
-      // A proposal without its terms event is malformed (both are emitted in
-      // the same tx) — skip rather than render a partial row.
-      if (!t || t.arbiter === undefined) continue
-      // Non-indexed args on a decoded log are typed `T | undefined`, but the
-      // event emits all of them atomically — the `arbiter` guard above proves
-      // the terms log decoded, so the rest are present.
-      next.push({
-        proposalId: b.proposalId,
-        proposer: b.proposer,
-        acceptor: b.acceptor,
-        arbiter: t.arbiter,
-        proposerToken: t.proposerToken!,
-        proposerAdapter: t.proposerAdapter!,
-        proposerAmount: t.proposerAmount!,
-        proposerMaxPenaltyBps: Number(t.proposerMaxPenaltyBps!),
-        acceptorToken: t.acceptorToken!,
-        acceptorAdapter: t.acceptorAdapter!,
-        acceptorAmount: t.acceptorAmount!,
-        acceptorMaxPenaltyBps: Number(t.acceptorMaxPenaltyBps!),
-        challengeWindow: BigInt(t.challengeWindow!),
-        expiresAt: BigInt(t.expiresAt!),
-        maxFlowProposerToAcceptor: t.maxFlowProposerToAcceptor!,
-        maxFlowAcceptorToProposer: t.maxFlowAcceptorToProposer!,
-        cancelled: cancelledSet.has(key),
-        createdAtBlock: b.block,
-      })
-    }
-
-    return next
+  // Terminal lifecycle of accepted agreements: forfeited or released.
+  const ids = proposals.flatMap((p) => (p.agreementId !== null ? [p.agreementId] : []))
+  const agreementStatus = new Map<string, string>()
+  if (ids.length > 0) {
+    const { agreements } = await indexerGraphqlData<{ agreements: { items: { id: string; status: string }[] } }>(
+      AGREEMENTS_QUERY,
+      { manager: vars.manager, ids },
+    )
+    for (const a of agreements.items) agreementStatus.set(a.id, a.status)
   }
 
-  const logs = useQuery({
-    enabled: !!client && !!managerAddress && !!viewAddress,
-    queryKey: ['agreement-proposals', chainId, managerAddress, viewAddress],
-    queryFn: scanProposals,
-  })
-  const records = useMemo(() => logs.data ?? [], [logs.data])
-
-  // ── Step 2: Acceptance enrichment — agreementOfProposal (0 ⇒ still open) ──────
-  const {
-    data: acceptanceData,
-    isLoading: isLoadingData,
-    error: multicallError,
-    refetch: refetchMulticall,
-  } = useReadContracts({
-    contracts: records.map((r) => ({
-      abi: commitmentManagerAbi,
-      address: managerAddress!,
-      functionName: 'agreementOfProposal' as const,
-      args: [r.proposalId] as const,
-    })),
-    query: {
-      enabled: records.length > 0 && !!managerAddress,
-      refetchInterval: POLL.fast,
-    },
-  })
-
-  // ── Step 2b: Terminal-status scan for accepted agreements ─────────────────────
-  // An accepted proposal carries an agreementId; watch that agreement's own
-  // lifecycle (AgreementForfeited / AgreementReleased) so resolved rows leave
-  // ACTIVE instead of showing live forever.
-  const acceptedAgreementIds = useMemo<bigint[]>(() => {
-    if (!acceptanceData) return []
-    const ids: bigint[] = []
-    for (let i = 0; i < records.length; i++) {
-      const res = acceptanceData[i]
-      if (res?.status === 'success') {
-        const id = res.result as bigint
-        if (id > 0n) ids.push(id)
-      }
-    }
-    return ids
-  }, [acceptanceData, records])
-
-  const terminal = useQuery({
-    enabled: !!client && !!managerAddress && acceptedAgreementIds.length > 0,
-    queryKey: ['agreement-terminal', chainId, managerAddress, acceptedAgreementIds.map(String)],
-    queryFn: async () => {
-      const [forfeitedLogs, releasedLogs] = await Promise.all([
-        client!.getLogs({
-          address: managerAddress!,
-          event: agreementForfeitedEvent,
-          args: { agreementId: acceptedAgreementIds },
-          fromBlock: 0n,
-        }),
-        client!.getLogs({
-          address: managerAddress!,
-          event: agreementReleasedEvent,
-          args: { agreementId: acceptedAgreementIds },
-          fromBlock: 0n,
-        }),
-      ])
-      const map = new Map<string, 'FORFEITED' | 'RESOLVED'>()
-      for (const log of releasedLogs) {
-        const id = log.args.agreementId
-        if (id !== undefined) map.set(id.toString(), 'RESOLVED')
-      }
-      // Forfeiture is the stronger terminal state — apply it last so it wins
-      // if an agreement ever emitted both.
-      for (const log of forfeitedLogs) {
-        const id = log.args.agreementId
-        if (id !== undefined) map.set(id.toString(), 'FORFEITED')
-      }
-      return map
-    },
-    // A failed scan must not blank ACTIVE rows — keep the prior map.
-    placeholderData: keepPreviousData,
-  })
-  const terminalMap = acceptedAgreementIds.length > 0 ? terminal.data : undefined
-
-  // ── Step 3: Build AgreementProposalWithStatus[] sorted newest-first ───────────
-  const agreements: AgreementProposalWithStatus[] = (() => {
-    if (records.length === 0) return []
-
-    const result: AgreementProposalWithStatus[] = []
-
-    for (let i = 0; i < records.length; i++) {
-      const r = records[i]
-      if (!r.proposer || r.proposer.toLowerCase() === zeroAddress) continue
-
-      const acceptanceResult = acceptanceData?.[i]
-      const agreementIdRaw =
-        acceptanceResult?.status === 'success'
-          ? (acceptanceResult.result as bigint)
-          : 0n
-      const accepted = agreementIdRaw > 0n
-
-      const viewerIsProposer =
-        !!viewAddress && viewAddress.toLowerCase() === r.proposer.toLowerCase()
-
-      // Accepted proposals display as ACTIVE unless their agreement has reached a
-      // terminal state (FORFEITED / RESOLVED), scanned in Step 2b.
-      const resolvedStatus = accepted ? terminalMap?.get(agreementIdRaw.toString()) : undefined
-      const status = deriveAgreementStatus(
-        {
-          accepted,
-          cancelled: r.cancelled,
-          expiresAt: r.expiresAt,
-        },
-        resolvedStatus,
-      )
-
-      result.push({
-        proposalId: r.proposalId,
-        proposer: r.proposer,
-        acceptor: r.acceptor,
-        arbiter: r.arbiter,
+  return proposals
+    .map((p) => {
+      const accepted = p.agreementId !== null
+      const cancelled = p.status === 'cancelled' || p.status === 'expired'
+      const expiresAt = BigInt(p.expiresAt ?? 0)
+      const terminal = accepted ? agreementStatus.get(p.agreementId!) : undefined
+      const resolved = terminal === 'forfeited' ? 'FORFEITED' : terminal === 'released' ? 'RESOLVED' : undefined
+      const proposerToken = p.proposerToken as Address
+      const proposerAdapter = p.proposerAdapter as Address
+      return {
+        proposalId: BigInt(p.id),
+        proposer: p.proposer as Address,
+        acceptor: p.acceptor as Address,
+        arbiter: p.arbiter as Address,
         // Headline token/adapter = proposer leg (see AgreementProposalWithStatus).
-        token: r.proposerToken,
-        adapter: r.proposerAdapter,
-        proposerAmount: r.proposerAmount,
-        acceptorAmount: r.acceptorAmount,
-        maxPenaltyBps: r.proposerMaxPenaltyBps,
-        challengeWindow: r.challengeWindow,
-        expiresAt: r.expiresAt,
+        token: proposerToken,
+        adapter: proposerAdapter,
+        proposerAmount: BigInt(p.proposerAmount ?? 0),
+        acceptorAmount: BigInt(p.acceptorAmount ?? 0),
+        maxPenaltyBps: p.proposerMaxPenaltyBps ?? 0,
+        challengeWindow: BigInt(p.challengeWindow ?? 0),
+        expiresAt,
         accepted,
-        cancelled: r.cancelled,
-        status,
-        proposerToken: r.proposerToken,
-        proposerAdapter: r.proposerAdapter,
-        acceptorToken: r.acceptorToken,
-        acceptorAdapter: r.acceptorAdapter,
-        acceptorMaxPenaltyBps: r.acceptorMaxPenaltyBps,
-        maxFlowProposerToAcceptor: r.maxFlowProposerToAcceptor,
-        maxFlowAcceptorToProposer: r.maxFlowAcceptorToProposer,
-        agreementId: accepted ? agreementIdRaw : undefined,
-        // commitmentIdA/B: derivable via getAgreementPair(agreementId) when needed.
-        viewerIsProposer,
-        createdAtBlock: r.createdAtBlock,
-      })
-    }
-
-    // Sort newest-first by createdAtBlock (D-04)
-    result.sort((a, b) => {
-      const aBlock = a.createdAtBlock ?? 0n
-      const bBlock = b.createdAtBlock ?? 0n
-      return aBlock > bBlock ? -1 : aBlock < bBlock ? 1 : 0
+        cancelled,
+        status: deriveAgreementStatus({ accepted, cancelled, expiresAt }, resolved),
+        proposerToken,
+        proposerAdapter,
+        acceptorToken: p.acceptorToken as Address,
+        acceptorAdapter: p.acceptorAdapter as Address,
+        acceptorMaxPenaltyBps: p.acceptorMaxPenaltyBps ?? 0,
+        maxFlowProposerToAcceptor: BigInt(p.maxFlowProposerToAcceptor ?? 0),
+        maxFlowAcceptorToProposer: BigInt(p.maxFlowAcceptorToProposer ?? 0),
+        agreementId: accepted ? BigInt(p.agreementId!) : undefined,
+        viewerIsProposer: p.proposer.toLowerCase() === vars.viewer,
+        createdAtBlock: BigInt(p.proposedBlock),
+      }
     })
+    .sort((a, b) => (a.createdAtBlock > b.createdAtBlock ? -1 : a.createdAtBlock < b.createdAtBlock ? 1 : 0))
+}
 
-    return result
-  })()
-
-  // ── Step 4: Real-time watchers — re-scan on new AgreementProposed ─────────────
-  // Two watchers: one for proposer side, one for acceptor side.
-  useWatchContractEvent({
-    address: managerAddress,
-    abi: commitmentManagerAbi,
-    eventName: 'AgreementProposed',
-    args: { proposer: viewAddress },
-    enabled: !!managerAddress && !!viewAddress,
-    onLogs: () => {
-      void logs.refetch()
-    },
+/**
+ * The viewer's agreement proposals (either side), newest first, from the
+ * indexer's `agreementProposal` rows joined with `agreement.status` for
+ * accepted ones. Empty without an indexer; trails the chain by the indexing
+ * delay.
+ */
+export function useAgreements({ managerAddress, viewAddress }: UseAgreementsParams): UseAgreementsReturn {
+  const chainId = useChainId()
+  const query = useQuery({
+    enabled: hasIndexer && !!managerAddress && !!viewAddress,
+    queryKey: ['agreement-proposals', chainId, managerAddress, viewAddress],
+    queryFn: () => fetchAgreements(managerAddress!, viewAddress!),
+    refetchInterval: POLL.fast,
+    retry: false,
   })
-
-  useWatchContractEvent({
-    address: managerAddress,
-    abi: commitmentManagerAbi,
-    eventName: 'AgreementProposed',
-    args: { acceptor: viewAddress },
-    enabled: !!managerAddress && !!viewAddress,
-    onLogs: () => {
-      void logs.refetch()
-    },
-  })
-
-  // Re-scan terminal status when one of our accepted agreements forfeits or
-  // releases, so a live row transitions to FORFEITED / RESOLVED without a reload.
-  useWatchContractEvent({
-    address: managerAddress,
-    abi: commitmentManagerAbi,
-    eventName: 'AgreementForfeited',
-    enabled: !!managerAddress && acceptedAgreementIds.length > 0,
-    onLogs: () => {
-      void terminal.refetch()
-    },
-  })
-
-  useWatchContractEvent({
-    address: managerAddress,
-    abi: commitmentManagerAbi,
-    eventName: 'AgreementReleased',
-    enabled: !!managerAddress && acceptedAgreementIds.length > 0,
-    onLogs: () => {
-      void terminal.refetch()
-    },
-  })
-
-  function refetch() {
-    void logs.refetch()
-    void refetchMulticall()
-  }
-
-  const error = logs.error ?? (multicallError as Error | null) ?? null
 
   return {
-    agreements,
-    isLoading: logs.isLoading || (records.length > 0 && isLoadingData),
-    isError: error !== null,
-    error,
-    refetch,
+    agreements: query.data ?? NONE,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    refetch: () => void query.refetch(),
   }
 }

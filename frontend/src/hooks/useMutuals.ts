@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { type Address } from 'viem'
+import { type Address, zeroHash } from 'viem'
 import { useChainId } from 'wagmi'
 
 import { hasIndexer, indexerJson } from '../config/indexer'
@@ -8,6 +8,15 @@ import { POLL } from './polling'
 
 /** Seconds in a 365-day year — the basis for annualizing the premium stream. */
 const SECONDS_PER_YEAR = 31_536_000n
+
+/**
+ * Annualized premium yield on deployed capacity, in basis points:
+ * `rewardRate × secondsPerYear × 1e4 / activeCover`, multiplied before dividing
+ * to keep small per-second rates. `undefined` with no active cover.
+ */
+export function premiumAprBps(rewardRate: bigint, activeCover: bigint): number | undefined {
+  return activeCover > 0n ? Number((rewardRate * SECONDS_PER_YEAR * 10_000n) / activeCover) : undefined
+}
 
 /**
  * Indexer-sourced Mutual header (the `GET /mutuals` contract).
@@ -57,6 +66,14 @@ export interface MutualIndexed {
   coveredVault: Address | null
   /** The keyless VaultCoverConduit funding the premium stream; null unless covered. */
   conduit: Address | null
+  /**
+   * MutualRegistry listing terms; `targetCapacity` is null for a mutual never
+   * registered there (and on older indexer builds).
+   */
+  targetCapacity: bigint | null
+  termEnd: bigint
+  perilURI: string
+  perilHash: `0x${string}`
 }
 
 /** Wire shape — every bigint arrives as a decimal string. */
@@ -81,6 +98,11 @@ interface MutualWire {
   // Underwritten-vault association — defaulted for older indexer builds.
   coveredVault?: string | null
   conduit?: string | null
+  // Registry listing terms — absent on older indexer builds.
+  targetCapacity?: string | null
+  termEnd?: number | null
+  perilURI?: string | null
+  perilHash?: string | null
 }
 
 export interface UseMutualsReturn {
@@ -95,11 +117,6 @@ export interface UseMutualsReturn {
 function parseMutual(w: MutualWire): MutualIndexed {
   const rewardRate = BigInt(w.rewardRate ?? '0')
   const activeCover = BigInt(w.activeCover ?? '0')
-  // bps = rewardRate × secondsPerYear × 1e4 / activeCover. Multiply before
-  // dividing to preserve precision on small per-second rates. Same formula as
-  // useMutualPremium so the list and detail page agree.
-  const premiumAprBps =
-    activeCover > 0n ? Number((rewardRate * SECONDS_PER_YEAR * 10_000n) / activeCover) : undefined
   return {
     mutualId: BigInt(w.mutualId),
     arbiter: w.arbiter as Address,
@@ -115,11 +132,15 @@ function parseMutual(w: MutualWire): MutualIndexed {
     activeCover,
     periodFinish: w.periodFinish ?? 0,
     premiumPool: BigInt(w.premiumPool ?? '0'),
-    premiumAprBps,
+    premiumAprBps: premiumAprBps(rewardRate, activeCover),
     active: w.active,
     terminal: w.terminal,
     coveredVault: (w.coveredVault ?? null) as Address | null,
     conduit: (w.conduit ?? null) as Address | null,
+    targetCapacity: w.targetCapacity != null ? BigInt(w.targetCapacity) : null,
+    termEnd: BigInt(w.termEnd ?? 0),
+    perilURI: w.perilURI ?? '',
+    perilHash: (w.perilHash ?? zeroHash) as `0x${string}`,
   }
 }
 

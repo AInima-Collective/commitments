@@ -4,11 +4,13 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { type Address } from 'viem'
 import { useChainId } from 'wagmi'
 
-import { agentDisplayName, bondStatusToDomain, parseRegistration } from '../components/agent/registration'
+import { agentDisplayName, parseRegistration } from '../components/agent/registration'
 import { AgentBadge, CommitmentStatusBadge, OperatorIdentity, PageHeader, PartyRow, RiskRow } from '../components/protocol'
 import { AddressDisplay, Card, EmptyState, Notice, Skeleton, StatBlock, TokenAmount } from '../components/ui'
-import { getContractAddresses, getVaultDescriptor } from '../config/contracts'
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { getContractAddresses } from '../config/contracts'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { commitmentStatusFromWire } from '../lib/indexerRows'
+import { useVaults } from '../hooks/useVaults'
 import { useAgentsIndexed, type AgentBondRow } from '../hooks/useAgentsIndexed'
 import { useMutuals, type MutualIndexed } from '../hooks/useMutuals'
 import { useTokenMetaMap } from '../hooks/useTokenMeta'
@@ -44,6 +46,8 @@ export default function AgentDetail() {
   const env = getContractAddresses(chainId)
   const agentVault = env.agentVault
   const { mutuals, byId: mutualsById } = useMutuals()
+  const { vaultFor } = useVaults()
+  const agentVaultInfo = vaultFor(agentVault)
 
   // Does THIS agent underwrite the agent-managed vault? True when one of its
   // bonds is a membership in the mutual whose `coveredVault` is env.agentVault.
@@ -60,8 +64,8 @@ export default function AgentDetail() {
     agent && coveringMutual && agent.bonds.bonds.some((b) => b.mutualId === coveringMutual.mutualId),
   )
 
-  // Aggregated operator-fee total from the coverage endpoint (underlying-asset
-  // denominated — 18-dec DAI for the seeded vault). Focused fetch: the full
+  // Aggregated operator-fee total from the coverage endpoint, in the vault's
+  // underlying asset. Focused fetch: the full
   // useVaultCoverage surface is vault-page-shaped; the dossier only needs one
   // number.
   const operatorFeeQuery = useQuery<bigint | null>({
@@ -69,9 +73,9 @@ export default function AgentDetail() {
     enabled: hasIndexer && underwritesAgentVault && Boolean(agentVault),
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await indexerFetch(`/vaults/${agentVault!.toLowerCase()}/coverage`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as { totals?: { operatorFee: string } }
+      const wire = await indexerJson<{ totals?: { operatorFee: string } }>(
+        `/vaults/${agentVault!.toLowerCase()}/coverage`,
+      )
       return wire.totals ? BigInt(wire.totals.operatorFee) : null
     },
   })
@@ -160,8 +164,8 @@ export default function AgentDetail() {
             value={
               <TokenAmount
                 amount={operatorFeeQuery.data}
-                decimals={18}
-                symbol={getVaultDescriptor(chainId, agentVault)?.assetSymbol ?? 'DAI'}
+                decimals={agentVaultInfo?.assetDecimals ?? 18}
+                symbol={agentVaultInfo?.assetSymbol}
                 size="inline"
               />
             }
@@ -294,7 +298,7 @@ function BondRow({
   metaFor: ReturnType<typeof useTokenMetaMap>['metaFor']
   mutualsById: Map<bigint, MutualIndexed>
 }) {
-  const chainId = useChainId()
+  const { vaultName } = useVaults()
   const navigate = useNavigate()
   const meta = metaFor(bond.token)
   const hasSla = !!bond.metadataURI && bond.metadataURI.length > 0
@@ -306,10 +310,7 @@ function BondRow({
   const coveredVault = isMembership ? (mutualsById.get(bond.mutualId!)?.coveredVault ?? undefined) : undefined
   const underwritesLabel = isMembership
     ? coveredVault
-      ? `underwrites ${
-          getVaultDescriptor(chainId, coveredVault)?.name ??
-          `vault ${coveredVault.slice(0, 6)}…${coveredVault.slice(-4)}`
-        }`
+      ? `underwrites ${vaultName(coveredVault)}`
       : `underwrites pool #${bond.mutualId!.toString()}`
     : undefined
   return (
@@ -332,7 +333,7 @@ function BondRow({
     >
       <span className="ds-row ds-row-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
         <span className="ds-mono-num">#{bond.id.toString()}</span>
-        <CommitmentStatusBadge status={bondStatusToDomain(bond.status)} />
+        <CommitmentStatusBadge status={commitmentStatusFromWire(bond.status)} />
         {hasSla ? (
           <span
             className="ds-badge ds-badge--accent"

@@ -106,9 +106,9 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
 }
 
 /**
- * Static metadata for a single vault entry in the multi-vault registry.
- * Live numbers (TVL, APY, your position) are read on demand by hooks; this
- * config is just the shape of "which vaults exist and what do we call them".
+ * One vault: which vaults exist and what we call them. `useVaults` reads them
+ * from the indexer; {@link getVaultRegistry} is the env fallback. Live numbers
+ * (TVL, APY, your position) are read on demand by hooks.
  */
 export interface VaultDescriptor {
   address: Address
@@ -120,17 +120,15 @@ export interface VaultDescriptor {
   description?: string
   /** Optional risk-tier override; otherwise computed from on-chain params. */
   riskTier?: 'low' | 'mid' | 'high'
+  /** Underlying asset and its decimals, when indexed. */
+  asset?: Address
+  assetDecimals?: number
 }
 
 /**
- * Vault registry — shipped as a hardcoded list per § 3 of
- * frontend/docs/restructure-plan.md. Source of truth becomes a VaultFactory
- * event subscription via Ponder when the factory is deployed, then an
- * on-chain registry query long-term. The list is static today because we
- * have a single canonical vault whose address is sourced from env.
- *
- * To add another vault: append a new entry. The /vaults list page renders
- * every entry; per-vault detail lives at /vaults/:address.
+ * Vault registry from env: the fallback for {@link useVaults} when the indexer
+ * is not configured, and the list for callers outside React. The indexer's
+ * `vault` table has every factory-deployed vault; prefer `useVaults`.
  */
 export function getVaultRegistry(_chainId: number): VaultDescriptor[] {
   const canonical = import.meta.env.VITE_COMMITMENTS_VAULT_ADDRESS as Address | undefined

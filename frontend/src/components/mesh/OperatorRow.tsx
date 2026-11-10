@@ -1,14 +1,14 @@
-import { type Address } from 'viem'
 import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../utils/mesh'
 import { TokenAmount } from '../ui'
 import { AgentBadge, OperatorIdentity, OperatorStatusBadge } from '../protocol'
 import { OperatorDetail } from './OperatorDetail'
-import { useOperatorMetadata } from '../../hooks/useIndexerMetadata'
 import { type AgentIdentity } from '../../hooks/useAgentIdentities'
 import { type CommitmentWithStatus } from '../../utils/commitments'
 
 interface OperatorWithStatus extends OperatorInfo {
   status: OperatorStatus
+  /** Verified profile metadata, carried on the indexed operator list. */
+  metadata?: { name?: string } | null
 }
 
 interface OperatorRowProps {
@@ -42,13 +42,7 @@ export function OperatorRow({
   myDelegations,
   onDelegationActed,
 }: OperatorRowProps) {
-  const metadata = useOperatorMetadata(operator.address as Address)
-  const profileName =
-    metadata.status === 'ok' && metadata.content && typeof metadata.content === 'object'
-      ? (typeof (metadata.content as Record<string, unknown>).name === 'string'
-          ? ((metadata.content as Record<string, unknown>).name as string)
-          : undefined)
-      : undefined
+  const profileName = operator.metadata?.name
 
   return (
     <>

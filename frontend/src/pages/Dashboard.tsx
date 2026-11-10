@@ -54,8 +54,7 @@ import { useClaimableYield, type ClaimableYieldEntry } from "../hooks/useClaimab
 import { useClaimAllQueue } from "../hooks/useClaimAllQueue";
 import { useClaimAllPremium } from "../hooks/useClaimAllPremium";
 import { useLedgerPositions } from "../hooks/useLedgerPositions";
-import { useMyMutualLosses } from "../hooks/useMyMutualLosses";
-import { useMyMutualPremium } from "../hooks/useMyMutualPremium";
+import { useMyMutualLosses, useMyMutualPremium } from "../hooks/useMyMemberships";
 import { useTokenMeta, useTokenMetaMap } from "../hooks/useTokenMeta";
 import { POLL } from "../hooks/polling";
 import { commitmentDetailPath } from "../lib/arbitrationRoutes";

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { type Address, parseUnits } from 'viem'
-import { useChainId, useReadContract, useReadContracts } from 'wagmi'
+import { useChainId, useReadContracts } from 'wagmi'
 
 import {
   Button,
@@ -42,8 +42,8 @@ import {
   useWriteCommitmentManagerJoinMutual,
   useWriteCommitmentManagerSettleMembers,
 } from '../generated'
-import { getContractAddresses, getVaultDescriptor } from '../config/contracts'
-import { buildCommitmentWithStatus, type CommitmentStruct } from '../hooks/commitmentReads'
+import { getContractAddresses } from '../config/contracts'
+import { buildCommitmentWithStatus } from '../hooks/commitmentReads'
 import { type CommitmentWithStatus } from '../utils/commitments'
 import { legibleWriteError } from '../utils/contractErrors'
 import {
@@ -56,14 +56,18 @@ import { useMutual } from '../hooks/useMutual'
 import { useMutualPremium } from '../hooks/useMutualPremium'
 import { useMutualRoster } from '../hooks/useMutualRoster'
 import { useMutualCover } from '../hooks/useMutualCover'
+import { useMyMemberships } from '../hooks/useMyMemberships'
+import { useVaults } from '../hooks/useVaults'
 import { useLedgerBalance } from '../hooks/useLedgerBalance'
 import { useMutualListings } from '../hooks/useMutualListings'
 import { useMutuals } from '../hooks/useMutuals'
 import { useTokenMetaMap } from '../hooks/useTokenMeta'
 import { useNowSeconds } from '../hooks/useNow'
+import { useOperatorNames } from '../hooks/useOperatorNames'
+import { POLL, refetchUntil } from '../hooks/polling'
 import { useTxReceipt } from '../hooks/useTxReceipt'
 import { useViewAddress } from '../hooks/useViewAddress'
-import { formatDuration, formatTokenAmount, truncateAddress } from '../lib/format'
+import { formatDuration, formatTokenAmount } from '../lib/format'
 import { parsePerilURI, perilLabel } from '../lib/peril'
 
 /** Which action modal is open, if any. */
@@ -85,16 +89,6 @@ const EMPTY_HASH = '0x0000000000000000000000000000000000000000000000000000000000
 
 /** Max live `pendingMemberLoss` reads verifying the roster's owed list. */
 const LIVE_OWED_READ_CAP = 40
-
-// Each member commitment id fans out to this many parallel manager reads, in a
-// fixed order (membership, pendingLoss, commitment, pendingPremium). The decode
-// below indexes `membershipData` as `i * MEMBER_READS_PER_ID + <slot>` — keep
-// the slot order here in lockstep with `membershipContracts`.
-const MEMBER_READS_PER_ID = 4
-const SLOT_MEMBERSHIP = 0
-const SLOT_PENDING_LOSS = 1
-const SLOT_COMMITMENT = 2
-const SLOT_PENDING_PREMIUM = 3
 
 /** The viewer's own membership in this mutual, enriched for exit + gauge state. */
 interface MyMember {
@@ -208,10 +202,8 @@ export default function Mutual() {
   const indexedRow = mutualId !== undefined ? indexedMutuals.byId.get(mutualId) : undefined
   const coveredVault = indexedRow?.coveredVault ?? undefined
   const conduitCovered = coveredVault !== undefined
-  const coveredVaultName =
-    coveredVault !== undefined
-      ? (getVaultDescriptor(chainId, coveredVault)?.name ?? `vault ${truncateAddress(coveredVault)}`)
-      : undefined
+  const { vaultName } = useVaults()
+  const coveredVaultName = coveredVault !== undefined ? vaultName(coveredVault) : undefined
 
   const {
     mutual,
@@ -253,86 +245,38 @@ export default function Mutual() {
     viewer: viewAddress,
   })
 
-  // Viewer's own positions: enumerate the connected wallet's commitments, batch
-  // read membership + live owed loss share, keep only this mutual's members. This
-  // is the fresh/authoritative source for the viewer's exit actions; the
-  // mutual-wide roster above drives settlement progress.
-  const { data: userCommitmentIds } = useReadContract({
-    abi: commitmentManagerAbi,
-    address: managerAddress,
-    functionName: 'getUserCommitmentIds',
-    args: viewAddress ? [viewAddress] : undefined,
-    query: { enabled: Boolean(managerAddress && viewAddress), refetchInterval: 30_000 },
-  })
-  const myIds = useMemo(
-    () => (userCommitmentIds as readonly bigint[] | undefined) ?? [],
-    [userCommitmentIds],
-  )
-
-  // Plain const — the React Compiler memoizes it; a manual useMemo here can no
-  // longer be statically preserved given the surrounding effects.
-  const membershipContracts = myIds.flatMap((id) => [
-    // SLOT_MEMBERSHIP
-    { abi: commitmentManagerAbi, address: managerAddress, functionName: 'getMembership' as const, args: [id] as const },
-    // SLOT_PENDING_LOSS
-    { abi: commitmentManagerAbi, address: managerAddress, functionName: 'pendingMemberLoss' as const, args: [id] as const },
-    // SLOT_COMMITMENT
-    { abi: commitmentManagerAbi, address: managerAddress, functionName: 'getCommitment' as const, args: [id] as const },
-    // SLOT_PENDING_PREMIUM
-    { abi: commitmentManagerAbi, address: managerAddress, functionName: 'pendingMemberPremium' as const, args: [id] as const },
-  ])
-  const { data: membershipData, refetch: refetchMemberships } = useReadContracts({
-    contracts: membershipContracts,
-    query: { enabled: Boolean(managerAddress) && myIds.length > 0, refetchInterval: 20_000 },
-  })
-
+  // Viewer's own positions: the indexer lists the viewer's memberships, the
+  // chain supplies their live state; keep only this mutual's. This is the
+  // source for the viewer's exit actions; the mutual-wide roster above drives
+  // settlement progress.
+  const myMemberships = useMyMemberships({ managerAddress, viewer: viewAddress })
+  const refetchMemberships = myMemberships.refetch
   const myMembers = useMemo<MyMember[]>(() => {
     if (mutualId === undefined || !viewAddress) return []
-    const rows: MyMember[] = []
-    myIds.forEach((id, i) => {
-      const base = i * MEMBER_READS_PER_ID
-      const m = membershipData?.[base + SLOT_MEMBERSHIP]?.result as
-        | {
-            mutualId: bigint
-            forfeitableUnits: bigint
-            settledUnits: bigint
-            creditedValue: bigint
-            lossSnapshot: bigint
-            unbondRequestedAt: bigint
-          }
-        | undefined
-      const owed = (membershipData?.[base + SLOT_PENDING_LOSS]?.result as bigint | undefined) ?? 0n
-      const struct = membershipData?.[base + SLOT_COMMITMENT]?.result as CommitmentStruct | undefined
-      const claimablePremium =
-        (membershipData?.[base + SLOT_PENDING_PREMIUM]?.result as bigint | undefined) ?? 0n
-      // The membership and commitment reads come from the same multicall, so
-      // requiring both keeps the row's derived commitment coherent.
-      if (m && m.mutualId === mutualId && struct) {
-        rows.push({
-          commitmentId: id,
-          committer: viewAddress,
-          creditedValue: m.creditedValue,
-          settledUnits: m.settledUnits,
-          owedUnits: owed,
-          lossSnapshot: m.lossSnapshot,
-          unbondRequestedAt: m.unbondRequestedAt,
-          liveAmount: struct.amount,
-          claimablePremium,
-          // Members can't have a normal unbond or forfeit in flight (the
-          // contract routes exits through the mutual lifecycle), so the
-          // enrichment skips those reads.
-          commitment: buildCommitmentWithStatus({
-            id,
-            commitment: struct,
-            forfeit: undefined,
-            unbondInitiatedAt: undefined,
-            strategies: undefined,
-          }),
-        })
-      }
-    })
-    return rows
-  }, [myIds, membershipData, mutualId, viewAddress])
+    return myMemberships.memberships
+      .filter((m) => m.mutualId === mutualId)
+      .map((m) => ({
+        commitmentId: m.commitmentId,
+        committer: viewAddress,
+        creditedValue: m.creditedValue,
+        settledUnits: m.settledUnits,
+        owedUnits: m.owed,
+        lossSnapshot: m.lossSnapshot,
+        unbondRequestedAt: m.unbondRequestedAt,
+        liveAmount: m.commitment.amount,
+        claimablePremium: m.claimablePremium,
+        // Members can't have a normal unbond or forfeit in flight (the
+        // contract routes exits through the mutual lifecycle), so the
+        // enrichment skips those reads.
+        commitment: buildCommitmentWithStatus({
+          id: m.commitmentId,
+          commitment: m.commitment,
+          forfeit: undefined,
+          unbondInitiatedAt: undefined,
+          strategies: undefined,
+        }),
+      }))
+  }, [myMemberships.memberships, mutualId, viewAddress])
 
   // The viewer's active cover as a policyholder (from the indexed bindings),
   // aggregated to a single notional + nearest expiry for the position panel.
@@ -351,24 +295,20 @@ export default function Mutual() {
   // indexer's full roster; fall back to the viewer's own positions (clearly a
   // partial view) when the indexer isn't available.
   const mutualWide = roster.members.length > 0
-  const rosterMembers = useMemo<RosterMember[]>(() => {
-    if (mutualWide) {
-      return roster.members.map((m) => ({
+  const rosterSource = mutualWide ? roster.members : myMembers
+  const rosterNames = useOperatorNames(rosterSource.map((m) => m.committer))
+  const rosterMembers = useMemo<RosterMember[]>(
+    () =>
+      rosterSource.map((m) => ({
         commitmentId: m.commitmentId,
         committer: m.committer,
+        name: rosterNames.get(m.committer),
         creditedValue: m.creditedValue,
         settledUnits: m.settledUnits,
         owedUnits: m.owedUnits,
-      }))
-    }
-    return myMembers.map((m) => ({
-      commitmentId: m.commitmentId,
-      committer: m.committer,
-      creditedValue: m.creditedValue,
-      settledUnits: m.settledUnits,
-      owedUnits: m.owedUnits,
-    }))
-  }, [mutualWide, roster.members, myMembers])
+      })),
+    [rosterSource, rosterNames],
+  )
 
   // Live-chain verification of the roster's owed list. The indexer roster lags
   // the chain by the indexing delay, so right after an in-app settle/collect
@@ -392,7 +332,7 @@ export default function Mutual() {
     contracts: liveOwedContracts,
     query: {
       enabled: Boolean(managerAddress) && rosterUnsettled.length > 0,
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
   const { unsettledIds, owedOutstanding } = useMemo(() => {
@@ -431,7 +371,9 @@ export default function Mutual() {
       closeModal()
       refetchMutual()
       roster.refetch()
-      void refetchMemberships()
+      // The new membership is listed once the indexer catches up.
+      const before = myMemberships.memberships.length
+      void refetchUntil(refetchMemberships, (n) => (n ?? 0) > before)
       void ledger.refetch()
     },
   })

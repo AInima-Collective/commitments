@@ -32,7 +32,7 @@ import { VaultCoverageCard } from '../components/vault/VaultCoverageCard'
 import { VaultApyChart } from '../components/vault/VaultApyChart'
 import { VaultStrategyRisk } from '../components/vault/VaultStrategyRisk'
 import { VaultTvlChart } from '../components/vault/VaultTvlChart'
-import { getContractAddresses, getVaultDescriptor } from '../config/contracts'
+import { getContractAddresses } from '../config/contracts'
 import { useAssetPrices } from '../hooks/useAssetPrices'
 import { useForfeitLedger } from '../hooks/useForfeitLedger'
 import { useVaultActivity } from '../hooks/useVaultActivity'
@@ -43,6 +43,7 @@ import { useUnifiedRows, type UnifiedRow } from '../hooks/useUnifiedRows'
 import { useVaultPeriodicHistory } from '../hooks/useVaultPeriodicHistory'
 import { useVaultPosition } from '../hooks/useVaultPosition'
 import { useVaultRiskMetrics } from '../hooks/useVaultRiskMetrics'
+import { useVaults } from '../hooks/useVaults'
 import { useVaultStats } from '../hooks/useVaultStats'
 import { useViewAddress } from '../hooks/useViewAddress'
 import { bigintToUsd, formatPercent } from '../lib/format'
@@ -89,7 +90,7 @@ export default function Vault() {
   const urlAddress = params.address && isAddress(params.address) ? (params.address as Address) : undefined
   const env = getContractAddresses(chainId)
   const vaultAddress = urlAddress ?? env.commitmentsVault
-  const descriptor = getVaultDescriptor(chainId, vaultAddress)
+  const descriptor = useVaults().vaultFor(vaultAddress)
   const { commitmentManager: managerAddress } = env
 
   const position = useVaultPosition({ vaultAddress, viewAddress, managerAddress })
@@ -98,7 +99,6 @@ export default function Vault() {
   const { getPrice } = useAssetPrices({ symbols: priceSymbols })
   const activity = useVaultActivity({ vaultAddress, userAddress: viewAddress })
   const apy = useVaultApy(vaultAddress)
-  const risk = useVaultRiskMetrics({ managerAddress, viewAddress })
   // The commitments tab shares the same table component as the Dashboard and
   // Commitment surfaces use indexer-backed unified rows. This view is scoped to THIS vault:
   // a commitment's backing `token` is the vault-share address (cvUSDC/cvWETH),
@@ -116,6 +116,7 @@ export default function Vault() {
       ),
     [unifiedRows, vaultAddress],
   )
+  const riskMetrics = useVaultRiskMetrics(vaultCommitmentRows)
   const vaultCommitmentTokenMeta = useTokenMetaMap(vaultCommitmentRows.map((r) => r.token))
   const navigate = useNavigate()
   // Every row here is a commitment (proposals are filtered out above), so the
@@ -166,7 +167,7 @@ export default function Vault() {
   }
 
   const symbol = position.assetSymbol ?? descriptor?.assetSymbol ?? 'TOKEN'
-  const aDecimals = position.assetDecimals ?? 18
+  const aDecimals = position.assetDecimals ?? descriptor?.assetDecimals ?? 18
   const isPaused = position.depositsPaused
 
   const metaName = asString(vaultMetadata.content?.name)
@@ -359,7 +360,7 @@ export default function Vault() {
         <PositionPanel
           position={position}
           isConnected={isConnected}
-          riskMetrics={risk.metrics}
+          riskMetrics={riskMetrics}
           underlyingUsd={(() => {
             const price = getPrice(position.assetSymbol)
             if (!price) return undefined

@@ -11,7 +11,8 @@ const app = new Hono()
 /**
  * Mutual / Synthetic Mutual endpoints.
  *
- *   GET /mutuals                    — every mutual row + derived liveCapacity / memberCount.
+ *   GET /mutuals                    — every mutual row + derived liveCapacity / memberCount,
+ *                                    and the registry listing terms when registered.
  *   GET /mutuals/:id/members        — the mutual's member roster + derived owedUnits / unbondRequestedAt.
  *   GET /mutuals/:id/ledger?limit=N — mutual dossier: the mutual row, its members,
  *                                    and its event timeline (newest first).
@@ -87,6 +88,11 @@ app.get('/', async (c) => {
       // from the vault's own yield (stamped by the conduit's PremiumFunded).
       coveredVault: g.coveredVault,
       conduit: g.conduit,
+      // MutualRegistry listing terms (NULL for a mutual never registered there).
+      targetCapacity: g.targetCapacity?.toString() ?? null,
+      termEnd: g.termEnd === null ? null : Number(g.termEnd),
+      perilURI: g.perilURI,
+      perilHash: g.perilHash,
     }
   })
 
