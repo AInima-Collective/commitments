@@ -4,7 +4,7 @@
 
 ## Local dev
 
-Prereqs: the project's Foundry stack has been built (`forge build`) and a local Anvil node is running with the protocol deployed via `forge script script/Simulate.s.sol --broadcast`.
+Prereqs: a local Anvil node with the protocol deployed and seeded. `just dev-up` does both.
 
 ```bash
 # From the repo root:
@@ -16,16 +16,27 @@ just indexer-dev   # listens on :65422, uses pglite by default
 pnpm --filter @commitments/indexer dev
 ```
 
-Endpoints:
+Endpoints. Each group is a Hono router mounted in `src/api/index.ts`; the route
+docs live in the matching `src/api/<group>.ts`.
 
-- `GET /graph/entanglements?address=0x…` — nodes+edges for the commitments graph
-- `GET /graph/mesh` — mesh DAG nodes+edges
-- `GET /account/:address` — per-address dossier
-- `GET /account/:address/claimable-yield` — active commitments where the user is counterparty and `yieldClaimable > 0`
-- `GET /commitments/urgent?address=0x…&status=active&limit=100` — canonical urgency-ordered commitment list (see "Canonical sort orders" below)
+- `/graph` — `agreements` (nodes and edges for the commitments graph), `mesh`, `mesh-topology`, `mesh-security`
+- `/account/:address` — dossier, plus `claimable-yield`, `premium`, `balance-history`, `activity`
+- `/commitments` — `urgent` (canonical urgency-ordered list; see "Canonical sort orders" below), `/:id`, `/:id/contributions`, `/:id/arbitration`, `arbitration/activity`
+- `/agreements/:id/settlements`
+- `/mutuals` — list, `/:id/members`, `/:id/ledger`, `/:id/premium`
+- `/vaults/:vault` — `forfeit-ledger`, `donations`, `coverage`, `periodic` (and `POST periodic/snapshot`)
+- `/services/:address/stake-summary`
+- `/protocol` — `stats`, `arbiters`, `cases`, `leaderboard`, `mechanism-activity`
+- `/governors` — list, `/:address`, `/:address/proposals`, `/:address/proposals/:id`, `/:address/proposals/:id/votes`
+- `/prices`
 - `POST /metadata/pin` — pin a metadata JSON object and return `{ cid, metadataURI, metadataHash }` (see "Metadata pinning" below)
 - `GET /graphql` — Ponder's auto-generated GraphQL over the full schema
 - `GET /sql/*` — Ponder's SQL-over-HTTP (used by `@ponder/client`)
+
+`/account/:address/claimable-yield` does not return an amount. It returns the
+strategy bindings on active commitments where the address is the counterparty,
+so the caller can read `manager.pending(commitmentId, strategy, claimData)`
+live, and the address's realized `DistributionPaid` rows.
 
 ## Metadata fetch network policy
 
@@ -123,16 +134,17 @@ Frontends should reuse these sorts so different UI surfaces stay consistent.
 ```sql
 ORDER BY
   CASE status
-    WHEN 'slashPending' THEN 0
-    WHEN 'active'       THEN 1
-    ELSE 2
+    WHEN 'forfeitPending' THEN 0
+    WHEN 'unbonding'      THEN 1
+    WHEN 'active'         THEN 2
+    ELSE 3
   END,
-  COALESCE(slashChallengeEnd, 9000000000000000000) ASC,
+  COALESCE(forfeitChallengeEnd, 9000000000000000000) ASC,
   id DESC
 ```
 
-`slashPending` floats to the top; among equally-prioritised rows the imminent
-deadline wins; ties break by newest first.
+`forfeitPending` floats to the top, then `unbonding`, then `active`; among
+equally-prioritised rows the imminent deadline wins; ties break by newest first.
 
 ## Resolving arbiter / counterparty addresses to operator names (Indexer Improvements #5)
 

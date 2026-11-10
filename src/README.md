@@ -56,8 +56,6 @@ ownership; they are not independently deployable plugins and must never be used
 against unrelated storage.
 
 The manager additionally links `CommitmentLifecycleLib`, `LedgerOpsLib`, and
-`MovementLib`. The complete link and deployment topology is locked in
-`script/compat-topology.json` and checked by `script/compat-snapshot.mjs`.
+`MovementLib`.
 
-There are no compatibility copies at retired import paths. External Solidity
-consumers must follow the repository import-path migration map.
+There are no compatibility copies at retired import paths.

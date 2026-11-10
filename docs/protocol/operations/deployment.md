@@ -5,7 +5,7 @@ status: current
 
 # Deployment Guide
 
-Use the repository Foundry scripts. They deploy implementations and initialize proxies in the same transaction; do not deploy an uninitialized proxy and configure it later.
+Deploy implementations and initialize proxies in the same transaction; do not deploy an uninitialized proxy and configure it later. Use the proxy address, not the implementation address, in downstream configuration.
 
 No address in this page is a canonical production deployment. Verify the selected network, deployer, admin, and broadcast output independently.
 
@@ -20,24 +20,6 @@ forge script script/DeploySepolia.s.sol:DeploySepolia --rpc-url <RPC_URL> --broa
 ~~~
 
 Read the environment-variable block in that script before use. PRIVATE_KEY, ADMIN_ADDRESS, token mode, service thresholds, optional feature flags, and network-specific settings are deployment inputs, not protocol defaults.
-
-## Component scripts
-
-Use the smaller scripts when deployments are managed separately:
-
-| Component | Script |
-|---|---|
-| CommitmentManager implementation and proxy | script/DeployCommitmentManager.s.sol |
-| Backing adapters and distribution strategies | script/DeployAdaptersAndStrategies.s.sol |
-| CommitmentsVault implementation and factory | script/DeployVaultFactory.s.sol |
-| OperatorRegistry implementation and proxy | script/DeployOperatorRegistry.s.sol |
-| Mesh implementations, factory, and example nodes | script/DeployMesh.s.sol |
-| OperatorServiceRegistry implementation and proxy | script/DeployOperatorServiceRegistry.s.sol |
-| Mutual periphery | script/DeployMutual.s.sol |
-| Rewards implementations and factory | script/DeployRewardsCoordinator.s.sol |
-| Governance implementations and factory | script/DeployGovernance.s.sol |
-
-Each script documents its required and optional environment variables. Use the proxy address, not the implementation address, in downstream configuration.
 
 ## Dependency order
 

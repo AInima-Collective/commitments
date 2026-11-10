@@ -24,7 +24,7 @@ On a fully synced archive node, an observer can derive:
 | Topology | `AgreementAccepted`, mesh provider/consumer registration | Full bilateral agreement graph + mesh DAG |
 | Deal terms | `metadataURI`, `metadataHash` | Pointer + integrity tag; the *existence* and *length* of the encrypted blob always leak |
 | Forfeit telemetry | `ForfeitInitiated`, `ForfeitExecuted`, `ForfeitCancelled` | Who, when, against whom, on what exposure |
-| Yield routing | `YieldDistributed`, `YieldIncentiveClaimed` | Counterparty earnings stream, NAV growth windows |
+| Yield routing | `StrategyFunded`, `EncumbranceMovedToEscrow`, `DistributionPaid` | Counterparty earnings stream, NAV growth windows |
 
 The minimum set of public predicates the protocol *requires* for the safety properties to hold:
 

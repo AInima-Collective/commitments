@@ -17,7 +17,7 @@ interface ContractAddresses {
   /** Two-controller ruling + appeal court deployment, when configured. */
   twoTierArbiter: Address | undefined
   // v2 backing adapters + distribution strategies (token-agnostic singletons,
-  // deployed by DeployAdaptersAndStrategies / Simulate). Undefined until
+  // deployed by Simulate). Undefined until
   // `just dev-up` writes them into .env.local.
   erc20Adapter: Address | undefined
   erc4626Adapter: Address | undefined
@@ -57,8 +57,8 @@ interface ContractAddresses {
   agentMutualArbiter: Address | undefined
   agentVaultBeneficiary: Address | undefined
   // Mutual surface. MutualRegistry indexes the pooled shared-loss mutuals;
-  // OptimisticMutualArbiter is the bonded loss proposer. Undefined until `just dev-up` runs
-  // DeployMutual.s.sol.
+  // OptimisticMutualArbiter is the bonded loss proposer. Undefined until
+  // `just dev-up` writes them into .env.local.
   mutualRegistry: Address | undefined
   optimisticMutualArbiter: Address | undefined
   // Premium leg: utilization-curve pricing (PremiumScheduler) + cover
