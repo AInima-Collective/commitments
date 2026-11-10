@@ -193,7 +193,7 @@ ponder.on('OptimisticInsuranceArbiter:ClaimUnwound', ({ event, context }) =>
   updateOptimisticTerminal(event, context, 'unwound', 'manager enforcement unavailable; bonds refunded', 'claim-unwound'))
 
 ponder.on('OptimisticInsuranceArbiter:ClaimRuled', async ({ event, context }) => {
-  const { claimId, winningAmtBps, source } = event.args
+  const { claimId, winningAmtBps } = event.args
   const key = caseKey(event.log.address, claimId)
   const current = await context.db.find(arbitrationCase, { id: key })
   if (!current) return
@@ -202,7 +202,7 @@ ponder.on('OptimisticInsuranceArbiter:ClaimRuled', async ({ event, context }) =>
   })
   await insertEvent(context, event, {
     mechanism: current.mechanism, caseId: claimId, commitmentId: current.commitmentId,
-    manager: current.manager, kind: 'claim-ruled', actor: source, phase: 'ruled',
+    manager: current.manager, kind: 'claim-ruled', phase: 'ruled',
     outcome: `${Number(winningAmtBps)} bps ruling`,
   })
 })

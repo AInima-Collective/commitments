@@ -10,6 +10,7 @@ import {StrategyBinding, DistributeContext} from "src/core/interfaces/IDistribut
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
 import {IndexAppreciationYield} from "src/distributions/IndexAppreciationYield.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 /// @dev Settable index adapter — models an appreciating venue without a full 4626 mock.
 contract MockIndexAdapter is IBackingAdapter {
@@ -106,7 +107,7 @@ contract IndexAppreciationYieldTest is Test {
 
     function test_hooks_managerOnly() public {
         DistributeContext memory ctx;
-        vm.expectRevert(IndexAppreciationYield.OnlyManager.selector);
+        vm.expectRevert(StrategyBase.OnlyManager.selector);
         strategy.distribute(ctx);
     }
 
@@ -149,7 +150,7 @@ contract IndexAppreciationYieldTest is Test {
         assertEq(owed, 0);
 
         vm.prank(bob);
-        vm.expectRevert(IndexAppreciationYield.NothingToClaim.selector);
+        vm.expectRevert(StrategyBase.NothingToClaim.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -157,7 +158,7 @@ contract IndexAppreciationYieldTest is Test {
         adapter.setIndex(1.04e18);
         manager.distribute(id, address(strategy));
         vm.prank(makeAddr("mallory"));
-        vm.expectRevert(IndexAppreciationYield.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -228,7 +229,7 @@ contract IndexAppreciationYieldTest is Test {
         manager.releaseCommitment(id);
         vm.warp(block.timestamp + 90 days);
         vm.prank(bob);
-        vm.expectRevert(IndexAppreciationYield.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(id, address(strategy), abi.encode(true));
     }
 

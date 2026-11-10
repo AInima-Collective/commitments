@@ -3,8 +3,6 @@ pragma solidity ^0.8.27;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
-
 /// @title IArbiter
 /// @notice Capability interface for contracts named as the `arbiter` field on a
 ///         Commitment. `CommitmentManager` still authenticates the arbiter by

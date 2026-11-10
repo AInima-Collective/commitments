@@ -7,6 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {OptimisticInsuranceArbiter} from "src/periphery/arbiters/OptimisticInsuranceArbiter.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {ManagerTestBase, MockIndexAdapter} from "../helpers/ManagerTestBase.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 
 // =============================================================================
 // Mocks
@@ -140,9 +141,7 @@ contract OptimisticInsuranceArbiterTest is ManagerTestBase {
         uint256 cid = _createAs(underwriter, _baseParams(otherArbiter, policyholder, AMOUNT, MAX_PENALTY_BPS));
 
         vm.prank(policyholder);
-        vm.expectRevert(
-            abi.encodeWithSelector(OptimisticInsuranceArbiter.WrongArbiter.selector, address(arbiter), otherArbiter)
-        );
+        vm.expectRevert(abi.encodeWithSelector(ArbiterBase.WrongArbiter.selector, address(arbiter), otherArbiter));
         arbiter.proposeClaim(cid, 3000, bytes32(0), bytes32(0), uint128(MIN_BOND));
     }
 
@@ -170,7 +169,7 @@ contract OptimisticInsuranceArbiterTest is ManagerTestBase {
         manager.releaseCommitment(cid);
 
         vm.prank(policyholder);
-        vm.expectRevert(abi.encodeWithSelector(OptimisticInsuranceArbiter.CommitmentNotActive.selector, cid));
+        vm.expectRevert(abi.encodeWithSelector(ArbiterBase.CommitmentNotActive.selector, cid));
         arbiter.proposeClaim(cid, 3000, bytes32(0), bytes32(0), uint128(MIN_BOND));
     }
 
@@ -737,9 +736,7 @@ contract OptimisticInsuranceArbiterTest is ManagerTestBase {
 
         vm.prank(policyholder);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                OptimisticInsuranceArbiter.ChallengeWindowTooShort.selector, ANSWER_TIMEOUT, uint64(1 days)
-            )
+            abi.encodeWithSelector(ArbiterBase.ChallengeWindowTooShort.selector, ANSWER_TIMEOUT, uint64(1 days))
         );
         arbiter.proposeClaim(cid, 3000, bytes32(0), bytes32(0), uint128(MIN_BOND));
     }

@@ -5,9 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
 import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol";
 
@@ -25,7 +25,7 @@ import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutu
 ///      calls `manager.executeMutualLoss` directly once the window elapses, and anyone reclaims the
 ///      bond to the proposer here (or the next `proposeLoss` does it). One active claim per mutual
 ///      (mirrors the manager's INV-7).
-contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTransient {
+contract OptimisticMutualArbiter is ArbiterBase, Ownable2Step, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     /// @dev The cover-binding snapshot `proposeLossFor` takes is emitted in `CoverBindingSnapshotted`,
@@ -37,7 +37,6 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         uint256 bond;
     }
 
-    ICommitmentManager public immutable manager;
     IERC20 public immutable bondToken;
     uint256 public immutable minBond;
     address public treasury;
@@ -58,7 +57,6 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         uint256 indexed mutualId, uint256 indexed coverBindingId, uint256 notional, uint64 expiry, address policyholder
     );
 
-    error ZeroAddress();
     error BondTooLow();
     error ClaimActive();
     error NoClaim();
@@ -71,19 +69,14 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
 
     constructor(address manager_, address bondToken_, uint256 minBond_, address treasury_, address owner_)
         Ownable(owner_)
+        ArbiterBase(manager_)
     {
-        if (manager_ == address(0) || bondToken_ == address(0) || treasury_ == address(0) || owner_ == address(0)) {
+        if (bondToken_ == address(0) || treasury_ == address(0) || owner_ == address(0)) {
             revert ZeroAddress();
         }
-        manager = ICommitmentManager(manager_);
         bondToken = IERC20(bondToken_);
         minBond = minBond_;
         treasury = treasury_;
-    }
-
-    /// @inheritdoc IArbiter
-    function commitmentManager() external view returns (address) {
-        return address(manager);
     }
 
     /// @inheritdoc IArbiter
@@ -99,11 +92,6 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
     ///      pointer is published.
     function arbiterMetadataURI() external pure returns (string memory) {
         return "";
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IArbiter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     function setTreasury(address treasury_) external onlyOwner {

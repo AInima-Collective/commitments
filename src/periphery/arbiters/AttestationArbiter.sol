@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
-import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandler.sol";
 import {IServiceManager} from "src/extensions/services/interfaces/IServiceManager.sol";
 import {ServiceEnvelopeVerifier} from "src/extensions/services/service-registry/ServiceEnvelopeVerifier.sol";
@@ -35,7 +33,7 @@ import {ServiceEnvelopeVerifier} from "src/extensions/services/service-registry/
 ///      by the strict per-`id` ordering sequence: every dispatched action bumps
 ///      the target's sequence, invalidating every envelope signed at an earlier
 ///      sequence value.
-contract AttestationArbiter is IArbiter, ServiceEnvelopeVerifier {
+contract AttestationArbiter is ArbiterBase, ServiceEnvelopeVerifier {
     enum Action {
         InitiateForfeit, // id = commitmentId    (commitment scope)
         CancelForfeit, // id = commitmentId    (commitment scope)
@@ -63,9 +61,6 @@ contract AttestationArbiter is IArbiter, ServiceEnvelopeVerifier {
         uint256 numeraire; // InitiateMutualLoss: lossNumeraire
         bytes32 evidenceHash; // SettleAgreement / InitiateMutualLoss
     }
-
-    /// @notice CommitmentManager this arbiter dispatches to. Immutable.
-    ICommitmentManager public immutable manager;
 
     /// @dev Per-commitment strict-ordering sequence for commitment-scoped actions
     ///      (InitiateForfeit / CancelForfeit / Release). Envelopes must carry the
@@ -98,14 +93,10 @@ contract AttestationArbiter is IArbiter, ServiceEnvelopeVerifier {
 
     event Acted(Action indexed action, uint256 indexed id, uint16 penaltyBps, uint256 deadline);
 
-    constructor(address manager_, address serviceManager_) ServiceEnvelopeVerifier(IServiceManager(serviceManager_)) {
-        manager = ICommitmentManager(manager_);
-    }
-
-    /// @inheritdoc IArbiter
-    function commitmentManager() external view returns (address) {
-        return address(manager);
-    }
+    constructor(address manager_, address serviceManager_)
+        ArbiterBase(manager_)
+        ServiceEnvelopeVerifier(IServiceManager(serviceManager_))
+    {}
 
     /// @inheritdoc IArbiter
     /// @dev Reflects the current `Action` set exactly — the full commitment,
@@ -125,11 +116,6 @@ contract AttestationArbiter is IArbiter, ServiceEnvelopeVerifier {
     ///      contract, so no static metadata pointer is published.
     function arbiterMetadataURI() external pure returns (string memory) {
         return "";
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IArbiter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     /// @notice Current ordering sequence a commitment-scoped envelope

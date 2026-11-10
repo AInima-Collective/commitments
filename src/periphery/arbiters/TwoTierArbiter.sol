@@ -2,11 +2,11 @@
 pragma solidity ^0.8.27;
 
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 
 /// @title TwoTierArbiter
 /// @notice A two-controller court in which a primary controller issues a fast
@@ -17,7 +17,7 @@ import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
 ///      inspect how either address is governed. Terms are fixed at deployment:
 ///      there are no controller, timing, manager, or policy setters and the
 ///      contract is deliberately non-upgradeable.
-contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
+contract TwoTierArbiter is ArbiterBase, ReentrancyGuardTransient {
     /// @notice Local lifecycle of a court case.
     enum CaseState {
         None,
@@ -45,9 +45,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         bytes32 appealHash;
         bytes32 humanDecisionHash;
     }
-
-    /// @notice CommitmentManager this court dispatches to.
-    ICommitmentManager public immutable manager;
 
     /// @notice Address authorized to open and withdraw first-pass rulings.
     address public immutable primaryController;
@@ -80,7 +77,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
     /// @notice Last allocated globally unique case ID. Zero is reserved.
     uint256 public nextCaseId;
 
-    error ZeroAddress();
     error ControllersMustDiffer();
     error ZeroWindow();
     error InvalidPolicy();
@@ -89,8 +85,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
     error NotAppealController(address caller);
     error UnauthorizedAppellant(address caller);
     error CommitmentNotFound(uint256 commitmentId);
-    error CommitmentNotActive(uint256 commitmentId);
-    error WrongArbiter(address expected, address actual);
     error CaseAlreadyActive(uint256 commitmentId, uint256 caseId);
     error UnknownCase(uint256 caseId);
     error WrongCaseState(uint256 caseId, CaseState expected, CaseState actual);
@@ -100,7 +94,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
     error InvalidPenalty(uint16 penaltyBps);
     error PenaltyAboveCommitmentMax(uint16 commitmentMax, uint16 penaltyBps);
     error ZeroHash();
-    error ChallengeWindowTooShort(uint64 required, uint64 actual);
     error AppealWindowElapsed(uint64 deadline, uint64 nowTs);
     error HumanResponseWindowElapsed(uint64 deadline, uint64 nowTs);
     error HumanResponseWindowActive(uint64 deadline, uint64 nowTs);
@@ -207,8 +200,8 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         uint64 executionBuffer_,
         string memory courtPolicyURI_,
         bytes32 courtPolicyHash_
-    ) {
-        if (manager_ == address(0) || primaryController_ == address(0) || appealController_ == address(0)) {
+    ) ArbiterBase(manager_) {
+        if (primaryController_ == address(0) || appealController_ == address(0)) {
             revert ZeroAddress();
         }
         if (primaryController_ == appealController_) revert ControllersMustDiffer();
@@ -218,7 +211,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 required = uint256(_max(appealWindow_, humanResponseWindow_)) + executionBuffer_;
         if (required > type(uint64).max) revert TimingOverflow();
 
-        manager = ICommitmentManager(manager_);
         primaryController = primaryController_;
         appealController = appealController_;
         appealWindow = appealWindow_;
@@ -230,11 +222,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
     }
 
     /// @inheritdoc IArbiter
-    function commitmentManager() external view returns (address) {
-        return address(manager);
-    }
-
-    /// @inheritdoc IArbiter
     function arbiterCapabilities() external pure returns (uint256) {
         return ArbiterCapabilities.INITIATE_FORFEIT | ArbiterCapabilities.CANCEL_FORFEIT;
     }
@@ -242,11 +229,6 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
     /// @inheritdoc IArbiter
     function arbiterMetadataURI() external view returns (string memory) {
         return _courtPolicyURI;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IArbiter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     /// @notice Return the complete record for `caseId`.
@@ -519,9 +501,7 @@ contract TwoTierArbiter is IArbiter, ReentrancyGuardTransient {
         returns (ICommitmentManager.ForfeitProposal memory proposal)
     {
         proposal = manager.getForfeitProposal(commitmentId);
-        if (proposal.initiatedAt == 0 || proposal.executed || proposal.cancelled) {
-            revert ManagerProposalNotActive(commitmentId);
-        }
+        if (!_forfeitProposalActive(proposal)) revert ManagerProposalNotActive(commitmentId);
         if (proposal.penaltyBps != expectedPenaltyBps) {
             revert ManagerPenaltyMismatch(expectedPenaltyBps, proposal.penaltyBps);
         }

@@ -10,11 +10,9 @@ import {
     IDistributionStrategy,
     TokenMovement,
     CreatedContext,
-    DistributeContext,
-    ClaimContext,
-    LifecycleContext,
-    ForfeitContext
+    ClaimContext
 } from "src/core/interfaces/IDistributionStrategy.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 /// @title CounterpartyPremiumStream
 /// @notice A pay-as-you-go premium the commitment's COUNTERPARTY (the insured) streams to the
@@ -40,13 +38,14 @@ import {
 ///      (reverted-and-skipped, §D.6) hook can never leave the stream running past close. The
 ///      counterparty caps their total exposure purely by how much they fund; unstreamed premium is
 ///      recoverable via `reclaimUnstreamed` once the policy has ended.
-contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTransient {
+contract CounterpartyPremiumStream is StrategyBase, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     /// @param ratePerSecond Premium units (backing-token) accruing to the committer per second.
     /// @param funded Cumulative premium the counterparty has deposited for this commitment.
     /// @param claimed Cumulative premium already paid out to the committer.
     /// @param token Backing token of the commitment (the premium is paid in the same token).
+    /// @param counterparty The commitment's counterparty (the insured), who funds and reclaims.
     /// @param startTime Binding timestamp; accrual is measured from here.
     /// @param bound Set once at binding; distinguishes a real (possibly zero-rate) stream from an
     ///        unbound id.
@@ -55,11 +54,11 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
         uint256 funded;
         uint256 claimed;
         address token;
+        address counterparty;
         uint64 startTime;
         bool bound;
     }
 
-    address public immutable manager;
     mapping(uint256 commitmentId => Stream) public streamOf;
 
     /// @notice The counterparty deposited `amount` of premium for `commitmentId` (pulled from `funder`).
@@ -67,23 +66,10 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
     /// @notice Unstreamed premium was returned to the counterparty after the policy ended.
     event PremiumReclaimed(uint256 indexed commitmentId, address indexed counterparty, uint256 amount);
 
-    error OnlyManager();
-    error AlreadyBound();
-    error NotBound();
-    error NotAuthorized();
-    error NothingToClaim();
     error StreamEnded();
     error StreamActive();
-    error ZeroAmount();
 
-    constructor(address manager_) {
-        manager = manager_;
-    }
-
-    modifier onlyManager() {
-        if (msg.sender != manager) revert OnlyManager();
-        _;
-    }
+    constructor(address manager_) StrategyBase(manager_) {}
 
     // =========================================================================
     // Counterparty funding / reclaim surface (self-custody, §D)
@@ -100,12 +86,9 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
         Stream storage st = streamOf[commitmentId];
         if (!st.bound) revert NotBound();
         if (ICM(manager).closedAt(commitmentId) != 0) revert StreamEnded();
-        if (msg.sender != ICM(manager).getCommitment(commitmentId).counterparty) revert NotAuthorized();
+        if (msg.sender != st.counterparty) revert NotAuthorized();
 
-        uint256 balanceBefore = IERC20(st.token).balanceOf(address(this));
-        IERC20(st.token).safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = IERC20(st.token).balanceOf(address(this)) - balanceBefore;
-        if (received == 0) revert ZeroAmount();
+        uint256 received = _pullMeasured(IERC20(st.token), amount);
 
         st.funded += received;
         emit PremiumFunded(commitmentId, msg.sender, received);
@@ -119,7 +102,7 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
     function reclaimUnstreamed(uint256 commitmentId) external nonReentrant {
         Stream storage st = streamOf[commitmentId];
         if (!st.bound) revert NotBound();
-        if (msg.sender != ICM(manager).getCommitment(commitmentId).counterparty) revert NotAuthorized();
+        if (msg.sender != st.counterparty) revert NotAuthorized();
 
         uint64 endTime = ICM(manager).closedAt(commitmentId);
         if (endTime == 0) revert StreamActive();
@@ -162,11 +145,11 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
     ///      `FlatFeeAtCreate`'s zero-fee no-op.
     function onCommitmentCreated(CreatedContext calldata ctx) external onlyManager {
         Stream storage st = streamOf[ctx.base.commitmentId];
-        if (st.bound) revert AlreadyBound();
         uint256 ratePerSecond = abi.decode(ctx.strategyParams, (uint256));
 
         st.ratePerSecond = ratePerSecond;
         st.token = ctx.base.token;
+        st.counterparty = ctx.base.counterparty;
         st.startTime = ctx.base.timestamp;
         st.bound = true;
     }
@@ -183,7 +166,7 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
     {
         if (ctx.caller != ctx.base.committer) revert NotAuthorized();
         Stream storage st = streamOf[ctx.base.commitmentId];
-        if (!st.bound) revert NothingToClaim();
+        if (!st.bound) revert NotBound();
 
         uint64 endTime = ctx.closedAt == 0 ? ctx.base.timestamp : ctx.closedAt;
         uint256 earned = _earned(st, endTime);
@@ -203,31 +186,6 @@ contract CounterpartyPremiumStream is IDistributionStrategy, ReentrancyGuardTran
         Stream storage st = streamOf[ctx.base.commitmentId];
         uint64 endTime = ctx.closedAt == 0 ? ctx.base.timestamp : ctx.closedAt;
         return _earned(st, endTime) - st.claimed;
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    /// @dev Accrual is computed on read (time-based), so there is nothing to advance and no
-    ///      movement to emit — premium lives in this contract, never in manager escrow.
-    function distribute(DistributeContext calldata) external view onlyManager returns (TokenMovement[] memory) {
-        return new TokenMovement[](0);
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    /// @dev No-op: the stream freezes at close via the live `manager.closedAt` read, so the release
-    ///      hook has no sweep to take. Kept a no-op (not reverting) so it never parks the release.
-    function onCommitmentReleased(LifecycleContext calldata)
-        external
-        view
-        onlyManager
-        returns (TokenMovement[] memory)
-    {
-        return new TokenMovement[](0);
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    /// @dev No-op for the same reason as `onCommitmentReleased`.
-    function onCommitmentForfeited(ForfeitContext calldata) external view onlyManager returns (TokenMovement[] memory) {
-        return new TokenMovement[](0);
     }
 
     // =========================================================================

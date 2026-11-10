@@ -2,11 +2,10 @@
 pragma solidity ^0.8.27;
 
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
-import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 
 /// @title ManualArbiter
 /// @notice Minimal arbiter controlled by a single owner (EOA or multisig).
@@ -18,12 +17,7 @@ import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 ///      admin. Production AVS services should prefer `AttestationArbiter` (or
 ///      another policy-encoded arbiter) where the policy is auditable from
 ///      on-chain code alone.
-contract ManualArbiter is IArbiter, Ownable2Step {
-    /// @notice CommitmentManager this arbiter dispatches to. Immutable to
-    ///         preserve the trust model — users who name this contract as
-    ///         their arbiter rely on the manager binding not changing.
-    ICommitmentManager public immutable manager;
-
+contract ManualArbiter is ArbiterBase, Ownable2Step {
     /// @dev Owner-settable off-chain metadata pointer (jurisdiction, policy,
     ///      dispute process). Empty until the owner sets it.
     string private _metadataURI;
@@ -31,14 +25,7 @@ contract ManualArbiter is IArbiter, Ownable2Step {
     /// @notice Emitted when the owner updates the arbiter's metadata URI.
     event MetadataURIUpdated(string uri);
 
-    constructor(address owner_, address manager_) Ownable(owner_) {
-        manager = ICommitmentManager(manager_);
-    }
-
-    /// @inheritdoc IArbiter
-    function commitmentManager() external view returns (address) {
-        return address(manager);
-    }
+    constructor(address owner_, address manager_) Ownable(owner_) ArbiterBase(manager_) {}
 
     /// @inheritdoc IArbiter
     /// @dev The owner drives every action manually, so ManualArbiter can reach
@@ -60,11 +47,6 @@ contract ManualArbiter is IArbiter, Ownable2Step {
     function setMetadataURI(string calldata uri) external onlyOwner {
         _metadataURI = uri;
         emit MetadataURIUpdated(uri);
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IArbiter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     // =========================================================================
@@ -131,23 +113,5 @@ contract ManualArbiter is IArbiter, Ownable2Step {
     /// @notice Cancel (veto) a pending mutual loss during its challenge window.
     function cancelMutualLoss(uint256 mutualId) external onlyOwner {
         manager.cancelMutualLoss(mutualId);
-    }
-
-    // =========================================================================
-    // Ownerless finalization
-    // =========================================================================
-
-    /// @notice Finalize a pending forfeit after the challenge window has passed.
-    /// @dev Ownerless by design — mirrors `CommitmentManager.executeForfeit` auth.
-    ///      The security property is the challenge window, not the caller.
-    function executeForfeit(uint256 commitmentId) external {
-        manager.executeForfeit(commitmentId);
-    }
-
-    /// @notice Finalize a pending mutual loss after its challenge window elapses.
-    /// @dev Ownerless — mirrors `CommitmentManager.executeMutualLoss` auth. Λ
-    ///      bumps once here; members then settle their several shares.
-    function executeMutualLoss(uint256 mutualId) external {
-        manager.executeMutualLoss(mutualId);
     }
 }

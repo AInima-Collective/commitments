@@ -9,6 +9,7 @@ import {TwoTierArbiter} from "src/periphery/arbiters/TwoTierArbiter.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
 import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 
 /// @title TwoTierArbiterTest
 /// @notice Focused state-machine and manager-integration coverage for the
@@ -120,13 +121,13 @@ contract TwoTierArbiterTest is ManagerTestBase {
     }
 
     function testConstructorRejectsZeroAddressesAndSameController() public {
-        vm.expectRevert(TwoTierArbiter.ZeroAddress.selector);
+        vm.expectRevert(ArbiterBase.ZeroAddress.selector);
         _deploy(address(0), primary, human, 1, 1, 1, POLICY_URI, POLICY_HASH);
 
-        vm.expectRevert(TwoTierArbiter.ZeroAddress.selector);
+        vm.expectRevert(ArbiterBase.ZeroAddress.selector);
         _deploy(address(manager), address(0), human, 1, 1, 1, POLICY_URI, POLICY_HASH);
 
-        vm.expectRevert(TwoTierArbiter.ZeroAddress.selector);
+        vm.expectRevert(ArbiterBase.ZeroAddress.selector);
         _deploy(address(manager), primary, address(0), 1, 1, 1, POLICY_URI, POLICY_HASH);
 
         vm.expectRevert(TwoTierArbiter.ControllersMustDiffer.selector);
@@ -194,7 +195,7 @@ contract TwoTierArbiterTest is ManagerTestBase {
 
         uint256 wrongArbiterId = _createCommitment(WINDOW, MAX_PENALTY, outsider);
         vm.prank(primary);
-        vm.expectRevert(abi.encodeWithSelector(TwoTierArbiter.WrongArbiter.selector, address(arbiter), outsider));
+        vm.expectRevert(abi.encodeWithSelector(ArbiterBase.WrongArbiter.selector, address(arbiter), outsider));
         arbiter.proposeRuling(wrongArbiterId, PRIMARY_PENALTY, PRIMARY_HASH);
 
         uint256 commitmentId = _createCommitment();
@@ -208,7 +209,7 @@ contract TwoTierArbiterTest is ManagerTestBase {
         arbiter.executeRuling(caseId);
 
         vm.prank(primary);
-        vm.expectRevert(abi.encodeWithSelector(TwoTierArbiter.CommitmentNotActive.selector, commitmentId));
+        vm.expectRevert(abi.encodeWithSelector(ArbiterBase.CommitmentNotActive.selector, commitmentId));
         arbiter.proposeRuling(commitmentId, PRIMARY_PENALTY, PRIMARY_HASH);
     }
 
@@ -230,9 +231,7 @@ contract TwoTierArbiterTest is ManagerTestBase {
 
         uint256 shortWindowId = _createCommitment(1 days, MAX_PENALTY, address(arbiter));
         vm.prank(primary);
-        vm.expectRevert(
-            abi.encodeWithSelector(TwoTierArbiter.ChallengeWindowTooShort.selector, REQUIRED_WINDOW, 1 days)
-        );
+        vm.expectRevert(abi.encodeWithSelector(ArbiterBase.ChallengeWindowTooShort.selector, REQUIRED_WINDOW, 1 days));
         arbiter.proposeRuling(shortWindowId, PRIMARY_PENALTY, PRIMARY_HASH);
     }
 

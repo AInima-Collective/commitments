@@ -11,6 +11,7 @@ import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
 import {FlatFeeAtCreate} from "src/distributions/FlatFeeAtCreate.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {FeeOnTransferERC20} from "../manager/Custody.t.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 contract FlatFeeAtCreateTest is Test {
     CommitmentManager internal manager;
@@ -70,11 +71,11 @@ contract FlatFeeAtCreateTest is Test {
         uint256 id = manager.createCommitment(_params());
         vm.stopPrank();
 
-        (uint256 fee, address feeToken, bool collected) = strategy.feeOf(id);
+        (uint256 fee, address feeToken, bool collected, bool bound) = strategy.feeOf(id);
         assertEq(fee, FEE);
         assertEq(feeToken, address(token));
         assertFalse(collected);
-        assertEq(strategy.allocated(address(token)), FEE);
+        assertTrue(bound);
         assertEq(strategy.creditOf(alice, address(token)), 0);
     }
 
@@ -90,7 +91,6 @@ contract FlatFeeAtCreateTest is Test {
         strategy.prefund(alice, address(token), FEE);
         manager.createCommitment(_params());
         vm.stopPrank();
-        assertEq(strategy.allocated(address(token)), 2 * FEE);
     }
 
     function test_claim_paysCounterpartyOnce() public {
@@ -108,11 +108,10 @@ contract FlatFeeAtCreateTest is Test {
         manager.claim(id, address(strategy), "");
 
         assertEq(token.balanceOf(bob), FEE);
-        assertEq(strategy.allocated(address(token)), 0);
         assertEq(manager.pending(id, address(strategy), ""), 0);
 
         vm.prank(bob);
-        vm.expectRevert(FlatFeeAtCreate.NothingToClaim.selector);
+        vm.expectRevert(StrategyBase.NothingToClaim.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -123,7 +122,7 @@ contract FlatFeeAtCreateTest is Test {
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert(FlatFeeAtCreate.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(id, address(strategy), "");
 
         // The fee was earned at creation: a forfeit doesn't void it.
@@ -190,7 +189,6 @@ contract FlatFeeAtCreateTest is Test {
 
         assertEq(token.balanceOf(alice), before + 2 * FEE);
         assertEq(strategy.creditOf(alice, address(token)), 0);
-        assertEq(strategy.allocated(address(token)), FEE);
 
         // The earned fee remains fully claimable after the refund.
         vm.prank(bob);
@@ -234,11 +232,11 @@ contract FlatFeeAtCreateTest is Test {
 
     function test_prefund_zeroChecks() public {
         vm.startPrank(alice);
-        vm.expectRevert(FlatFeeAtCreate.ZeroAmount.selector);
+        vm.expectRevert(StrategyBase.ZeroAmount.selector);
         strategy.prefund(alice, address(token), 0);
         vm.expectRevert(FlatFeeAtCreate.ZeroAddress.selector);
         strategy.prefund(address(0), address(token), FEE);
-        vm.expectRevert(FlatFeeAtCreate.ZeroAmount.selector);
+        vm.expectRevert(StrategyBase.ZeroAmount.selector);
         strategy.refundUnallocated(address(token), 0);
         vm.stopPrank();
     }

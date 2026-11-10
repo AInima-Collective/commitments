@@ -154,6 +154,21 @@ export const attestationArbiterAbi = [
   },
   {
     type: 'error',
+    inputs: [
+      { name: 'required', internalType: 'uint64', type: 'uint64' },
+      { name: 'actual', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'ChallengeWindowTooShort',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CommitmentNotActive',
+  },
+  {
+    type: 'error',
     inputs: [{ name: 'eventId', internalType: 'bytes20', type: 'bytes20' }],
     name: 'EnvelopeAlreadyConsumed',
   },
@@ -184,8 +199,17 @@ export const attestationArbiterAbi = [
       { name: 'expected', internalType: 'address', type: 'address' },
       { name: 'actual', internalType: 'address', type: 'address' },
     ],
+    name: 'WrongArbiter',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'expected', internalType: 'address', type: 'address' },
+      { name: 'actual', internalType: 'address', type: 'address' },
+    ],
     name: 'WrongBoundArbiter',
   },
+  { type: 'error', inputs: [], name: 'ZeroAddress' },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -6847,13 +6871,6 @@ export const flatFeeAtCreateAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'token', internalType: 'address', type: 'address' }],
-    name: 'allocated',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       {
         name: 'ctx',
@@ -6972,7 +6989,7 @@ export const flatFeeAtCreateAbi = [
         ],
       },
     ],
-    stateMutability: 'view',
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -6984,6 +7001,7 @@ export const flatFeeAtCreateAbi = [
       { name: 'fee', internalType: 'uint256', type: 'uint256' },
       { name: 'token', internalType: 'address', type: 'address' },
       { name: 'collected', internalType: 'bool', type: 'bool' },
+      { name: 'bound', internalType: 'bool', type: 'bool' },
     ],
     stateMutability: 'view',
   },
@@ -7098,7 +7116,7 @@ export const flatFeeAtCreateAbi = [
         ],
       },
     ],
-    stateMutability: 'view',
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -7152,7 +7170,7 @@ export const flatFeeAtCreateAbi = [
         ],
       },
     ],
-    stateMutability: 'view',
+    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -7318,7 +7336,6 @@ export const flatFeeAtCreateAbi = [
     ],
     name: 'Prefunded',
   },
-  { type: 'error', inputs: [], name: 'AlreadyBound' },
   {
     type: 'error',
     inputs: [
@@ -7336,6 +7353,7 @@ export const flatFeeAtCreateAbi = [
     name: 'InsufficientCredit',
   },
   { type: 'error', inputs: [], name: 'NotAuthorized' },
+  { type: 'error', inputs: [], name: 'NotBound' },
   { type: 'error', inputs: [], name: 'NothingToClaim' },
   { type: 'error', inputs: [], name: 'OnlyManager' },
   { type: 'error', inputs: [], name: 'ReentrancyGuardReentrantCall' },
@@ -7783,22 +7801,6 @@ export const manualArbiterAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'executeForfeit',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
-    name: 'executeMutualLoss',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
       { name: 'agreementId', internalType: 'uint256', type: 'uint256' },
       { name: 'penaltyBps', internalType: 'uint16', type: 'uint16' },
     ],
@@ -7958,6 +7960,21 @@ export const manualArbiterAbi = [
   },
   {
     type: 'error',
+    inputs: [
+      { name: 'required', internalType: 'uint64', type: 'uint64' },
+      { name: 'actual', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'ChallengeWindowTooShort',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CommitmentNotActive',
+  },
+  {
+    type: 'error',
     inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
     name: 'OwnableInvalidOwner',
   },
@@ -7966,6 +7983,15 @@ export const manualArbiterAbi = [
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
     name: 'OwnableUnauthorizedAccount',
   },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'expected', internalType: 'address', type: 'address' },
+      { name: 'actual', internalType: 'address', type: 'address' },
+    ],
+    name: 'WrongArbiter',
+  },
+  { type: 'error', inputs: [], name: 'ZeroAddress' },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -10582,12 +10608,6 @@ export const optimisticInsuranceArbiterAbi = [
         type: 'uint16',
         indexed: false,
       },
-      {
-        name: 'source',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
     ],
     name: 'ClaimRuled',
   },
@@ -10769,6 +10789,7 @@ export const optimisticInsuranceArbiterAbi = [
     ],
     name: 'WrongClaimState',
   },
+  { type: 'error', inputs: [], name: 'ZeroAddress' },
   { type: 'error', inputs: [], name: 'ZeroAnswerTimeout' },
 ] as const
 
@@ -11158,7 +11179,22 @@ export const optimisticMutualArbiterAbi = [
   { type: 'error', inputs: [], name: 'AlreadyResolved' },
   { type: 'error', inputs: [], name: 'BindingMutualMismatch' },
   { type: 'error', inputs: [], name: 'BondTooLow' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'required', internalType: 'uint64', type: 'uint64' },
+      { name: 'actual', internalType: 'uint64', type: 'uint64' },
+    ],
+    name: 'ChallengeWindowTooShort',
+  },
   { type: 'error', inputs: [], name: 'ClaimActive' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'CommitmentNotActive',
+  },
   { type: 'error', inputs: [], name: 'CoverPolicyUnset' },
   { type: 'error', inputs: [], name: 'LossNotCancelled' },
   { type: 'error', inputs: [], name: 'LossNotExecuted' },
@@ -11180,6 +11216,14 @@ export const optimisticMutualArbiterAbi = [
     name: 'SafeERC20FailedOperation',
   },
   { type: 'error', inputs: [], name: 'VetoWindowClosed' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'expected', internalType: 'address', type: 'address' },
+      { name: 'actual', internalType: 'address', type: 'address' },
+    ],
+    name: 'WrongArbiter',
+  },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
 ] as const
 
@@ -19015,30 +19059,12 @@ export const useReadFlatFeeAtCreate = /*#__PURE__*/ createUseReadContract({
 })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"allocated"`
- */
-export const useReadFlatFeeAtCreateAllocated =
-  /*#__PURE__*/ createUseReadContract({
-    abi: flatFeeAtCreateAbi,
-    functionName: 'allocated',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"creditOf"`
  */
 export const useReadFlatFeeAtCreateCreditOf =
   /*#__PURE__*/ createUseReadContract({
     abi: flatFeeAtCreateAbi,
     functionName: 'creditOf',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"distribute"`
- */
-export const useReadFlatFeeAtCreateDistribute =
-  /*#__PURE__*/ createUseReadContract({
-    abi: flatFeeAtCreateAbi,
-    functionName: 'distribute',
   })
 
 /**
@@ -19056,24 +19082,6 @@ export const useReadFlatFeeAtCreateManager =
   /*#__PURE__*/ createUseReadContract({
     abi: flatFeeAtCreateAbi,
     functionName: 'manager',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentForfeited"`
- */
-export const useReadFlatFeeAtCreateOnCommitmentForfeited =
-  /*#__PURE__*/ createUseReadContract({
-    abi: flatFeeAtCreateAbi,
-    functionName: 'onCommitmentForfeited',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentReleased"`
- */
-export const useReadFlatFeeAtCreateOnCommitmentReleased =
-  /*#__PURE__*/ createUseReadContract({
-    abi: flatFeeAtCreateAbi,
-    functionName: 'onCommitmentReleased',
   })
 
 /**
@@ -19102,12 +19110,39 @@ export const useWriteFlatFeeAtCreateClaim =
   })
 
 /**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"distribute"`
+ */
+export const useWriteFlatFeeAtCreateDistribute =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: flatFeeAtCreateAbi,
+    functionName: 'distribute',
+  })
+
+/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentCreated"`
  */
 export const useWriteFlatFeeAtCreateOnCommitmentCreated =
   /*#__PURE__*/ createUseWriteContract({
     abi: flatFeeAtCreateAbi,
     functionName: 'onCommitmentCreated',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentForfeited"`
+ */
+export const useWriteFlatFeeAtCreateOnCommitmentForfeited =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: flatFeeAtCreateAbi,
+    functionName: 'onCommitmentForfeited',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentReleased"`
+ */
+export const useWriteFlatFeeAtCreateOnCommitmentReleased =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: flatFeeAtCreateAbi,
+    functionName: 'onCommitmentReleased',
   })
 
 /**
@@ -19144,12 +19179,39 @@ export const useSimulateFlatFeeAtCreateClaim =
   })
 
 /**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"distribute"`
+ */
+export const useSimulateFlatFeeAtCreateDistribute =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: flatFeeAtCreateAbi,
+    functionName: 'distribute',
+  })
+
+/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentCreated"`
  */
 export const useSimulateFlatFeeAtCreateOnCommitmentCreated =
   /*#__PURE__*/ createUseSimulateContract({
     abi: flatFeeAtCreateAbi,
     functionName: 'onCommitmentCreated',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentForfeited"`
+ */
+export const useSimulateFlatFeeAtCreateOnCommitmentForfeited =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: flatFeeAtCreateAbi,
+    functionName: 'onCommitmentForfeited',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link flatFeeAtCreateAbi}__ and `functionName` set to `"onCommitmentReleased"`
+ */
+export const useSimulateFlatFeeAtCreateOnCommitmentReleased =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: flatFeeAtCreateAbi,
+    functionName: 'onCommitmentReleased',
   })
 
 /**
@@ -19583,24 +19645,6 @@ export const useWriteManualArbiterCancelMutualLoss =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link manualArbiterAbi}__ and `functionName` set to `"executeForfeit"`
- */
-export const useWriteManualArbiterExecuteForfeit =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: manualArbiterAbi,
-    functionName: 'executeForfeit',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link manualArbiterAbi}__ and `functionName` set to `"executeMutualLoss"`
- */
-export const useWriteManualArbiterExecuteMutualLoss =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: manualArbiterAbi,
-    functionName: 'executeMutualLoss',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link manualArbiterAbi}__ and `functionName` set to `"forfeitAgreement"`
  */
 export const useWriteManualArbiterForfeitAgreement =
@@ -19722,24 +19766,6 @@ export const useSimulateManualArbiterCancelMutualLoss =
   /*#__PURE__*/ createUseSimulateContract({
     abi: manualArbiterAbi,
     functionName: 'cancelMutualLoss',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link manualArbiterAbi}__ and `functionName` set to `"executeForfeit"`
- */
-export const useSimulateManualArbiterExecuteForfeit =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: manualArbiterAbi,
-    functionName: 'executeForfeit',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link manualArbiterAbi}__ and `functionName` set to `"executeMutualLoss"`
- */
-export const useSimulateManualArbiterExecuteMutualLoss =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: manualArbiterAbi,
-    functionName: 'executeMutualLoss',
   })
 
 /**
