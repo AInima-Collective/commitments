@@ -43,6 +43,9 @@ contract GovernorFactory {
     /// @notice The Timelock implementation cloned for every DAO this factory deploys.
     address public immutable timelockImpl;
 
+    /// @notice The account that deployed this factory; the only caller of `setCanonicalGovernor`.
+    address public immutable deployer;
+
     // ============================================================
     // EVENTS
     // ============================================================
@@ -60,6 +63,7 @@ contract GovernorFactory {
     error ZeroAddress();
     error CanonicalAlreadySet();
     error UnknownGovernor();
+    error NotDeployer();
 
     // ============================================================
     // STRUCTS
@@ -116,6 +120,7 @@ contract GovernorFactory {
         if (governorImpl_ == address(0) || timelockImpl_ == address(0)) revert ZeroAddress();
         governorImpl = governorImpl_;
         timelockImpl = timelockImpl_;
+        deployer = msg.sender;
     }
 
     // ============================================================
@@ -178,10 +183,10 @@ contract GovernorFactory {
     }
 
     /// @notice Mark a previously-deployed governor as the canonical / reference DAO.
-    ///         Set-once: callable only when no canonical has been set. Permissionless;
-    ///         the very first caller wins, so a deployer typically does this in the
-    ///         same transaction as deploy() to lock the choice.
+    ///         Set-once, and only by the factory's `deployer`: `deploy` is permissionless,
+    ///         so an open setter would let anyone claim the slot with a junk DAO.
     function setCanonicalGovernor(address governor) external {
+        if (msg.sender != deployer) revert NotDeployer();
         if (_canonicalGovernor != address(0)) revert CanonicalAlreadySet();
         if (_byGovernor[governor].governor == address(0)) revert UnknownGovernor();
         _canonicalGovernor = governor;

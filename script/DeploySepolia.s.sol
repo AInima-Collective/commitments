@@ -24,6 +24,7 @@ import {GovernorFactory} from "src/periphery/governance/GovernorFactory.sol";
 import {MerkleSnapshot} from "src/extensions/rewards/MerkleSnapshot.sol";
 import {CommitmentsRewardsCoordinator} from "src/extensions/rewards/CommitmentsRewardsCoordinator.sol";
 import {RewardsCoordinatorFactory} from "src/extensions/rewards/RewardsCoordinatorFactory.sol";
+import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 // The faucet backing token. MockERC20 (under test/) has a permissionless
 // `mint(to, amount)` — exactly the "anyone can mint and exercise commitments"
@@ -47,9 +48,10 @@ import {MockERC20} from "../test/helpers/MockERC20.sol";
 ///        5. ManualArbiter (the registry requires a *contract* arbiter).
 ///        6. OperatorRegistry impl + proxy.
 ///        7. Manager → registry wiring (`setOperatorRegistry`).
-///        8. Mesh impls + MeshFactory + one TokenWeighting node (the stake
-///           registry's voting-power source).
-///        9. OperatorServiceRegistry impl + proxy.
+///        8. Mesh impls + MeshFactory + one TokenWeighting node whose provider is
+///           the OperatorRegistry, a 1:1 weight on the registry's stake denom, and
+///           `operatorRegistry.setMeshWiring`.
+///        9. OperatorServiceRegistry impl + proxy, reading the same node.
 ///       10. Optional governance + rewards factories (DEPLOY_GOVERNANCE / DEPLOY_REWARDS).
 ///
 /// All roles default to the broadcaster (`msg.sender`) but can be overridden:
@@ -116,7 +118,15 @@ contract DeploySepolia is Script {
         _loadConfig();
 
         vm.startBroadcast();
+        _deploy();
+        vm.stopBroadcast();
 
+        _printSummary();
+    }
+
+    /// @dev The whole composition, split out of `run` so a test can run it without a broadcast.
+    ///      Every call is made by the caller, which must hold `admin`'s roles.
+    function _deploy() internal {
         // 1. Faucet backing token (public mint).
         faucetToken = new MockERC20(faucetName, faucetSymbol, faucetDecimals);
         console.log("FaucetToken (%s):", faucetSymbol, address(faucetToken));
@@ -179,15 +189,22 @@ contract DeploySepolia is Script {
         manager.setOperatorRegistry(address(operatorRegistry));
         console.log("Wired: manager.setOperatorRegistry(registry)");
 
-        // 8. Mesh impls + factory + one TokenWeighting node (admin is provider +
-        //    governance so it can be re-pointed at the registry/governor later).
+        // 8. Mesh impls + factory + one TokenWeighting node. The registry is the
+        //    node's provider: register/delegate/release/forfeit/deregister credit and
+        //    release operator stake through it. Admin is governance and sets a 1:1
+        //    weight on the registry's stake denom, so voting power is in raw faucet
+        //    units, like STAKE_THRESHOLD.
         FanInNode fanInImpl = new FanInNode();
         FanOutNode fanOutImpl = new FanOutNode();
         TokenWeighting twImpl = new TokenWeighting();
         meshFactory = new MeshFactory(address(fanInImpl), address(fanOutImpl), address(twImpl));
-        tokenWeightingNode = meshFactory.deployTokenWeightingAt(keccak256("sepolia.tw.v1"), admin, admin);
+        tokenWeightingNode =
+            meshFactory.deployTokenWeightingAt(keccak256("sepolia.tw.v1"), address(operatorRegistry), admin);
+        TokenWeighting(tokenWeightingNode).updateWeight(operatorRegistry.stakeDenom(), BPS_DENOMINATOR);
+        operatorRegistry.setMeshWiring(tokenWeightingNode, address(meshFactory));
         console.log("MeshFactory:         ", address(meshFactory));
         console.log("TokenWeighting node: ", tokenWeightingNode);
+        console.log("Wired: operatorRegistry.setMeshWiring(tokenWeighting, meshFactory)");
 
         // 9. OperatorServiceRegistry impl + proxy. Voting-power source is the
         //    TokenWeighting node deployed above.
@@ -201,7 +218,8 @@ contract DeploySepolia is Script {
         console.log("OperatorServiceRegistry:", address(stakeRegistry));
 
         // 10. Optional governance / rewards factories (impls only; instances are
-        //     spawned later via factory.deploy / deployCoordinator).
+        //     spawned later via factory.deploy / deployCoordinator). Only this
+        //     broadcaster, the factory's deployer, may later call setCanonicalGovernor.
         if (deployGovernance) {
             CommitmentsGovernor govImpl = new CommitmentsGovernor();
             CommitmentsTimelock tlImpl = new CommitmentsTimelock();
@@ -218,10 +236,6 @@ contract DeploySepolia is Script {
             console.log("RewardsCoordinator impl:", address(coordImpl));
             console.log("RewardsCoordinatorFactory:", address(rewardsFactory));
         }
-
-        vm.stopBroadcast();
-
-        _printSummary();
     }
 
     function _loadConfig() internal {
@@ -254,7 +268,6 @@ contract DeploySepolia is Script {
     function _printSummary() internal view {
         console.log("");
         console.log("=== Sepolia deployment complete ===");
-        console.log("Record these in deployments/sepolia.json (broadcast/ is gitignored):");
         console.log("  faucetToken      ", address(faucetToken));
         console.log("  vaultFactory     ", address(vaultFactory));
         console.log("  vault            ", address(vault));

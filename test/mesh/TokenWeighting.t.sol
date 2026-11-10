@@ -222,13 +222,24 @@ contract TokenWeightingTest is Test {
     }
 
     function test_flowQuery_providers() public {
-        vm.prank(provider);
-        tw.stake(provider, DENOM_WSETH, 100e18);
+        // The provider credits stakers other than itself (as OperatorRegistry does), so the
+        // reported amount must be the denom's total, not the provider's own stake.
+        vm.startPrank(provider);
+        tw.stake(makeAddr("stakerA"), DENOM_WSETH, 100e18);
+        tw.stake(makeAddr("stakerB"), DENOM_WSETH, 50e18);
+        vm.stopPrank();
 
         ProviderInfo[] memory pInfo = tw.providers();
         assertEq(pInfo.length, 1, "should have one provider");
         assertEq(pInfo[0].provider, provider);
         assertGt(pInfo[0].stakes.length, 0, "should have stake info");
+        bool found;
+        for (uint256 i; i < pInfo[0].stakes.length; ++i) {
+            if (pInfo[0].stakes[i].denom != DENOM_WSETH) continue;
+            assertEq(pInfo[0].stakes[i].amount, 150e18, "amount is the denom's total stake");
+            found = true;
+        }
+        assertTrue(found, "wstETH denom reported");
     }
 
     /// @notice Sink node — no downstream consumers

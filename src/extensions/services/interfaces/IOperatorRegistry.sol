@@ -166,6 +166,10 @@ interface IOperatorRegistry {
     ///         for any real ERC-20's raw units (uint192 max ≈ 6.3e57); the guard exists so a
     ///         checkpoint reverts rather than silently truncating and corrupting `stakeAt`.
     error StakeCheckpointOverflow();
+    /// @notice `reconcile` was called for a commitment that is not routed to this registry.
+    error CommitmentNotTracked();
+    /// @notice `reconcile` was called for a commitment that is still open in the manager.
+    error CommitmentStillOpen();
 
     // =========================================================================
     // Registration
@@ -318,6 +322,14 @@ interface IOperatorRegistry {
     /// @param forfeitedAmount Backing-token units forfeited (penalty portion).
     /// @param fullAmount Full commitment amount (for proper totalDelegatedStake accounting).
     function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, uint256 fullAmount) external;
+
+    /// @notice Close a routed commitment whose release or forfeit hook failed in the manager.
+    /// @dev Permissionless. Runs the same close path as the hooks when the commitment is still
+    ///      routed here but the manager shows it released or forfeited, and emits the matching
+    ///      `DelegationReleased` or `DelegationForfeited`. Reverts `CommitmentNotTracked` when it
+    ///      is not routed here and `CommitmentStillOpen` when it is still open in the manager.
+    /// @param commitmentId The commitment to reconcile.
+    function reconcile(uint256 commitmentId) external;
 
     // =========================================================================
     // Config views

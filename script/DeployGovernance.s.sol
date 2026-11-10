@@ -45,5 +45,6 @@ contract DeployGovernance is Script {
         console.log("                          votingPeriod, proposalThreshold, quorumNumerator,");
         console.log("                          lateQuorumExtension })");
         console.log("Then call source.transferGovernance(timelock) so the DAO can update weights.");
+        console.log("Only this broadcaster (the factory's deployer) may call factory.setCanonicalGovernor.");
     }
 }

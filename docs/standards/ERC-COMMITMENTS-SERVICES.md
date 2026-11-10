@@ -118,6 +118,7 @@ interface IOperatorRegistry {
     // --- Manager → registry lifecycle callbacks (§2.4) ---
     function onDelegationReleased(uint256 commitmentId, uint256 amount) external;
     function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, uint256 fullAmount) external;
+    function reconcile(uint256 commitmentId) external;
 
     // --- Service-manager-compatible views ---
     function getOperatorStake(address operator) external view returns (uint256);
@@ -184,7 +185,7 @@ Implementations MUST snapshot the credited amount per commitment at registration
 
 `delegate` MUST revert once `activeDelegationCount >= maxDelegationsPerOperator` (reference default `1024`). The cap bounds the per-operator callback fan-out and keeps `getOperatorSet`-driven iteration gas-bounded.
 
-`deregister` is operator-initiated and MUST revert unless the operator has no active delegations beyond their own self-stake (`activeDelegationCount == 1`). It marks the operator inactive, removes it from the enumerable set (swap-and-pop), and clears the self-stake commitment's callback routing so a later release/forfeit of that commitment cannot mutate a future re-registration's counters. Re-registration after `deregister` REQUIRES a fresh commitment.
+`deregister` is operator-initiated and MUST revert unless the operator has no active delegations beyond their own self-stake (`activeDelegationCount == 1`). It marks the operator inactive, removes it from the enumerable set (swap-and-pop), clears the self-stake commitment's callback routing so a later release/forfeit of that commitment cannot mutate a future re-registration's counters, and sets `totalDelegatedStake` and `activeDelegationCount` to zero with a zero `stakeAt` checkpoint. Re-registration after `deregister` REQUIRES a fresh commitment.
 
 #### 2.3 Acceptance policy
 
@@ -225,6 +226,8 @@ Both callbacks:
 `onDelegationForfeited` MUST remove the **full** committed amount (`fullAmount` / the credited snapshot), not just the `forfeitedAmount` penalty portion: a forfeit terminates the entire commitment, so the whole stake leaves the operator set and the residual returns to the committer.
 
 **Ordering and failure semantics.** The manager MUST invoke these callbacks *after* the corresponding core state transition succeeds (the release returns, the forfeit transfer lands), in the same transaction. Invoking before risks the registry reading pre-forfeit state and double-counting. The manager SHOULD invoke them via a guarded (gas-capped, `try/catch`) call; on revert it SHOULD emit a `RegistryCallbackFailed(commitmentId, selector)` signal and continue, NOT revert the underlying release/forfeit. The registry is a downstream consumer of state changes, never an authority that can veto them — the same liveness posture the core applies to distribution-strategy hooks (core §D.6). A buggy or adversarial registry therefore cannot render a registered operator's commitments un-releasable or un-forfeitable.
+
+**Repairing a failed callback.** A swallowed callback leaves the commitment routed to the registry with its stake still credited, which blocks the operator's `deregister`. `reconcile(commitmentId)` is permissionless: when the commitment is still routed but the manager shows it released or forfeited, it MUST run the same close path as the callback and emit `DelegationReleased` (carrying the credited snapshot) or `DelegationForfeited` (carrying the manager's `forfeitedUnitsOf`). It MUST revert `CommitmentNotTracked` for a commitment not routed to the registry and `CommitmentStillOpen` for one still open in the manager.
 
 #### 2.5 Forfeit proceeds and the sweep path
 

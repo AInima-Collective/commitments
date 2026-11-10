@@ -134,6 +134,17 @@ contract GovernorFactoryTest is Test {
         factory.setCanonicalGovernor(dao2.governor);
     }
 
+    function test_setCanonicalGovernor_onlyDeployer() public {
+        assertEq(factory.deployer(), address(this));
+        GovernorFactory.DAODeployment memory dao = factory.deploy(_baseCfg());
+
+        // deploy() is permissionless, so a stranger can make a DAO but not claim the slot.
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(GovernorFactory.NotDeployer.selector);
+        factory.setCanonicalGovernor(dao.governor);
+        assertEq(factory.canonicalGovernor(), address(0));
+    }
+
     function test_setCanonicalGovernor_unknownReverts() public {
         vm.expectRevert(GovernorFactory.UnknownGovernor.selector);
         factory.setCanonicalGovernor(address(0xDEAD));

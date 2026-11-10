@@ -47,9 +47,11 @@ Each script documents its required and optional environment variables. Use the p
 4. Deploy adapters, distribution strategies, and chosen arbiters.
 5. Deploy OperatorRegistry with the manager, required arbiter, required token, and stake policy.
 6. Call manager.setOperatorRegistry(registryProxy).
-7. Deploy Mesh and choose an IVotingPowerSource.
-8. Deploy OperatorServiceRegistry with OperatorRegistry and that voting-power source.
-9. Optionally deploy governance and Rewards. Rewards services create their snapshot/coordinator pairs through RewardsCoordinatorFactory.
+7. Deploy the Mesh implementations and MeshFactory, then a TokenWeighting node whose provider is the OperatorRegistry proxy. Its provider is fixed at deployment.
+8. As the node's governance, set a non-zero weight for operatorRegistry.stakeDenom().
+9. Call operatorRegistry.setMeshWiring(tokenWeighting, meshFactory). Registered and delegated stake reaches the node from then on.
+10. Deploy OperatorServiceRegistry with OperatorRegistry and that TokenWeighting node as its voting-power source.
+11. Optionally deploy governance and Rewards. Only the GovernorFactory's deployer may call setCanonicalGovernor, once. Rewards services create their snapshot/coordinator pairs through RewardsCoordinatorFactory.
 
 ## Verification checklist
 

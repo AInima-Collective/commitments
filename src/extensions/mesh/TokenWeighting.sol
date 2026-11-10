@@ -478,7 +478,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
                 denom: denom,
                 maxPenaltyBps: 0, // sink node: no forfeiture upstream
                 unbondingPeriod: 0,
-                amount: currentStake[provider][denom]
+                amount: totalStake[denom]
             });
         }
 

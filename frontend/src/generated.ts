@@ -7838,6 +7838,13 @@ export const governorFactoryAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'deployer',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'deploymentCount',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -7948,6 +7955,7 @@ export const governorFactoryAbi = [
     ],
     name: 'InsufficientBalance',
   },
+  { type: 'error', inputs: [], name: 'NotDeployer' },
   { type: 'error', inputs: [], name: 'UnknownGovernor' },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
 ] as const
@@ -9365,6 +9373,15 @@ export const operatorRegistryAbi = [
     inputs: [
       { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
     ],
+    name: 'reconcile',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
+    ],
     name: 'register',
     outputs: [],
     stateMutability: 'nonpayable',
@@ -9984,6 +10001,8 @@ export const operatorRegistryAbi = [
   },
   { type: 'error', inputs: [], name: 'AlreadyRegistered' },
   { type: 'error', inputs: [], name: 'CommitmentAlreadyDelegated' },
+  { type: 'error', inputs: [], name: 'CommitmentNotTracked' },
+  { type: 'error', inputs: [], name: 'CommitmentStillOpen' },
   {
     type: 'error',
     inputs: [
@@ -20004,6 +20023,15 @@ export const useReadGovernorFactoryCanonicalGovernor =
   })
 
 /**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"deployer"`
+ */
+export const useReadGovernorFactoryDeployer =
+  /*#__PURE__*/ createUseReadContract({
+    abi: governorFactoryAbi,
+    functionName: 'deployer',
+  })
+
+/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link governorFactoryAbi}__ and `functionName` set to `"deploymentCount"`
  */
 export const useReadGovernorFactoryDeploymentCount =
@@ -21726,6 +21754,15 @@ export const useWriteOperatorRegistryOnDelegationReleased =
   })
 
 /**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link operatorRegistryAbi}__ and `functionName` set to `"reconcile"`
+ */
+export const useWriteOperatorRegistryReconcile =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: operatorRegistryAbi,
+    functionName: 'reconcile',
+  })
+
+/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link operatorRegistryAbi}__ and `functionName` set to `"register"`
  */
 export const useWriteOperatorRegistryRegister =
@@ -21918,6 +21955,15 @@ export const useSimulateOperatorRegistryOnDelegationReleased =
   /*#__PURE__*/ createUseSimulateContract({
     abi: operatorRegistryAbi,
     functionName: 'onDelegationReleased',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link operatorRegistryAbi}__ and `functionName` set to `"reconcile"`
+ */
+export const useSimulateOperatorRegistryReconcile =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: operatorRegistryAbi,
+    functionName: 'reconcile',
   })
 
 /**
