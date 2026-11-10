@@ -1,37 +1,24 @@
+import { lazy, type ComponentType } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import RootLayout from './components/shell/RootLayout'
 import { ErrorPanel } from './components/ui'
 import { VaultRedirect } from './components/shell/VaultRedirect'
 import { MutualsRedirect } from './components/shell/MutualsRedirect'
-import Dashboard from './pages/Dashboard'
-import Vault from './pages/Vault'
-import Vaults from './pages/Vaults'
-import ClaimDetail from './pages/ClaimDetail'
-import CommitmentDetail from './pages/CommitmentDetail'
-import ArbiterDetail from './pages/ArbiterDetail'
-import Arbitration from './pages/Arbitration'
-import TwoTierCaseDetail from './pages/TwoTierCaseDetail'
-// /marketplace is the risk-coverage marketplace (the former /mutuals list,
-// redesigned). Mutual is its detail surface.
-import Marketplace from './pages/Marketplace'
-import Mutual from './pages/Mutual'
-import Service from './pages/Service'
-import Services from './pages/Services'
-import Agents from './pages/Agents'
-import AgentDetail from './pages/AgentDetail'
-import Explorer from './pages/Explorer'
-import Governance from './pages/Governance'
-import GovernorDetail from './pages/GovernorDetail'
-import ProposalDetail from './pages/ProposalDetail'
-import CreateProposal from './pages/CreateProposal'
-import Design from './pages/Design'
-import DesignRecipes from './pages/DesignRecipes'
-import ValueDesignExploration from './pages/ValueDesignExploration'
-import Lab from './pages/Lab'
-import Docs from './pages/Docs'
-import Resources from './pages/Resources'
-import Admin from './pages/Admin'
 import Landing from './pages/Landing'
+
+/**
+ * A lazily loaded page in its own chunk, behind its own error panel. The
+ * shell's `<Suspense>` (RootLayout) covers the load, so the landing page and
+ * the shell no longer download every page.
+ */
+function page(panelName: string, load: () => Promise<{ default: ComponentType }>) {
+  const Page = lazy(load)
+  return (
+    <ErrorPanel panelName={panelName}>
+      <Page />
+    </ErrorPanel>
+  )
+}
 
 export const router = createBrowserRouter([
   // Landing is the index route. It intentionally lives OUTSIDE RootLayout —
@@ -45,11 +32,11 @@ export const router = createBrowserRouter([
     path: '/app',
     element: <RootLayout />,
     children: [
-      { index: true, element: <ErrorPanel panelName="Dashboard"><Dashboard /></ErrorPanel> },
+      { index: true, element: page('Dashboard', () => import('./pages/Dashboard')) },
       // Legacy /vault redirects to /vaults/:address for the canonical vault.
       { path: 'vault', element: <VaultRedirect /> },
-      { path: 'vaults', element: <ErrorPanel panelName="Vaults"><Vaults /></ErrorPanel> },
-      { path: 'vaults/:address', element: <ErrorPanel panelName="Vault"><Vault /></ErrorPanel> },
+      { path: 'vaults', element: page('Vaults', () => import('./pages/Vaults')) },
+      { path: 'vaults/:address', element: page('Vault', () => import('./pages/Vault')) },
       // Backing was folded into the dashboard's "Your assets" section (deposit +
       // withdraw modals). Redirect old links/bookmarks to the dashboard.
       { path: 'backing', element: <Navigate to="/app" replace /> },
@@ -57,38 +44,40 @@ export const router = createBrowserRouter([
       // Keep the exact route as a redirect for bookmarks while preserving the
       // shareable /commitments/:id detail URLs below.
       { path: 'commitments', element: <Navigate to="/app/explorer" replace /> },
-      { path: 'commitments/:id', element: <ErrorPanel panelName="Commitment"><CommitmentDetail /></ErrorPanel> },
-      { path: 'arbiters/:address', element: <ErrorPanel panelName="Arbiter"><ArbiterDetail /></ErrorPanel> },
-      { path: 'arbitration', element: <ErrorPanel panelName="Arbitration"><Arbitration /></ErrorPanel> },
-      { path: 'arbitration/two-tier/:id', element: <ErrorPanel panelName="Two-tier case"><TwoTierCaseDetail /></ErrorPanel> },
-      { path: 'claims/:id', element: <ErrorPanel panelName="Claim"><ClaimDetail /></ErrorPanel> },
-      { path: 'marketplace', element: <ErrorPanel panelName="Marketplace"><Marketplace /></ErrorPanel> },
-      { path: 'marketplace/:mutualId', element: <ErrorPanel panelName="Coverage"><Mutual /></ErrorPanel> },
+      { path: 'commitments/:id', element: page('Commitment', () => import('./pages/CommitmentDetail')) },
+      { path: 'arbiters/:address', element: page('Arbiter', () => import('./pages/ArbiterDetail')) },
+      { path: 'arbitration', element: page('Arbitration', () => import('./pages/Arbitration')) },
+      { path: 'arbitration/two-tier/:id', element: page('Two-tier case', () => import('./pages/TwoTierCaseDetail')) },
+      { path: 'claims/:id', element: page('Claim', () => import('./pages/ClaimDetail')) },
+      // /marketplace is the risk-coverage marketplace (the former /mutuals list,
+      // redesigned). Mutual is its detail surface.
+      { path: 'marketplace', element: page('Marketplace', () => import('./pages/Marketplace')) },
+      { path: 'marketplace/:mutualId', element: page('Coverage', () => import('./pages/Mutual')) },
       // Legacy /mutuals* → /marketplace* (the mutuals list became the marketplace).
       { path: 'mutuals', element: <MutualsRedirect /> },
       { path: 'mutuals/:mutualId', element: <MutualsRedirect /> },
-      { path: 'services', element: <ErrorPanel panelName="Services"><Services /></ErrorPanel> },
-      { path: 'services/:slug', element: <ErrorPanel panelName="Service"><Service /></ErrorPanel> },
+      { path: 'services', element: page('Services', () => import('./pages/Services')) },
+      { path: 'services/:slug', element: page('Service', () => import('./pages/Service')) },
       // ERC-8004 agent showcase: registered identities + their SLA bonds.
-      { path: 'agents', element: <ErrorPanel panelName="Agents"><Agents /></ErrorPanel> },
-      { path: 'agents/:agentId', element: <ErrorPanel panelName="Agent"><AgentDetail /></ErrorPanel> },
-      { path: 'governance', element: <ErrorPanel panelName="Governance"><Governance /></ErrorPanel> },
-      { path: 'governance/:governor', element: <ErrorPanel panelName="Governor"><GovernorDetail /></ErrorPanel> },
-      { path: 'governance/:governor/new', element: <ErrorPanel panelName="New proposal"><CreateProposal /></ErrorPanel> },
-      { path: 'governance/:governor/:id', element: <ErrorPanel panelName="Proposal"><ProposalDetail /></ErrorPanel> },
+      { path: 'agents', element: page('Agents', () => import('./pages/Agents')) },
+      { path: 'agents/:agentId', element: page('Agent', () => import('./pages/AgentDetail')) },
+      { path: 'governance', element: page('Governance', () => import('./pages/Governance')) },
+      { path: 'governance/:governor', element: page('Governor', () => import('./pages/GovernorDetail')) },
+      { path: 'governance/:governor/new', element: page('New proposal', () => import('./pages/CreateProposal')) },
+      { path: 'governance/:governor/:id', element: page('Proposal', () => import('./pages/ProposalDetail')) },
       // Legacy /mesh entry — redirect to /services.
       { path: 'mesh', element: <Navigate to="/app/services" replace /> },
       { path: 'mesh/*', element: <Navigate to="/app/services" replace /> },
-      { path: 'explorer', element: <ErrorPanel panelName="Explorer"><Explorer /></ErrorPanel> },
-      { path: 'design', element: <ErrorPanel panelName="Design"><Design /></ErrorPanel> },
-      { path: 'design/recipes', element: <ErrorPanel panelName="Design Recipes"><DesignRecipes /></ErrorPanel> },
-      { path: 'design/value', element: <ErrorPanel panelName="Value Design Exploration"><ValueDesignExploration /></ErrorPanel> },
+      { path: 'explorer', element: page('Explorer', () => import('./pages/Explorer')) },
+      { path: 'design', element: page('Design', () => import('./pages/Design')) },
+      { path: 'design/recipes', element: page('Design Recipes', () => import('./pages/DesignRecipes')) },
+      { path: 'design/value', element: page('Value Design Exploration', () => import('./pages/ValueDesignExploration')) },
       // Scaffolding: the palette / type / brand-mark experiment surface.
       // Remove along with components/ui/labTheme.ts once a direction lands.
-      { path: 'lab', element: <ErrorPanel panelName="Design Lab"><Lab /></ErrorPanel> },
-      { path: 'docs/*', element: <ErrorPanel panelName="Docs"><Docs /></ErrorPanel> },
-      { path: 'resources', element: <ErrorPanel panelName="Resources"><Resources /></ErrorPanel> },
-      { path: 'admin', element: <ErrorPanel panelName="Admin"><Admin /></ErrorPanel> },
+      { path: 'lab', element: page('Design Lab', () => import('./pages/Lab')) },
+      { path: 'docs/*', element: page('Docs', () => import('./pages/Docs')) },
+      { path: 'resources', element: page('Resources', () => import('./pages/Resources')) },
+      { path: 'admin', element: page('Admin', () => import('./pages/Admin')) },
       // Unknown paths under /app fall back to the dashboard.
       { path: '*', element: <Navigate to="/app" replace /> },
     ],

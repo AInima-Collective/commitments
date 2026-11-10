@@ -48,9 +48,13 @@ function importRules() {
     message:
       "Import primitives from the barrel ('components/ui') instead of deep paths. Deep imports drift the public surface — see frontend/src/components/ui/CONTRIBUTING.md.",
   }
-  const featureImports = FEATURE_DIRS.map((d) => `**/components/${d}/**`)
+  // A sibling-relative path ('../mesh/X' from components/protocol) never spells
+  // 'components/', so also match the folder one '..' up. Anchoring on a single
+  // leading '../' leaves lib/graph, utils/mesh and src/docs ('../../docs') alone.
+  const layerImports = (d) => [`**/components/${d}/**`, `../${d}`, `../${d}/**`]
+  const featureImports = FEATURE_DIRS.flatMap(layerImports)
   const uiLayer = {
-    group: ['**/components/protocol/**', ...featureImports],
+    group: [...layerImports('protocol'), ...featureImports],
     message:
       'components/ui/** is the primitive layer — it must not depend on protocol-aware or feature-folder components.',
   }

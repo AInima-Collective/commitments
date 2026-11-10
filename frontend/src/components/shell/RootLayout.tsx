@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useChainId } from "wagmi";
 import { TopBar } from "./TopBar";
 import { WrongNetworkBanner } from "./WrongNetworkBanner";
 import { ViewingBanner } from "./ViewingBanner";
-import { BrandMark, ErrorPanel, GitHubMark, SocialLink, ThemeToggle, XMark } from "../ui";
+import { BrandMark, ErrorPanel, GitHubMark, Skeleton, SocialLink, ThemeToggle, XMark } from "../ui";
 
 const ANVIL_CHAIN_ID = 31337;
 
@@ -187,7 +187,10 @@ export default function RootLayout() {
         </aside>
         <main className="ds-app-main">
           <ErrorPanel panelName="content">
-            <Outlet />
+            {/* Pages are lazy chunks (router.tsx); this covers their first load. */}
+            <Suspense fallback={<Skeleton height={120} />}>
+              <Outlet />
+            </Suspense>
           </ErrorPanel>
         </main>
       </div>

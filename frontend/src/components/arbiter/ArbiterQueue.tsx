@@ -6,7 +6,8 @@ import {
 } from '../../generated'
 
 import { useArbiterCommitments, type ArbiterCommitment } from '../../hooks/useArbiterCommitments'
-import { useDisplayNow } from '../../hooks/useDisplayNow'
+import { useDisplayNow, useDisplayNowSelect } from '../../hooks/useDisplayNow'
+import { POLL } from '../../hooks/polling'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { compareCommitmentUrgency } from '../../lib/commitmentSort'
 import {
@@ -98,10 +99,9 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     limit: pageSize,
     offset: page * pageSize,
   })
-  const nowSec = BigInt(useDisplayNow())
   const { data: pauseRaw } = useReadCommitmentManagerPauseState({
     address: managerAddress,
-    query: { enabled: Boolean(managerAddress), refetchInterval: 15_000 },
+    query: { enabled: Boolean(managerAddress), refetchInterval: POLL.fast },
   })
   const { data: ttl } = useReadCommitmentManagerForfeitProposalTtl({
     address: managerAddress,
@@ -121,17 +121,21 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     [pauseRaw],
   )
 
-  const buckets = useMemo(() => {
-    const grouped: Record<ArbiterQueueBucket, ArbiterCommitment[]> = {
-      executable: [],
-      pending: [],
-      active: [],
-      other: [],
-    }
-    for (const c of commitments) grouped[bucketForArbiterInbox(c, nowSec, pauseState, ttl)].push(c)
-    for (const key of BUCKET_ORDER) grouped[key].sort(compareCommitmentUrgency)
-    return grouped
-  }, [commitments, nowSec, pauseState, ttl])
+  // Buckets move with time (a pending forfeit becomes executable), but the
+  // queue re-renders only when one does: the selector's string changes then,
+  // not every second. Row countdowns tick in their own leaf.
+  const bucketKey = useDisplayNowSelect((now) =>
+    commitments.map((c) => bucketForArbiterInbox(c, BigInt(now), pauseState, ttl)).join(','),
+  )
+  const buckets: Record<ArbiterQueueBucket, ArbiterCommitment[]> = {
+    executable: [],
+    pending: [],
+    active: [],
+    other: [],
+  }
+  const bucketOf = bucketKey.split(',') as ArbiterQueueBucket[]
+  commitments.forEach((c, i) => buckets[bucketOf[i]].push(c))
+  for (const key of BUCKET_ORDER) buckets[key].sort(compareCommitmentUrgency)
 
   const needsAttention = counts.needsAction
 
@@ -233,7 +237,6 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
                       managerAddress={managerAddress}
                       connectedAddress={connectedAddress}
                       isConnected={isConnected}
-                      nowSec={nowSec}
                       pauseState={pauseState}
                       ttl={ttl}
                       onActed={refetch}
@@ -278,7 +281,6 @@ interface ArbiterQueueRowProps {
   managerAddress: Address
   connectedAddress: Address
   isConnected: boolean
-  nowSec: bigint
   pauseState: ManagerPauseSnapshot | undefined
   ttl: bigint | undefined
   onActed: () => void
@@ -290,7 +292,6 @@ function ArbiterQueueRow({
   managerAddress,
   connectedAddress,
   isConnected,
-  nowSec,
   pauseState,
   ttl,
   onActed,
@@ -304,23 +305,6 @@ function ArbiterQueueRow({
     metaFor: () => ({ decimals, symbol }),
   })
   const label = commitmentLabel(unified, labelContext)
-
-  const enforcement = calculateForfeitEnforcement({
-    proposal: commitment.forfeitProposal,
-    challengeWindow: commitment.challengeWindow,
-    pauseState,
-    proposalTtl: ttl,
-    now: nowSec,
-  })
-  const showCountdown = bucket === 'pending' && enforcement.state === 'PENDING'
-  const totalSecs =
-    commitment.forfeitProposal && enforcement.effectiveExecutionAt
-      ? Number(enforcement.effectiveExecutionAt - commitment.forfeitProposal.initiatedAt)
-      : Number(commitment.challengeWindow)
-  const remainingSecs = showCountdown && enforcement.effectiveExecutionAt
-    ? Math.max(0, Number(enforcement.effectiveExecutionAt - nowSec))
-    : 0
-  const elapsedSecs = Math.max(0, totalSecs - remainingSecs)
 
   return (
     <div className="ds-card ds-stack ds-stack-3" data-bucket={bucket}>
@@ -352,8 +336,8 @@ function ArbiterQueueRow({
         </div>
       </div>
 
-      {showCountdown && (
-        <Countdown label="forfeit execution delay" elapsed={elapsedSecs} total={totalSecs} tone="warn" />
+      {bucket === 'pending' && (
+        <ForfeitCountdown commitment={commitment} pauseState={pauseState} ttl={ttl} />
       )}
 
       <Disclosure label="Forfeiture detail & timeline">
@@ -364,6 +348,36 @@ function ArbiterQueueRow({
       </Disclosure>
     </div>
   )
+}
+
+/** The row's ticking part: the pause-adjusted forfeit execution delay. */
+function ForfeitCountdown({
+  commitment,
+  pauseState,
+  ttl,
+}: {
+  commitment: ArbiterCommitment
+  pauseState: ManagerPauseSnapshot | undefined
+  ttl: bigint | undefined
+}) {
+  const nowSec = BigInt(useDisplayNow())
+  const enforcement = calculateForfeitEnforcement({
+    proposal: commitment.forfeitProposal,
+    challengeWindow: commitment.challengeWindow,
+    pauseState,
+    proposalTtl: ttl,
+    now: nowSec,
+  })
+  if (enforcement.state !== 'PENDING') return null
+  const totalSecs =
+    commitment.forfeitProposal && enforcement.effectiveExecutionAt
+      ? Number(enforcement.effectiveExecutionAt - commitment.forfeitProposal.initiatedAt)
+      : Number(commitment.challengeWindow)
+  const remainingSecs = enforcement.effectiveExecutionAt
+    ? Math.max(0, Number(enforcement.effectiveExecutionAt - nowSec))
+    : 0
+  const elapsedSecs = Math.max(0, totalSecs - remainingSecs)
+  return <Countdown label="forfeit execution delay" elapsed={elapsedSecs} total={totalSecs} tone="warn" />
 }
 
 /**

@@ -106,23 +106,25 @@ function windowDetail(
 /**
  * Status badge plus, when the row has an active time window (forfeit
  * challenge, unbonding maturity, proposal expiry), a live countdown beneath
- * it. `useDisplayNow` ticks on its own so callers needn't thread `now` through.
+ * it. Only rows with a window subscribe to the clock.
  */
 export function StatusCell({ row }: { row: UnifiedRow }) {
-  const now = useDisplayNow()
-  const detail = windowDetail(row, now)
+  // Whether a window exists does not depend on `now`; only its text does.
+  const hasWindow = windowDetail(row, 0) !== null
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
       <CommitmentStatusBadge status={row.status} />
-      {detail && (
-        <span
-          className="ds-mono-num"
-          style={{ fontSize: 'var(--text-xs)', color: detail.color }}
-          title={detail.title}
-        >
-          {detail.text}
-        </span>
-      )}
+      {hasWindow && <WindowCountdown row={row} />}
+    </span>
+  )
+}
+
+function WindowCountdown({ row }: { row: UnifiedRow }) {
+  const detail = windowDetail(row, useDisplayNow())
+  if (!detail) return null
+  return (
+    <span className="ds-mono-num" style={{ fontSize: 'var(--text-xs)', color: detail.color }} title={detail.title}>
+      {detail.text}
     </span>
   )
 }

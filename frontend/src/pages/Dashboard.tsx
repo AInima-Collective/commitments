@@ -57,6 +57,8 @@ import { useLedgerPositions } from "../hooks/useLedgerPositions";
 import { useMyMutualLosses } from "../hooks/useMyMutualLosses";
 import { useMyMutualPremium } from "../hooks/useMyMutualPremium";
 import { useTokenMeta, useTokenMetaMap } from "../hooks/useTokenMeta";
+import { POLL } from "../hooks/polling";
+import { commitmentDetailPath } from "../lib/arbitrationRoutes";
 import {
   useUnifiedRows,
   type UnifiedCommitmentRowEntry,
@@ -150,7 +152,7 @@ export default function Dashboard() {
   const openRow = useCallback(
     (r: UnifiedRow) => {
       if (r.kind === "commitment") {
-        navigate(`/app/commitments/${r.id.toString()}`, {
+        navigate(commitmentDetailPath(r.id), {
           state: { commitmentOrigin: "dashboard" },
         });
       } else {
@@ -220,7 +222,7 @@ export default function Dashboard() {
   }, [candidates, viewAddress, managerAddress]);
   const { data: ledgerData, refetch: refetchLedger } = useReadContracts({
     contracts: ledgerContracts,
-    query: { enabled: ledgerContracts.length > 0, refetchInterval: 15_000 },
+    query: { enabled: ledgerContracts.length > 0, refetchInterval: POLL.fast },
   });
   const ledgerByToken = useMemo(() => {
     const map = new Map<string, TokenLedger>();
@@ -561,7 +563,9 @@ export default function Dashboard() {
   // delivery released" is a sentence someone can act on; "Commitment #12
   // released" makes them open the row to find out whether they care.
   const labelContext = useCommitmentLabelContext(commitmentRows, activityTokenMeta);
-  const events = useMemo<ActivityEvent[]>(() => {
+  // Built every render, not memoized: `labelContext` is a fresh object each
+  // render, so a memo here could never hold.
+  const events = ((): ActivityEvent[] => {
     const out: ActivityEvent[] = [];
 
     for (const a of vaultActivity.data ?? []) {
@@ -695,17 +699,7 @@ export default function Dashboard() {
 
     out.sort((a, b) => b.timestamp - a.timestamp);
     return out;
-  }, [
-    vaultActivity.data,
-    commitmentRows,
-    rows,
-    assetDecimals,
-    assetSymbol,
-    openRow,
-    accountActivity.events,
-    activityTokenMeta,
-    labelContext,
-  ]);
+  })();
 
   // ── Render: empty / welcome / dashboard ────────────────────────────────
   if (!viewAddress) {
@@ -1184,7 +1178,7 @@ function AssetRow({
   const { data: underlyingTotalRaw } = useReadCommitmentsVaultConvertToAssets({
     address: option.token,
     args: total > 0n ? [total] : undefined,
-    query: { enabled: option.isVaultShare && total > 0n, refetchInterval: 30_000 },
+    query: { enabled: option.isVaultShare && total > 0n, refetchInterval: POLL.slow },
   });
   const underlyingTotal = (underlyingTotalRaw as bigint | undefined) ?? 0n;
 

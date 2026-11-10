@@ -41,15 +41,18 @@ export function ResolveCommitmentButton({
       >
         {label}
       </button>
-      <ResolveCommitmentModal
-        open={open}
-        onClose={() => setOpen(false)}
-        commitment={commitment}
-        managerAddress={managerAddress}
-        connectedAddress={connectedAddress}
-        isConnected={isConnected}
-        onActed={onActed}
-      />
+      {/* Mounted only while open: the modal body runs a clock and several reads. */}
+      {open && (
+        <ResolveCommitmentModal
+          open
+          onClose={() => setOpen(false)}
+          commitment={commitment}
+          managerAddress={managerAddress}
+          connectedAddress={connectedAddress}
+          isConnected={isConnected}
+          onActed={onActed}
+        />
+      )}
     </>
   )
 }

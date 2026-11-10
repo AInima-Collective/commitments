@@ -2,10 +2,11 @@
 //
 // Vite glob is anchored at this file, so `../../../docs` resolves to
 // the repository's docs directory (one level above the frontend package). The
-// `?raw` query gives us the markdown text without parsing. We load
-// eagerly — total markdown payload is small (<1MB raw, much less gzipped) and
-// per-page chunking would conflict with the build-time index this file
-// builds (titles + frontmatter come from the same content).
+// `?raw` query gives us the markdown text without parsing. The glob is eager
+// because the sidebar index needs every page's frontmatter title, and `?raw`
+// cannot yield the frontmatter alone. The corpus (about 1 MB raw) therefore
+// lands in the lazily loaded Docs route chunk, never the entry chunk: only
+// pages/Docs.tsx and components/docs import this module.
 
 import {
   TOP_LEVEL_ORDER,

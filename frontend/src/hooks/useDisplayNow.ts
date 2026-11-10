@@ -1,6 +1,6 @@
 import { useChainId } from 'wagmi'
 import { useAnvilTime } from './useAnvilTime'
-import { useNowSeconds } from './useNow'
+import { useNowSelect } from './useNow'
 
 const ANVIL_CHAIN_ID = 31337
 
@@ -14,12 +14,18 @@ const ANVIL_CHAIN_ID = 31337
  * Returns seconds since the unix epoch, as a number.
  */
 export function useDisplayNow(): number {
+  return useDisplayNowSelect((now) => now)
+}
+
+/**
+ * {@link useDisplayNow} through a selector: the caller re-renders only when
+ * `select(now)` changes. `select` must return a primitive or stable value.
+ */
+export function useDisplayNowSelect<T>(select: (nowSeconds: number) => T): T {
   const chainId = useChainId()
   const onAnvil = chainId === ANVIL_CHAIN_ID
-  const anvilTime = useAnvilTime(2000, onAnvil)
-  const wallNow = useNowSeconds()
-  if (onAnvil && anvilTime.now !== undefined) {
-    return Number(anvilTime.now)
-  }
-  return Number(wallNow)
+  const anvilNow = useAnvilTime(2000, onAnvil).now
+  return useNowSelect((wall) =>
+    select(onAnvil && anvilNow !== undefined ? Number(anvilNow) : Number(wall)),
+  )
 }

@@ -21,7 +21,11 @@ vi.mock('../../../hooks/useProtocolEntityList', () => ({
 vi.mock('../../../hooks/useArbiterProfile', () => ({
   useArbiterProfile: (...args: unknown[]) => mocks.profile(...args),
 }))
-vi.mock('wagmi', () => ({ useChainId: () => 31337 }))
+// Partial: the protocol barrel reaches config/wagmi, which calls createConfig.
+vi.mock('wagmi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('wagmi')>()),
+  useChainId: () => 31337,
+}))
 vi.mock('../../../hooks/useOperatorNames', () => ({
   useOperatorNames: () => ({ get: () => undefined, isLoading: false }),
 }))
@@ -105,6 +109,19 @@ describe('EntityBrowser', () => {
     expect(screen.getByRole('link', { name: `View arbiter ${ARBITER}` }).getAttribute('href')).toBe(
       `/app/arbiters/${ARBITER}`,
     )
+  })
+
+  it('filters commitments by address on the server, not over a capped first page', () => {
+    mocks.commitments.mockReturnValue({ rows: [], total: 0, isLoading: false, error: null })
+
+    render(
+      <MemoryRouter>
+        <EntityBrowser filterAddress={COUNTERPARTY} />
+      </MemoryRouter>,
+    )
+
+    expect(mocks.commitments).toHaveBeenCalledWith({ address: COUNTERPARTY })
+    expect(screen.getByText('This address is not the committer or counterparty of any commitment.')).toBeTruthy()
   })
 
   it('paginates and address-filters the complete arbiter directory with direct profile links', () => {

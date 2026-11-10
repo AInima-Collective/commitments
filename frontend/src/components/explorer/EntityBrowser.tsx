@@ -30,12 +30,13 @@ import {
   type ProtocolEntityPage,
 } from '../../hooks/useProtocolEntityList'
 import { useArbiterProfile } from '../../hooks/useArbiterProfile'
+import type { ArbiterProfile } from '../../lib/arbiterProfile'
 import { getContractAddresses } from '../../config/contracts'
 import { findConfiguredArbiterProfile } from '../../config/arbiters'
 import { formatDuration } from '../../lib/format'
-import { arbiterProfilePath } from '../../lib/arbitrationRoutes'
+import { arbiterProfilePath, commitmentDetailPath } from '../../lib/arbitrationRoutes'
 
-const COMMITMENTS_LIMIT = 100
+const AGREEMENTS_LIMIT = 100
 
 const COMMITMENT_STATUS_TIER: Record<ProtocolCommitmentRow['status'], number> = {
   FORFEIT_PENDING: 0,
@@ -178,23 +179,8 @@ function ArbitersTable({ filterAddress }: { filterAddress?: string | null }) {
     () => [
       {
         id: 'arbiter',
-        header: 'arbiter',
-        render: (row) => <ArbiterIdentityCell address={row.address} />,
-      },
-      {
-        id: 'form',
-        header: 'address form',
-        render: (row) => <ArbiterProfileField address={row.address} field="form" />,
-      },
-      {
-        id: 'mechanism',
-        header: 'recognized mechanism',
-        render: (row) => <ArbiterProfileField address={row.address} field="mechanism" />,
-      },
-      {
-        id: 'capabilities',
-        header: 'declared capabilities',
-        render: (row) => <ArbiterProfileField address={row.address} field="capabilities" />,
+        header: 'arbiter · form · mechanism · capabilities',
+        render: (row) => <ArbiterCell address={row.address} />,
       },
       {
         id: 'commitments',
@@ -232,46 +218,42 @@ function ArbitersTable({ filterAddress }: { filterAddress?: string | null }) {
   )
 }
 
-function ArbiterIdentityCell({ address }: { address: Address }) {
-  const chainId = useChainId()
-  const manager = getContractAddresses(chainId).commitmentManager
-  const { profile } = useArbiterProfile(address, manager)
-  return (
-    <Link to={arbiterProfilePath(address)} aria-label={`View arbiter ${address}`}>
-      <span className="ds-stack ds-stack-1">
-        <strong>{profile?.displayName ?? 'Arbiter'}</strong>
-        <AddressDisplay address={address} compact />
-      </span>
-    </Link>
-  )
-}
-
-function ArbiterProfileField({
-  address,
-  field,
-}: {
-  address: Address
-  field: 'form' | 'mechanism' | 'capabilities'
-}) {
+/** One profile read per row: identity plus the declared profile fields, stacked. */
+function ArbiterCell({ address }: { address: Address }) {
   const chainId = useChainId()
   const manager = getContractAddresses(chainId).commitmentManager
   const { profile, isLoading } = useArbiterProfile(address, manager)
-  if (isLoading || !profile) return <span className="ds-subtle">…</span>
-  if (field === 'form') return <span>{profile.addressForm}</span>
-  if (field === 'mechanism') {
-    return (
-      <span>
-        {profile.mechanism} <span className="ds-badge">{profile.mechanismVerification}</span>
-      </span>
-    )
-  }
+  return (
+    <span className="ds-stack ds-stack-1">
+      <Link to={arbiterProfilePath(address)} aria-label={`View arbiter ${address}`}>
+        <span className="ds-stack ds-stack-1">
+          <strong>{profile?.displayName ?? 'Arbiter'}</strong>
+          <AddressDisplay address={address} compact />
+        </span>
+      </Link>
+      {isLoading || !profile ? (
+        <span className="ds-subtle">…</span>
+      ) : (
+        <span className="ds-text-xs ds-stack ds-stack-1">
+          <span>{profile.addressForm}</span>
+          <span>
+            {profile.mechanism} <span className="ds-badge">{profile.mechanismVerification}</span>
+          </span>
+          <ArbiterCapabilities profile={profile} />
+        </span>
+      )}
+    </span>
+  )
+}
+
+function ArbiterCapabilities({ profile }: { profile: ArbiterProfile }) {
   if (profile.fieldStatus.capabilities === 'not-applicable') {
-    return <span className="ds-subtle">not applicable</span>
+    return <span className="ds-subtle">capabilities not applicable</span>
   }
   if (['not-declared', 'unsupported'].includes(profile.fieldStatus.capabilities)) {
-    return <span className="ds-subtle">not declared</span>
+    return <span className="ds-subtle">capabilities not declared</span>
   }
-  if (profile.declaredCapabilities.length === 0) return <span className="ds-subtle">none declared</span>
+  if (profile.declaredCapabilities.length === 0) return <span className="ds-subtle">no capabilities declared</span>
   return <span>{profile.declaredCapabilities.map((item) => item.label).join(', ')}</span>
 }
 
@@ -408,17 +390,12 @@ function CasesTable({ filterAddress }: { filterAddress?: string | null }) {
 
 function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) {
   const navigate = useNavigate()
-  const { rows, isLoading } = useProtocolCommitmentsList({ limit: COMMITMENTS_LIMIT })
-  const filtered = useMemo(() => {
-    if (!filterAddress) return rows
-    const a = filterAddress.toLowerCase()
-    return rows.filter(
-      (r) =>
-        r.committer.toLowerCase() === a ||
-        r.counterparty.toLowerCase() === a ||
-        r.arbiter.toLowerCase() === a,
-    )
-  }, [rows, filterAddress])
+  // The indexer filters by address (committer or counterparty), so a filtered
+  // view is not limited to the first page of the unfiltered list. Arbiter
+  // roles are on the arbiters and cases tabs.
+  const { rows: filtered, total, isLoading } = useProtocolCommitmentsList({
+    address: filterAddress ?? undefined,
+  })
   const allAddresses = useMemo(() => {
     const out: string[] = []
     for (const r of filtered) {
@@ -430,107 +407,89 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
   const agents = useAgentIdentities(allAddresses)
   const blockNumbers = useMemo(() => filtered.map((r) => r.createdBlock), [filtered])
   const blockTimestamps = useBlockTimestamps(blockNumbers)
-  const now = useDisplayNow()
-  const tokenMeta = useTokenMetaMap(filtered.map((row) => row.token))
-  const capped = !filterAddress && rows.length === COMMITMENTS_LIMIT
+  const { metaFor } = useTokenMetaMap(filtered.map((row) => row.token))
+  const capped = total > filtered.length
 
-  const columns = useMemo<DataTableColumn<ProtocolCommitmentRow>[]>(
-    () => [
-      {
-        id: 'id',
-        header: 'id',
-        sortable: true,
-        render: (r) => `#${r.id.toString()}`,
-        width: '88px',
-      },
-      {
-        id: 'committer',
-        header: 'committer',
-        render: (r) => (
+  // Not memoized: `names` and `agents` are fresh objects every render.
+  const columns: DataTableColumn<ProtocolCommitmentRow>[] = [
+    {
+      id: 'id',
+      header: 'id',
+      sortable: true,
+      render: (r) => `#${r.id.toString()}`,
+      width: '88px',
+    },
+    {
+      id: 'committer',
+      header: 'committer',
+      render: (r) => (
+        <OperatorIdentity
+          address={r.committer}
+          name={names.get(r.committer)}
+          size="sm"
+          badge={agentBadgeFor(agents, r.committer)}
+        />
+      ),
+    },
+    {
+      id: 'counterparty',
+      header: 'counterparty',
+      render: (r) => (
+        <OperatorIdentity
+          address={r.counterparty}
+          name={names.get(r.counterparty)}
+          size="sm"
+          badge={agentBadgeFor(agents, r.counterparty)}
+        />
+      ),
+    },
+    {
+      id: 'arbiter',
+      header: 'arbiter',
+      render: (r) => (
+        <Link
+          to={arbiterProfilePath(r.arbiter)}
+          onClick={(event) => event.stopPropagation()}
+          aria-label={`View arbiter ${r.arbiter}`}
+        >
           <OperatorIdentity
-            address={r.committer}
-            name={names.get(r.committer)}
+            address={r.arbiter}
+            name={names.get(r.arbiter)}
             size="sm"
-            badge={agentBadgeFor(agents, r.committer)}
+            badge={agentBadgeFor(agents, r.arbiter)}
           />
-        ),
+        </Link>
+      ),
+    },
+    {
+      id: 'amount',
+      header: 'amount',
+      align: 'right',
+      sortable: true,
+      render: (r) => {
+        const meta = metaFor(r.token)
+        return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
       },
-      {
-        id: 'counterparty',
-        header: 'counterparty',
-        render: (r) => (
-          <OperatorIdentity
-            address={r.counterparty}
-            name={names.get(r.counterparty)}
-            size="sm"
-            badge={agentBadgeFor(agents, r.counterparty)}
-          />
-        ),
-      },
-      {
-        id: 'arbiter',
-        header: 'arbiter',
-        render: (r) => (
-          <Link
-            to={arbiterProfilePath(r.arbiter)}
-            onClick={(event) => event.stopPropagation()}
-            aria-label={`View arbiter ${r.arbiter}`}
-          >
-            <OperatorIdentity
-              address={r.arbiter}
-              name={names.get(r.arbiter)}
-              size="sm"
-              badge={agentBadgeFor(agents, r.arbiter)}
-            />
-          </Link>
-        ),
-      },
-      {
-        id: 'amount',
-        header: 'amount',
-        align: 'right',
-        sortable: true,
-        render: (r) => {
-          const meta = tokenMeta.metaFor(r.token)
-          return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
-        },
-      },
-      {
-        id: 'penalty',
-        header: 'max penalty',
-        align: 'right',
-        render: (r) => `${(r.maxPenaltyBps / 100).toFixed(0)}%`,
-      },
-      {
-        id: 'status',
-        header: 'status',
-        sortable: true,
-        render: (r) => <CommitmentStatusBadge status={r.status} />,
-      },
-      {
-        id: 'age',
-        header: 'age',
-        width: '110px',
-        render: (r) => {
-          const ts = blockTimestamps.get(r.createdBlock)
-          if (ts === undefined) {
-            return <span className="ds-subtle ds-text-xs" title={`Block ${r.createdBlock.toString()}`}>…</span>
-          }
-          const age = now - Number(ts)
-          if (age < 0) return <span className="ds-subtle">—</span>
-          return (
-            <span
-              className="ds-text-xs ds-subtle"
-              title={`Block ${r.createdBlock.toString()} · ${new Date(Number(ts) * 1000).toISOString()}`}
-            >
-              {formatDuration(age)} ago
-            </span>
-          )
-        },
-      },
-    ],
-    [names, agents, blockTimestamps, now, tokenMeta],
-  )
+    },
+    {
+      id: 'penalty',
+      header: 'max penalty',
+      align: 'right',
+      render: (r) => `${(r.maxPenaltyBps / 100).toFixed(0)}%`,
+    },
+    {
+      id: 'status',
+      header: 'status',
+      sortable: true,
+      render: (r) => <CommitmentStatusBadge status={r.status} />,
+    },
+    {
+      id: 'age',
+      header: 'age',
+      width: '110px',
+      render: (r) => <AgeCell block={r.createdBlock} timestamp={blockTimestamps.get(r.createdBlock)} />,
+    },
+  ]
 
   const [sort, setSort] = useState<{ columnId: string; direction: 'asc' | 'desc' } | undefined>()
   const sortedRows = useMemo(() => {
@@ -561,7 +520,7 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         isLoading={isLoading}
         getRowKey={(r) => `${r.manager}-${r.id.toString()}`}
         onRowClick={(r) =>
-          navigate(`/app/commitments/${r.id}?manager=${r.manager}`, {
+          navigate(commitmentDetailPath(r.id, r.manager), {
             state: { commitmentOrigin: 'explorer' },
           })
         }
@@ -569,7 +528,10 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
         onSortChange={setSort}
         emptyState={
           filterAddress ? (
-            <EmptyState title="NO COMMITMENTS" description="This address has no commitments." />
+            <EmptyState
+              title="NO COMMITMENTS"
+              description="This address is not the committer or counterparty of any commitment."
+            />
           ) : (
             <EmptyState title="NO COMMITMENTS" description="No commitments yet — create one to get started." />
           )
@@ -577,16 +539,37 @@ function CommitmentsTable({ filterAddress }: { filterAddress?: string | null }) 
       />
       {capped && (
         <Notice tone="info" size="sm">
-          Showing the first {COMMITMENTS_LIMIT} commitments.
+          Showing the first {filtered.length} of {total} commitments.
         </Notice>
       )}
     </div>
   )
 }
 
+/** The age cell owns the clock, so a tick re-renders this cell, not the table. */
+function AgeCell({ block, timestamp }: { block: bigint; timestamp: bigint | undefined }) {
+  const now = useDisplayNow()
+  if (timestamp === undefined) {
+    return <span className="ds-subtle ds-text-xs" title={`Block ${block.toString()}`}>…</span>
+  }
+  const age = now - Number(timestamp)
+  if (age < 0) return <span className="ds-subtle">—</span>
+  return (
+    <span
+      className="ds-text-xs ds-subtle"
+      title={`Block ${block.toString()} · ${new Date(Number(timestamp) * 1000).toISOString()}`}
+    >
+      {formatDuration(age)} ago
+    </span>
+  )
+}
+
 function AgreementsTable({ filterAddress }: { filterAddress?: string | null }) {
   const navigate = useNavigate()
-  const { rows, isLoading } = useProtocolAgreementsList({ limit: 100 })
+  // Agreements have no address filter on the indexer, so the filter runs over
+  // the first page only, and the notice below says so.
+  const { rows, isLoading } = useProtocolAgreementsList({ limit: AGREEMENTS_LIMIT })
+  const capped = rows.length === AGREEMENTS_LIMIT
   const filtered = useMemo(() => {
     if (!filterAddress) return rows
     const a = filterAddress.toLowerCase()
@@ -606,101 +589,113 @@ function AgreementsTable({ filterAddress }: { filterAddress?: string | null }) {
   const names = useOperatorNames(allAddresses)
   const agents = useAgentIdentities(allAddresses)
 
-  const columns = useMemo<DataTableColumn<ProtocolAgreementRow>[]>(
-    () => [
-      {
-        id: 'id',
-        header: 'id',
-        render: (r) => `#${r.id.toString()}`,
-        width: '88px',
-      },
-      {
-        id: 'aOperator',
-        header: 'A operator',
-        render: (r) =>
-          r.committerA ? (
-            <OperatorIdentity
-              address={r.committerA}
-              name={names.get(r.committerA)}
-              size="sm"
-              badge={agentBadgeFor(agents, r.committerA)}
-            />
-          ) : (
-            <span className="ds-subtle">—</span>
-          ),
-      },
-      {
-        id: 'bOperator',
-        header: 'B operator',
-        render: (r) =>
-          r.committerB ? (
-            <OperatorIdentity
-              address={r.committerB}
-              name={names.get(r.committerB)}
-              size="sm"
-              badge={agentBadgeFor(agents, r.committerB)}
-            />
-          ) : (
-            <span className="ds-subtle">—</span>
-          ),
-      },
-      {
-        id: 'sides',
-        header: 'sides',
-        width: '120px',
-        render: (r) => (
-          <span className="ds-mono-num ds-text-xs ds-subtle">
-            #{r.commitmentIdA.toString()} ↔ #{r.commitmentIdB.toString()}
-          </span>
+  // Not memoized: `names` and `agents` are fresh objects every render.
+  const columns: DataTableColumn<ProtocolAgreementRow>[] = [
+    {
+      id: 'id',
+      header: 'id',
+      render: (r) => `#${r.id.toString()}`,
+      width: '88px',
+    },
+    {
+      id: 'aOperator',
+      header: 'A operator',
+      render: (r) =>
+        r.committerA ? (
+          <OperatorIdentity
+            address={r.committerA}
+            name={names.get(r.committerA)}
+            size="sm"
+            badge={agentBadgeFor(agents, r.committerA)}
+          />
+        ) : (
+          <span className="ds-subtle">—</span>
         ),
-      },
-      {
-        id: 'status',
-        header: 'status',
-        render: (r) => <AgreementStatusBadge status={r.status} />,
-      },
-      {
-        id: 'exposure',
-        header: 'exposure',
-        align: 'right',
-        render: (r) =>
-          r.exposure !== undefined ? (
-            <TokenAmount amount={r.exposure} decimals={6} symbol="USDC" compact />
-          ) : (
-            <span className="ds-subtle">—</span>
-          ),
-      },
-      {
-        id: 'flow',
-        header: 'flow (P→A)',
-        align: 'right',
-        render: (r) => (
-          <TokenAmount amount={r.cumulativeProposerToAcceptor} decimals={6} symbol="USDC" compact />
+    },
+    {
+      id: 'bOperator',
+      header: 'B operator',
+      render: (r) =>
+        r.committerB ? (
+          <OperatorIdentity
+            address={r.committerB}
+            name={names.get(r.committerB)}
+            size="sm"
+            badge={agentBadgeFor(agents, r.committerB)}
+          />
+        ) : (
+          <span className="ds-subtle">—</span>
         ),
-      },
-    ],
-    [names, agents],
-  )
+    },
+    {
+      id: 'sides',
+      header: 'sides',
+      width: '120px',
+      render: (r) => (
+        <span className="ds-mono-num ds-text-xs ds-subtle">
+          #{r.commitmentIdA.toString()} ↔ #{r.commitmentIdB.toString()}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'status',
+      render: (r) => <AgreementStatusBadge status={r.status} />,
+    },
+    {
+      id: 'exposure',
+      header: 'exposure',
+      align: 'right',
+      render: (r) =>
+        r.exposure !== undefined ? (
+          <TokenAmount amount={r.exposure} decimals={6} symbol="USDC" compact />
+        ) : (
+          <span className="ds-subtle">—</span>
+        ),
+    },
+    {
+      id: 'flow',
+      header: 'flow (P→A)',
+      align: 'right',
+      render: (r) => (
+        <TokenAmount amount={r.cumulativeProposerToAcceptor} decimals={6} symbol="USDC" compact />
+      ),
+    },
+  ]
 
   return (
-    <DataTable<ProtocolAgreementRow>
-      aria-label="Agreements"
-      columns={columns}
-      rows={filtered}
-      isLoading={isLoading}
-      getRowKey={(r) => r.id.toString()}
-      onRowClick={(r) =>
-        navigate(`/app/commitments/${r.commitmentIdA}`, {
-          state: { commitmentOrigin: 'explorer' },
-        })
-      }
-      emptyState={
-        filterAddress ? (
-          <EmptyState title="NO AGREEMENTS" description="This address is not party to any agreement." />
-        ) : (
-          <EmptyState title="NO AGREEMENTS" description="Propose and accept an agreement to see it here." />
-        )
-      }
-    />
+    <div className="ds-stack ds-stack-2">
+      <DataTable<ProtocolAgreementRow>
+        aria-label="Agreements"
+        columns={columns}
+        rows={filtered}
+        isLoading={isLoading}
+        getRowKey={(r) => r.id.toString()}
+        onRowClick={(r) =>
+          navigate(commitmentDetailPath(r.commitmentIdA), {
+            state: { commitmentOrigin: 'explorer' },
+          })
+        }
+        emptyState={
+          filterAddress ? (
+            <EmptyState
+              title="NO AGREEMENTS"
+              description={
+                capped
+                  ? `This address is not party to any of the latest ${AGREEMENTS_LIMIT} agreements.`
+                  : 'This address is not party to any agreement.'
+              }
+            />
+          ) : (
+            <EmptyState title="NO AGREEMENTS" description="Propose and accept an agreement to see it here." />
+          )
+        }
+      />
+      {capped && (
+        <Notice tone="info" size="sm">
+          Showing the latest {AGREEMENTS_LIMIT} agreements{filterAddress ? '; the address filter applies to these only' : ''}.
+        </Notice>
+      )}
+    </div>
   )
 }

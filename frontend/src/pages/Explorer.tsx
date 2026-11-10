@@ -105,7 +105,8 @@ export default function Explorer() {
   const primaryVaultAssetMeta = useTokenMeta(primaryVaultAsset)
 
   // Flow (Sankey) view aggregates the protocol-wide commitment list client-side.
-  const flowCommitments = useProtocolCommitmentsList({ limit: 500 })
+  // The same cached first page feeds the entity browser and the activity feed.
+  const flowCommitments = useProtocolCommitmentsList()
 
   const [mode, setMode] = useState<GraphMode>('agreements')
   const [search, setSearch] = useState('')
@@ -414,8 +415,9 @@ function OperatorLeaderboardList({ rows }: { rows: OperatorLeaderboardRow[] | un
  * no time. Order is the urgency sort's.
  */
 function RecentActivity() {
-  const { rows, isLoading } = useProtocolCommitmentsList({ limit: 20 })
-  const tokenMeta = useTokenMetaMap(rows.map((row) => row.token))
+  const list = useProtocolCommitmentsList()
+  const rows = useMemo(() => list.rows.slice(0, 20), [list.rows])
+  const { metaFor } = useTokenMetaMap(rows.map((row) => row.token))
 
   const events = useMemo<ActivityEvent[]>(
     () =>
@@ -437,11 +439,11 @@ function RecentActivity() {
           </span>
         ),
         trailing: (() => {
-          const meta = tokenMeta.metaFor(r.token)
+          const meta = metaFor(r.token)
           return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
         })(),
       })),
-    [rows, tokenMeta],
+    [rows, metaFor],
   )
 
   return (
@@ -453,7 +455,7 @@ function RecentActivity() {
       <ActivityFeed
         events={events}
         groupBy="none"
-        isLoading={isLoading}
+        isLoading={list.isLoading}
         emptyState={<EmptyState title="NO ACTIVITY" description="No commitments indexed yet." />}
       />
     </section>

@@ -35,31 +35,37 @@ export interface ProtocolCommitmentRow {
 
 interface UrgentEnvelope {
   rows: CommitmentRowWire[]
+  counts?: { total: number }
 }
+
+const EMPTY_COMMITMENTS: ProtocolCommitmentRow[] = []
+
+/** `/commitments/urgent` serves at most this many rows per request. */
+const URGENT_PAGE = 100
 
 /**
  * useProtocolCommitmentsList — protocol-wide commitment list using the
  * canonical `/commitments/urgent` sort (forfeitPending → unbonding → active →
- * terminal, then deadline ASC, then id DESC). Caller may filter by status.
+ * terminal, then deadline ASC, then id DESC): the first page of 100, the
+ * endpoint's maximum. Callers wanting fewer rows slice, so every caller shares
+ * one cached request. `address` filters server-side to commitments where it is
+ * committer or counterparty. `total` counts every matching row.
  */
-export function useProtocolCommitmentsList(options: {
-  status?: 'active' | 'unbonding' | 'forfeitPending' | 'forfeited' | 'released' | 'expired'
-  limit?: number
-} = {}): {
+export function useProtocolCommitmentsList(options: { address?: string } = {}): {
   rows: ProtocolCommitmentRow[]
+  total: number
   isLoading: boolean
   error: unknown
 } {
-  const { status, limit = 100 } = options
+  const address = options.address?.toLowerCase()
   const query = useQuery({
     enabled: hasIndexer,
-    queryKey: ['protocol-commitments-list', status ?? null, limit],
-    queryFn: async (): Promise<ProtocolCommitmentRow[]> => {
-      const params = new URLSearchParams()
-      params.set('limit', String(limit))
-      if (status) params.set('status', status)
+    queryKey: ['protocol-commitments-list', address ?? null],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(URGENT_PAGE) })
+      if (address) params.set('address', address)
       const env = await indexerJson<UrgentEnvelope>(`/commitments/urgent?${params.toString()}`)
-      return (env.rows ?? []).map((w): ProtocolCommitmentRow => {
+      const rows = (env.rows ?? []).map((w): ProtocolCommitmentRow => {
         const r = parseCommitmentRow(w)
         return {
           id: r.id,
@@ -77,11 +83,13 @@ export function useProtocolCommitmentsList(options: {
           createdAt: r.createdAt ?? null,
         }
       })
+      return { rows, total: env.counts?.total ?? rows.length }
     },
     refetchInterval: POLL.fast,
   })
   return {
-    rows: query.data ?? [],
+    rows: query.data?.rows ?? EMPTY_COMMITMENTS,
+    total: query.data?.total ?? 0,
     isLoading: query.isLoading,
     error: query.error,
   }
