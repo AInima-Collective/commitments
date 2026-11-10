@@ -47,7 +47,7 @@ An **operator service** is any system that derives crypto-economic security from
 | **§3 Voting-power source** (`IVotingPowerSource`) | normative-optional | independent; composes with [mesh](./ERC-COMMITMENTS-MESH.md) §3.3 |
 | **§4 Service manager / quorum validation** (`IServiceManager`, ERC-1271) | normative-optional | §3; eligibility from §2 |
 
-The three sections are independently adoptable. A service MAY consume `IOperatorRegistry.getOperatorStake` directly without §3–§4; a §4 service manager REQUIRES an §3 voting-power source and a §2 eligibility source. None of the three is required for core conformance — a manager deployment with no services is fully conformant to the core.
+The three sections are independently adoptable. A service MAY consume `IOperatorRegistry.getOperator(operator).totalDelegatedStake` directly without §3–§4; a §4 service manager REQUIRES an §3 voting-power source and a §2 eligibility source. None of the three is required for core conformance — a manager deployment with no services is fully conformant to the core.
 
 This document does not specify BLS aggregation. The current reference service manager validates ECDSA signatures; the `IVotingPowerSource` indirection (§3) is the explicit seam at which a future BLS service manager reuses the same stake accounting. A BLS sibling is anticipated future work and is out of scope here. Also out of scope: any change to core custody, ledger, or two-phase-forfeit semantics — this extension is a pure consumer of those.
 
@@ -74,7 +74,6 @@ interface IOperatorRegistry {
         address operator;
         uint64  registeredAt;
         bool    active;
-        bool    belowMinStake;           // set when totalDelegatedStake < minOperatorStake
         uint256 selfStakeCommitmentId;
         uint256 totalDelegatedStake;     // self + delegated, in required-token units
         uint32  activeDelegationCount;   // includes the self-stake (counts as 1)
@@ -94,7 +93,8 @@ interface IOperatorRegistry {
     event DelegationReleased(address indexed staker, address indexed operator, uint256 indexed commitmentId, uint256 amount);
     event DelegationForfeited(address indexed staker, address indexed operator, uint256 indexed commitmentId, uint256 forfeitedAmount);
     event OperatorBelowMinStake(address indexed operator, uint256 currentStake, uint256 minStake);
-    event StakeCheckpointed(address indexed operator, uint64 indexed timestamp, uint256 newStake);
+    event MinOperatorStakeUpdated(uint256 oldValue, uint256 newValue);
+    event MaxDelegationsPerOperatorUpdated(uint256 oldValue, uint256 newValue);
     event OperatorMetadataUpdated(address indexed operator, string uri, bytes32 contentHash, uint64 timestamp);
     event AcceptancePolicyTightened(uint16 oldFloor, uint16 newFloor);
     event StrategyAllowlistUpdated(address indexed strategy, bool allowed);
@@ -121,8 +121,6 @@ interface IOperatorRegistry {
     function reconcile(uint256 commitmentId) external;
 
     // --- Service-manager-compatible views ---
-    function getOperatorStake(address operator) external view returns (uint256);
-    function stakeAt(address operator, uint64 timestamp, uint256 hint) external view returns (uint256);
     function isOperator(address operator) external view returns (bool);
     function getOperatorSet() external view returns (address[] memory);
     function getOperator(address operator) external view returns (Operator memory);
@@ -155,9 +153,9 @@ interface IOperatorRegistry {
 }
 ```
 
-The `Operator` struct field order is packing-sensitive: `operator` (160) + `registeredAt` (64) + `active` (8) + `belowMinStake` (8) fill slot 0; `activeDelegationCount` (32) + `selfStakeActive` (8) share slot 3. Implementations MUST preserve this layout for a conformant `getOperator` ABI.
+The `Operator` struct field order is packing-sensitive: `operator` (160) + `registeredAt` (64) + `active` (8) fill slot 0; `activeDelegationCount` (32) + `selfStakeActive` (8) share slot 3. Implementations MUST preserve this layout for a conformant `getOperator` ABI.
 
-**Event indexing (normative).** `OperatorRegistered` / `OperatorDeregistered` / `OperatorBelowMinStake` index `operator`. `DelegationCreated` / `DelegationReleased` / `DelegationForfeited` index `(staker, operator, commitmentId)`. `StakeCheckpointed` indexes `(operator, timestamp)` — matching the `stakeAt` axis (§2.7). `MeshWired` indexes `(tokenWeighting, meshFactory)`, `OperatorFanInDeployed` indexes `(operator, fanIn)`, and `NonceIncreased` indexes `account`.
+**Event indexing (normative).** `OperatorRegistered` / `OperatorDeregistered` / `OperatorBelowMinStake` index `operator`. `DelegationCreated` / `DelegationReleased` / `DelegationForfeited` index `(staker, operator, commitmentId)`. `MeshWired` indexes `(tokenWeighting, meshFactory)`, `OperatorFanInDeployed` indexes `(operator, fanIn)`, and `NonceIncreased` indexes `account`.
 
 #### 2.1 Two-step registration and on-chain verification
 
@@ -170,7 +168,7 @@ On step 2 the registry MUST load the commitment from the manager and verify, rev
 
 - `commitment.committer == msg.sender` — the caller owns the stake.
 - `commitment.counterparty == address(this)` — the stake is pledged to *this* registry.
-- `commitment.released == false && commitment.forfeited == false` — the commitment is active.
+- `commitment.released == false && commitment.forfeited == false` — the commitment is active (`CommitmentClosed` otherwise).
 - For `register`: `commitment.amount >= minOperatorStake`.
 - the commitment is not already tracked by the registry (no double-registration of one commitment).
 - the acceptance policy (§2.3) passes.
@@ -185,7 +183,7 @@ Implementations MUST snapshot the credited amount per commitment at registration
 
 `delegate` MUST revert once `activeDelegationCount >= maxDelegationsPerOperator` (reference default `1024`). The cap bounds the per-operator callback fan-out and keeps `getOperatorSet`-driven iteration gas-bounded.
 
-`deregister` is operator-initiated and MUST revert unless the operator has no active delegations beyond their own self-stake (`activeDelegationCount == 1`). It marks the operator inactive, removes it from the enumerable set (swap-and-pop), clears the self-stake commitment's callback routing so a later release/forfeit of that commitment cannot mutate a future re-registration's counters, and sets `totalDelegatedStake` and `activeDelegationCount` to zero with a zero `stakeAt` checkpoint. Re-registration after `deregister` REQUIRES a fresh commitment.
+`deregister` is operator-initiated and MUST revert unless the operator has no active delegations beyond their own self-stake (`activeDelegationCount == 1`). It marks the operator inactive, removes it from the enumerable set (swap-and-pop), clears the self-stake commitment's callback routing so a later release/forfeit of that commitment cannot mutate a future re-registration's counters, and sets `totalDelegatedStake` and `activeDelegationCount` to zero. Because the routing is cleared, the same still-live commitment MAY be presented to `register` again in a later block.
 
 #### 2.3 Acceptance policy
 
@@ -219,9 +217,9 @@ Both callbacks:
 
 - MUST revert unless `msg.sender == commitmentManager`.
 - MUST silently ignore (return without state change) a `commitmentId` the registry does not track — the manager invokes the callback for every release/forfeit of a commitment naming the registry as counterparty, including ones the registry never accepted.
-- MUST decrement `totalDelegatedStake` by the **credited snapshot** (§2.2), saturating at zero, and decrement `activeDelegationCount` by one.
+- MUST decrement `totalDelegatedStake` by the **credited snapshot** (§2.2) and decrement `activeDelegationCount` by one.
 - MUST clear the commitment's callback routing.
-- MUST set `belowMinStake` and emit `OperatorBelowMinStake` if the operator is still active and `totalDelegatedStake` has fallen below `minOperatorStake`.
+- MUST emit `OperatorBelowMinStake` if the operator is still active and `totalDelegatedStake` has fallen below `minOperatorStake`. Being below the minimum is not stored: a reader compares `totalDelegatedStake` with the current `minOperatorStake()`, so a later threshold change applies at once.
 
 `onDelegationForfeited` MUST remove the **full** committed amount (`fullAmount` / the credited snapshot), not just the `forfeitedAmount` penalty portion: a forfeit terminates the entire commitment, so the whole stake leaves the operator set and the residual returns to the committer.
 
@@ -237,15 +235,13 @@ A forfeit whose counterparty is the registry pays out as a pull-payment credit t
 
 #### 2.6 Views and metadata
 
-`getOperatorStake`, `isOperator`, and `getOperatorSet` are the service-manager-compatible triad: a service or an §3 voting-power source reads them to enumerate the set and its weights. `getOperator` returns the full record; `getOperatorCount` returns the active count.
+`isOperator`, `getOperatorSet`, and `getOperator` are the service-manager-compatible views: a service or an §3 voting-power source reads them to enumerate the set and its weights (`getOperator(operator).totalDelegatedStake`). `getOperatorCount` returns the active count. The admin setters for `minOperatorStake` and `maxDelegationsPerOperator` emit `MinOperatorStakeUpdated` and `MaxDelegationsPerOperatorUpdated` with the old and new values.
 
-`setOperatorMetadata(uri, contentHash)` lets an active operator publish an off-chain metadata pointer (name, endpoint, geographic info). It MUST revert if the caller is not an active operator (`OperatorNotActive`) or `uri` exceeds `MAX_METADATA_URI_LENGTH` (512 bytes, `URITooLong`). Metadata MUST be stored in a sidecar mapping isolated from the hot-path `Operator` record, so a metadata write never touches the slots read by `isOperator` / `getOperatorStake` / `getOperatorSet`.
+`setOperatorMetadata(uri, contentHash)` lets an active operator publish an off-chain metadata pointer (name, endpoint, geographic info). It MUST revert if the caller is not an active operator (`OperatorNotActive`) or `uri` exceeds `MAX_METADATA_URI_LENGTH` (512 bytes, `URITooLong`). Metadata MUST be stored in a sidecar mapping isolated from the hot-path `Operator` record, so a metadata write never touches the slots read by `isOperator` / `getOperatorSet` / `getOperator`.
 
-#### 2.7 Checkpointed stake history (`stakeAt`)
+#### 2.7 No stake history
 
-`stakeAt(operator, timestamp, hint) → uint256` returns an operator's aggregate `totalDelegatedStake` as of a past **`block.timestamp`**, read from a monotone checkpoint trace the registry pushes on every stake mutation (register, delegate, release, forfeit). It lets an arbiter adjudicating an offense at time `T`, or an epoch/snapshot rewards process, read stake-at-offense on-chain rather than only the live value. Each such mutation MUST emit `StakeCheckpointed(operator, timestamp, newStake)` carrying the post-mutation aggregate; multiple mutations in one block collapse to a single checkpoint (the last emit for that timestamp wins). A checkpoint value that would exceed the trace's `uint192` capacity MUST revert `StakeCheckpointOverflow()` rather than silently truncate.
-
-This timestamp axis is deliberately **distinct** from §3's block-number voting-power checkpoints: `stakeAt` is keyed by `block.timestamp` (for time-based dispute/reward logic), whereas an `IVotingPowerSource` (§3) is keyed by block number (for signature-validation snapshots, §4.6). The two never share a checkpoint. Semantics: `stakeAt` returns 0 for a `timestamp` before the first checkpoint (or an operator that never staked), the checkpoint value exactly on a boundary, and the latest value at/after the last checkpoint. `hint` is a checkpoint-index guess that yields an O(1) read when it covers `timestamp`; it is **trustless** — a wrong, empty, or out-of-range hint only costs gas, never correctness, since both the hinted and binary-search paths return the identical historically-correct value.
+The registry keeps no history of operator stake; it exposes only the current `totalDelegatedStake`. Historical weight for signature validation comes from the block-keyed §3 voting-power source (§4.6), and an indexer can rebuild a stake timeline from the registration, delegation, release and forfeit events.
 
 #### 2.8 Signature-delegated registration
 
@@ -365,7 +361,7 @@ function isValidSignature(bytes32 digest, bytes memory signatureData) external v
 
 where `signatureData` decodes to `(address[] signers, bytes[] signatures, uint32 referenceBlock)` (decode order: `address[]`, `bytes[]`, `uint32`) and `isValidSignature` MUST return the ERC-1271 magic value iff the same algorithm (§4.5) passes for `digest`. `getStakeRegistry` returns the §2 operator registry used for eligibility.
 
-**Reverts (normative).** A failing `validate` / `isValidSignature` MUST revert with one of: `LengthMismatch()` (`signers.length != signatures.length`); `InvalidLength()` (empty signer set); `NotSorted()` (signers not strictly ascending, which also catches duplicates); `InvalidReferenceBlock()` (the `type(uint32).max` "live" sentinel or `referenceBlock >= block.number`); `StaleReferenceBlock(uint32 referenceBlock, uint96 maxAge)` (older than `maxReferenceBlockAge`); `InvalidSignature()` (a signature fails `SignatureChecker`); `SignerNotRegistered()` (a signer's key resolves to `address(0)` at `referenceBlock`, or to an operator not currently registered); `InsufficientSignedStake()` (absolute-threshold gate); `InsufficientQuorumZero()` (`getTotalPowerAt == 0`); or `InsufficientQuorum(uint256 signerWeight, uint256 thresholdWeight, uint256 totalWeight)` (quorum-fraction gate). Config setters revert `InvalidThresholdWeight()` (zero or `> type(uint160).max` threshold), `InvalidQuorumParameters()` (`quorumDenominator == 0`, `quorumNumerator > quorumDenominator`, or either `> type(uint160).max`), or `ZeroAmount()` (`setMaxReferenceBlockAge(0)`).
+**Reverts (normative).** A failing `validate` / `isValidSignature` MUST revert with one of: `LengthMismatch()` (`signers.length != signatures.length`); `InvalidLength()` (empty signer set); `NotSorted()` (signers not strictly ascending, which also catches duplicates); `InvalidReferenceBlock()` (the `type(uint32).max` "live" sentinel or `referenceBlock >= block.number`); `StaleReferenceBlock(uint32 referenceBlock, uint96 maxAge)` (older than `maxReferenceBlockAge`); `InvalidSignature()` (a signature fails `SignatureChecker`); `SignerNotRegistered()` (a signer's key resolves to `address(0)` at `referenceBlock`, or to an operator not currently registered); `InsufficientSignedStake()` (absolute-threshold gate); `InsufficientQuorumZero()` (`getTotalPowerAt == 0`); or `InsufficientQuorum(uint256 signerWeight, uint256 thresholdWeight, uint256 totalWeight)` (quorum-fraction gate). Config setters revert `InvalidThresholdWeight()` (zero or `> type(uint160).max` threshold), `InvalidQuorumParameters()` (`quorumDenominator == 0`, `quorumNumerator > quorumDenominator`, or `quorumDenominator > type(uint80).max`), or `ZeroAmount()` (`setMaxReferenceBlockAge(0)`).
 
 **EigenLayer-compat shims (OPTIONAL).** An implementation MAY additionally expose `getAllocationManager()` / `getDelegationManager()` views for drop-in compatibility with EigenLayer-style service tooling; when exposed they MUST return `address(0)` for a commitments-backed service — there is no separate allocation or delegation manager; the commitment manager and registry serve those roles. The shims are not part of the required surface (the reference implementation does not ship them); tooling that requires them should call `getStakeRegistry` first and treat the shims as absent-by-default.
 
@@ -376,7 +372,7 @@ A service manager maintains its own enrollment roster, gated on §2 eligibility,
 ```solidity
 interface IOperatorServiceRegistry {
     // Events
-    event OperatorRegistered(address indexed operator, uint256 weight);
+    event OperatorRegistered(address indexed operator);
     event OperatorDeregistered(address indexed operator);
     event OperatorSigningKeyUpdated(address indexed operator, address indexed oldKey, address indexed newKey);
     event StakeThresholdUpdated(uint256 newThreshold);
@@ -411,12 +407,11 @@ interface IOperatorServiceRegistry {
     // Views
     function operatorRegistered(address operator) external view returns (bool);
     function operatorRegistry() external view returns (address);
-    function totalOperators() external view returns (uint256);
 }
 ```
 
-- `enrollServiceOperator()` MUST revert unless the caller `isOperator` in the linked §2 registry (`NotActiveOperator`), and unless not already enrolled here (`AlreadyRegistered`). It appends the caller to the manager's operator list and emits `OperatorRegistered(operator, weight)`. Enrollment here is service participation, not stake custody — no capital moves; the caller's stake lives in its §2 registration commitment.
-- `withdrawServiceOperator(operator)` MUST be callable by the operator themselves or by an admin (`NotAdminOrSelf` otherwise), and MUST revert if `operator` is not enrolled (`NotRegistered`). It removes the operator (swap-and-pop) and MUST clear the operator's signing key by pushing a zero entry into both the `operator → key` and `key → operator` checkpoints at the current block — so that resolving the key at any post-withdrawal block yields `address(0)` and fails validation.
+- `enrollServiceOperator()` MUST revert unless the caller `isOperator` in the linked §2 registry (`NotActiveOperator`), and unless not already enrolled here (`AlreadyRegistered`). It marks the caller enrolled and emits `OperatorRegistered(operator)`; the event carries no weight, since voting power is read from the §3 source at validation time. Enrollment here is service participation, not stake custody — no capital moves; the caller's stake lives in its §2 registration commitment.
+- `withdrawServiceOperator(operator)` MUST be callable by the operator themselves or by an admin (`NotAdminOrSelf` otherwise), and MUST revert if `operator` is not enrolled (`NotRegistered`). It marks the operator not enrolled and MUST clear the operator's signing key by pushing a zero entry into both the `operator → key` and `key → operator` checkpoints at the current block — so that resolving the key at any post-withdrawal block yields `address(0)` and fails validation.
 
 Operators sign with a **signing key** distinct from their operator address, rotated via:
 
@@ -512,7 +507,7 @@ This is a new standard and introduces no backwards-compatibility concerns. It is
 
 The reference implementation ships conformance and unit suites (in the repository this document lives in):
 
-- `test/registry/` — operator registration, delegation, acceptance policy (`OperatorRegistryAcceptance.t.sol`), metadata (`OperatorRegistryMetadata.t.sol`), signature-delegated register/delegate (`OperatorRegistrySig.t.sol`), the timestamped `stakeAt` trace (`OperatorRegistryStakeAt.t.sol`), the `OperatorCommissionCoupon` allow-listed strategy (`OperatorCommission.t.sol`), and `test/registry/conformance/` for the INV-S1 / INV-S2 accounting and acceptance-binding invariants.
+- `test/registry/` — operator registration, delegation, acceptance policy (`OperatorRegistryAcceptance.t.sol`), metadata (`OperatorRegistryMetadata.t.sol`), signature-delegated register/delegate (`OperatorRegistrySig.t.sol`), the `OperatorCommissionCoupon` allow-listed strategy (`OperatorCommission.t.sol`), and `test/registry/conformance/` for the INV-S1 / INV-S2 accounting and acceptance-binding invariants.
 - `test/services/` — the service manager: enrollment gating, signing-key rotation and proof-of-possession, quorum/threshold configuration, the EIP-712 envelope digest, the reference-block staleness rule, and the §4.5 validation algorithm (`OperatorServiceRegistry.t.sol`), with `test/services/conformance/` for the INV-S3 / INV-S4 signing-key-uniqueness and validation-soundness invariants.
 
 ## Reference Implementation

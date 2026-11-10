@@ -43,8 +43,6 @@ import {HalmosBase} from "./HalmosBase.sol";
 ///            gate without reproducing the full release/forfeit lifecycle (that lands the
 ///            same `onDelegation*` call — the accounting effect is identical and is the
 ///            unit under test).
-///        C4. `stakeAt` checkpoint push runs (uint192 guard); amounts are bounded well
-///            below uint192 so the guard never trips.
 ///
 ///      Run: FOUNDRY_PROFILE=halmos halmos --contract RegistryDelegation
 contract RegistryDelegation is HalmosBase {
@@ -138,7 +136,7 @@ contract RegistryDelegation is HalmosBase {
         assert(op.activeDelegationCount == 1); // self-stake counts as 1
         assert(op.totalDelegatedStake == SELF_STAKE);
         assert(registry.isOperator(OPERATOR));
-        assert(registry.getOperatorStake(OPERATOR) == SELF_STAKE);
+        assert(registry.getOperator(OPERATOR).totalDelegatedStake == SELF_STAKE);
         assert(registry.trackedCommitmentCount() == 1);
     }
 

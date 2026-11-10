@@ -370,48 +370,6 @@ contract StorageSlotsTest is Test {
         assertTrue(reg.isStrategyAllowed(strategy), "allowedStrategies must live at slot offset 18");
     }
 
-    /// @notice Locks the issue-#42 `operatorStakeTrace` append at offset 19 (after allowedStrategies
-    ///         at 18). The mapping base slot holds nothing; probe the derived `StakeTrace` for an
-    ///         operator — its `length` lives at keccak(operator, base+19) and its packed checkpoint
-    ///         `points[0]` at keccak(0, entry+1) — then confirm the `stakeAt` view reads it back.
-    function test_registryLayoutAppendOnly_operatorStakeTraceIsLast() public {
-        OperatorRegistry impl = new OperatorRegistry();
-        ERC1967Proxy proxy = new ERC1967Proxy(
-            address(impl),
-            abi.encodeCall(
-                OperatorRegistry.initialize,
-                (address(0xC0FFEE), 1e18, 8, address(this), address(0xA9B17E9), 0, address(0x70CEA))
-            )
-        );
-        OperatorRegistry reg = OperatorRegistry(address(proxy));
-
-        bytes32 base = OperatorRegistryStorage.STORAGE_SLOT;
-
-        // Offset 19: operatorStakeTrace mapping base — the slot itself holds nothing.
-        assertEq(
-            vm.load(address(proxy), bytes32(uint256(base) + 19)),
-            bytes32(0),
-            "operatorStakeTrace mapping base must be at offset 19"
-        );
-
-        // Hand-build one checkpoint for `operator` at the offset-19 slot and read it via stakeAt.
-        address operator = address(0x57A6E);
-        uint64 ts = 1_700_000_000;
-        uint192 stake = 777e18;
-
-        // StakeTrace entry: slot0 = length, slot1 = points-mapping base.
-        bytes32 traceSlot = keccak256(abi.encode(operator, bytes32(uint256(base) + 19)));
-        vm.store(address(proxy), traceSlot, bytes32(uint256(1))); // length = 1
-
-        // points[0] = { uint64 timestamp; uint192 stake } packed: ts | (stake << 64).
-        bytes32 pointSlot = keccak256(abi.encode(uint256(0), bytes32(uint256(traceSlot) + 1)));
-        vm.store(address(proxy), pointSlot, bytes32(uint256(ts) | (uint256(stake) << 64)));
-
-        assertEq(reg.stakeAt(operator, ts, 0), stake, "operatorStakeTrace must live at slot offset 19 (valid hint)");
-        assertEq(reg.stakeAt(operator, ts, 99), stake, "offset-19 read must match via fallback");
-        assertEq(reg.stakeAt(operator, ts - 1, 0), 0, "before the sole checkpoint reads 0");
-    }
-
     /// @notice Locks the clean-vault CommitmentsVaultStorage.Layout by initializing a proxy
     ///         with sentinel values and probing the raw slots.
     ///

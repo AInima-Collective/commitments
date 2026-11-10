@@ -13,7 +13,6 @@ import {
   meshDenomWeight,
   meshNode,
   operator,
-  operatorWeight,
   registryMembership,
   service,
   serviceOperator,
@@ -1132,14 +1131,14 @@ ponder.on('OperatorServiceRegistry:ServiceURIUpdated', async ({ event, context }
 // OperatorRegistry + OperatorServiceRegistry
 // ============================================================================
 
+// The event carries no weight: voting power is live-read from the IVotingPowerSource.
 ponder.on('OperatorServiceRegistry:OperatorRegistered', async ({ event, context }) => {
-  const { operator: op, weight } = event.args
+  const { operator: op } = event.args
   const serviceAddress = event.log.address
   await context.db
     .insert(operator)
     .values({
       address: op,
-      weight,
       signingKey: null,
       status: 'registered',
       registeredBlock: event.block.number,
@@ -1147,14 +1146,9 @@ ponder.on('OperatorServiceRegistry:OperatorRegistered', async ({ event, context 
       updatedBlock: event.block.number,
     })
     .onConflictDoUpdate({
-      weight,
       status: 'registered',
       updatedBlock: event.block.number,
     })
-  await context.db
-    .insert(operatorWeight)
-    .values({ operator: op, weight, updatedBlock: event.block.number })
-    .onConflictDoUpdate({ weight, updatedBlock: event.block.number })
   // Per-service membership row — supports operators that join multiple
   // services without losing track of which one they belong to.
   await context.db
@@ -1164,13 +1158,11 @@ ponder.on('OperatorServiceRegistry:OperatorRegistered', async ({ event, context 
       service: serviceAddress,
       operator: op,
       status: 'registered',
-      weight,
       registeredBlock: event.block.number,
       updatedBlock: event.block.number,
     })
     .onConflictDoUpdate({
       status: 'registered',
-      weight,
       updatedBlock: event.block.number,
     })
 })
@@ -1272,10 +1264,16 @@ ponder.on('OperatorRegistry:OperatorDeregistered', async ({ event, context }) =>
   // Operator row continues to use the "latest registry mirror" semantic — the
   // per-registry truth is in registryMembership above. Callers that need to
   // know "is operator X still active in ANY registry?" should query that table.
+  // `deregister` zeroes the registry's stake and count and drops the self-stake's routing, so
+  // no later release/forfeit event will. Zero the mirror too, but only when it mirrors this
+  // registry (same self-stake commitment), so a second registry cannot clobber the first's figures.
   const existing = await context.db.find(operator, { address: op })
   if (!existing) return
+  const mirrorsThisRegistry =
+    !!membership && existing.selfStakeCommitmentId === membership.selfStakeCommitmentId
   await context.db.update(operator, { address: op }).set({
     status: 'deregistered',
+    ...(mirrorsThisRegistry ? { selfStake: 0n, totalDelegatedStake: 0n, activeDelegationCount: 0 } : {}),
     updatedBlock: event.block.number,
   })
 })
@@ -1353,9 +1351,6 @@ ponder.on('OperatorServiceRegistry:OperatorDeregistered', async ({ event, contex
     status: 'deregistered',
     updatedBlock: event.block.number,
   })
-  await context.db
-    .update(operatorWeight, { operator: op })
-    .set({ weight: 0n, updatedBlock: event.block.number })
   // Flip the per-service membership row to deregistered. Don't delete it —
   // historical queries still want to know who used to belong.
   const serviceOperatorId = `${serviceAddress.toLowerCase()}-${op.toLowerCase()}`

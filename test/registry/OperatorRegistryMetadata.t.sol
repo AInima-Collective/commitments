@@ -284,7 +284,7 @@ contract OperatorRegistryMetadataTest is ManagerTestBase {
 
         // Snapshot hot-path views before set
         bool isOpBefore = operatorRegistry.isOperator(alice);
-        uint256 stakeBefore = operatorRegistry.getOperatorStake(alice);
+        uint256 stakeBefore = operatorRegistry.getOperator(alice).totalDelegatedStake;
         uint256 setLenBefore = operatorRegistry.getOperatorSet().length;
 
         // Set metadata (sidecar write)
@@ -294,7 +294,7 @@ contract OperatorRegistryMetadataTest is ManagerTestBase {
         // Assert hot-path views unchanged
         assertEq(operatorRegistry.isOperator(alice), isOpBefore, "isOperator must be unchanged after setMetadata");
         assertEq(
-            operatorRegistry.getOperatorStake(alice),
+            operatorRegistry.getOperator(alice).totalDelegatedStake,
             stakeBefore,
             "getOperatorStake must be unchanged after setMetadata"
         );

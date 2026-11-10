@@ -72,7 +72,7 @@ contract OperatorRegistryMulticallTest is ManagerTestBase {
 
         assertTrue(registry.isOperator(operator), "operator active after batched register");
         assertTrue(registry.isEntity(operator), "MembershipBase.isEntity mirrors active");
-        assertEq(registry.getOperatorStake(operator), MIN_OPERATOR_STAKE, "stake credited");
+        assertEq(registry.getOperator(operator).totalDelegatedStake, MIN_OPERATOR_STAKE, "stake credited");
         IOperatorRegistry.OperatorMetadata memory m = registry.getOperatorMetadata(operator);
         assertEq(m.uri, "ipfs://op", "metadata set in same tx");
     }
@@ -97,7 +97,11 @@ contract OperatorRegistryMulticallTest is ManagerTestBase {
         registry.multicall(calls);
 
         // self-stake + two delegations.
-        assertEq(registry.getOperatorStake(operator), 3 * MIN_OPERATOR_STAKE, "both delegations credited in one tx");
+        assertEq(
+            registry.getOperator(operator).totalDelegatedStake,
+            3 * MIN_OPERATOR_STAKE,
+            "both delegations credited in one tx"
+        );
     }
 
     // =========================================================================

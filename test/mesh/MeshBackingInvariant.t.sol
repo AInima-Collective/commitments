@@ -19,7 +19,7 @@ import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 ///         OperatorRegistry ↔ mesh boundary. Across arbitrary register / delegate /
 ///         release / forfeit / deregister sequences against the REAL CommitmentManager:
 ///
-///           INV-A  per operator: tw.currentStake(op, denom) == registry.getOperatorStake(op)
+///           INV-A  per operator: tw.currentStake(op, denom) == registry.getOperator(op).totalDelegatedStake
 ///           INV-B  Σ tw.currentStake(op, denom) == tw.totalStake(denom)
 ///           INV-C  tw.totalStake(denom) ≤ Σ encumberedBalance(token, staker)
 ///                  (mesh voting power for the token can never exceed real, registry-
@@ -215,7 +215,7 @@ contract MeshBackingInvariantTest is ManagerTestBase {
             //        only flips `active` and zeroes the mesh power; it deliberately
             //        leaves `totalDelegatedStake` (getOperatorStake) untouched, so the
             //        lockstep is conditioned on the operator still being active.
-            uint256 expected = registry.getOperator(op).active ? registry.getOperatorStake(op) : 0;
+            uint256 expected = registry.getOperator(op).active ? registry.getOperator(op).totalDelegatedStake : 0;
             assertEq(tw.currentStake(op, denom), expected, "INV-A: tw.currentStake != expected mesh power");
             sumCurrent += tw.currentStake(op, denom);
         }

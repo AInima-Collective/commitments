@@ -164,7 +164,6 @@ contract OperatorServiceRegistryTest is Test {
         registry.enrollServiceOperator();
 
         assertTrue(registry.operatorRegistered(operator1));
-        assertEq(registry.totalOperators(), 1);
     }
 
     function test_registerOperator_notInRegistry_reverts() public {
@@ -192,7 +191,6 @@ contract OperatorServiceRegistryTest is Test {
         registry.withdrawServiceOperator(operator1);
 
         assertFalse(registry.operatorRegistered(operator1));
-        assertEq(registry.totalOperators(), 0);
     }
 
     function test_deregisterOperator_admin() public {
@@ -529,9 +527,27 @@ contract OperatorServiceRegistryTest is Test {
         registry.updateStakeThreshold(500);
     }
 
-    function test_updateQuorum() public {
+    function test_updateQuorum_appliesFromNextBlock() public {
+        _registerAndSetKey(operator1, operator1Key, signingKey1, signingKey1Pk);
+        _registerAndSetKey(operator2, operator2Key, signingKey2, signingKey2Pk);
+        mockSource.setPower(operator1, 600);
+        mockSource.setPower(operator2, 400); // operator1 alone holds exactly 3/5
+
+        IServiceHandler.Envelope memory env = _env("quorum");
+        IServiceHandler.SignatureData memory sig = _sign(env, _pks(signingKey1Pk), _addrs(signingKey1));
+        vm.expectRevert(abi.encodeWithSelector(IServiceManager.InsufficientQuorum.selector, 600, THRESHOLD, 1000));
+        registry.validate(env, sig);
+
         vm.prank(admin);
         registry.updateQuorum(3, 5);
+        vm.roll(block.number + 1);
+        registry.validate(env, _sign(env, _pks(signingKey1Pk), _addrs(signingKey1)));
+    }
+
+    function test_updateQuorum_denominatorAbove80Bits_reverts() public {
+        vm.prank(admin);
+        vm.expectRevert(IServiceManager.InvalidQuorumParameters.selector);
+        registry.updateQuorum(1, uint256(type(uint80).max) + 1);
     }
 
     function test_updateQuorum_invalidParameters_revertsWithInterfaceError() public {

@@ -8852,7 +8852,6 @@ export const operatorRegistryAbi = [
           { name: 'operator', internalType: 'address', type: 'address' },
           { name: 'registeredAt', internalType: 'uint64', type: 'uint64' },
           { name: 'active', internalType: 'bool', type: 'bool' },
-          { name: 'belowMinStake', internalType: 'bool', type: 'bool' },
           {
             name: 'selfStakeCommitmentId',
             internalType: 'uint256',
@@ -8904,13 +8903,6 @@ export const operatorRegistryAbi = [
     inputs: [],
     name: 'getOperatorSet',
     outputs: [{ name: '', internalType: 'address[]', type: 'address[]' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'operator', internalType: 'address', type: 'address' }],
-    name: 'getOperatorStake',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -9013,7 +9005,7 @@ export const operatorRegistryAbi = [
     inputs: [
       { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
       { name: 'forfeitedAmount', internalType: 'uint256', type: 'uint256' },
-      { name: 'fullAmount', internalType: 'uint256', type: 'uint256' },
+      { name: '', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'onDelegationForfeited',
     outputs: [],
@@ -9151,17 +9143,6 @@ export const operatorRegistryAbi = [
     type: 'function',
     inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
     name: 'sigNonces',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'operator', internalType: 'address', type: 'address' },
-      { name: 'timestamp', internalType: 'uint64', type: 'uint64' },
-      { name: 'hint', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'stakeAt',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
@@ -9409,6 +9390,25 @@ export const operatorRegistryAbi = [
     anonymous: false,
     inputs: [
       {
+        name: 'oldValue',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newValue',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'MaxDelegationsPerOperatorUpdated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
         name: 'tokenWeighting',
         internalType: 'address',
         type: 'address',
@@ -9422,6 +9422,25 @@ export const operatorRegistryAbi = [
       },
     ],
     name: 'MeshWired',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'oldValue',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'newValue',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'MinOperatorStakeUpdated',
   },
   {
     type: 'event',
@@ -9621,31 +9640,6 @@ export const operatorRegistryAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'operator',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'timestamp',
-        internalType: 'uint64',
-        type: 'uint64',
-        indexed: true,
-      },
-      {
-        name: 'newStake',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'StakeCheckpointed',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
         name: 'strategy',
         internalType: 'address',
         type: 'address',
@@ -9685,6 +9679,7 @@ export const operatorRegistryAbi = [
   },
   { type: 'error', inputs: [], name: 'AlreadyRegistered' },
   { type: 'error', inputs: [], name: 'CommitmentAlreadyDelegated' },
+  { type: 'error', inputs: [], name: 'CommitmentClosed' },
   { type: 'error', inputs: [], name: 'CommitmentNotTracked' },
   { type: 'error', inputs: [], name: 'CommitmentStillOpen' },
   {
@@ -9757,7 +9752,6 @@ export const operatorRegistryAbi = [
   },
   { type: 'error', inputs: [], name: 'SameBlockToggle' },
   { type: 'error', inputs: [], name: 'SignatureExpired' },
-  { type: 'error', inputs: [], name: 'StakeCheckpointOverflow' },
   { type: 'error', inputs: [], name: 'StrategiesNotAllowed' },
   { type: 'error', inputs: [], name: 'URITooLong' },
   { type: 'error', inputs: [], name: 'UUPSUnauthorizedCallContext' },
@@ -10054,13 +10048,6 @@ export const operatorServiceRegistryAbi = [
   },
   {
     type: 'function',
-    inputs: [],
-    name: 'totalOperators',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: 'newSigningKey', internalType: 'address', type: 'address' },
       { name: 'signingKeySignature', internalType: 'bytes', type: 'bytes' },
@@ -10195,12 +10182,6 @@ export const operatorServiceRegistryAbi = [
         internalType: 'address',
         type: 'address',
         indexed: true,
-      },
-      {
-        name: 'weight',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
       },
     ],
     name: 'OperatorRegistered',
@@ -20908,15 +20889,6 @@ export const useReadOperatorRegistryGetOperatorSet =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link operatorRegistryAbi}__ and `functionName` set to `"getOperatorStake"`
- */
-export const useReadOperatorRegistryGetOperatorStake =
-  /*#__PURE__*/ createUseReadContract({
-    abi: operatorRegistryAbi,
-    functionName: 'getOperatorStake',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link operatorRegistryAbi}__ and `functionName` set to `"getRoleAdmin"`
  */
 export const useReadOperatorRegistryGetRoleAdmin =
@@ -21013,15 +20985,6 @@ export const useReadOperatorRegistrySigNonces =
   /*#__PURE__*/ createUseReadContract({
     abi: operatorRegistryAbi,
     functionName: 'sigNonces',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link operatorRegistryAbi}__ and `functionName` set to `"stakeAt"`
- */
-export const useReadOperatorRegistryStakeAt =
-  /*#__PURE__*/ createUseReadContract({
-    abi: operatorRegistryAbi,
-    functionName: 'stakeAt',
   })
 
 /**
@@ -21557,12 +21520,30 @@ export const useWatchOperatorRegistryInitializedEvent =
   })
 
 /**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link operatorRegistryAbi}__ and `eventName` set to `"MaxDelegationsPerOperatorUpdated"`
+ */
+export const useWatchOperatorRegistryMaxDelegationsPerOperatorUpdatedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: operatorRegistryAbi,
+    eventName: 'MaxDelegationsPerOperatorUpdated',
+  })
+
+/**
  * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link operatorRegistryAbi}__ and `eventName` set to `"MeshWired"`
  */
 export const useWatchOperatorRegistryMeshWiredEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: operatorRegistryAbi,
     eventName: 'MeshWired',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link operatorRegistryAbi}__ and `eventName` set to `"MinOperatorStakeUpdated"`
+ */
+export const useWatchOperatorRegistryMinOperatorStakeUpdatedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: operatorRegistryAbi,
+    eventName: 'MinOperatorStakeUpdated',
   })
 
 /**
@@ -21644,15 +21625,6 @@ export const useWatchOperatorRegistryRoleRevokedEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: operatorRegistryAbi,
     eventName: 'RoleRevoked',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link operatorRegistryAbi}__ and `eventName` set to `"StakeCheckpointed"`
- */
-export const useWatchOperatorRegistryStakeCheckpointedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: operatorRegistryAbi,
-    eventName: 'StakeCheckpointed',
   })
 
 /**
@@ -21884,15 +21856,6 @@ export const useReadOperatorServiceRegistrySupportsInterface =
   /*#__PURE__*/ createUseReadContract({
     abi: operatorServiceRegistryAbi,
     functionName: 'supportsInterface',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link operatorServiceRegistryAbi}__ and `functionName` set to `"totalOperators"`
- */
-export const useReadOperatorServiceRegistryTotalOperators =
-  /*#__PURE__*/ createUseReadContract({
-    abi: operatorServiceRegistryAbi,
-    functionName: 'totalOperators',
   })
 
 /**

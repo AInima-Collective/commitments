@@ -132,7 +132,7 @@ contract OperatorCommissionTest is ManagerTestBase {
         vm.prank(staker1);
         registry.delegate(operator1, delegCid);
 
-        assertEq(registry.getOperatorStake(operator1), 150e18, "delegation credited with coupon bound");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 150e18, "delegation credited with coupon bound");
         assertEq(registry.operatorForCommitment(delegCid), operator1, "routing resolvable");
     }
 
@@ -179,7 +179,7 @@ contract OperatorCommissionTest is ManagerTestBase {
 
         // Non-draining: the delegated backing (and thus operator stake) is untouched.
         assertEq(manager.getCommitment(delegCid).amount, 50e18, "commission never drains the stake");
-        assertEq(registry.getOperatorStake(operator1), 150e18, "no phantom stake shift");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 150e18, "no phantom stake shift");
     }
 
     function testCommission_fundGuards() public {

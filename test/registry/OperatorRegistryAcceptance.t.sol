@@ -111,7 +111,7 @@ contract OperatorRegistryAcceptanceTest is ManagerTestBase {
         vm.prank(operator1);
         registry.register(cid);
         assertTrue(registry.isOperator(operator1), "operator should be registered");
-        assertEq(registry.getOperatorStake(operator1), 100e18, "stake mismatch");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 100e18, "stake mismatch");
     }
 
     function testRegister_acceptsCommitmentExactlyAtPenaltyFloor() public {
@@ -181,7 +181,7 @@ contract OperatorRegistryAcceptanceTest is ManagerTestBase {
         vm.prank(staker1);
         registry.delegate(operator1, delegCid);
 
-        assertEq(registry.getOperatorStake(operator1), 150e18, "delegated stake not added");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 150e18, "delegated stake not added");
     }
 
     function testDelegate_revertsWrongArbiter() public {
@@ -335,7 +335,7 @@ contract OperatorRegistryAcceptanceTest is ManagerTestBase {
 
         // Existing operator is NOT retroactively ejected
         assertTrue(registry.isOperator(operator1), "forward-only tightening should grandfather existing registrations");
-        assertEq(registry.getOperatorStake(operator1), 100e18, "stake should be unchanged");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 100e18, "stake should be unchanged");
 
         // But a new registration at the old floor now reverts
         uint256 newCid = _createCommitment(staker1, trustedArbiter, FLOOR, 100e18);
@@ -425,7 +425,7 @@ contract OperatorRegistryAcceptanceTest is ManagerTestBase {
         uint256 delegCid = _createCommitment(staker1, trustedArbiter, 10_000, 50e18);
         vm.prank(staker1);
         registry.delegate(operator1, delegCid);
-        assertEq(registry.getOperatorStake(operator1), 150e18, "snapshot credited at delegate time");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 150e18, "snapshot credited at delegate time");
 
         // The committer is the first contributor (opt-in), growing c.amount 50e18 → 75e18.
         vm.prank(staker1);
@@ -437,10 +437,14 @@ contract OperatorRegistryAcceptanceTest is ManagerTestBase {
         vm.prank(trustedArbiter);
         manager.releaseCommitment(delegCid);
 
-        assertEq(registry.getOperatorStake(operator1), 100e18, "release must decrement the registered snapshot");
+        assertEq(
+            registry.getOperator(operator1).totalDelegatedStake,
+            100e18,
+            "release must decrement the registered snapshot"
+        );
         IOperatorRegistry.Operator memory op = registry.getOperator(operator1);
         assertEq(op.activeDelegationCount, 1, "only self-stake remains");
-        assertFalse(op.belowMinStake, "no spurious belowMinStake flag");
+        assertGe(op.totalDelegatedStake, registry.minOperatorStake(), "not below the minimum");
     }
 
     /// @dev Same drift scenario through the forfeit path: onDelegationForfeited receives the
@@ -460,7 +464,11 @@ contract OperatorRegistryAcceptanceTest is ManagerTestBase {
         // 50% forfeit of the drifted 75e18 → 37.5e18 credited to the registry.
         _executeFullForfeit(delegCid, FLOOR);
 
-        assertEq(registry.getOperatorStake(operator1), 100e18, "forfeit must decrement the registered snapshot");
+        assertEq(
+            registry.getOperator(operator1).totalDelegatedStake,
+            100e18,
+            "forfeit must decrement the registered snapshot"
+        );
         assertEq(
             manager.freeBalance(address(token), address(registry)),
             37.5e18,

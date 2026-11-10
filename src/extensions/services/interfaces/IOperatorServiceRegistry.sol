@@ -15,7 +15,7 @@ interface IOperatorServiceRegistry {
     // Events
     // =========================================================================
 
-    event OperatorRegistered(address indexed operator, uint256 weight);
+    event OperatorRegistered(address indexed operator);
     event OperatorDeregistered(address indexed operator);
     event OperatorSigningKeyUpdated(address indexed operator, address indexed oldKey, address indexed newKey);
     event StakeThresholdUpdated(uint256 newThreshold);
@@ -89,7 +89,4 @@ interface IOperatorServiceRegistry {
 
     /// @notice Returns the linked OperatorRegistry address (the eligibility source).
     function operatorRegistry() external view returns (address);
-
-    /// @notice Returns the total number of registered operators.
-    function totalOperators() external view returns (uint256);
 }

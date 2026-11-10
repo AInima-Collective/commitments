@@ -34,15 +34,6 @@ library OperatorServiceRegistryStorage {
         /// @dev operator -> registered in this middleware
         mapping(address => bool) operatorRegistered;
 
-        /// @dev Enumerable list of registered operators
-        address[] operatorList;
-
-        /// @dev operator -> index in operatorList (for O(1) removal)
-        mapping(address => uint256) operatorListIndex;
-
-        /// @dev Count of operators registered in this middleware
-        uint256 totalOperators;
-
         // =====================================================================
         // Signing key management (checkpoint-tracked)
         // =====================================================================
@@ -60,11 +51,8 @@ library OperatorServiceRegistryStorage {
         /// @dev Minimum absolute weight required from signers
         Checkpoints.Trace160 thresholdWeightHistory;
 
-        /// @dev Quorum fraction numerator
-        Checkpoints.Trace160 quorumNumeratorHistory;
-
-        /// @dev Quorum fraction denominator
-        Checkpoints.Trace160 quorumDenominatorHistory;
+        /// @dev Quorum fraction, packed `(numerator << 80) | denominator`; both fit in 80 bits
+        Checkpoints.Trace160 quorumHistory;
 
         // =====================================================================
         // Service metadata
@@ -80,9 +68,9 @@ library OperatorServiceRegistryStorage {
         /// @dev Maximum allowed age (in blocks) of `referenceBlock` passed to
         ///      `_checkSignatures`. Prevents an attacker from pinning to a stale
         ///      historical snapshot where the operator set or quorum threshold
-        ///      was different. 0 means "use the default" (lazy-init
-        ///      backwards-compat); admin can tighten or loosen via
-        ///      `setMaxReferenceBlockAge`. Default applied at read site.
+        ///      was different. 0 means "never set": the read site applies
+        ///      `DEFAULT_MAX_REFERENCE_BLOCK_AGE`. Admin can tighten or loosen
+        ///      via `setMaxReferenceBlockAge`, which rejects 0.
         uint96 maxReferenceBlockAge;
     }
 
