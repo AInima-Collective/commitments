@@ -286,7 +286,6 @@ contract ManualArbiterTest is ManagerTestBase {
             arbiter: address(arbiter),
             numeraire: address(token),
             beneficiary: mutualBeneficiary,
-            valuationAuthority: address(0), // homogeneous
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -308,7 +307,7 @@ contract ManualArbiterTest is ManagerTestBase {
         p.challengeWindow = WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     function testOwner_canActivateInitiateAndExecuteMutualLoss() public {
@@ -363,7 +362,6 @@ contract ManualArbiterTest is ManagerTestBase {
             arbiter: address(arbiter),
             numeraire: address(token),
             beneficiary: mutualBeneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });

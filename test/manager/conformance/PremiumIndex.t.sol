@@ -4,7 +4,6 @@ pragma solidity ^0.8.27;
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
@@ -166,7 +165,6 @@ contract PremiumIndexTest is Test {
             arbiter: arbiter,
             numeraire: address(numeraire),
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -189,7 +187,7 @@ contract PremiumIndexTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
         gCids.push(cid);
     }
 
@@ -205,14 +203,13 @@ contract PremiumIndexTest is Test {
         manager.executeMutualLoss(gid);
     }
 
-    /// @dev Recompute `effCover_i` the contract way: premiumWeight·min(E_i−settled, c.amount)/E_i.
+    /// @dev Recompute `effCover_i` the contract way: min(E_i−settled, c.amount).
     function _effCover(uint256 cid) internal view returns (uint256) {
         ICM.Membership memory m = manager.getMembership(cid);
-        if (m.mutualId == 0 || m.forfeitableUnits == 0) return 0;
+        if (m.mutualId == 0) return 0;
         uint256 deliverable = m.forfeitableUnits - m.settledUnits;
         uint256 amt = manager.getCommitment(cid).amount;
-        if (amt < deliverable) deliverable = amt;
-        return Math.mulDiv(m.premiumWeight, deliverable, m.forfeitableUnits);
+        return amt < deliverable ? amt : deliverable;
     }
 
     /// @dev INV-P9 (exact, dual-tracked) + Belt-2 inert: activeCover == totalShares − settledTotal
@@ -520,7 +517,7 @@ contract PremiumIndexTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(u1);
-        uint256 cB = manager.joinMutual(gB, p, 0, "");
+        uint256 cB = manager.joinMutual(gB, p);
 
         uint256 effA_before = _effCover(cA);
 
@@ -677,28 +674,6 @@ contract PremiumIndexTest is Test {
     }
 
     // =========================================================================
-    // Premium funding is HOMOGENEOUS-ONLY — attested mode (valuationAuthority != 0) is fenced off
-    // =========================================================================
-
-    function test_fundMutualPremium_attestedMode_reverts() public {
-        ICM.MutualParams memory p = ICM.MutualParams({
-            arbiter: arbiter,
-            numeraire: address(token),
-            beneficiary: beneficiary,
-            valuationAuthority: makeAddr("valuation"), // != 0 and != arbiter => attested heterogeneous mode
-            challengeWindow: MUTUAL_WINDOW,
-            deallocationWindow: MUTUAL_WINDOW
-        });
-        uint256 gid = manager.createMutual(p);
-        vm.prank(arbiter);
-        manager.activateMutual(gid);
-
-        vm.prank(policyholder);
-        vm.expectRevert(ICM.HeterogeneousPremiumUnsupported.selector);
-        manager.fundMutualPremium(gid, 100e18, 100);
-    }
-
-    // =========================================================================
     // Fee-on-transfer numeraire — measured-receipt funding credits the DELTA
     // =========================================================================
 
@@ -716,7 +691,6 @@ contract PremiumIndexTest is Test {
             arbiter: arbiter,
             numeraire: address(fot),
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -734,7 +708,7 @@ contract PremiumIndexTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(u1);
-        manager.joinMutual(gid, p, 0, "");
+        manager.joinMutual(gid, p);
 
         // Fund 100e18; only 90e18 ARRIVES (10% skimmed). The pool/rate must reflect the delta.
         fot.mint(policyholder, 100e18);

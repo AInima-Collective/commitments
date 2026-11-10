@@ -16,12 +16,6 @@ interface MinimalManagerClient {
     functionName: 'getMutualPremiumState'
     args: [bigint]
   }): Promise<readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint]>
-  readContract(args: {
-    address: Hex
-    abi: typeof commitmentManagerAbi
-    functionName: 'getMutualJuniorPool'
-    args: [bigint]
-  }): Promise<bigint>
 }
 
 function getManagerClient(): MinimalManagerClient | null {
@@ -99,7 +93,6 @@ app.get('/', async (c) => {
       arbiter: g.arbiter,
       beneficiary: g.beneficiary,
       numeraire: g.numeraire,
-      valuationAuthority: g.valuationAuthority,
       challengeWindow: Number(g.challengeWindow),
       deallocationWindow: Number(g.deallocationWindow),
       totalShares: g.totalShares.toString(),
@@ -121,13 +114,6 @@ app.get('/', async (c) => {
       // from the vault's own yield (stamped by the conduit's PremiumFunded).
       coveredVault: g.coveredVault,
       conduit: g.conduit,
-      // Heterogeneous mode (§H §8 / M4) — `heterogeneous` is the canonical flag (bandAdapter set).
-      heterogeneous: g.bandAdapter != null,
-      bandAdapter: g.bandAdapter,
-      valuationFloorBps: Number(g.valuationFloorBps),
-      valuationCeilBps: Number(g.valuationCeilBps),
-      juniorBps: Number(g.juniorBps),
-      juniorPool: g.juniorPool.toString(),
     }
   })
 
@@ -292,24 +278,12 @@ app.get('/:id/premium', async (c) => {
   const client = getManagerClient()
   if (mutual && client) {
     try {
-      const [r, juniorPool] = await Promise.all([
-        client.readContract({
-          address: mutual.manager,
-          abi: commitmentManagerAbi,
-          functionName: 'getMutualPremiumState',
-          args: [mutualId],
-        }),
-        // Live junior reserve (funded − drawn); 0 for homogeneous mutuals. Surfaced alongside the
-        // premium snapshot so the underwriter view reads one consistent on-chain state.
-        client
-          .readContract({
-            address: mutual.manager,
-            abi: commitmentManagerAbi,
-            functionName: 'getMutualJuniorPool',
-            args: [mutualId],
-          })
-          .catch(() => null),
-      ])
+      const r = await client.readContract({
+        address: mutual.manager,
+        abi: commitmentManagerAbi,
+        functionName: 'getMutualPremiumState',
+        args: [mutualId],
+      })
       premiumState = {
         premiumPerShareStored: r[0].toString(),
         activeCover: r[1].toString(),
@@ -320,7 +294,6 @@ app.get('/:id/premium', async (c) => {
         premiumRemainder: r[6].toString(),
         bankedTotal: r[7].toString(),
         premiumPool: r[8].toString(),
-        juniorPool: juniorPool == null ? null : juniorPool.toString(),
       }
     } catch {
       premiumState = null

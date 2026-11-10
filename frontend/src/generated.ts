@@ -556,28 +556,6 @@ export const commitmentManagerAbi = [
   {
     type: 'function',
     inputs: [
-      { name: 'mutualId', internalType: 'uint256', type: 'uint256' },
-      {
-        name: 'config',
-        internalType: 'struct ICommitmentManager.HeteroConfig',
-        type: 'tuple',
-        components: [
-          { name: 'bandAdapter', internalType: 'address', type: 'address' },
-          { name: 'valuationFloorBps', internalType: 'uint64', type: 'uint64' },
-          { name: 'valuationCeilBps', internalType: 'uint64', type: 'uint64' },
-          { name: 'juniorBps', internalType: 'uint64', type: 'uint64' },
-          { name: 'collaterals', internalType: 'address[]', type: 'address[]' },
-          { name: 'haircutBps', internalType: 'uint64[]', type: 'uint64[]' },
-        ],
-      },
-    ],
-    name: 'configureHeterogeneous',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
       { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
       { name: 'units', internalType: 'uint256', type: 'uint256' },
     ],
@@ -709,11 +687,6 @@ export const commitmentManagerAbi = [
           { name: 'arbiter', internalType: 'address', type: 'address' },
           { name: 'numeraire', internalType: 'address', type: 'address' },
           { name: 'beneficiary', internalType: 'address', type: 'address' },
-          {
-            name: 'valuationAuthority',
-            internalType: 'address',
-            type: 'address',
-          },
           { name: 'challengeWindow', internalType: 'uint64', type: 'uint64' },
           {
             name: 'deallocationWindow',
@@ -1044,7 +1017,6 @@ export const commitmentManagerAbi = [
           { name: 'creditedValue', internalType: 'uint128', type: 'uint128' },
           { name: 'lossSnapshot', internalType: 'uint256', type: 'uint256' },
           { name: 'unbondRequestedAt', internalType: 'uint64', type: 'uint64' },
-          { name: 'premiumWeight', internalType: 'uint128', type: 'uint128' },
           { name: 'premiumSnapshot', internalType: 'uint256', type: 'uint256' },
           { name: 'rewardBank', internalType: 'uint256', type: 'uint256' },
         ],
@@ -1065,11 +1037,6 @@ export const commitmentManagerAbi = [
           { name: 'arbiter', internalType: 'address', type: 'address' },
           { name: 'numeraire', internalType: 'address', type: 'address' },
           { name: 'beneficiary', internalType: 'address', type: 'address' },
-          {
-            name: 'valuationAuthority',
-            internalType: 'address',
-            type: 'address',
-          },
           { name: 'challengeWindow', internalType: 'uint64', type: 'uint64' },
           {
             name: 'deallocationWindow',
@@ -1097,20 +1064,9 @@ export const commitmentManagerAbi = [
             type: 'uint256',
           },
           { name: 'bankedTotal', internalType: 'uint256', type: 'uint256' },
-          { name: 'bandAdapter', internalType: 'address', type: 'address' },
-          { name: 'valuationFloorBps', internalType: 'uint64', type: 'uint64' },
-          { name: 'valuationCeilBps', internalType: 'uint64', type: 'uint64' },
-          { name: 'juniorBps', internalType: 'uint64', type: 'uint64' },
         ],
       },
     ],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
-    name: 'getMutualJuniorPool',
-    outputs: [{ name: 'juniorPool', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -1294,8 +1250,6 @@ export const commitmentManagerAbi = [
           { name: 'metadataHash', internalType: 'bytes32', type: 'bytes32' },
         ],
       },
-      { name: 'creditedValue', internalType: 'uint128', type: 'uint128' },
-      { name: 'attestation', internalType: 'bytes', type: 'bytes' },
     ],
     name: 'joinMutual',
     outputs: [
@@ -1492,16 +1446,6 @@ export const commitmentManagerAbi = [
       { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'releaseMutualMember',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'mutualId', internalType: 'uint256', type: 'uint256' },
-      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'remark',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -2683,31 +2627,6 @@ export const commitmentManagerAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'commitmentId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-      {
-        name: 'oldWeight',
-        internalType: 'uint128',
-        type: 'uint128',
-        indexed: false,
-      },
-      {
-        name: 'newWeight',
-        internalType: 'uint128',
-        type: 'uint128',
-        indexed: false,
-      },
-    ],
-    name: 'MemberRemarked',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
         name: 'mutualId',
         internalType: 'uint256',
         type: 'uint256',
@@ -2794,120 +2713,8 @@ export const commitmentManagerAbi = [
         type: 'address',
         indexed: false,
       },
-      {
-        name: 'valuationAuthority',
-        internalType: 'address',
-        type: 'address',
-        indexed: false,
-      },
     ],
     name: 'MutualCreated',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'mutualId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-      {
-        name: 'bandAdapter',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'valuationFloorBps',
-        internalType: 'uint64',
-        type: 'uint64',
-        indexed: false,
-      },
-      {
-        name: 'valuationCeilBps',
-        internalType: 'uint64',
-        type: 'uint64',
-        indexed: false,
-      },
-      {
-        name: 'juniorBps',
-        internalType: 'uint64',
-        type: 'uint64',
-        indexed: false,
-      },
-    ],
-    name: 'MutualHeterogeneousConfigured',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'commitmentId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-      {
-        name: 'amount',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'MutualJuniorDrawn',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'mutualId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-      {
-        name: 'funder',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'amount',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'MutualJuniorFunded',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'mutualId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-      {
-        name: 'recipient',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'amount',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'MutualJuniorSwept',
   },
   {
     type: 'event',
@@ -3346,7 +3153,6 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'FailedCall' },
   { type: 'error', inputs: [], name: 'ForfeitPending' },
   { type: 'error', inputs: [], name: 'ForfeitureIsPaused' },
-  { type: 'error', inputs: [], name: 'HeterogeneousPremiumUnsupported' },
   {
     type: 'error',
     inputs: [
@@ -3386,23 +3192,13 @@ export const commitmentManagerAbi = [
       { name: 'requested', internalType: 'uint256', type: 'uint256' },
       { name: 'available', internalType: 'uint256', type: 'uint256' },
     ],
-    name: 'InsufficientMutualJunior',
-  },
-  {
-    type: 'error',
-    inputs: [
-      { name: 'requested', internalType: 'uint256', type: 'uint256' },
-      { name: 'available', internalType: 'uint256', type: 'uint256' },
-    ],
     name: 'InsufficientMutualPremium',
   },
   { type: 'error', inputs: [], name: 'InvalidCreditedValue' },
   { type: 'error', inputs: [], name: 'InvalidExpiry' },
-  { type: 'error', inputs: [], name: 'InvalidHeteroConfig' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'InvalidNonce' },
   { type: 'error', inputs: [], name: 'InvalidSignature' },
-  { type: 'error', inputs: [], name: 'InvalidValuationAttestation' },
   { type: 'error', inputs: [], name: 'MemberStrategyForbidden' },
   { type: 'error', inputs: [], name: 'MemberUnsettled' },
   { type: 'error', inputs: [], name: 'MinChallengeWindowBelowFloor' },
@@ -3456,8 +3252,6 @@ export const commitmentManagerAbi = [
     name: 'MovementWrongToken',
   },
   { type: 'error', inputs: [], name: 'MovementZeroUnits' },
-  { type: 'error', inputs: [], name: 'MutualAlreadyActive' },
-  { type: 'error', inputs: [], name: 'MutualAlreadyConfigured' },
   { type: 'error', inputs: [], name: 'MutualArbiterMismatch' },
   { type: 'error', inputs: [], name: 'MutualBeneficiaryMismatch' },
   { type: 'error', inputs: [], name: 'MutualChallengeWindowActive' },
@@ -3475,12 +3269,10 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'NotAcceptor' },
   { type: 'error', inputs: [], name: 'NotArbiter' },
   { type: 'error', inputs: [], name: 'NotCommitter' },
-  { type: 'error', inputs: [], name: 'NotHeterogeneous' },
   { type: 'error', inputs: [], name: 'NotInitializing' },
   { type: 'error', inputs: [], name: 'NotMutualArbiter' },
   { type: 'error', inputs: [], name: 'NotMutualMember' },
   { type: 'error', inputs: [], name: 'NotProposer' },
-  { type: 'error', inputs: [], name: 'NotValuationAuthority' },
   { type: 'error', inputs: [], name: 'NumeraireMismatch' },
   {
     type: 'error',
@@ -3529,7 +3321,6 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'UnbondPending' },
   { type: 'error', inputs: [], name: 'UnknownStrategy' },
   { type: 'error', inputs: [], name: 'UseAgreementPath' },
-  { type: 'error', inputs: [], name: 'ValuationAuthorityIsArbiter' },
   { type: 'error', inputs: [], name: 'ZeroAddress' },
   { type: 'error', inputs: [], name: 'ZeroAmount' },
   { type: 'error', inputs: [], name: 'ZeroArbiter' },
@@ -8644,11 +8435,6 @@ export const mutualRegistryAbi = [
           { name: 'arbiter', internalType: 'address', type: 'address' },
           { name: 'numeraire', internalType: 'address', type: 'address' },
           { name: 'beneficiary', internalType: 'address', type: 'address' },
-          {
-            name: 'valuationAuthority',
-            internalType: 'address',
-            type: 'address',
-          },
           { name: 'challengeWindow', internalType: 'uint64', type: 'uint64' },
           {
             name: 'deallocationWindow',
@@ -14292,15 +14078,6 @@ export const useReadCommitmentManagerGetMutual =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"getMutualJuniorPool"`
- */
-export const useReadCommitmentManagerGetMutualJuniorPool =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'getMutualJuniorPool',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"getMutualLossProposal"`
  */
 export const useReadCommitmentManagerGetMutualLossProposal =
@@ -14605,15 +14382,6 @@ export const useWriteCommitmentManagerClaimMembersPremium =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"configureHeterogeneous"`
- */
-export const useWriteCommitmentManagerConfigureHeterogeneous =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'configureHeterogeneous',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"contributeEncumbered"`
  */
 export const useWriteCommitmentManagerContributeEncumbered =
@@ -14890,15 +14658,6 @@ export const useWriteCommitmentManagerReleaseMutualMember =
   /*#__PURE__*/ createUseWriteContract({
     abi: commitmentManagerAbi,
     functionName: 'releaseMutualMember',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"remark"`
- */
-export const useWriteCommitmentManagerRemark =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'remark',
   })
 
 /**
@@ -15187,15 +14946,6 @@ export const useSimulateCommitmentManagerClaimMembersPremium =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"configureHeterogeneous"`
- */
-export const useSimulateCommitmentManagerConfigureHeterogeneous =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'configureHeterogeneous',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"contributeEncumbered"`
  */
 export const useSimulateCommitmentManagerContributeEncumbered =
@@ -15472,15 +15222,6 @@ export const useSimulateCommitmentManagerReleaseMutualMember =
   /*#__PURE__*/ createUseSimulateContract({
     abi: commitmentManagerAbi,
     functionName: 'releaseMutualMember',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"remark"`
- */
-export const useSimulateCommitmentManagerRemark =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'remark',
   })
 
 /**
@@ -16003,15 +15744,6 @@ export const useWatchCommitmentManagerMemberReleasedEvent =
   })
 
 /**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"MemberRemarked"`
- */
-export const useWatchCommitmentManagerMemberRemarkedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'MemberRemarked',
-  })
-
-/**
  * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"MemberSettled"`
  */
 export const useWatchCommitmentManagerMemberSettledEvent =
@@ -16045,42 +15777,6 @@ export const useWatchCommitmentManagerMutualCreatedEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: commitmentManagerAbi,
     eventName: 'MutualCreated',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"MutualHeterogeneousConfigured"`
- */
-export const useWatchCommitmentManagerMutualHeterogeneousConfiguredEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'MutualHeterogeneousConfigured',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"MutualJuniorDrawn"`
- */
-export const useWatchCommitmentManagerMutualJuniorDrawnEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'MutualJuniorDrawn',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"MutualJuniorFunded"`
- */
-export const useWatchCommitmentManagerMutualJuniorFundedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'MutualJuniorFunded',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"MutualJuniorSwept"`
- */
-export const useWatchCommitmentManagerMutualJuniorSweptEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'MutualJuniorSwept',
   })
 
 /**

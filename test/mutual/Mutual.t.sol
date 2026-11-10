@@ -70,7 +70,6 @@ contract MutualE2ETest is Test {
             arbiter: address(arbiter),
             numeraire: address(usdc),
             beneficiary: address(router),
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -90,7 +89,7 @@ contract MutualE2ETest is Test {
         p.challengeWindow = 1 days;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(mutualId, p, 0, "");
+        cid = manager.joinMutual(mutualId, p);
     }
 
     function test_e2e_proposeExecuteSettleCollect() public {

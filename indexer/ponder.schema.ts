@@ -871,7 +871,7 @@ export const ledgerFlow = onchainTable(
      * 'deposit' | 'withdraw' | 'encumber' | 'release' | 'escrow' | 'external'
      * | 'transferIn' | 'transferOut' | 'contributeOut' | 'contributeIn'
      * | 'forfeitOut' | 'forfeitIn' | 'settleOut' | 'settleIn' | 'distribution'
-     * | 'premiumOut' | 'premiumIn' | 'juniorOut' | 'juniorIn'
+     * | 'premiumOut' | 'premiumIn'
      */
     kind: t.text().notNull(),
     /** Attributed commitment, when the path names one. Null otherwise. */
@@ -1165,7 +1165,6 @@ export const mutual = onchainTable(
     arbiter: t.hex().notNull(),
     numeraire: t.hex().notNull(),
     beneficiary: t.hex().notNull(),
-    valuationAuthority: t.hex().notNull(), // 0x0 ⇒ homogeneous mode (creditedValue == forfeitableUnits)
     challengeWindow: t.bigint().notNull().default(0n), // seconds (uint64 on chain)
     deallocationWindow: t.bigint().notNull().default(0n), // seconds (uint64 on chain)
     totalShares: t.bigint().notNull().default(0n), // Σ active members' creditedValue
@@ -1183,14 +1182,6 @@ export const mutual = onchainTable(
     premiumRemainder: t.bigint().notNull().default(0n), // carried fixed-point dust
     bankedTotal: t.bigint().notNull().default(0n), // Σ unclaimed member rewardBank
     premiumPool: t.bigint().notNull().default(0n), // reserve (funded − claimed)
-    // ---- Heterogeneous mode (ERC §H §8 / M4) — set once via configureHeterogeneous, then the
-    // band/junior config is immutable; `juniorPool` moves with funding / settle-draw / sweep. NULL/0
-    // for homogeneous & attested-unconfigured mutuals (bandAdapter NULL ⇒ not heterogeneous).
-    bandAdapter: t.hex(), // manipulation-resistant valuation adapter; NULL ⇒ homogeneous (M1 behaviour)
-    valuationFloorBps: t.bigint().notNull().default(0n), // band lower bound on premiumWeight (uint64)
-    valuationCeilBps: t.bigint().notNull().default(0n), // band upper bound; ≤1e4 (uint64)
-    juniorBps: t.bigint().notNull().default(0n), // premium-funding split to the junior absorber (uint64)
-    juniorPool: t.bigint().notNull().default(0n), // junior reserve, funded − drawn (5th partition compartment)
     // Synthetic-mutual annotation (denormalized from MutualRegistered) — NULL for bare mutuals.
     targetCapacity: t.bigint(),
     termEnd: t.bigint(),
@@ -1246,7 +1237,6 @@ export const membership = onchainTable(
     creditedValue: t.bigint().notNull(), // uint128 on chain
     lossSnapshot: t.bigint().notNull().default(0n),
     // ---- Premium index (reward side; M1 append-only) — refreshed via getMembership ----
-    premiumWeight: t.bigint().notNull().default(0n), // uint128 on chain; == creditedValue in homogeneous v1
     premiumSnapshot: t.bigint().notNull().default(0n), // Pi at join / last sync (reward non-retroactivity)
     rewardBank: t.bigint().notNull().default(0n), // accrued-but-unclaimed premium in numeraire
     status: t.text().notNull(), // 'active' | 'exitRequested' | 'released'
@@ -1282,9 +1272,7 @@ export const mutualEvent = onchainTable(
     commitmentId: t.bigint(), // null for mutual-scoped transitions
     // 'created' | 'activated' | 'memberJoined' | 'lossInitiated' | 'lossExecuted' |
     // 'lossCancelled' | 'lossShortfall' | 'memberSettled' | 'exitRequested' |
-    // 'memberReleased' | 'terminated' |
-    // heterogeneous (§H §8 / M4): 'heteroConfigured' | 'remarked' | 'juniorFunded' |
-    // 'juniorDrawn' | 'juniorSwept'
+    // 'memberReleased' | 'terminated'
     kind: t.text().notNull(),
     numeraireAmount: t.bigint(), // loss/credit exposure where applicable
     cumulativeLoss: t.bigint(), // post-event Lambda (lossExecuted / memberSettled)

@@ -149,9 +149,8 @@ interface ICommitmentManager {
     ///         (ERC-COMMITMENTS-MUTUALS). Economically: Lloyd's several liability with a shared loss ratio.
     struct Mutual {
         address arbiter; // sole authority to INITIATE a mutual loss
-        address numeraire; // unit of account for creditedValue & L (pricing only; never moved)
+        address numeraire; // the token every member posts; unit of creditedValue, L and premium
         address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
-        address valuationAuthority; // attests creditedValue in attested mode; MUST != arbiter; 0 = homogeneous mode
         uint64 challengeWindow; // >= MUTUAL_MIN_CHALLENGE_WINDOW (longer than the per-commitment floor)
         uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
         uint64 lastInitiatedAt; // re-initiation rate-limit cursor (griefing guard)
@@ -172,27 +171,6 @@ interface ICommitmentManager {
         uint64 periodFinish; // end of the current stream; accrual stops here
         uint256 premiumRemainder; // sub-1e27 dust carried forward between pokes (no value ever lost)
         uint256 bankedTotal; // Σ rewardBank_i — `outstandingBank` for the funding-time solvency guard (INV-P2)
-        // ---- Heterogeneous mode (append-only; all zero in homogeneous & attested-unconfigured) ----
-        // A mutual is HETEROGENEOUS iff `bandAdapter != 0`. These are set ONCE by `configureHeterogeneous`
-        // (valuationAuthority-only, while !active && !terminal) and immutable after. They drive ONLY the
-        // premium (reward) side — `premiumWeight` band-clamping + haircut + the junior split — and NEVER
-        // the loss denominator, so homogeneous mutuals (all fields zero) are byte-for-byte unchanged.
-        address bandAdapter; // 0 = homogeneous / attested-unconfigured (homogeneous behaviour); nonzero = heterogeneous
-        uint64 valuationFloorBps; // band lower bound on `premiumWeight` as floorBps*adapterValue/1e4 (INV-P11)
-        uint64 valuationCeilBps; // band upper bound; <= 1e4 (no inflation above the adapter value, INV-P11)
-        uint64 juniorBps; // premium-funding split routed to the junior shortfall absorber (0 = no split)
-    }
-
-    /// @notice Heterogeneous-mode configuration, applied ONCE via `configureHeterogeneous` before the
-    ///         mutual is activated and immutable thereafter. Only meaningful for mutuals
-    ///         with a non-zero `valuationAuthority`; homogeneous mutuals can never be configured.
-    struct HeteroConfig {
-        address bandAdapter; // manipulation-resistant valuation adapter (TWAP / 4626 rate); REQUIRED, != 0
-        uint64 valuationFloorBps; // band lower bound (<= ceil)
-        uint64 valuationCeilBps; // band upper bound (<= 1e4)
-        uint64 juniorBps; // premium split to the junior absorber (<= 1e4)
-        address[] collaterals; // per-collateral haircut keys (parallel to `haircutBps`)
-        uint64[] haircutBps; // per-collateral haircut bps (each <= 1e4); parallel to `collaterals`
     }
 
     /// @notice Per-commitment membership in a Mutual (sparse; mutualId 0 == not a member).
@@ -200,13 +178,10 @@ interface ICommitmentManager {
         uint256 mutualId; // 0 == not a member (single, non-rebindable)
         uint256 forfeitableUnits; // E_i = amount*maxPenaltyBps/10_000, FROZEN at join (the loss base, raw units)
         uint256 settledUnits; // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
-        uint128 creditedValue; // valuation(token, E_i) in numeraire, FROZEN at join (totalShares accounting)
+        uint128 creditedValue; // == E_i, FROZEN at join (totalShares accounting)
         uint256 lossSnapshot; // Lambda at join / last settle — liable only for cumulativeLoss - snapshot
         uint64 unbondRequestedAt; // 0 == active; nonzero starts the deallocation window (still slashable until elapsed)
         // ---- Premium index (reward side; append-only) ----
-        // Numeraire PREMIUM weight; == creditedValue in homogeneous v1, re-priceable in heterogeneous mode.
-        uint128 premiumWeight;
-        // Kept distinct from creditedValue so a reward re-mark can never touch the loss denominator (INV-P6).
         uint256 premiumSnapshot; // Pi at join / last sync — earns only Pi-growth after (reward non-retroactivity, INV-P5)
         uint256 rewardBank; // accrued-but-unclaimed premium in numeraire (paid to the committer on claim/release)
         // (The deallocation-window pause snapshot lives in the sibling
@@ -233,7 +208,6 @@ interface ICommitmentManager {
         address arbiter;
         address numeraire;
         address beneficiary;
-        address valuationAuthority; // 0 = homogeneous-numeraire mode (oracle-free; numeraire == member token)
         uint64 challengeWindow;
         uint64 deallocationWindow;
     }
@@ -401,13 +375,7 @@ interface ICommitmentManager {
     // Events — shared-loss mutuals (Mutual extension, ERC-COMMITMENTS-MUTUALS)
     // =========================================================================
 
-    event MutualCreated(
-        uint256 indexed mutualId,
-        address indexed arbiter,
-        address numeraire,
-        address beneficiary,
-        address valuationAuthority
-    );
+    event MutualCreated(uint256 indexed mutualId, address indexed arbiter, address numeraire, address beneficiary);
     event MutualActivated(uint256 indexed mutualId);
     event MutualTerminated(uint256 indexed mutualId);
     event MemberJoined(
@@ -450,24 +418,6 @@ interface ICommitmentManager {
     event PremiumReclaimed(uint256 indexed mutualId, address indexed recipient, uint256 unstreamed);
     /// @notice Terminal sweep of a wound-down mutual's residual reserve (so INV-P1 closes at zero).
     event MutualPremiumSwept(uint256 indexed mutualId, address indexed recipient, uint256 amount);
-
-    // ---- Heterogeneous mode ----
-    /// @notice A mutual was configured for heterogeneous mode (immutable after; pre-activation only).
-    event MutualHeterogeneousConfigured(
-        uint256 indexed mutualId,
-        address indexed bandAdapter,
-        uint64 valuationFloorBps,
-        uint64 valuationCeilBps,
-        uint64 juniorBps
-    );
-    /// @notice A member's premium weight was down-only re-marked (monotone non-increasing, INV-P11).
-    event MemberRemarked(uint256 indexed commitmentId, uint128 oldWeight, uint128 newWeight);
-    /// @notice The junior shortfall absorber was funded by the premium split (`juniorBps` of a receipt).
-    event MutualJuniorFunded(uint256 indexed mutualId, address indexed funder, uint256 amount);
-    /// @notice The junior absorber was drawn at settle to top up the beneficiary's numeraire recovery.
-    event MutualJuniorDrawn(uint256 indexed commitmentId, uint256 amount);
-    /// @notice Terminal sweep of a wound-down mutual's residual junior reserve (so INV-P13 closes at zero).
-    event MutualJuniorSwept(uint256 indexed mutualId, address indexed recipient, uint256 amount);
 
     // =========================================================================
     // Events — admin
@@ -600,7 +550,6 @@ interface ICommitmentManager {
     error ExitNotRequested();
     error ExitRequestLapsed(); // release at or past 2 * deallocationWindow; request again
     error MutualExhausted(); // Lambda at its cap: no new joins or premium
-    error ValuationAuthorityIsArbiter();
     error InvalidCreditedValue();
     error NumeraireMismatch();
     error MutualArbiterMismatch();
@@ -608,7 +557,6 @@ interface ICommitmentManager {
     error MemberStrategyForbidden();
     error TotalSharesOverflow();
     error ReinitTooSoon();
-    error InvalidValuationAttestation();
     error CommitmentInMutual();
 
     // ---- Premium index (reward side) ----
@@ -618,15 +566,6 @@ interface ICommitmentManager {
     error RewardRateOverflow(); // computed rewardRate would not fit uint128 (infeasible funding)
     error StreamDurationOutOfBounds(); // duration outside [MIN_STREAM_DURATION, MAX_STREAM_DURATION], or uint64 deadline overflow
     error PremiumRateDecreased(); // live-stream funding may only maintain/raise rewardRate (anti-dilution/stall)
-    error HeterogeneousPremiumUnsupported(); // premium funding blocked: attested mode not yet configured
-    error InsufficientMutualJunior(uint256 requested, uint256 available); // junior pool debit exceeds the reserve
-
-    // ---- Heterogeneous mode ----
-    error NotValuationAuthority(); // configureHeterogeneous caller is not the mutual's valuationAuthority
-    error NotHeterogeneous(); // remark / heterogeneous-only op on a mutual with no bandAdapter
-    error MutualAlreadyConfigured(); // configureHeterogeneous on an already-configured mutual (immutable)
-    error MutualAlreadyActive(); // configureHeterogeneous after activation (config is pre-activation only)
-    error InvalidHeteroConfig(); // bad band bounds / juniorBps / haircut / array-length mismatch
 
     // ---- Operator registry wiring ----
     /// @notice setOperatorRegistry would orphan live delegations: the outgoing registry still
@@ -872,40 +811,18 @@ interface ICommitmentManager {
     // =========================================================================
 
     /// @notice Create a Mutual. Starts inactive; members can only join once its arbiter
-    ///         activates it. `valuationAuthority == 0` selects the oracle-free
-    ///         homogeneous-numeraire subset (every member posts the mutual's `numeraire` token and
-    ///         `creditedValue == E_i` by construction).
+    ///         activates it. Every member posts the mutual's `numeraire` token and
+    ///         `creditedValue == E_i` by construction (oracle-free).
     function createMutual(MutualParams calldata params) external returns (uint256 mutualId);
 
     /// @notice Flip an inactive mutual active (arbiter only; no creator is stored). No joins and no
     ///         losses until active.
     function activateMutual(uint256 mutualId) external;
 
-    /// @notice Configure heterogeneous mode (valuationAuthority-only, while inactive & non-terminal).
-    ///         Sets the manipulation-resistant band adapter, the band bounds, the junior split, and
-    ///         the per-collateral haircuts. Immutable after this call; reverts otherwise. Only valid
-    ///         for mutuals created with a non-zero `valuationAuthority` (homogeneous mutuals can never
-    ///         be configured). Once configured, premium funding (`fundMutualPremium`) is re-enabled and
-    ///         new joins derive their `premiumWeight` from the band+haircut instead of the attestation.
-    function configureHeterogeneous(uint256 mutualId, HeteroConfig calldata config) external;
-
-    /// @notice Permissionless down-only re-mark of one member's premium weight (heterogeneous only).
-    ///         Recomputes the band+haircut weight and ratchets `premiumWeight` to the MIN of the
-    ///         current and recomputed value (monotone non-increasing, INV-P11). Reverts while a mutual
-    ///         loss is pending (INV-P12). Writes ONLY `premiumWeight` and the premium aggregates —
-    ///         never the loss denominator (`creditedValue` / `totalShares` / Lambda / headroom).
-    function remark(uint256 mutualId, uint256 commitmentId) external;
-
-    /// @notice Create a fresh commitment and join it to `mutualId` atomically, freezing the opaque
-    ///         capacity weight `creditedValue`. In homogeneous mode `creditedValue` is ignored and
-    ///         set to `E_i`; in attested mode it must be signed by the mutual's `valuationAuthority`.
-    ///         Reverts `MutualExhausted` once Lambda is at its cap (1e18).
-    function joinMutual(
-        uint256 mutualId,
-        CommitmentParams calldata params,
-        uint128 creditedValue,
-        bytes calldata attestation
-    ) external returns (uint256 commitmentId);
+    /// @notice Create a fresh commitment and join it to `mutualId` atomically, freezing its weight
+    ///         `creditedValue == E_i`. `params.token` must be the mutual's numeraire. Reverts
+    ///         `MutualExhausted` once Lambda is at its cap (1e18).
+    function joinMutual(uint256 mutualId, CommitmentParams calldata params) external returns (uint256 commitmentId);
 
     /// @notice Phase 1 (mutual arbiter only): declare a loss `lossNumeraire`, starting the mutual
     ///         challenge window. Freezes joins/exits/releases until resolved.
@@ -996,9 +913,6 @@ interface ICommitmentManager {
 
     /// @notice Premium currently claimable by `commitmentId` if claimed now (banked + simulated accrual).
     function pendingMemberPremium(uint256 commitmentId) external view returns (uint256 claimable);
-
-    /// @notice Junior shortfall absorber reserve (`funded − drawn`) for a mutual, in its numeraire.
-    function getMutualJuniorPool(uint256 mutualId) external view returns (uint256 juniorPool);
 
     function getMutual(uint256 mutualId) external view returns (Mutual memory);
     function getMembership(uint256 commitmentId) external view returns (Membership memory);

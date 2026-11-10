@@ -402,14 +402,6 @@ function CoveragePoolCard({ listing, mutual, meta, onOpen, onOpenVault }: Covera
               vault-funded
             </span>
           )}
-          {mutual?.heterogeneous && (
-            <span
-              className="ds-badge ds-badge--accent"
-              title="Heterogeneous mode — premium priced off a band valuation (ERC §H §8)"
-            >
-              heterogeneous
-            </span>
-          )}
           {status ? (
             <MutualStatusBadge status={status} />
           ) : (

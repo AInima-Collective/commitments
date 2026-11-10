@@ -63,7 +63,7 @@ import { useTokenMetaMap } from '../hooks/useTokenMeta'
 import { useNowSeconds } from '../hooks/useNow'
 import { useTxReceipt } from '../hooks/useTxReceipt'
 import { useViewAddress } from '../hooks/useViewAddress'
-import { formatDuration, formatPercent, formatTokenAmount, truncateAddress } from '../lib/format'
+import { formatDuration, formatTokenAmount, truncateAddress } from '../lib/format'
 import { parsePerilURI, perilLabel } from '../lib/peril'
 
 /** Which action modal is open, if any. */
@@ -217,8 +217,6 @@ export default function Mutual() {
     mutual,
     proposal,
     hasPendingLoss,
-    isHeterogeneous,
-    juniorPool,
     liveCapacity,
     liveCapacityAvailable,
     notFound,
@@ -541,9 +539,6 @@ export default function Mutual() {
             metadataURI: '',
             metadataHash: EMPTY_HASH,
           },
-          // creditedValue (uint128) — homogeneous mode: equals amount posted.
-          amount,
-          '0x',
         ],
       },
       {
@@ -597,7 +592,7 @@ export default function Mutual() {
       <PageHeader
         eyebrow={`mutual · #${mutualId.toString()}`}
         title={listing?.perilURI ? perilLabel(listing.perilURI) : `Mutual #${mutualId.toString()}`}
-        lead={`Pooled shared-loss cover · ${isHeterogeneous ? 'mixed collateral' : `backed by ${meta.symbol}`}`}
+        lead={`Pooled shared-loss cover · backed by ${meta.symbol}`}
         actions={loaded ? <MutualStatusBadge status={status} /> : undefined}
       />
 
@@ -679,7 +674,6 @@ export default function Mutual() {
             arbiter={mutual.arbiter}
             challengeWindow={mutual.challengeWindow}
             symbol={meta.symbol}
-            heterogeneous={isHeterogeneous}
           />
 
           {/* 2. Market & risk at a glance — one consolidated block. */}
@@ -731,7 +725,6 @@ export default function Mutual() {
                 lossPending={hasPendingLoss}
                 unsettledIds={unsettledIds}
                 owedOutstanding={owedOutstanding}
-                heterogeneous={isHeterogeneous}
                 onCollected={() => {
                   refetchMutual()
                   roster.refetch()
@@ -894,44 +887,10 @@ export default function Mutual() {
                       </div>
                     </div>
                   ) : (
-                    !isHeterogeneous && (
-                      <EmptyState
-                        title="NO PREMIUM STREAM YET"
-                        description="No cover has been bought, so there's no premium streaming to underwriters. Buy cover to start a stream."
-                      />
-                    )
-                  )}
-
-                  {isHeterogeneous && (
-                    <div className="ds-stack ds-stack-2">
-                      <h4 className="ds-section-eyebrow">Heterogeneous pricing</h4>
-                      <Notice tone="info" size="sm" title="Premium priced off a band valuation">
-                        Underwriters here post different collateral. Premium share is weighted by a
-                        manipulation-resistant valuation, clamped to the band below, then haircut per
-                        collateral. Loss recovery is unaffected — only the reward side is valued.
-                      </Notice>
-                      <div className="ds-stat-grid">
-                        <StatBlock
-                          label="valuation band"
-                          value={`${formatPercent(mutual.valuationFloorBps)} – ${formatPercent(mutual.valuationCeilBps)}`}
-                          meta="premiumWeight bounds vs. adapter value"
-                        />
-                        <StatBlock
-                          label="junior buffer"
-                          value={
-                            juniorPool !== undefined ? (
-                              <span title={formatTokenAmount(juniorPool, meta.decimals).full}>
-                                <TokenAmount amount={juniorPool} decimals={meta.decimals} symbol={meta.symbol} compact />
-                              </span>
-                            ) : (
-                              '—'
-                            )
-                          }
-                          tone={juniorPool !== undefined && juniorPool > 0n ? 'accent' : 'neutral'}
-                          meta={`${formatPercent(mutual.juniorBps)} of premium · tops up beneficiary on loss`}
-                        />
-                      </div>
-                    </div>
+                    <EmptyState
+                      title="NO PREMIUM STREAM YET"
+                      description="No cover has been bought, so there's no premium streaming to underwriters. Buy cover to start a stream."
+                    />
                   )}
                 </Card>
               </Tabs.Panel>
@@ -1160,11 +1119,16 @@ export default function Mutual() {
                 <div className="ds-stack ds-stack-3">
                   <h4 className="ds-section-eyebrow">Exit</h4>
                   {myMembers.map((m) => {
-                    const exitRequested = m.unbondRequestedAt > 0n
+                    // Release is open only while deallocationWindow <= elapsed < 2 * deallocationWindow
+                    // from the request; after that the request has lapsed and must be made again.
+                    const requested = m.unbondRequestedAt > 0n
+                    const windowOpensAt = m.unbondRequestedAt + mutual.deallocationWindow
+                    const windowClosesAt = windowOpensAt + mutual.deallocationWindow
+                    const lapsed = requested && nowSec >= windowClosesAt
+                    const exitRequested = requested && !lapsed
                     const slashableWindow = Number(mutual.deallocationWindow)
                     const slashableElapsed = exitRequested ? Number(nowSec - m.unbondRequestedAt) : 0
-                    const windowEnd = m.unbondRequestedAt + mutual.deallocationWindow
-                    const windowElapsed = exitRequested && nowSec >= windowEnd
+                    const windowElapsed = exitRequested && nowSec >= windowOpensAt
                     // Contract gate (INV-G5): release requires the member be settled
                     // to the live Λ. If Λ moved since the member last settled, the
                     // accrued slice must be settled first.
@@ -1190,7 +1154,8 @@ export default function Mutual() {
                         lossPending: hasPendingLoss,
                         unsettled: needsSettle,
                         owedUnits: m.owedUnits,
-                        exitRequestedAt: m.unbondRequestedAt,
+                        // A lapsed request reads as no request: offer the request again, not release.
+                        exitRequestedAt: exitRequested ? m.unbondRequestedAt : 0n,
                         deallocationWindow: mutual.deallocationWindow,
                       },
                     }).filter((a) => MUTUAL_ACTION_KINDS.has(a.kind))
@@ -1216,6 +1181,20 @@ export default function Mutual() {
                           slashableElapsed={slashableElapsed}
                           slashableWindow={slashableWindow}
                         />
+
+                        {exitRequested && (
+                          <span className="ds-text-xs ds-subtle">
+                            {windowElapsed
+                              ? `Exit window open — closes in ${formatDuration(Number(windowClosesAt - nowSec))}.`
+                              : `Exit window opens in ${formatDuration(Number(windowOpensAt - nowSec))} and stays open ${formatDuration(slashableWindow)}.`}
+                          </span>
+                        )}
+                        {lapsed && (
+                          <Notice tone="warn" size="sm" title="Exit request lapsed">
+                            The exit window closed {formatDuration(Number(nowSec - windowClosesAt))} ago without a
+                            release. Request exit again to open a new window.
+                          </Notice>
+                        )}
 
                         {/* Window elapsed and releasable — preview what comes back. */}
                         {exitRequested && windowElapsed && !hasPendingLoss && (

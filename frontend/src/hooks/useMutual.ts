@@ -12,8 +12,6 @@ export interface MutualHeader {
   arbiter: Address
   numeraire: Address
   beneficiary: Address
-  /** Zero address ⇒ homogeneous mode (every member posts the numeraire). */
-  valuationAuthority: Address
   challengeWindow: bigint
   deallocationWindow: bigint
   /** 0n when no loss proposal has ever been initiated. */
@@ -24,15 +22,6 @@ export interface MutualHeader {
   cumulativeLoss: bigint
   active: boolean
   terminal: boolean
-  // Heterogeneous mode (ERC §H §8 / M4) — zero/empty for homogeneous & attested-unconfigured mutuals.
-  /** Band valuation adapter; zero address ⇒ NOT heterogeneous (homogeneous M1 behaviour). */
-  bandAdapter: Address
-  /** Band lower bound on premiumWeight, basis points. */
-  valuationFloorBps: bigint
-  /** Band upper bound on premiumWeight, basis points (≤1e4). */
-  valuationCeilBps: bigint
-  /** Premium-funding split routed to the junior absorber, basis points. */
-  juniorBps: bigint
 }
 
 /** Pending bonded loss proposal (the `getMutualLossProposal` tuple, typed). */
@@ -54,15 +43,6 @@ export interface UseMutualReturn {
   markdownFraction: number
   /** Lambda as a percentage in [0, 100] (cumulative markdown). */
   markdownPct: number
-  /** True in homogeneous mode (valuationAuthority == 0). */
-  isHomogeneous: boolean
-  /** True in heterogeneous mode (ERC §H §8): a band valuation adapter is configured. */
-  isHeterogeneous: boolean
-  /**
-   * Junior shortfall reserve (funded − drawn) in raw numeraire units, from the indexer's
-   * `GET /mutuals`. `undefined` when the indexer hasn't supplied this mutual. 0n for homogeneous.
-   */
-  juniorPool: bigint | undefined
   /**
    * Loss-adjusted live coverage (raw numeraire units) from the indexer's
    * `GET /mutuals`. `undefined` when the indexer hasn't supplied this mutual —
@@ -144,7 +124,6 @@ export function useMutual({
         arbiter: mutualRaw.arbiter,
         numeraire: mutualRaw.numeraire,
         beneficiary: mutualRaw.beneficiary,
-        valuationAuthority: mutualRaw.valuationAuthority,
         challengeWindow: BigInt(mutualRaw.challengeWindow),
         deallocationWindow: BigInt(mutualRaw.deallocationWindow),
         lastInitiatedAt: BigInt(mutualRaw.lastInitiatedAt),
@@ -152,10 +131,6 @@ export function useMutual({
         cumulativeLoss: BigInt(mutualRaw.cumulativeLoss),
         active: mutualRaw.active,
         terminal: mutualRaw.terminal,
-        bandAdapter: mutualRaw.bandAdapter,
-        valuationFloorBps: BigInt(mutualRaw.valuationFloorBps),
-        valuationCeilBps: BigInt(mutualRaw.valuationCeilBps),
-        juniorBps: BigInt(mutualRaw.juniorBps),
       }
     : undefined
 
@@ -181,15 +156,6 @@ export function useMutual({
   const markdownFraction = lambdaToFraction(lambda)
   const markdownPct = markdownFraction * 100
 
-  const isHomogeneous =
-    mutual !== undefined && mutual.valuationAuthority.toLowerCase() === ZERO
-
-  // Heterogeneous iff a band adapter is configured (set by configureHeterogeneous before
-  // activation). Distinct from `!isHomogeneous`: an attested-but-unconfigured mutual has a
-  // non-zero valuationAuthority yet still prices premium homogeneously (bandAdapter == 0).
-  const isHeterogeneous =
-    mutual !== undefined && mutual.bandAdapter.toLowerCase() !== ZERO
-
   // A non-existent mutual id reads back as the zero struct: no arbiter, never
   // activated, no shares. Treat that as "not found" rather than a real mutual.
   const notFound =
@@ -206,9 +172,6 @@ export function useMutual({
     hasPendingLoss,
     markdownFraction,
     markdownPct,
-    isHomogeneous,
-    isHeterogeneous,
-    juniorPool: indexed?.juniorPool,
     liveCapacity: indexed?.liveCapacity,
     liveCapacityAvailable: indexed !== undefined,
     memberCount: indexed?.memberCount,

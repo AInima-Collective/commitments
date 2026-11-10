@@ -1765,7 +1765,6 @@ contract Simulate is Script {
             arbiter: address(agentMutualArbiter),
             numeraire: address(agentVault),
             beneficiary: address(agentVaultBeneficiary),
-            valuationAuthority: address(0), // homogeneous (oracle-free)
             challengeWindow: 172_800, // 2 days (hard mutual floor)
             deallocationWindow: 172_800
         });
@@ -1849,7 +1848,7 @@ contract Simulate is Script {
         );
         p.challengeWindow = 86_400; // 1 day (member commitment; the mutual window governs losses)
 
-        uint256 commitmentId = manager.joinMutual(agentMutualId, p, 0, "");
+        uint256 commitmentId = manager.joinMutual(agentMutualId, p);
         vm.stopBroadcast();
         console.log("  Underwriter %s: commitment %d (%d cvaDAI)", member.addr, commitmentId, shares / 1e27);
     }
@@ -1987,7 +1986,6 @@ contract Simulate is Script {
             arbiter: address(optimisticMutualArbiter),
             numeraire: address(usdcVault),
             beneficiary: beneficiary,
-            valuationAuthority: address(0), // homogeneous (oracle-free)
             challengeWindow: 172_800, // 2 days (hard mutual floor)
             deallocationWindow: 172_800 // >= challengeWindow
         });
@@ -2021,9 +2019,8 @@ contract Simulate is Script {
     /// @dev Mint fresh USDC to `member`, route it through the vault into cvUSDC shares in the
     ///      manager, then `joinMutual` (committer = caller, counterparty = the mutual beneficiary).
     ///      The join line is the ACTUAL shares minted (vault NAV has lifted from earlier donations,
-    ///      so a fixed share figure can't be assumed). maxPenaltyBps = 10_000 so E_i == amount in
-    ///      homogeneous mode; the member commitment's own challengeWindow is 1 day. `creditedValue
-    ///      = 0` + empty attestation: the lib derives creditedValue = E_i automatically.
+    ///      so a fixed share figure can't be assumed). maxPenaltyBps = 10_000 so E_i == amount ==
+    ///      creditedValue; the member commitment's own challengeWindow is 1 day.
     function _joinMutual(
         Wallet memory member,
         uint256 mutualId,
@@ -2052,7 +2049,7 @@ contract Simulate is Script {
         // underwrites the same thing, and the differences are amounts.
         if (bytes(metadataKey).length > 0) _withMetadata(p, metadataKey);
 
-        uint256 commitmentId = manager.joinMutual(mutualId, p, 0, "");
+        uint256 commitmentId = manager.joinMutual(mutualId, p);
         vm.stopBroadcast();
         console.log("  Member %s joined mutual %d: commitment %d", member.addr, mutualId, commitmentId);
     }

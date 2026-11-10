@@ -786,7 +786,6 @@ contract AttestationArbiterTest is ManagerTestBase {
             arbiter: address(arbiter),
             numeraire: address(token),
             beneficiary: mutualBeneficiary,
-            valuationAuthority: address(0), // homogeneous
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -805,7 +804,7 @@ contract AttestationArbiterTest is ManagerTestBase {
         p.challengeWindow = WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     /// @dev Submit a mutual-scoped action envelope (activate / initiate / cancel).

@@ -22,8 +22,6 @@ export interface MutualIndexed {
   arbiter: Address
   beneficiary: Address
   numeraire: Address
-  /** Zero address ⇒ homogeneous mode. */
-  valuationAuthority: Address
   challengeWindow: bigint
   deallocationWindow: bigint
   memberCount: number
@@ -58,18 +56,6 @@ export interface MutualIndexed {
   coveredVault: Address | null
   /** The keyless VaultCoverConduit funding the premium stream; null unless covered. */
   conduit: Address | null
-  /** True ⇒ heterogeneous mode (ERC §H §8): premium priced off a band-valuation adapter. */
-  heterogeneous: boolean
-  /** Band valuation adapter; null ⇒ homogeneous. */
-  bandAdapter: Address | null
-  /** Band lower bound on premiumWeight, in basis points (0 for homogeneous). */
-  valuationFloorBps: number
-  /** Band upper bound on premiumWeight, in basis points (≤1e4; 0 for homogeneous). */
-  valuationCeilBps: number
-  /** Premium-funding split routed to the junior absorber, in basis points. */
-  juniorBps: number
-  /** Junior shortfall reserve (funded − drawn), raw numeraire units. */
-  juniorPool: bigint
 }
 
 /** Wire shape — every bigint arrives as a decimal string. */
@@ -78,7 +64,6 @@ interface MutualWire {
   arbiter: string
   beneficiary: string
   numeraire: string
-  valuationAuthority: string
   challengeWindow: string
   deallocationWindow: string
   memberCount: number
@@ -95,13 +80,6 @@ interface MutualWire {
   // Underwritten-vault association — defaulted for older indexer builds.
   coveredVault?: string | null
   conduit?: string | null
-  // Heterogeneous mode (§H §8 / M4) — present on every row; defaulted for older indexer builds.
-  heterogeneous?: boolean
-  bandAdapter?: string | null
-  valuationFloorBps?: number
-  valuationCeilBps?: number
-  juniorBps?: number
-  juniorPool?: string
 }
 
 export interface UseMutualsReturn {
@@ -126,7 +104,6 @@ function parseMutual(w: MutualWire): MutualIndexed {
     arbiter: w.arbiter as Address,
     beneficiary: w.beneficiary as Address,
     numeraire: w.numeraire as Address,
-    valuationAuthority: w.valuationAuthority as Address,
     challengeWindow: BigInt(w.challengeWindow),
     deallocationWindow: BigInt(w.deallocationWindow),
     memberCount: w.memberCount,
@@ -142,12 +119,6 @@ function parseMutual(w: MutualWire): MutualIndexed {
     terminal: w.terminal,
     coveredVault: (w.coveredVault ?? null) as Address | null,
     conduit: (w.conduit ?? null) as Address | null,
-    heterogeneous: w.heterogeneous ?? w.bandAdapter != null,
-    bandAdapter: (w.bandAdapter ?? null) as Address | null,
-    valuationFloorBps: w.valuationFloorBps ?? 0,
-    valuationCeilBps: w.valuationCeilBps ?? 0,
-    juniorBps: w.juniorBps ?? 0,
-    juniorPool: BigInt(w.juniorPool ?? '0'),
   }
 }
 

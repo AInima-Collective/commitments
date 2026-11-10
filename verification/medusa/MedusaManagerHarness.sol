@@ -242,8 +242,8 @@ contract MedusaManagerHarness is ManagerHandler {
     // Properties
     // =====================================================================
 
-    /// @notice INV-1 / INV-P13 — five-compartment partition per token:
-    ///         free + encumbered + escrow + mutualPremiumPool + mutualJuniorPool
+    /// @notice INV-1 / INV-P1 — four-compartment partition per token:
+    ///         free + encumbered + escrow + mutualPremiumPool
     ///         == manager's real token balance. Mirrors
     ///         PartitionInvariantTest.invariant_partition_aggregatesMatchBalance. The adversarial
     ///         Wave-6 flows feed this: parked hooks never move value, sweeps re-drive under the
@@ -253,15 +253,13 @@ contract MedusaManagerHarness is ManagerHandler {
             address token = address(tokens[t]);
             (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(token);
             uint256 pool;
-            uint256 junior;
             for (uint256 i = 0; i < allMutualIds.length; i++) {
                 uint256 gid = allMutualIds[i];
                 if (manager.getMutual(gid).numeraire != token) continue;
                 (,,,,,,,, uint256 p) = manager.getMutualPremiumState(gid);
                 pool += p;
-                junior += manager.getMutualJuniorPool(gid);
             }
-            if (free + enc + esc + pool + junior != tokens[t].balanceOf(address(manager))) return false;
+            if (free + enc + esc + pool != tokens[t].balanceOf(address(manager))) return false;
         }
         return true;
     }

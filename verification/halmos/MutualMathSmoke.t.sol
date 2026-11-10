@@ -14,21 +14,17 @@ import {HalmosBase} from "./HalmosBase.sol";
 ///         Synthetix-style premium index Π (`premiumPerShareStored`), and the per-member settlement
 ///         accounting. Owns the Halmos column of PROPERTIES.md rows INV-G2, INV-G3, INV-G6, P2-MONO.
 ///
-///         Scene (built concretely in setUp): ONE homogeneous (oracle-free, `valuationAuthority == 0`)
-///         mutual with TWO members, both denominated in a single token. Symbolic inputs are the
+///         Scene (built concretely in setUp): ONE (oracle-free) mutual with TWO members, both denominated in a single token. Symbolic inputs are the
 ///         declared loss, the premium funding amount/duration, and (where relevant) the settle timing;
 ///         all are `vm.assume`-bounded to `<= 1_000e18` (well under the uint128 denominator cap) so the
 ///         nonlinear `Math.mulDiv` on the index denominators stays tractable for z3.
 ///
 /// @dev Run: FOUNDRY_PROFILE=halmos halmos --contract MutualMathSmokeTest --solver z3
 ///
-///      HOMOGENEOUS-MODE JUSTIFICATION: homogeneous mutuals (`bandAdapter == 0`, `valuationAuthority ==
-///      0`) are the oracle-free subset where `premiumWeight == creditedValue == E_i` exactly; the
-///      heterogeneous band/haircut/junior machinery is entirely skipped (see MutualLib `_effCover`,
-///      `_bandHaircutWeight`). This keeps every property's loss-side denominator (`totalShares`) and
-///      premium-side denominator (`activeCover`) linear in the member weights, so a proof here covers
-///      the arithmetic core; the adapter-priced weight derivation is a periphery concern owned by
-///      Fuzz/Medusa (it never touches the loss index — MutualLib INV-P11/P12/P14).
+///      Every mutual is oracle-free: each member posts the numeraire and its weight is
+///      `creditedValue == E_i` exactly (see MutualLib `_effCover`). This keeps every property's
+///      loss-side denominator (`totalShares`) and premium-side denominator (`activeCover`) linear in
+///      the member weights, so a proof here covers the arithmetic core.
 contract MutualMathSmokeTest is HalmosBase {
     CommitmentManager internal manager;
     MockERC20 internal token;
@@ -76,12 +72,11 @@ contract MutualMathSmokeTest is HalmosBase {
         vm.prank(FUNDER);
         token.approve(address(manager), type(uint256).max);
 
-        // Homogeneous (oracle-free) mutual: valuationAuthority == 0 ⇒ creditedValue == E_i, no adapter.
+        // Oracle-free mutual: creditedValue == E_i, no adapter.
         ICM.MutualParams memory mp = ICM.MutualParams({
             arbiter: ARBITER,
             numeraire: address(token),
             beneficiary: BENEFICIARY,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -112,7 +107,7 @@ contract MutualMathSmokeTest is HalmosBase {
         p.challengeWindow = COMMIT_WINDOW;
         p.strategies = new StrategyBinding[](0); // members bind no strategies (OBJ-7)
         vm.prank(who);
-        cid = manager.joinMutual(mutualId, p, 0, "");
+        cid = manager.joinMutual(mutualId, p);
     }
 
     /// @dev Initiate a symbolic loss, warp past the mutual challenge window, and execute it. Returns
@@ -207,7 +202,7 @@ contract MutualMathSmokeTest is HalmosBase {
         p.challengeWindow = COMMIT_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(memberC);
-        uint256 cidC = manager.joinMutual(mutualId, p, 0, "");
+        uint256 cidC = manager.joinMutual(mutualId, p);
 
         uint256 sharesPost = manager.getMutual(mutualId).totalShares;
         uint256 expectedEi = (amount * 5_000) / 10_000; // == creditedValue in homogeneous mode

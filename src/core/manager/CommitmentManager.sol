@@ -453,29 +453,16 @@ contract CommitmentManager is
         MutualLib.activateMutual(CommitmentManagerStorage.layout(), mutualId);
     }
 
-    /// @notice Configure heterogeneous mode (valuationAuthority-only, pre-activation, immutable). See lib.
-    function configureHeterogeneous(uint256 mutualId, ICM.HeteroConfig calldata config) external nonReentrant {
-        MutualLib.configureHeterogeneous(CommitmentManagerStorage.layout(), mutualId, config);
-    }
-
-    /// @notice Permissionless down-only re-mark of a member's premium weight (heterogeneous only). See lib.
-    function remark(uint256 mutualId, uint256 commitmentId) external nonReentrant {
-        MutualLib.remark(CommitmentManagerStorage.layout(), mutualId, commitmentId);
-    }
-
-    /// @notice Create a fresh commitment and join it to `mutualId`, freezing the capacity weight.
-    function joinMutual(
-        uint256 mutualId,
-        ICM.CommitmentParams calldata params,
-        uint128 creditedValue,
-        bytes calldata attestation
-    ) external nonReentrant returns (uint256 commitmentId) {
+    /// @notice Create a fresh commitment and join it to `mutualId`, freezing its weight (`E_i`).
+    function joinMutual(uint256 mutualId, ICM.CommitmentParams calldata params)
+        external
+        nonReentrant
+        returns (uint256 commitmentId)
+    {
         commitmentId = MutualLib.joinMutual(
             CommitmentManagerStorage.layout(),
             mutualId,
             params,
-            creditedValue,
-            attestation,
             MIN_CHALLENGE_WINDOW(),
             MAX_STRATEGIES,
             MAX_METADATA_URI_LENGTH
@@ -601,11 +588,6 @@ contract CommitmentManager is
     /// @notice Premium currently claimable by `commitmentId` if claimed now (banked + simulated accrual).
     function pendingMemberPremium(uint256 commitmentId) external view returns (uint256 claimable) {
         return MutualLib.pendingMemberPremium(CommitmentManagerStorage.layout(), commitmentId);
-    }
-
-    /// @notice Junior shortfall absorber reserve (`funded − drawn`) for a mutual, in its numeraire.
-    function getMutualJuniorPool(uint256 mutualId) external view returns (uint256 juniorPool) {
-        return CommitmentManagerStorage.layout().mutualJuniorPool[mutualId];
     }
 
     // =========================================================================
@@ -747,10 +729,9 @@ contract CommitmentManager is
     }
 
     /// @notice Per-token aggregate counters for the base O(1) partition check (ERC §A.5). The full
-    ///         partition closes over five compartments — `free + encumbered + escrow +
-    ///         mutualPremium + mutualJunior == IERC20(token).balanceOf(manager)` (INV-P13); this
-    ///         getter exposes the base three. The two mutual compartments are read via
-    ///         `totalMutualPremium` / `totalMutualJunior`.
+    ///         partition closes over four compartments — `free + encumbered + escrow +
+    ///         mutualPremium == IERC20(token).balanceOf(manager)` (INV-P1); this getter exposes
+    ///         the base three. The mutual compartment is read via `totalMutualPremium`.
     function ledgerTotals(address token)
         external
         view

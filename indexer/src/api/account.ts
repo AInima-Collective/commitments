@@ -242,7 +242,6 @@ app.get('/:address/premium', async (c) => {
       mutualId: m.mutualId.toString(),
       commitmentId: m.commitmentId.toString(),
       status: m.status,
-      premiumWeight: m.premiumWeight.toString(),
       premiumSnapshot: m.premiumSnapshot.toString(),
       rewardBank: m.rewardBank.toString(),
     })),

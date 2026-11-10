@@ -138,43 +138,21 @@ library CommitmentManagerStorage {
         ///      totalMutualPremium == balanceOf`) be checked without iterating mutuals.
         mapping(address => uint256) totalMutualPremium;
         // =====================================================================
-        // Junior shortfall absorber (heterogeneous Mutual; offsets 34..36)
-        //
-        // The FIFTH partition compartment. `mutualJuniorPool[mutualId]` is `funded − drawn` numeraire
-        // per mutual, tracked by the per-token `totalMutualJunior` aggregate so the extended O(1)
-        // partition check (INV-P13) closes: totalFree + totalEncumbered + totalEscrow +
-        // totalMutualPremium + totalMutualJunior == balanceOf. The pool NEVER earns the premium index
-        // `Pi` and is NEVER part of `activeCover` / `totalShares`. It is mutated ONLY through the
-        // LedgerLib `freeToMutualJunior` / `mutualJuniorToFree` helper pair. Homogeneous mutuals have
-        // `juniorBps == 0`, so they never fund it and these stay byte-for-byte zero. Append-only.
-        // =====================================================================
-        /// @dev mutualId => junior reserve (`funded − drawn`, the 5th INV-P1 compartment). Credited
-        ///      only by the junior split in `fundMutualPremium`; debited only by the settle-time draw /
-        ///      terminal sweep. Never earns `Pi`; never in `activeCover`.
-        mapping(uint256 => uint256) mutualJuniorPool;
-        /// @dev numeraire token => Σ mutualJuniorPool over mutuals with that numeraire. The O(1)
-        ///      aggregate that closes the 5-compartment partition (INV-P13) without iterating mutuals.
-        mapping(address => uint256) totalMutualJunior;
-        /// @dev mutualId => collateral token => haircut bps (immutable, set at `configureHeterogeneous`).
-        ///      Sizes both the band-bounded `premiumWeight` reduction (INV-P14) and the fixed-fraction
-        ///      junior draw at settle. Absent (zero) => no haircut for that collateral.
-        mapping(uint256 => mapping(address => uint64)) mutualHaircutBps;
-        // =====================================================================
-        // Agreements — proposal → agreement reverse index (offset 37; append-only)
+        // Agreements — proposal → agreement reverse index (offset 34; append-only)
         // =====================================================================
         /// @dev proposalId => agreementId (0 = proposal never accepted; ids are 1-indexed). The
         ///      reverse of the accept-time link, so a proposer/indexer can resolve the agreement a
         ///      proposal produced without scanning `AgreementAccepted` logs. Written once, at accept.
         mapping(uint256 => uint256) proposalToAgreement;
         // =====================================================================
-        // Agreements — per-leg (acceptor) strategy bindings (offset 38; append-only)
+        // Agreements — per-leg (acceptor) strategy bindings (offset 35; append-only)
         // =====================================================================
         /// @dev proposalId => the ACCEPTOR leg's strategy bindings. The PROPOSER leg's
         ///      bindings continue to live in `proposalStrategies`; splitting them is what
         ///      lets the two legs carry independent strategy sets. Consumed at accept.
         mapping(uint256 => StrategyBinding[]) proposalAcceptorStrategies;
         // =====================================================================
-        // Pause budget + window-classified clock-stop (ERC §A.6 erratum; offsets 39..41)
+        // Pause budget + window-classified clock-stop (ERC §A.6 erratum; offsets 36..38)
         //
         // The three scalars pack into one slot. All default-zero: a manager with no budget
         // (`maxPauseDuration == 0`) — including any pre-erratum proxy upgraded in place — clamps

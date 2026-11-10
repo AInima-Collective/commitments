@@ -79,18 +79,12 @@ type MutualSnapshot = {
   arbiter: Hex
   numeraire: Hex
   beneficiary: Hex
-  valuationAuthority: Hex
   challengeWindow: bigint
   deallocationWindow: bigint
   totalShares: bigint
   cumulativeLoss: bigint
   active: boolean
   terminal: boolean
-  // Heterogeneous mode (§H §8 / M4) — appended Mutual fields; all zero for homogeneous mutuals.
-  bandAdapter: Hex
-  valuationFloorBps: bigint
-  valuationCeilBps: bigint
-  juniorBps: bigint
 }
 
 /**
@@ -135,7 +129,6 @@ type MembershipSnapshot = {
   lossSnapshot: bigint
   unbondRequestedAt: bigint
   // §G premium index (reward side) — appended to the GroupMembership struct.
-  premiumWeight: bigint
   premiumSnapshot: bigint
   rewardBank: bigint
 }
@@ -175,17 +168,6 @@ async function readMutualPremiumState(
     bankedTotal: r[7],
     premiumPool: r[8],
   }
-}
-
-// Live junior shortfall absorber reserve (funded − drawn) for a heterogeneous mutual; 0 for
-// homogeneous mutuals. Returns null on an RPC blip so the caller leaves the column untouched.
-async function readMutualJuniorPool(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  manager: Hex,
-  mutualId: bigint,
-): Promise<bigint | null> {
-  return safeManagerRead<bigint>(context, manager, 'getMutualJuniorPool', [mutualId])
 }
 
 async function readMembership(
@@ -230,20 +212,18 @@ async function recordMutualEvent(
 }
 
 /**
- * Append a free-balance credit for one of the premium/junior pool payout paths.
+ * Append a free-balance credit for one of the premium pool payout paths.
  *
- * All four (`MemberPremiumClaimed`, `PremiumReclaimed`, `MutualPremiumSwept`,
- * `MutualJuniorSwept`) plus the settle-time `MutualJuniorDrawn` run through
- * `LedgerLib.mutualPremiumToFree` / `mutualJuniorToFree`, which credit
+ * All three (`MemberPremiumClaimed`, `PremiumReclaimed`, `MutualPremiumSwept`)
+ * run through `LedgerLib.mutualPremiumToFree`, which credit
  * `free[recipient]` in the mutual's numeraire. None of them emits a `Deposited`,
  * so without this the credit is invisible to the balance history.
  *
  * The funding direction is deliberately NOT recorded: `fundMutualPremium` pulls
  * the numeraire in and credits `free[funder]` (via `_pullNumeraireMeasured`),
  * then immediately debits the same measured amount back out through
- * `freeToMutualPremium` + `freeToMutualJunior`. The split is exact
- * (`premiumPortion = received - juniorShare`), so the funder's free balance nets
- * to zero across the call and there is nothing to log.
+ * `freeToMutualPremium`, so the funder's free balance nets to zero across the
+ * call and there is nothing to log.
  *
  * Returns silently when the mutual row is missing — the numeraire is only known
  * from the indexed row, and a wrong token is worse than a missing delta.
@@ -255,7 +235,7 @@ async function recordPoolCredit(
   mutualId: bigint,
   recipient: Hex,
   amount: bigint,
-  kind: 'premiumIn' | 'juniorIn',
+  kind: 'premiumIn',
   event: FlowEvent,
   commitmentId?: bigint,
 ): Promise<void> {
@@ -285,10 +265,9 @@ async function refreshMutual(
   const id = mutualKey(manager, mutualId)
   const row = await context.db.find(mutual, { id })
   if (!row) return
-  const [snap, premium, juniorPool] = await Promise.all([
+  const [snap, premium] = await Promise.all([
     readMutualSnapshot(context, manager, mutualId),
     readMutualPremiumState(context, manager, mutualId),
-    readMutualJuniorPool(context, manager, mutualId),
   ])
   await context.db.update(mutual, { id }).set({
     ...(snap
@@ -297,11 +276,6 @@ async function refreshMutual(
           cumulativeLoss: snap.cumulativeLoss,
           active: snap.active,
           terminal: snap.terminal,
-          // Heterogeneous config (immutable once set; NULL bandAdapter ⇒ homogeneous).
-          bandAdapter: heteroAdapterOrNull(snap.bandAdapter),
-          valuationFloorBps: snap.valuationFloorBps,
-          valuationCeilBps: snap.valuationCeilBps,
-          juniorBps: snap.juniorBps,
         }
       : {}),
     ...(premium
@@ -317,16 +291,9 @@ async function refreshMutual(
           premiumPool: premium.premiumPool,
         }
       : {}),
-    ...(juniorPool != null ? { juniorPool } : {}),
     ...extra,
     updatedBlock: block,
   })
-}
-
-// The on-chain Mutual.bandAdapter is the zero address until configureHeterogeneous runs;
-// normalize that to NULL so `bandAdapter != null` is the canonical "is heterogeneous" predicate.
-function heteroAdapterOrNull(adapter: Hex): Hex | null {
-  return adapter && adapter !== '0x0000000000000000000000000000000000000000' ? adapter : null
 }
 
 // ----------------------------------------------------------------------------
@@ -334,7 +301,7 @@ function heteroAdapterOrNull(adapter: Hex): Hex | null {
 // ----------------------------------------------------------------------------
 
 ponder.on('CommitmentManager:MutualCreated', async ({ event, context }) => {
-  const { mutualId, arbiter, numeraire, beneficiary, valuationAuthority } = event.args
+  const { mutualId, arbiter, numeraire, beneficiary } = event.args
   const manager = event.log.address as Hex
   const snap = await readMutualSnapshot(context, manager, mutualId)
   await context.db.insert(mutual).values({
@@ -344,7 +311,6 @@ ponder.on('CommitmentManager:MutualCreated', async ({ event, context }) => {
     arbiter,
     numeraire,
     beneficiary,
-    valuationAuthority,
     challengeWindow: snap ? snap.challengeWindow : 0n,
     deallocationWindow: snap ? snap.deallocationWindow : 0n,
     totalShares: snap ? snap.totalShares : 0n,
@@ -389,7 +355,6 @@ ponder.on('CommitmentManager:MemberJoined', async ({ event, context }) => {
     settledUnits: mem ? mem.settledUnits : 0n,
     creditedValue,
     lossSnapshot: mem ? mem.lossSnapshot : 0n,
-    premiumWeight: mem ? mem.premiumWeight : creditedValue,
     premiumSnapshot: mem ? mem.premiumSnapshot : 0n,
     rewardBank: mem ? mem.rewardBank : 0n,
     status: 'active',
@@ -471,7 +436,6 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
       lossSnapshot: mem ? mem.lossSnapshot : row.lossSnapshot,
       ...(mem
         ? {
-            premiumWeight: mem.premiumWeight,
             premiumSnapshot: mem.premiumSnapshot,
             rewardBank: mem.rewardBank,
           }
@@ -507,8 +471,7 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
         commitmentId,
       })
       // The credit lands on the mutual's beneficiary, in the COMMITMENT's token
-      // (the stake), not the mutual numeraire — the junior top-up above is the
-      // numeraire-denominated leg and is logged separately by MutualJuniorDrawn.
+      // (the stake), which is the mutual numeraire.
       const g = await context.db.find(mutual, { id: mutualKey(manager, mutualId) })
       if (g) {
         await recordFlow(context.db, event, 'b', {
@@ -546,7 +509,6 @@ ponder.on('CommitmentManager:MemberExitRequested', async ({ event, context }) =>
       status: 'exitRequested',
       ...(mem
         ? {
-            premiumWeight: mem.premiumWeight,
             premiumSnapshot: mem.premiumSnapshot,
             rewardBank: mem.rewardBank,
           }
@@ -570,7 +532,6 @@ ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
       status: 'released',
       ...(mem
         ? {
-            premiumWeight: mem.premiumWeight,
             premiumSnapshot: mem.premiumSnapshot,
             rewardBank: mem.rewardBank,
           }
@@ -689,7 +650,6 @@ ponder.on('CommitmentManager:MemberPremiumClaimed', async ({ event, context }) =
     await context.db.update(membership, { id }).set({
       ...(mem
         ? {
-            premiumWeight: mem.premiumWeight,
             premiumSnapshot: mem.premiumSnapshot,
             rewardBank: mem.rewardBank,
           }
@@ -747,126 +707,6 @@ ponder.on('CommitmentManager:MutualPremiumSwept', async ({ event, context }) => 
     event,
   })
   await recordPoolCredit(context, manager, mutualId, recipient as Hex, amount as bigint, 'premiumIn', event)
-})
-
-// ----------------------------------------------------------------------------
-// Heterogeneous mode (§H §8 / M4) — band config, down-only remark, junior absorber.
-// ----------------------------------------------------------------------------
-
-ponder.on('CommitmentManager:MutualHeterogeneousConfigured', async ({ event, context }) => {
-  const { mutualId, bandAdapter, valuationFloorBps, valuationCeilBps, juniorBps } = event.args
-  const manager = event.log.address as Hex
-  // The band/junior config arrives complete in the event args (immutable after), so set it
-  // directly rather than re-reading — more robust than a chain round-trip on an RPC blip.
-  const id = mutualKey(manager, mutualId)
-  const row = await context.db.find(mutual, { id })
-  if (row) {
-    await context.db.update(mutual, { id }).set({
-      bandAdapter: heteroAdapterOrNull(bandAdapter as Hex),
-      valuationFloorBps: valuationFloorBps as bigint,
-      valuationCeilBps: valuationCeilBps as bigint,
-      juniorBps: juniorBps as bigint,
-      updatedBlock: event.block.number,
-    })
-  }
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    kind: 'heteroConfigured',
-    actor: bandAdapter as Hex,
-    event,
-  })
-})
-
-ponder.on('CommitmentManager:MemberRemarked', async ({ event, context }) => {
-  const { commitmentId, newWeight } = event.args
-  const manager = event.log.address as Hex
-  const id = membershipKey(manager, commitmentId)
-  const row = await context.db.find(membership, { id })
-  const mem = await readMembership(context, manager, commitmentId)
-  if (row) {
-    await context.db.update(membership, { id }).set({
-      // premiumWeight ratcheted down; premiumSnapshot/rewardBank were poked-and-banked at the
-      // old effCover before the shrink, so pull the fresh values when the live read succeeds.
-      premiumWeight: mem ? mem.premiumWeight : (newWeight as bigint),
-      ...(mem ? { premiumSnapshot: mem.premiumSnapshot, rewardBank: mem.rewardBank } : {}),
-      updatedBlock: event.block.number,
-    })
-  }
-  const mutualId = row?.mutualId ?? (mem ? mem.mutualId : 0n)
-  // activeCover shrank by the deliverable-cover delta — refresh the mutual denominator.
-  if (mutualId !== 0n) await refreshMutual(context, manager, mutualId, event.block.number)
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    commitmentId,
-    kind: 'remarked',
-    numeraireAmount: newWeight as bigint, // the new (lower) premium weight
-    event,
-  })
-})
-
-ponder.on('CommitmentManager:MutualJuniorFunded', async ({ event, context }) => {
-  const { mutualId, funder, amount } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number) // juniorPool up
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    kind: 'juniorFunded',
-    actor: funder as Hex,
-    numeraireAmount: amount as bigint,
-    event,
-  })
-})
-
-ponder.on('CommitmentManager:MutualJuniorDrawn', async ({ event, context }) => {
-  const { commitmentId, amount } = event.args
-  const manager = event.log.address as Hex
-  const id = membershipKey(manager, commitmentId)
-  const row = await context.db.find(membership, { id })
-  const mutualId = row?.mutualId ?? (await readMembership(context, manager, commitmentId))?.mutualId ?? 0n
-  if (mutualId !== 0n) await refreshMutual(context, manager, mutualId, event.block.number) // juniorPool down
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    commitmentId,
-    kind: 'juniorDrawn',
-    numeraireAmount: amount as bigint,
-    event,
-  })
-  // The draw tops up the loss beneficiary's recovery, so the credit lands on
-  // the MUTUAL's beneficiary — the event names only the member commitment.
-  if (mutualId !== 0n) {
-    const g = await context.db.find(mutual, { id: mutualKey(manager, mutualId) })
-    if (g) {
-      await recordPoolCredit(
-        context,
-        manager,
-        mutualId,
-        g.beneficiary as Hex,
-        amount as bigint,
-        'juniorIn',
-        event,
-        commitmentId,
-      )
-    }
-  }
-})
-
-ponder.on('CommitmentManager:MutualJuniorSwept', async ({ event, context }) => {
-  const { mutualId, recipient, amount } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    kind: 'juniorSwept',
-    actor: recipient as Hex,
-    numeraireAmount: amount as bigint,
-    event,
-  })
-  await recordPoolCredit(context, manager, mutualId, recipient as Hex, amount as bigint, 'juniorIn', event)
 })
 
 // ----------------------------------------------------------------------------
@@ -938,7 +778,6 @@ if (MUTUAL_REGISTRY_ENABLED) {
       arbiter: snap?.arbiter ?? ZERO,
       numeraire,
       beneficiary,
-      valuationAuthority: snap?.valuationAuthority ?? ZERO,
       challengeWindow: snap ? snap.challengeWindow : 0n,
       deallocationWindow: snap ? snap.deallocationWindow : 0n,
       totalShares: snap ? snap.totalShares : 0n,

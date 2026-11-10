@@ -135,7 +135,6 @@ contract PauseBudgetTest is Test {
             arbiter: arbiter,
             numeraire: address(token),
             beneficiary: bob,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -148,7 +147,7 @@ contract PauseBudgetTest is Test {
         ICM.CommitmentParams memory p = _params(amount, 10_000, 0);
         p.counterparty = bob; // == beneficiary
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     // =========================================================================

@@ -31,9 +31,6 @@ interface PayoutPanelProps {
   unsettledIds: bigint[]
   /** Σ owedUnits across those members — the "still settling" figure. */
   owedOutstanding: bigint
-  /** Mixed-collateral mutual: recovery is a basket of member tokens, so the
-   *  in-app collect only retrieves the numeraire leg. */
-  heterogeneous: boolean
   /** Refetch page state after a confirmed collect. */
   onCollected?: () => void
 }
@@ -60,7 +57,6 @@ export function PayoutPanel({
   lossPending,
   unsettledIds,
   owedOutstanding,
-  heterogeneous,
   onCollected,
 }: PayoutPanelProps) {
   const { push } = useToasts()
@@ -218,13 +214,6 @@ export function PayoutPanel({
               {payout.isRouter ? '; the claimant then collects.' : '.'}
             </span>
           </div>
-        )}
-
-        {heterogeneous && payout.isClaimant && (
-          <Notice tone="info" size="sm" title="Mixed-collateral recovery">
-            Members here post mixed collateral, so the recovery is a basket. This collects the{' '}
-            {symbol} leg; other tokens are collected from the router per token.
-          </Notice>
         )}
       </Card>
     </section>

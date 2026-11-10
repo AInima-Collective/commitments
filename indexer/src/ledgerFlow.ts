@@ -65,7 +65,6 @@ export type LedgerFlowKind =
   | 'settleIn'
   | 'distribution'
   | 'premiumIn'
-  | 'juniorIn'
 
 /**
  * The subset of ponder's event shape this module needs. Declared structurally

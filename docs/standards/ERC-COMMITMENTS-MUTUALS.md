@@ -33,15 +33,15 @@ lazily and permissionlessly.
 
 The thesis is the **decoupling of custody from attribution**. The core standard's custody
 ledger is unchanged: every member's backing stays in its own `(token, committer)` encumbered
-position, in whatever heterogeneous, exogenous collateral the member chose (USDC, ETH, a
-yield-bearing vault share). What a mutual adds is a single shared **loss index**
+position, in the mutual's numeraire token (for example USDC or a yield-bearing vault share).
+What a mutual adds is a single shared **loss index**
 `Lambda` (stored as `cumulativeLoss`, a 1e18-scaled fraction). A declared loss `L` does not
 move, pool, or centralize any tokens; it **rebases attribution** by bumping `Lambda` once.
 Each member subsequently owes `forfeitableUnits_i * (Lambda - lossSnapshot_i) / 1e18` **raw
 units of its own token** — a dimensionless fraction of its own frozen allotment — settled
 into the mutual's beneficiary through the *existing* balance-conserving
-`LedgerLib.forfeitTransfer`. Because the loss is a fraction and not a numeraire amount,
-heterogeneous collateral needs **no settlement-time oracle**.
+`LedgerLib.forfeitTransfer`. Because every member posts the numeraire and the loss is a
+fraction of each member's own allotment, settlement needs **no oracle**.
 
 Economically this is **Lloyd's several liability with a shared loss ratio**: each member is
 liable only for its proportionate share, and the mutual's loss ratio is applied *severally*
@@ -70,61 +70,51 @@ does not depend on strategy execution.
 | Extension | Status | Depends on |
 |---|---|---|
 | **Mutuals — loss core** (§1–§5) | normative-optional | `ERC-COMMITMENTS` Parts A, C |
-| **Homogeneous-numeraire mode** (`valuationAuthority == 0`) | normative-optional, oracle-free subset | §1–§5 |
 | **Premium index** (§6) | normative-optional | §1–§5 |
-| **Attested heterogeneous mode + junior absorber** (§7, `bandAdapter != 0`) | normative-optional | §1–§6 plus §8 trust model |
-| **Trust and dispute model** (§8) | normative for attested mode | §1–§7 |
-| **Periphery** (§9) | informative reference | §1–§7 |
+| **Trust and dispute model** (§7) | informative | §1–§6 |
+| **Periphery** (§8) | informative reference | §1–§6 |
 
-An implementation MAY claim mutual conformance in homogeneous mode only, and MAY ship the
-premium index (§6) independently of heterogeneous mode. Attested mode REQUIRES the §8 trust
-constraints. The periphery contracts of §9 are reference compositions, not part of the
-normative custody-root surface.
+An implementation MAY claim mutual conformance for the loss core alone, and MAY ship the
+premium index (§6) separately. Every member of a mutual posts the mutual's `numeraire` token,
+and its weight is its forfeitable allotment (`creditedValue == E_i`). The periphery contracts
+of §8 are reference compositions, not part of the normative custody-root surface.
 
 ---
 
 ## 1. Storage
 
-A conforming manager appends **nine** top-level fields to its EIP-7201 namespaced `Layout`
-struct, at field **offsets 29..37**, after the Part D `forfeitedUnits` mapping (offset 28), in
-three append-only groups: the **loss core** (offsets 29..32), the **premium reserve**
-(offsets 33..34), and the **junior shortfall absorber** (offsets 35..37). The append is
+A conforming manager appends **six** top-level fields to its EIP-7201 namespaced `Layout`
+struct, at field **offsets 28..33**, after the Part D `forfeitedUnits` mapping (offset 27), in
+two append-only groups: the **loss core** (offsets 28..31) and the **premium reserve**
+(offsets 32..33). The append is
 **strictly additive**: no existing field is reordered, re-typed, or removed. The core
 `Commitment` struct and its `getCommitment` ABI tuple MUST NOT be widened — mutual state lives
 in *sibling mappings keyed by `commitmentId` / `mutualId`*, the same discipline used by
 `unbondInitiatedAt`, `closedAt`, and `forfeitedUnits`. The layout is append-only, and
 implementations MUST extend their storage-slot offset test
-(`test/manager/StorageSlots.t.sol`) with probes for all **nine** new fields so any layout
+(`test/manager/StorageSlots.t.sol`) with probes for all **six** new fields so any layout
 drift fails loudly.
 
 ```solidity
-// === Shared-loss mutuals — loss core (append-only; offsets 29..32) ===
+// === Shared-loss mutuals — loss core (append-only; offsets 28..31) ===
 mapping(uint256 => Mutual)             mutuals;             // mutualId => header
 mapping(uint256 => Membership)         membership;          // commitmentId => membership (sparse)
 uint256                                nextMutualId;        // 1-indexed; 0 == not-a-member sentinel
 mapping(uint256 => MutualLossProposal) mutualLossProposals; // mutualId => pending two-phase loss
 
-// === Premium reserve — the FOURTH partition compartment (append-only; offsets 33..34) ===
+// === Premium reserve — the FOURTH partition compartment (append-only; offsets 32..33) ===
 mapping(uint256 => uint256) mutualPremiumPool;   // mutualId => premium reserve (funded − claimed)
 mapping(address => uint256) totalMutualPremium;  // numeraire => Σ mutualPremiumPool (O(1) INV-P1 aggregate)
-
-// === Junior shortfall absorber — the FIFTH partition compartment (append-only; offsets 35..37) ===
-mapping(uint256 => uint256)                    mutualJuniorPool;  // mutualId => junior reserve (funded − drawn)
-mapping(address => uint256)                    totalMutualJunior; // numeraire => Σ mutualJuniorPool (O(1) INV-P13 aggregate)
-mapping(uint256 => mapping(address => uint64)) mutualHaircutBps;  // mutualId => collateral => haircut bps (immutable)
 ```
 
-The premium reserve (`mutualPremiumPool` / `totalMutualPremium`) and the junior absorber
-(`mutualJuniorPool` / `totalMutualJunior`) are **genuine partition compartments**, not free-
-floating balances: each is `funded − claimed` (resp. `funded − drawn`) numeraire per mutual,
-tracked by a per-token aggregate so the extended `O(1)` partition check stays closed. The
-premium reserve extends the core INV-1 partition to **INV-P1**
-(`totalFree + totalEncumbered + totalEscrow + totalMutualPremium == balanceOf`) and the junior
-reserve extends it once more to **INV-P13** (adding `+ totalMutualJunior`). Both compartments
-are mutated **only** through dedicated `LedgerLib` helper pairs (`freeToMutualPremium` /
-`mutualPremiumToFree` and `freeToMutualJunior` / `mutualJuniorToFree`, INV-P0) so INV-P1/P13
-hold on the manager's *actual* token balance. See the premium index (§6) and the
-heterogeneous-mode junior absorber (§7) for the normative mechanics.
+The premium reserve (`mutualPremiumPool` / `totalMutualPremium`) is a **genuine partition
+compartment**, not a free-floating balance: it is `funded − claimed` numeraire per mutual,
+tracked by a per-token aggregate so the extended `O(1)` partition check stays closed. It
+extends the core INV-1 partition to **INV-P1**
+(`totalFree + totalEncumbered + totalEscrow + totalMutualPremium == balanceOf`). The
+compartment is mutated **only** through the dedicated `LedgerLib` helper pair
+(`freeToMutualPremium` / `mutualPremiumToFree`, INV-P0) so INV-P1 holds on the manager's
+*actual* token balance. See the premium index (§6) for the normative mechanics.
 
 `nextMutualId` is lazily initialized to `1` on first `createMutual`; mutual id `0` is reserved as
 the `Membership.mutualId` "not-a-member" sentinel. `membership` is sparse: a zero
@@ -135,9 +125,8 @@ the `Membership.mutualId` "not-a-member" sentinel. `membership` is sparse: a zer
 ```solidity
 struct Mutual {
     address arbiter;            // sole authority to INITIATE a mutual loss
-    address numeraire;          // unit of account for creditedValue & L (pricing only; never moved)
+    address numeraire;          // the token every member posts; unit of creditedValue, L and premium
     address beneficiary;        // who settled units pay to (typically a ClaimRouter) — REQUIRED
-    address valuationAuthority; // attests creditedValue in attested mode; MUST != arbiter; 0 = homogeneous
     uint64  challengeWindow;    // >= MUTUAL_MIN_CHALLENGE_WINDOW
     uint64  deallocationWindow; // post-exit-request slashable window; >= challengeWindow
     uint64  lastInitiatedAt;    // re-initiation rate-limit cursor (griefing guard)
@@ -154,21 +143,13 @@ struct Mutual {
     uint64  periodFinish;          // end of the current stream; accrual stops here
     uint256 premiumRemainder;      // sub-1e27 dust carried forward between pokes (no value ever lost)
     uint256 bankedTotal;           // Σ rewardBank_i — outstandingBank for the funding-time solvency guard (INV-P2)
-    // ---- Heterogeneous mode (§7; append-only; all zero in homogeneous & attested-unconfigured) ----
-    address bandAdapter;           // 0 = homogeneous / attested-unconfigured; nonzero ⇒ heterogeneous
-    uint64  valuationFloorBps;     // band lower bound on premiumWeight as floorBps*adapterValue/1e4 (INV-P11)
-    uint64  valuationCeilBps;      // band upper bound; <= 1e4 (no inflation above the adapter value, INV-P11)
-    uint64  juniorBps;             // premium-funding split routed to the junior shortfall absorber (0 = no split)
 }
 ```
 
-The first eleven fields (`arbiter` … `terminal`) are the loss-path core. The eight premium
-fields (`premiumPerShareStored` … `bankedTotal`) drive the reward-side index `Pi` (§6); the
-four heterogeneous fields (`bandAdapter` … `juniorBps`) drive attested-mode weighting and the
-junior absorber (§7). **All twelve appended fields default to zero**, so a mutual that never
-funds premium and is never configured heterogeneous is byte-for-byte the pure-loss primitive: a
-mutual is *heterogeneous* iff `bandAdapter != 0`, and the premium index is inert while
-`rewardRate == 0`. A conforming implementation MUST declare all appended fields in the exact
+The first ten fields (`arbiter` … `terminal`) are the loss-path core. The eight premium
+fields (`premiumPerShareStored` … `bankedTotal`) drive the reward-side index `Pi` (§6). **All
+eight appended fields default to zero**, so a mutual that never funds premium is byte-for-byte
+the pure-loss primitive: the premium index is inert while `rewardRate == 0`. A conforming implementation MUST declare all appended fields in the exact
 order shown (the struct is fuzz-locked by the storage-slot test).
 
 ### 1.2 `Membership`
@@ -178,25 +159,23 @@ struct Membership {
     uint256 mutualId;          // 0 == not a member (single, non-rebindable)
     uint256 forfeitableUnits; // E_i = amount * maxPenaltyBps / 10_000, FROZEN at join (raw units, the loss base)
     uint256 settledUnits;     // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
-    uint128 creditedValue;    // valuation(token, E_i) in numeraire, FROZEN at join (totalShares accounting)
+    uint128 creditedValue;    // == E_i, FROZEN at join (totalShares accounting)
     uint256 lossSnapshot;     // Lambda at join / last settle — liable only for cumulativeLoss - snapshot
     uint64  unbondRequestedAt;// 0 == active; nonzero starts the deallocation window (still slashable until elapsed)
     // ---- Premium index (reward side, §6; append-only) ----
-    uint128 premiumWeight;    // numeraire PREMIUM weight; == creditedValue in homogeneous, band-derived in heterogeneous
     uint256 premiumSnapshot;  // Pi at join / last sync — earns only Pi-growth after (reward non-retroactivity, INV-P5)
     uint256 rewardBank;       // accrued-but-unclaimed premium in numeraire (paid to the committer on claim/release)
 }
 ```
 
-The first six fields are the loss-path core. The three appended fields carry the reward side:
-`premiumWeight` is the member's premium-denominator weight, **kept distinct from
-`creditedValue`** so a reward re-mark can never touch the loss denominator (INV-P6) — it equals
-`creditedValue` in homogeneous mode and is band-derived in heterogeneous mode (§7);
+The first six fields are the loss-path core. The two appended fields carry the reward side:
 `premiumSnapshot` is the member's `Pi` cursor; `rewardBank` is accrued-but-unclaimed premium,
-paid to the committer on claim or release. All three MUST be declared in this order.
+paid to the committer on claim or release. Both MUST be declared in this order. A member's
+weight in the premium denominator is its `creditedValue`, the same weight it carries in
+`totalShares`.
 
-Both `forfeitableUnits` (`E_i`, the raw-unit loss base) and `creditedValue` (the numeraire
-capacity weight) MUST be stored. Settlement reads only `forfeitableUnits` and never a price;
+Both `forfeitableUnits` (`E_i`, the raw-unit loss base) and `creditedValue` (the capacity
+weight, equal to `E_i`) MUST be stored. Settlement reads only `forfeitableUnits` and never a price;
 `creditedValue` is decremented from `totalShares` at exactly the value it was added, so exit
 cannot drift the denominator. `settledUnits` MUST be stored explicitly (not re-derived from the
 live `commitment.amount`) so the surviving-partial decrement and the terminal close are
@@ -219,7 +198,7 @@ struct MutualLossProposal {
 (`initiatedAt != 0 && !executed && !cancelled`) — the analog of the core standard's INV-7. The
 proposal records `proposer` and `evidenceHash` so the dispute model is storage-complete, but
 **no native-token bond field is held in the custody root**: bond custody is delegated to the
-pluggable mutual arbiter (§8, §9), keeping the manager ETH-free.
+pluggable mutual arbiter (§7, §8), keeping the manager ETH-free.
 
 ### 1.4 `MutualParams`
 
@@ -228,34 +207,12 @@ struct MutualParams {
     address arbiter;
     address numeraire;
     address beneficiary;
-    address valuationAuthority; // 0 = homogeneous-numeraire mode (oracle-free; numeraire == member token)
     uint64  challengeWindow;
     uint64  deallocationWindow;
 }
 ```
 
-### 1.5 `HeteroConfig`
-
-Heterogeneous-mode configuration, applied **once** via `configureHeterogeneous` before the
-mutual is activated and immutable thereafter (§7). Only meaningful for mutuals created with a
-non-zero `valuationAuthority`; homogeneous mutuals can never be configured.
-
-```solidity
-struct HeteroConfig {
-    address   bandAdapter;       // manipulation-resistant valuation adapter (TWAP / 4626 rate); REQUIRED, != 0
-    uint64    valuationFloorBps; // band lower bound (<= ceil)
-    uint64    valuationCeilBps;  // band upper bound (<= 1e4)
-    uint64    juniorBps;         // premium split routed to the junior absorber (<= 1e4)
-    address[] collaterals;       // per-collateral haircut keys (parallel to haircutBps)
-    uint64[]  haircutBps;        // per-collateral haircut bps (each <= 1e4); parallel to collaterals
-}
-```
-
-The `collaterals`/`haircutBps` arrays MUST be equal length; each entry populates the
-`mutualHaircutBps[mutualId][collateral]` storage mapping (offset 37). All band/junior fields
-drive **only** the premium side (§7); none is ever read into the loss denominator.
-
-### 1.6 Parameters
+### 1.5 Parameters
 
 A conforming implementation defines the following constants (reference values in parentheses):
 
@@ -276,8 +233,6 @@ A conforming implementation defines the following constants (reference values in
   a premium stream's `duration` (§6); outside them `fundMutualPremium` reverts
   `StreamDurationOutOfBounds`. A live stream's end never moves earlier, so a short duration
   cannot compress one.
-- `BPS` (10_000) — the basis-points denominator for the heterogeneous band / haircut /
-  junior-split arithmetic (§7).
 
 ---
 
@@ -315,10 +270,9 @@ Each member then owes, at settle:
 owedUnits = forfeitableUnits_i * (cumulativeLoss - lossSnapshot_i) / LAMBDA_ONE   // round DOWN
 ```
 
-Because `creditedValue_i = valuation(token_i, E_i)`, forfeiting fraction `f = applied /
-totalShares` of `E_i` delivers fraction `f` of frozen value, and
-`Σ f * creditedValue_i = f * totalShares = applied`. The basket is worth the applied loss in
-numeraire-at-join terms. Rounding member-owed **down** guarantees `Σ settled <= L` (a direct
+Because `creditedValue_i = E_i` and every member posts the numeraire, forfeiting fraction
+`f = applied / totalShares` of `E_i` gives `Σ f * creditedValue_i = f * totalShares = applied`:
+the members pay exactly the applied loss, in the numeraire. Rounding member-owed **down** guarantees `Σ settled <= L` (a direct
 sum; the residual dust is bounded by `members × 1 wei`).
 
 ### 2.2 Why the denominator is fixed
@@ -370,18 +324,16 @@ commitmentId)`, so integrators can query every membership lifecycle transition w
 function createMutual(MutualParams calldata params) external returns (uint256 mutualId);
 ```
 
-Permissionless. The caller names the `arbiter`, `numeraire`, `beneficiary`, and
-`valuationAuthority`. The manager MUST revert with:
+Permissionless. The caller names the `arbiter`, `numeraire`, and `beneficiary`. The manager MUST
+revert with:
 
 - `ZeroAddress` if `arbiter`, `numeraire`, or `beneficiary` is the zero address;
 - `MutualChallengeWindowTooShort` if `challengeWindow < MUTUAL_MIN_CHALLENGE_WINDOW`;
-- `DeallocationWindowTooShort` if `deallocationWindow < challengeWindow`;
-- `ValuationAuthorityIsArbiter` if `valuationAuthority != 0 && valuationAuthority == arbiter`
-  (§8 — pricing trust MUST be separable from loss-declaration trust).
+- `DeallocationWindowTooShort` if `deallocationWindow < challengeWindow`.
 
-`valuationAuthority == 0` selects **homogeneous-numeraire mode** (oracle-free). The mutual starts
-inactive (`active == false`, `terminal == false`, `totalShares == 0`, `cumulativeLoss == 0`).
-The manager emits `MutualCreated(mutualId, arbiter, numeraire, beneficiary, valuationAuthority)`.
+The mutual starts inactive (`active == false`, `terminal == false`, `totalShares == 0`,
+`cumulativeLoss == 0`). The manager emits `MutualCreated(mutualId, arbiter, numeraire,
+beneficiary)`.
 
 ### 3.2 `activateMutual`
 
@@ -397,12 +349,7 @@ listing is informational and gates nothing. Emits `MutualActivated(mutualId)`.
 ### 3.3 `joinMutual`
 
 ```solidity
-function joinMutual(
-    uint256 mutualId,
-    CommitmentParams calldata params,
-    uint128 creditedValue,
-    bytes calldata attestation
-) external returns (uint256 commitmentId);
+function joinMutual(uint256 mutualId, CommitmentParams calldata params) external returns (uint256 commitmentId);
 ```
 
 Creates a **fresh** commitment (committer = caller) via the core create path and joins
@@ -421,19 +368,12 @@ membership. The manager MUST enforce, in order:
    forfeit-to-self**; settled units pay the mutual beneficiary.
 5. `params.strategies.length == 0` (`MemberStrategyForbidden`) — member commitments carry
    NO distribution-strategy bindings (§5, OBJ-7).
-6. `E_i = params.amount * params.maxPenaltyBps / 10_000` is non-zero (`InvalidCreditedValue`).
+6. `params.token == mutual.numeraire` (`NumeraireMismatch`) — every member posts the numeraire.
+7. `E_i = params.amount * params.maxPenaltyBps / 10_000` is non-zero (`InvalidCreditedValue`)
+   and does not exceed `MAX_TOTAL_SHARES` (`TotalSharesOverflow`).
 
-The credited weight is then resolved by mode:
-
-- **Homogeneous mode (`valuationAuthority == 0`).** `params.token` MUST equal `mutual.numeraire`
-  (`NumeraireMismatch`); `E_i` MUST NOT exceed `MAX_TOTAL_SHARES` (`TotalSharesOverflow`); and
-  `creditedValue` is **set equal to `E_i`**. This subset is oracle-free: every member posts the
-  single numeraire token, and the credited weight is the member's own frozen units.
-- **Attested mode (`valuationAuthority != 0`).** The supplied `creditedValue` MUST be non-zero
-  (`InvalidCreditedValue`) and MUST be signed by the mutual's `valuationAuthority` over a digest
-  binding `("MutualValuation", chainid, manager, mutualId, committer, token, E_i,
-  creditedValue)` (`InvalidValuationAttestation`). The manager never derives the weight from a
-  live, pumpable adapter read — the attestation *is* the (bounded, off-chain) trust (§8).
+`creditedValue` is **set equal to `E_i`**. No oracle is read: the weight is the member's own
+frozen units.
 
 After validation the manager creates the commitment, adds `creditedValue` to `totalShares`
 (checked against `MAX_TOTAL_SHARES`, `TotalSharesOverflow`), writes the membership with
@@ -559,8 +499,7 @@ reserve (`mutualPremiumToFree`), zeroing `rewardBank`, decrementing `bankedTotal
 `MemberPremiumClaimed(commitmentId, committer, amount)`. A member therefore never has to make a
 separate `claimMemberPremium` call to recover its premium at exit. If releasing the *last*
 member (`totalShares == 0`), the manager performs a **terminal sweep** of any residual premium
-and junior reserve to the beneficiary (emitting `MutualPremiumSwept` / `MutualJuniorSwept`) so
-INV-P1 / INV-P13 close at zero.
+reserve to the beneficiary (emitting `MutualPremiumSwept`) so INV-P1 closes at zero.
 
 ### 3.7 Views
 
@@ -597,9 +536,8 @@ by the conformance fuzz alongside the core invariants.
   release, so a request can lapse while a loss is pending; that is intended.
 - **INV-G6 (single membership).** One commitment maps to at most one mutual; `mutualId` is single
   and non-rebindable (a fresh `joinMutual` mints a new commitment).
-- **INV-G7 (bounded valuation).** `creditedValue` is never an unbounded live manager read; in
-  homogeneous mode it equals `E_i`, in attested mode it is authority-signed and SHOULD be
-  band-bounded against an adapter read by the periphery (§8).
+- **INV-G7 (no live valuation).** `creditedValue` equals `E_i`; it is never read from a price
+  or an adapter.
 - **INV-G8 (close-path isolation).** A member commitment can never enter an agreement, and can
   never be terminally single-forfeited or closed through the normal path while the mutual still
   expects to draw its `E_i` (§5).
@@ -620,11 +558,11 @@ by the conformance fuzz alongside the core invariants.
   `c.amount`; this clamp over the aggregate-checking `forfeitTransfer` is never droppable for a
   user with multiple member commitments on one token.
 
-The premium index (§6) and the heterogeneous junior absorber (§7) add the following. A
-homogeneous, never-funded mutual has all premium/junior state at zero, so these hold trivially.
+The premium index (§6) adds the following. A never-funded mutual has all premium state at zero,
+so these hold trivially.
 
-- **INV-P0 (helper-only reserve mutation).** The premium and junior reserves are mutated **only**
-  through their `LedgerLib` helper pairs; the index poke `_pokePremium` NEVER writes a reserve.
+- **INV-P0 (helper-only reserve mutation).** The premium reserve is mutated **only** through its
+  `LedgerLib` helper pair; the index poke `_pokePremium` NEVER writes a reserve.
 - **INV-P1 (extended partition — premium).** Per token,
   `totalFree + totalEncumbered + totalEscrow + totalMutualPremium == balanceOf(manager)`. The
   premium reserve is a genuine fourth compartment (`funded − claimed`).
@@ -634,26 +572,12 @@ homogeneous, never-funded mutual has all premium/junior state at zero, so these 
   solvency check.
 - **INV-P5 (reward non-retroactivity).** A member joining at `Pi = p0` earns only `Pi` growth
   after its join (`premiumSnapshot = Pi` at join).
-- **INV-P6 (weight isolation).** `premiumWeight` is stored distinct from `creditedValue`; a
-  reward-side re-mark writes only `premiumWeight` and the premium aggregates, never the loss
-  denominator (`creditedValue` / `totalShares` / `lossSnapshot` / `Lambda` / headroom).
 - **INV-P8 (poke-before-change).** `_pokePremium` runs immediately before every mutation of
   `activeCover` or `Pi` (MasterChef discipline).
-- **INV-P9 (cover exactness).** `activeCover == totalShares − settledTotal == Σ effCover_i`
-  (the `totalShares − settledTotal` leg is homogeneous-only; heterogeneous mutuals hold the
-  running-delta identity `activeCover == Σ effCover_i`, INV-P9′).
+- **INV-P9 (cover exactness).** `activeCover == totalShares − settledTotal == Σ effCover_i`.
 - **INV-P10 (bank never bricks a loss).** Premium banking inside settle/release is failure-
   isolated (saturating, skip-not-revert on the infeasible overflow path), so a premium-arithmetic
   edge can never wedge the loss legs; a deferred accrual is recovered on a later poke, never lost.
-- **INV-P11 (band bound).** In heterogeneous mode `premiumWeight` is band-clamped to
-  `[floorBps, ceilBps] × adapterValue / 1e4` with `ceilBps <= 1e4` (no inflation above the
-  adapter value); a `remark` is **down-only** (monotone non-increasing).
-- **INV-P13 (extended partition — junior).** Per token,
-  `totalFree + totalEncumbered + totalEscrow + totalMutualPremium + totalMutualJunior ==
-  balanceOf(manager)`. The junior reserve is a genuine fifth compartment (`funded − drawn`); it
-  never earns `Pi` and is never part of `activeCover` / `totalShares`.
-- **INV-P14 (haircut bound).** The heterogeneous `premiumWeight` is haircut by the per-collateral
-  `mutualHaircutBps` after banding, so `weight <= (1 − haircut)/1e4 × bandWeight`.
 
 The relationship to the core path is precise: a size-1 mutual taking one `Lambda = 1e18` loss
 matches `initiateForfeit(maxPenaltyBps) + executeForfeit` **on the forfeited-units leg**. The
@@ -710,8 +634,8 @@ funds premium keeps `rewardRate == 0` and every premium field zero, so the premi
 byte-for-byte no-op on the pure-loss path (short-circuited in `_pokePremium`).
 
 `activeCover` is maintained exactly: `activeCover == totalShares − settledTotal == Σ effCover_i`
-(INV-P9). A member's `effCover_i` is its `premiumWeight` scaled by its *remaining* deliverable
-liability `(E_i − settledUnits)`, so a loss settle shrinks the premium denominator by the same
+(INV-P9). A member's `effCover_i` is its *remaining* deliverable liability `E_i − settledUnits`
+(its `creditedValue` less what it has settled), so a loss settle shrinks the premium denominator by the same
 delta it shrinks the member's cover. Every mutation of `activeCover` or `Pi` is preceded by a poke
 (`_pokePremium`, INV-P8), which advances `Pi` to `min(now, periodFinish)`, carries sub-`1e27` dust
 in `premiumRemainder`, and never touches a reserve (INV-P0).
@@ -720,7 +644,7 @@ in `premiumRemainder`, and never touches a reserve (INV-P0).
 
 The premium reserve `mutualPremiumPool[mutualId]` is `funded − claimed` numeraire and is a
 **genuine partition compartment** — the fourth, alongside free / encumbered / escrow — tracked by
-the per-token aggregate `totalMutualPremium` (§1 storage, offsets 33..34). It is credited only by
+the per-token aggregate `totalMutualPremium` (§1 storage, offsets 32..33). It is credited only by
 `fundMutualPremium` and debited only by `claimMemberPremium` / `reclaimPremium` / terminal-sweep,
 each through the `LedgerLib` `freeToMutualPremium` / `mutualPremiumToFree` helper pair (INV-P0), so
 the extended partition **INV-P1**
@@ -755,9 +679,6 @@ entirely in the periphery. It reverts:
 
 - `MutualIsTerminal` on a wound-down mutual;
 - `MutualExhausted` when `cumulativeLoss == LAMBDA_ONE` (no cover left to pay for);
-- `HeterogeneousPremiumUnsupported` when the mutual is attested (`valuationAuthority != 0`) but
-  not yet `configureHeterogeneous`-configured — the money path stays closed until a `bandAdapter`
-  is set;
 - `StreamDurationOutOfBounds` when `duration ∉ [MIN_STREAM_DURATION, MAX_STREAM_DURATION]`
   (1 minute … 365 days) **or** the new `periodFinish` would overflow `uint64`;
 - `NoActiveCover` when `activeCover == 0` (no live cover to distribute to);
@@ -792,117 +713,28 @@ A terminal sweep of a wound-down mutual's residual reserve emits
 Events: `MutualPremiumFunded`, `MemberPremiumClaimed`, `PremiumReclaimed`, `MutualPremiumSwept`.
 
 Errors: `NoActiveCover`, `PremiumStreamUnderfunded`, `InsufficientMutualPremium`,
-`RewardRateOverflow`, `StreamDurationOutOfBounds`, `PremiumRateDecreased`,
-`HeterogeneousPremiumUnsupported`.
+`RewardRateOverflow`, `StreamDurationOutOfBounds`, `PremiumRateDecreased`.
 
 ---
 
-## 7. Attested heterogeneous mode and the junior absorber
+## 7. Trust and dispute model
 
-A mutual with a non-zero `valuationAuthority` MAY additionally be placed in **heterogeneous mode**,
-which unlocks band-bounded premium re-marking and a junior shortfall absorber. A mutual is
-heterogeneous **iff `bandAdapter != 0`**. Heterogeneous state drives **only the premium (reward)
-side — never the loss denominator** — so a homogeneous mutual (all §7 fields zero, `juniorBps == 0`)
-is byte-for-byte the pure primitive.
-
-### 7.1 API
-
-```solidity
-function configureHeterogeneous(uint256 mutualId, HeteroConfig calldata config) external; // valuationAuthority
-function remark(uint256 mutualId, uint256 commitmentId) external;                          // permissionless, down-only
-function getMutualJuniorPool(uint256 mutualId) external view returns (uint256 juniorPool);
-```
-
-**`configureHeterogeneous`** is **immutable and pre-activation**: `valuationAuthority`-only
-(`NotValuationAuthority` — homogeneous mutuals have `valuationAuthority == 0` and so can never be
-configured), allowed only while `!active && !terminal` (`MutualAlreadyActive` / `MutualIsTerminal`),
-and only once (`MutualAlreadyConfigured` if `bandAdapter != 0`). It validates the band and split
-(`InvalidHeteroConfig` for `bandAdapter == 0`, `valuationCeilBps > 1e4`,
-`valuationFloorBps > valuationCeilBps`, `juniorBps > 1e4`, a haircut `> 1e4`, or a
-`collaterals`/`haircutBps` length mismatch), writes the four `Mutual` band/junior fields
-(`bandAdapter`, `valuationFloorBps`, `valuationCeilBps`, `juniorBps`) and the per-collateral
-`mutualHaircutBps` mapping, and emits
-`MutualHeterogeneousConfigured(mutualId, bandAdapter, valuationFloorBps, valuationCeilBps, juniorBps)`.
-Configuring re-enables `fundMutualPremium` for an attested mutual and switches new joins to
-band+haircut premium pricing.
-
-At join, a heterogeneous member's `premiumWeight` is derived from the **manipulation-resistant
-`bandAdapter`** (a TWAP or ERC-4626 rate — never the attestation and never a live, donation-pumpable
-spot read): the adapter value of `E_i` raw units is band-clamped to
-`[valuationFloorBps, valuationCeilBps] × adapterValue / 1e4` (with `valuationCeilBps <= 1e4`, so the
-result never exceeds the adapter value — no inflation, INV-P11) and then haircut by the
-per-collateral `mutualHaircutBps` (INV-P14). This feeds `premiumWeight` / `effCover` / `activeCover`
-only; `creditedValue`, `totalShares`, `Lambda`, and headroom are untouched.
-
-**`remark`** is a permissionless **down-only** re-mark of one member's `premiumWeight`: it recomputes
-the band+haircut weight and ratchets to `min(current, recomputed)` (monotone non-increasing,
-INV-P11), banks accrued premium on the old `effCover` first (INV-P8), then shrinks `activeCover` by
-the deliverable-cover delta. It reverts `NotMutualMember` off-member, `NotHeterogeneous` on a
-homogeneous mutual, and `MutualLossPending` while a loss is pending (INV-P12); an appreciation /
-unchanged weight is a no-op emit. It writes **only** `premiumWeight` and the premium aggregates —
-never the loss denominator — so a remarker can neither wedge nor delay a claim (INV-P6). Emits
-`MemberRemarked(commitmentId, oldWeight, newWeight)`.
-
-### 7.2 The junior shortfall absorber
-
-The junior pool `mutualJuniorPool[mutualId]` is a **shortfall absorber** and the **fifth partition
-compartment**: `funded − drawn` numeraire, tracked by the per-token aggregate `totalMutualJunior`
-(§1 storage, offsets 35..37), mutated only through the `LedgerLib` `freeToMutualJunior` /
-`mutualJuniorToFree` helper pair. It extends the partition once more to **INV-P13**
-(`… + totalMutualPremium + totalMutualJunior == balanceOf(manager)`). It **never earns `Pi`** and is
-**never part of `activeCover` / `totalShares`**.
-
-It is funded as a fixed `juniorBps` split of each premium receipt (subordinate capital that is
-excluded from the stream and from the INV-P2 solvency accounting), emitting
-`MutualJuniorFunded(mutualId, funder, amount)`. At a loss settle it is drawn — **oracle-free**, a
-fixed `mutualHaircutBps` fraction of the owed units, not a live price — to top up the beneficiary's
-numeraire recovery, bounded by the available reserve (`InsufficientMutualJunior` guards any direct
-debit past the reserve; the settle-time draw is clamped to the pool so it can never revert and brick
-a loss, INV-P13). The draw emits `MutualJuniorDrawn(commitmentId, amount)`; a terminal sweep emits
-`MutualJuniorSwept(mutualId, recipient, amount)`. For a homogeneous mutual `juniorBps == 0`, so the
-pool is never funded and this entire subsystem stays zero and inert.
-
-### 7.3 Events and errors
-
-Events: `MutualHeterogeneousConfigured`, `MemberRemarked`, `MutualJuniorFunded`,
-`MutualJuniorDrawn`, `MutualJuniorSwept`.
-
-Errors: `NotValuationAuthority`, `NotHeterogeneous`, `MutualAlreadyConfigured`,
-`MutualAlreadyActive`, `InvalidHeteroConfig`, `InsufficientMutualJunior`.
-
----
-
-## 8. Trust and dispute model
-
-**The homogeneous-numeraire subset is oracle-free.** When `valuationAuthority == 0`, every member
-posts the mutual's single `numeraire` token and `creditedValue == E_i`; the manager reads no
-price and the loss is a dimensionless fraction of like units. There is no settlement-time oracle
-and no pricing trust. This is the subset a conforming implementation SHOULD ship and audit first.
-
-**Attested mode relocates trust; it does not eliminate it.** In heterogeneous mode a mis-set
-`creditedValue_i` is profitable in two directions — inflate yours to dilute everyone's loss
-fraction (and skim any premium weighted by `creditedValue_i`), or deflate a victim's to make it
-over-pay. Opaqueness alone just moves that attack onto the `valuationAuthority`. The standard
-therefore (a) **REQUIRES `valuationAuthority != arbiter`** (enforced at `createMutual`) so a
-single key cannot control pricing *and* loss declaration, and (b) RECOMMENDS the periphery
-**band-bound** the attested weight within `[lo, hi] × adapter.value(token, E_i)` so even the
-authorized attestor cannot set it arbitrarily — the adapter read is a *sanity band*, not the
-denominator. The manager MUST NOT place a live, donation-pumpable adapter read directly into the
-loss-fraction denominator. The attestation is a self-contained ECDSA signature over a digest
-binding chainid + manager + the exact `(mutualId, committer, token, E_i, creditedValue)` — no
-EIP-712 plumbing is threaded through the delegatecall library.
+**A mutual is oracle-free.** Every member posts the mutual's single `numeraire` token and
+`creditedValue == E_i`; the manager reads no price and the loss is a dimensionless fraction of
+like units. There is no settlement-time oracle and no pricing trust. The trust a mutual carries
+is the arbiter's, below.
 
 **Bond custody lives in the periphery, not the custody root.** One declaration moves the whole
 mutual, so the mutual challenge path SHOULD be bonded/optimistic. The standard deliberately
 keeps **native-token bond custody OUT of the manager**: `MutualLossProposal` stores `proposer`
 and `evidenceHash` (making the dispute model storage-complete) but no bond. The bond, the veto,
-and the slash live in a pluggable mutual arbiter (§9, `OptimisticMutualArbiter`), mirroring how the
+and the slash live in a pluggable mutual arbiter (§8, `OptimisticMutualArbiter`), mirroring how the
 per-commitment path delegates to `OptimisticInsuranceArbiter`. This keeps the custody root
 ETH-free and the dispute economics swappable without touching the core.
 
 ---
 
-## 9. Periphery (informative)
+## 8. Periphery (informative)
 
 The following reference contracts compose the core primitive into the *Mutual*
 product. They are off the core custody path and are not part of the normative manager surface.
@@ -937,9 +769,8 @@ Events: `LossProposed`, `LossVetoed`, `BondReclaimed`, `CoverBindingSnapshotted`
 `manager.settleMembers`, so a claim can never brick on one uncooperative member. The designated
 immutable `claimant` (policyholder) calls `collect(token, to)` to `withdraw` and transfer out a
 single token, or `settleAndCollect(commitmentIds, token, to)` to do both. The default product is
-**basket settlement** — the claimant receives the members' raw heterogeneous collateral tokens
-as-is, one token per `collect` call; any swap to a single unit is an explicit, opt-in step the
-claimant performs after collection. The router never swaps. Events: `Settled`, `Collected`.
+settlement in the numeraire: every member posts it, so the claimant collects one token. The
+router never swaps. Events: `Settled`, `Collected`.
 
 **`LinkedMutualPolicy` + `PremiumScheduler`** — the premium binding and pricing periphery for the
 §6 stream. `PremiumScheduler` is the pricing brain: a two-slope kinked utilization-curve plus an
@@ -953,47 +784,32 @@ entirely here — the custody root only sets a future rate under INV-P2. Events:
 
 ---
 
-## 10. Security considerations
+## 9. Security considerations
 
 - **Claimant collection is `O(N)`.** The "`O(1)`" property is honest about the *writer* (one
   loss declaration, one `Lambda` bump; each member settle is `O(1)` and `K`-deferral collapses)
   but **not the payee**: the policyholder/`ClaimRouter` must trigger (or fund a keeper to
-  trigger) `N` settles, receives an `N`-leg heterogeneous basket, and may need up to `N` swaps
-  for a usable unit — a regression versus a pool's single `redeem`. The mitigation is the bounded
+  trigger) `N` settles — a regression versus a pool's single `redeem`. The mitigation is the bounded
   `settleMembers([])` batch plus a protocol-funded keeper bounty as the *expected* claim path,
   not a fallback. Implementations MUST NOT loop over a mutual-members array on any non-admin
   custody-root path.
-- **Basket settlement / collateral drift.** Capacity is **frozen at join**. Realized coverage is
-  `(1 − δ)/h` for collateral drawdown `δ` and haircut `h`, not "worth the loss by construction":
-  if a loss lands after a drawdown, the delivered basket is worth less in numeraire than the
-  frozen `creditedValue`. The haircut (credited-value reduction at join) is the only buffer and a
-  one-time guess. Heterogeneous mode ships the two mitigations first-class: per-collateral haircut
-  tiers (`mutualHaircutBps`) and the **junior shortfall absorber** (§7), a `juniorBps` premium
-  split drawn at settle to top up numeraire recovery. Both SHOULD be sized to a stress drawdown;
-  they *bound* the shortfall, they do not eliminate it (any residual is still surfaced as
-  `MutualLossShortfall`). The homogeneous-numeraire subset has no drift and is unaffected.
 - **Denominator-shrinkage coupling.** A shared `totalShares` couples members: capacity flight
   during a systemic event shrinks the denominator and bites the `Lambda <= 1e18` clamp sooner — a
   wrong-way fragility independent liens do not have. It is bounded (not eliminated) by the
   deallocation window and any MCR-analog leverage cap the periphery imposes; the resulting
   under-recovery is always surfaced as `MutualLossShortfall`.
-- **Adverse selection / no variation margin.** If premium accrues on a frozen weight while loss
-  delivers a fraction of a basket at current price, a rational underwriter is rewarded for posting
-  the most volatile collateral that clears the static join-time haircut. Heterogeneous mode blunts
-  (does not remove) this with the **down-only `remark`** (§7): premium accrues on `premiumWeight`,
-  which is band-derived and can be permissionlessly ratcheted *down* as a member's collateral
-  depreciates — never up — so a decayed position stops earning full premium. Fine-grained pricing
-  (utilization-curve premium, deductible/co-insurance) remains a periphery concern, in scope for
-  any production deployment of the heterogeneous basket.
+- **Numeraire risk.** Every member posts the numeraire, so the cover is worth what the numeraire
+  is worth at loss time. A numeraire that can lose value (a vault share, for example) carries that
+  risk into the cover; choose it accordingly.
 - **Premium-stream integrity (permissionless funding).** `fundMutualPremium` is permissionless, so
   the Synthetix `notifyRewardAmount` griefing surface is closed by four guards (§6): the stream
   `duration` is bounded to `[MIN_STREAM_DURATION, MAX_STREAM_DURATION]`
   (`StreamDurationOutOfBounds`, which also fences the `uint64 periodFinish` cast against
   truncation-into-the-past), a live stream's end never moves earlier (so a dust fund cannot
   compress it), a live stream's `rewardRate` may only be maintained or raised
-  (`PremiumRateDecreased`), and solvency is enforced once at funding time (INV-P2). The premium and
-  junior reserves are true partition compartments (INV-P1 / INV-P13) mutated only through their
-  `LedgerLib` helper pairs, and premium banking inside a loss settle is failure-isolated
+  (`PremiumRateDecreased`), and solvency is enforced once at funding time (INV-P2). The premium
+  reserve is a true partition compartment (INV-P1) mutated only through its `LedgerLib` helper
+  pair, and premium banking inside a loss settle is failure-isolated
   (skip-not-revert, INV-P10) so a premium-arithmetic edge can never brick a validated loss.
 - **Frozen-at-join valuation.** `creditedValue` and `E_i` are immutable post-join by design;
   contributions, strategy sweeps, agreements, and normal close paths are all barred so nothing
@@ -1005,19 +821,19 @@ entirely here — the custody root only sets a future rate under INV-P2. Events:
   floor. Re-initiation is rate-limited and stale proposals are permissionlessly cancellable, so
   the join/exit freeze a pending loss imposes is neither a free nor a permanent capital trap.
 
-## 11. Backwards compatibility
+## 10. Backwards compatibility
 
-This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no change to the core custody ledger, the commitment lifecycle, or any other sibling extension: a manager that does not implement the mutuals surface remains fully conformant to the core standard. Mutual membership only ever *adds* gating on commitments a member explicitly enrolls (§5) — the terminal-close, unbond, and forfeit-initiation paths revert `CommitmentInMutual` on a member commitment, with committer-liveness preserved through the mutual exit path. Non-member commitments and existing deployments are unaffected. The nine storage mappings are appended (offsets 29..37) with no reordering of prior fields.
+This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no change to the core custody ledger, the commitment lifecycle, or any other sibling extension: a manager that does not implement the mutuals surface remains fully conformant to the core standard. Mutual membership only ever *adds* gating on commitments a member explicitly enrolls (§5) — the terminal-close, unbond, and forfeit-initiation paths revert `CommitmentInMutual` on a member commitment, with committer-liveness preserved through the mutual exit path. Non-member commitments and existing deployments are unaffected. The six storage fields are appended (offsets 28..33) with no reordering of prior fields.
 
-## 12. Reference implementation
+## 11. Reference implementation
 
-- `src/extensions/mutuals/MutualLib.sol` — the loss index (Λ), premium index (Π), attested heterogeneous mode, and junior absorber core logic (an external delegatecall library of the manager).
+- `src/extensions/mutuals/MutualLib.sol` — the loss index (Λ) and premium index (Π) core logic (an external delegatecall library of the manager).
 - `src/core/interfaces/ICommitmentManager.sol` — the mutual structs, events, and errors.
-- `src/core/manager/storage/CommitmentManagerStorage.sol` — the nine append-only mutual mappings (offsets 29..37).
+- `src/core/manager/storage/CommitmentManagerStorage.sol` — the six append-only mutual fields (offsets 28..33).
 - `src/extensions/mutuals/` — owning extension directory for `MutualRegistry`, `LinkedMutualPolicy`, `PremiumScheduler`, `ClaimRouter`, and `OptimisticMutualArbiter`.
 
-## 13. Test cases
+## 12. Test cases
 
-- `test/manager/Mutual.t.sol`, `test/mutual/Mutual.t.sol`, `test/mutual/PremiumPolicy.t.sol` — the loss, premium, and heterogeneous mutual suites.
-- `test/manager/conformance/PartitionInvariant.t.sol` — the extended partition-invariant fuzz (INV-P1 premium compartment, INV-P13 junior compartment).
+- `test/manager/Mutual.t.sol`, `test/mutual/Mutual.t.sol`, `test/mutual/PremiumPolicy.t.sol` — the loss and premium mutual suites.
+- `test/manager/conformance/PartitionInvariant.t.sol` — the extended partition-invariant fuzz (INV-P1 premium compartment, INV-P9 cover exactness).
 - `test/manager/StorageSlots.t.sol` — locks the mutual storage offsets.

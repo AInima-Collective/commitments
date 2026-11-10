@@ -94,7 +94,6 @@ contract VaultCoverConduitTest is Test {
             arbiter: address(arbiter),
             numeraire: numeraire,
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -120,7 +119,7 @@ contract VaultCoverConduitTest is Test {
         p.maxPenaltyBps = 10_000;
         p.challengeWindow = 1 days;
         p.strategies = new StrategyBinding[](0);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
         vm.stopPrank();
     }
 

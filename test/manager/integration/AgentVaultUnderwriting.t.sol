@@ -115,7 +115,6 @@ contract AgentVaultUnderwritingTest is Test {
                 arbiter: address(arbiter),
                 numeraire: address(vault),
                 beneficiary: address(beneficiary),
-                valuationAuthority: address(0),
                 challengeWindow: MUTUAL_WINDOW,
                 deallocationWindow: MUTUAL_WINDOW
             })
@@ -165,18 +164,15 @@ contract AgentVaultUnderwritingTest is Test {
         p.maxPenaltyBps = 10_000;
         p.challengeWindow = 1 days;
         p.strategies = new StrategyBinding[](0);
-        cid = manager.joinMutual(mutualId, p, 0, "");
+        cid = manager.joinMutual(mutualId, p);
         vm.stopPrank();
     }
 
     function _partitionHolds() internal view {
         (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(vault));
         (,,,,,,,, uint256 premiumPool) = manager.getMutualPremiumState(mutualId);
-        uint256 juniorPool = manager.getMutualJuniorPool(mutualId);
-        // INV-1 extended by the mutual pools: the share token's whole partition.
-        assertEq(
-            free + enc + esc + premiumPool + juniorPool, vault.balanceOf(address(manager)), "INV-1 for the share token"
-        );
+        // INV-1 extended by the mutual premium pool: the share token's whole partition.
+        assertEq(free + enc + esc + premiumPool, vault.balanceOf(address(manager)), "INV-1 for the share token");
     }
 
     function _premiumState() internal view returns (uint128 activeCover, uint128 rate, uint64 finish) {

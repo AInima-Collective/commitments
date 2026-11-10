@@ -39,7 +39,7 @@ unverified, reason given).
 
 | ID | Property | Layers | Status |
 |---|---|---|---|
-| INV-1 / INV-P13 | Partition: `Σ(free+encumbered) + Σescrow + Σ(premiumPool+juniorPool) == balanceOf(manager)` per token | CVL ghost sums; Fuzz; Medusa | fuzz-only; Medusa smoke green 2026-07-09; tier-1 aggregate CVL authored+typechecked (`certora/specs/ManagerLedger.spec`); not yet run on the cloud prover (tier-2 ghost walk planned) |
+| INV-1 / INV-P1 | Partition: `Σ(free+encumbered) + Σescrow + ΣpremiumPool == balanceOf(manager)` per token | CVL ghost sums; Fuzz; Medusa | fuzz-only; Medusa smoke green 2026-07-09; tier-1 aggregate CVL authored+typechecked (`certora/specs/ManagerLedger.spec`); not yet run on the cloud prover (tier-2 ghost walk planned) |
 | INV-2 | Per-actor encumbered == Σ active commitment amounts | CVL; Fuzz | fuzz-only (CVL planned) |
 | INV-3 | `totalForfeitable ≤ totalEncumbered` per (user, token) | CVL; Fuzz | fuzz-only; CVL authored+typechecked (`certora/specs/ManagerLedger.spec`); not yet run on the cloud prover |
 | INV-4 | Strategy movement debits ≤ bound commitment's `amount`; recipients restricted to commitment parties | CVL; Halmos | **Halmos verified** (`halmos/MovementCapSmoke.t.sol`, non-vacuity mutation-checked; symbolic-`units` debit-bound check runs at `maxPenaltyBps == 0` to linearize the exposure math — nonzero-penalty cap interaction owned by Fuzz/Medusa); distribute-path CVL authored+typechecked (`certora/specs/ManagerLedger.spec`); not yet run on the cloud prover |
@@ -65,8 +65,8 @@ unverified, reason given).
 | ID | Property | Layers | Status |
 |---|---|---|---|
 | INV-E1 | Bilateral cumulative flows per direction never exceed caps | CVL; Fuzz | fuzz-only (CVL planned) |
-| INV-P9/P9' | Mutual active-cover identities; `deliverable ≤ c.amount` | Fuzz; CVL (homogeneous identity) | fuzz-only |
-| INV-G2/G3/G6 | `cumulativeLoss ≤ 1e18`; `totalShares == Σ creditedValue`; `settledUnits ≤ forfeitableUnits` | Fuzz; Halmos (allocation math) | **Halmos verified** (`halmos/MutualMathSmoke.t.sol`, homogeneous 1-mutual/2-member scene, symbolic loss/join ≤ 1_000e18, all non-vacuity mutation-checked): INV-G2 `executeMutualLoss` Λ-cap; INV-G6 `settleMembers` Belt-1 clamp; INV-G3 verified as the per-join **delta** form (`ΔtotalShares == creditedValue == E_i` at a concrete `maxPenaltyBps` to keep `E_i = amount·bps/1e4` linear — the full Σ identity is impractical symbolically, the delta is the inductive step). Heterogeneous band/haircut weight owned by Fuzz/Medusa. Fuzz aggregate still green |
+| INV-P9 | Mutual active-cover identity `activeCover == totalShares − settledTotal == Σ effCover`; `deliverable ≤ c.amount` | Fuzz; CVL | fuzz-only |
+| INV-G2/G3/G6 | `cumulativeLoss ≤ 1e18`; `totalShares == Σ creditedValue`; `settledUnits ≤ forfeitableUnits` | Fuzz; Halmos (allocation math) | **Halmos verified** (`halmos/MutualMathSmoke.t.sol`, homogeneous 1-mutual/2-member scene, symbolic loss/join ≤ 1_000e18, all non-vacuity mutation-checked): INV-G2 `executeMutualLoss` Λ-cap; INV-G6 `settleMembers` Belt-1 clamp; INV-G3 verified as the per-join **delta** form (`ΔtotalShares == creditedValue == E_i` at a concrete `maxPenaltyBps` to keep `E_i = amount·bps/1e4` linear — the full Σ identity is impractical symbolically, the delta is the inductive step). Fuzz aggregate still green |
 | P2-MONO | Loss index Λ monotone non-decreasing; premium index rate non-decrease (S6) | Halmos; Fuzz | **Halmos verified** (`halmos/MutualMathSmoke.t.sol`, non-vacuity mutation-checked): loss half is the INV-G2 `Λ' ≥ Λ` monotonicity assert; premium half asserts the S6 premium-per-cover index Π (`premiumPerShareStored`) never decreases across `fundMutualPremium` + time-warp + poke (symbolic funding amount ≤ 1_000e18, concrete 1-day duration to satisfy the S6 live-stream rate-non-decrease guard). Fuzz still green |
 
 ## P3 — Vault + strategies

@@ -2,18 +2,14 @@
 pragma solidity ^0.8.27;
 
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {IBandValuationAdapter} from "src/extensions/mutuals/interfaces/IBandValuationAdapter.sol";
 import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManagerStorage.sol";
 import {CommitmentLifecycleLib} from "src/core/manager/libraries/CommitmentLifecycleLib.sol";
 import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {PauseLib} from "src/core/manager/libraries/PauseLib.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title MutualLib
 /// @notice The shared-loss-index ("Mutual" / Mutual) primitive — a manager-level
@@ -63,8 +59,8 @@ library MutualLib {
     // =========================================================================
 
     /// @notice Create a Mutual (permissionless — the caller names the arbiter). Starts
-    ///         inactive; `valuationAuthority == 0` selects the oracle-free homogeneous-numeraire
-    ///         subset (every member posts `numeraire` and `creditedValue == E_i`).
+    ///         inactive. Every member posts `numeraire`, and its weight is its forfeitable
+    ///         allotment (`creditedValue == E_i`).
     function createMutual(CommitmentManagerStorage.Layout storage s, ICM.MutualParams calldata p)
         external
         returns (uint256 mutualId)
@@ -74,11 +70,6 @@ library MutualLib {
         }
         if (p.challengeWindow < MUTUAL_MIN_CHALLENGE_WINDOW) revert ICM.MutualChallengeWindowTooShort();
         if (p.deallocationWindow < p.challengeWindow) revert ICM.DeallocationWindowTooShort();
-        // Split pricing trust from loss declaration: the same key must not control both (OBJ-2).
-        // (`valuationAuthority == 0` is homogeneous mode and is never == a non-zero arbiter.)
-        if (p.valuationAuthority != address(0) && p.valuationAuthority == p.arbiter) {
-            revert ICM.ValuationAuthorityIsArbiter();
-        }
 
         if (s.nextMutualId == 0) s.nextMutualId = 1; // lazy 1-index (0 is the not-a-member sentinel)
         mutualId = s.nextMutualId++;
@@ -87,11 +78,10 @@ library MutualLib {
         g.arbiter = p.arbiter;
         g.numeraire = p.numeraire;
         g.beneficiary = p.beneficiary;
-        g.valuationAuthority = p.valuationAuthority;
         g.challengeWindow = p.challengeWindow;
         g.deallocationWindow = p.deallocationWindow;
 
-        emit ICM.MutualCreated(mutualId, p.arbiter, p.numeraire, p.beneficiary, p.valuationAuthority);
+        emit ICM.MutualCreated(mutualId, p.arbiter, p.numeraire, p.beneficiary);
     }
 
     /// @notice Arbiter flips an inactive, non-terminal mutual active (no losses until active).
@@ -103,99 +93,19 @@ library MutualLib {
         emit ICM.MutualActivated(mutualId);
     }
 
-    /// @notice Configure heterogeneous mode (valuationAuthority-only, while !active && !terminal;
-    ///         immutable after). Sets the manipulation-resistant band adapter, the band bounds, the
-    ///         junior split, and the per-collateral haircuts. A mutual is HETEROGENEOUS iff
-    ///         `bandAdapter != 0`; only mutuals created with a non-zero `valuationAuthority` can be
-    ///         configured (homogeneous mutuals revert via the authority check). Configuring before
-    ///         activation re-enables `fundMutualPremium` and switches new joins to band+haircut pricing.
-    /// @dev Heterogeneous mode drives ONLY the premium (reward) side. The loss denominator
-    ///      (`creditedValue` / `totalShares` / Lambda / headroom) is never read from the band adapter,
-    ///      so a compromised adapter cannot enlarge any claimant's loss recovery (INV-P11/P12/P14).
-    function configureHeterogeneous(
-        CommitmentManagerStorage.Layout storage s,
-        uint256 mutualId,
-        ICM.HeteroConfig calldata cfg
-    ) external {
-        ICM.Mutual storage g = _mutual(s, mutualId);
-        // Homogeneous mutuals have `valuationAuthority == 0`, which is never == a real caller, so this
-        // both authorizes and forbids homogeneous configuration in one check.
-        if (msg.sender != g.valuationAuthority) revert ICM.NotValuationAuthority();
-        if (g.terminal) revert ICM.MutualIsTerminal();
-        if (g.active) revert ICM.MutualAlreadyActive(); // pre-activation only (immutable once members can join)
-        if (g.bandAdapter != address(0)) revert ICM.MutualAlreadyConfigured(); // immutable after first config
-
-        if (cfg.bandAdapter == address(0)) revert ICM.InvalidHeteroConfig();
-        if (cfg.valuationCeilBps > BPS_DENOMINATOR) revert ICM.InvalidHeteroConfig(); // no inflation above adapter value
-        if (cfg.valuationFloorBps > cfg.valuationCeilBps) revert ICM.InvalidHeteroConfig();
-        if (cfg.juniorBps > BPS_DENOMINATOR) revert ICM.InvalidHeteroConfig();
-        if (cfg.collaterals.length != cfg.haircutBps.length) revert ICM.InvalidHeteroConfig();
-
-        g.bandAdapter = cfg.bandAdapter;
-        g.valuationFloorBps = cfg.valuationFloorBps;
-        g.valuationCeilBps = cfg.valuationCeilBps;
-        g.juniorBps = cfg.juniorBps;
-
-        uint256 n = cfg.collaterals.length;
-        for (uint256 i; i < n; i++) {
-            if (cfg.haircutBps[i] > BPS_DENOMINATOR) revert ICM.InvalidHeteroConfig();
-            s.mutualHaircutBps[mutualId][cfg.collaterals[i]] = cfg.haircutBps[i];
-        }
-
-        emit ICM.MutualHeterogeneousConfigured(
-            mutualId, cfg.bandAdapter, cfg.valuationFloorBps, cfg.valuationCeilBps, cfg.juniorBps
-        );
-    }
-
-    /// @notice Permissionless DOWN-ONLY re-mark of one member's premium weight (heterogeneous only).
-    ///         Recomputes the band+haircut weight from the manipulation-resistant adapter and ratchets
-    ///         `premiumWeight` to `min(current, recomputed)` (monotone non-increasing, INV-P11). Reverts
-    ///         while a mutual loss is pending (INV-P12). Banks accrued premium at the OLD effCover first,
-    ///         then shrinks `activeCover` by the deliverable-cover delta. It writes ONLY `premiumWeight`
-    ///         and the premium aggregates — never the loss denominator (`creditedValue` / `totalShares` /
-    ///         `lossSnapshot` / Lambda / headroom), so a remarker can neither wedge nor delay a claim.
-    function remark(CommitmentManagerStorage.Layout storage s, uint256 mutualId, uint256 commitmentId) external {
-        ICM.Membership storage m = s.membership[commitmentId];
-        if (m.mutualId != mutualId || mutualId == 0) revert ICM.NotMutualMember();
-        ICM.Mutual storage g = s.mutuals[mutualId];
-        if (g.bandAdapter == address(0)) revert ICM.NotHeterogeneous();
-        if (_lossPending(s, mutualId)) revert ICM.MutualLossPending(); // marks frozen during a declaration
-
-        ICM.Commitment storage c = s.commitments[commitmentId];
-        uint128 cur = m.premiumWeight;
-        uint128 computed = _bandHaircutWeight(s, g, mutualId, c.token, m.forfeitableUnits);
-        uint128 newWeight = computed < cur ? computed : cur; // DOWN-ONLY: a remark never raises the weight
-
-        if (newWeight == cur) {
-            emit ICM.MemberRemarked(commitmentId, cur, cur); // no-op (appreciation / unchanged): nothing written
-            return;
-        }
-
-        // Bank on the OLD effCover BEFORE shrinking the weight (INV-P8 poke-before-change), then move
-        // ONLY the premium denominator by the deliverable-cover delta. No loss-side field is touched.
-        _syncMember(g, m, c);
-        uint256 effOld = _effCover(m, c);
-        m.premiumWeight = newWeight;
-        uint256 effNew = _effCover(m, c);
-        g.activeCover = uint128(uint256(g.activeCover) - (effOld - effNew)); // effOld >= effNew (down-only)
-
-        emit ICM.MemberRemarked(commitmentId, cur, newWeight);
-    }
-
     // =========================================================================
-    // Join — mutual-aware create that freezes the opaque capacity weight
+    // Join — mutual-aware create that freezes the member's weight
     // =========================================================================
 
     /// @notice Create a fresh commitment (committer = caller) and join it to `mutualId`, freezing
-    ///         `E_i` and `creditedValue`. Member commitments may bind NO strategies (the cover leg
-    ///         carries no hooks; premium is a separate, unpooled periphery leg) — this makes the
+    ///         `E_i` (and `creditedValue == E_i`). The member must post the mutual's numeraire.
+    ///         Member commitments may bind NO strategies (the cover leg carries no hooks; premium
+    ///         is a separate, unpooled periphery leg) — this makes the
     ///         "no FromEncumbered drift / no forfeit-reactive hook" guarantee structural (OBJ-7).
     function joinMutual(
         CommitmentManagerStorage.Layout storage s,
         uint256 mutualId,
         ICM.CommitmentParams calldata params,
-        uint128 creditedValue,
-        bytes calldata attestation,
         uint64 minChallengeWindow,
         uint256 maxStrategies,
         uint256 maxURILength
@@ -207,51 +117,28 @@ library MutualLib {
         if (params.arbiter != g.arbiter) revert ICM.MutualArbiterMismatch();
         if (params.counterparty != g.beneficiary) revert ICM.MutualBeneficiaryMismatch(); // no forfeit-to-self
         if (params.strategies.length != 0) revert ICM.MemberStrategyForbidden();
+        if (params.token != g.numeraire) revert ICM.NumeraireMismatch();
 
         // E_i = the member's frozen forfeitable allotment — the loss base (raw units of its token).
         uint256 ei = ExposureLib.exposureOf(params.amount, params.maxPenaltyBps);
         if (ei == 0) revert ICM.InvalidCreditedValue(); // a member with zero forfeitable capacity is pointless
 
-        uint128 credited;
-        if (g.valuationAuthority == address(0)) {
-            // Homogeneous-numeraire mode: oracle-free. creditedValue == E_i, denominated in the
-            // mutual's single numeraire token (which every member posts).
-            if (params.token != g.numeraire) revert ICM.NumeraireMismatch();
-            if (ei > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
-            credited = uint128(ei);
-        } else {
-            // Attested heterogeneous mode: `creditedValue` is an opaque weight that MUST be signed
-            // by the mutual's (non-arbiter) valuationAuthority. The manager never derives it from a
-            // live, pumpable adapter read; the attestation IS the (bounded, off-chain) trust.
-            if (creditedValue == 0) revert ICM.InvalidCreditedValue();
-            _verifyValuation(g.valuationAuthority, mutualId, msg.sender, params.token, ei, creditedValue, attestation);
-            credited = creditedValue;
-        }
-
-        // Premium denominator weight. HOMOGENEOUS or attested-but-unconfigured (`bandAdapter == 0`):
-        // `premiumWeight == credited` exactly — homogeneous v1 behaviour, byte-for-byte. HETEROGENEOUS
-        // (`bandAdapter != 0`, set once by `configureHeterogeneous` before activation): derive a
-        // band-bounded + haircut weight from the manipulation-resistant adapter (never the attestation),
-        // so a reward re-mark can later ratchet it DOWN without ever touching the loss denominator.
-        uint128 premWeight = credited;
-        if (g.bandAdapter != address(0)) {
-            premWeight = _bandHaircutWeight(s, g, mutualId, params.token, ei);
-            if (premWeight == 0) revert ICM.InvalidCreditedValue();
-        }
+        if (ei > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint128 credited = uint128(ei); // checked just above
 
         // Reuse the audited create path verbatim (committer = caller).
         commitmentId =
             CommitmentLifecycleLib.createFull(s, msg.sender, params, minChallengeWindow, maxStrategies, maxURILength);
 
-        // Register the membership + freeze both denominators' weights (extracted to bound stack depth).
-        _registerMember(s, g, mutualId, commitmentId, ei, credited, premWeight);
+        // Register the membership + freeze its weight (extracted to bound stack depth).
+        _registerMember(s, g, mutualId, commitmentId, ei, credited);
 
         emit ICM.MemberJoined(mutualId, commitmentId, msg.sender, credited, ei);
     }
 
     /// @dev Post-create membership registration: grow `totalShares` (loss denominator), freeze the
-    ///      membership row (both `creditedValue` and the distinct `premiumWeight`), and initialize the
-    ///      premium side (poke + snapshot + `activeCover` add). Extracted from `joinMutual` purely to
+    ///      membership row, and initialize the premium side (poke + snapshot + `activeCover` add). Extracted from `joinMutual` purely to
     ///      bound stack depth. `creditedValue` moves ONLY on join / release — never on loss.
     function _registerMember(
         CommitmentManagerStorage.Layout storage s,
@@ -259,8 +146,7 @@ library MutualLib {
         uint256 mutualId,
         uint256 commitmentId,
         uint256 ei,
-        uint128 credited,
-        uint128 premiumWeight
+        uint128 credited
     ) private {
         uint256 newTotal = uint256(g.totalShares) + credited;
         if (newTotal > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
@@ -273,14 +159,13 @@ library MutualLib {
             creditedValue: credited,
             lossSnapshot: g.cumulativeLoss, // no-retroactive-loss: liable only for future Lambda growth
             unbondRequestedAt: 0,
-            premiumWeight: premiumWeight, // == creditedValue in homogeneous; band+haircut in heterogeneous
             premiumSnapshot: 0, // set to Pi by _initMemberPremium below — no-retroactive-reward (INV-P5)
             rewardBank: 0
         });
 
         // Premium side: poke BEFORE mutating `activeCover` (MasterChef discipline, INV-P8), then add the
         // member's deliverable cover to the denominator. A fresh member has `settledUnits == 0` and
-        // `c.amount >= E_i`, so `effCover == premiumWeight == credited` — exact, no Belt-2 clamp bite.
+        // `c.amount >= E_i`, so `effCover == credited` — exact, no Belt-2 clamp bite.
         _initMemberPremium(g, s.membership[commitmentId], s.commitments[commitmentId]);
     }
 
@@ -460,33 +345,10 @@ library MutualLib {
 
             // Dual-track the premium denominator EXACTLY (INV-P9): the loss reduced deliverable cover by
             // `effOld − effNew`, so shrink `activeCover` by that delta and grow `settledTotal` by `owed`,
-            // keeping `activeCover == totalShares − settledTotal == Σ effCover` — funded or not. (For
-            // heterogeneous mutuals only the running-delta identity `activeCover == Σ effCover` is exact —
-            // INV-P9' — since `premiumWeight != creditedValue`; the `totalShares − settledTotal` leg is
-            // homogeneous-only.)
+            // keeping `activeCover == totalShares − settledTotal == Σ effCover` — funded or not.
             g.settledTotal += owed;
             uint256 effNew = _effCover(m, c);
             g.activeCover = uint128(uint256(g.activeCover) - (effOld - effNew)); // effOld >= effNew
-
-            // ---- Junior shortfall absorber draw (HETEROGENEOUS only; ORACLE-FREE, failure-isolated).
-            // Top up the beneficiary's numeraire recovery by a FIXED fraction of the owed units — the
-            // pre-sized expected haircut, NOT a live price — bounded by the available junior reserve. The
-            // draw is skip-if-empty and provably never reverts (`draw <= pool` by the clamp), so the loss
-            // legs above ALWAYS execute regardless of pool state (INV-P13). For homogeneous mutuals
-            // (`bandAdapter == 0`, no junior funding) this whole block is skipped — hot path unchanged.
-            if (g.bandAdapter != address(0)) {
-                uint256 haircut = s.mutualHaircutBps[mutualId][c.token];
-                uint256 pool = s.mutualJuniorPool[mutualId];
-                if (haircut != 0 && pool != 0) {
-                    uint256 draw = (haircut * owed) / BPS_DENOMINATOR;
-                    if (draw > pool) draw = pool; // clamp ⇒ mutualJuniorToFree can never revert here
-                    if (draw != 0) {
-                        // numeraire top-up to the beneficiary (the junior pool is funded in numeraire).
-                        LedgerLib.mutualJuniorToFree(s, g.numeraire, g.beneficiary, mutualId, draw);
-                        emit ICM.MutualJuniorDrawn(commitmentId, draw);
-                    }
-                }
-            }
         }
         m.lossSnapshot = lambda;
 
@@ -635,16 +497,6 @@ library MutualLib {
         ICM.Mutual storage g = _mutual(s, mutualId);
         if (g.terminal) revert ICM.MutualIsTerminal();
         if (g.cumulativeLoss == LAMBDA_ONE) revert ICM.MutualExhausted(); // no cover left to pay for
-        // Premium funding is HOMOGENEOUS or CONFIGURED-HETEROGENEOUS only. An ATTESTED-BUT-UNCONFIGURED
-        // mutual (`valuationAuthority != 0 && bandAdapter == 0`) has a `premiumWeight == creditedValue`
-        // that can diverge from `E_i` while still lacking the re-priceable band machinery, so the money
-        // path stays closed until `configureHeterogeneous` sets a `bandAdapter`. Homogeneous
-        // (`valuationAuthority == 0`) funds as in homogeneous v1; once configured, heterogeneous funds with the
-        // junior split below. INV-P9's exact `activeCover == totalShares − settledTotal` cross-check is
-        // HOMOGENEOUS-ONLY; heterogeneous relaxes to INV-P9' (running-delta `activeCover == Σ effCover`).
-        if (g.valuationAuthority != address(0) && g.bandAdapter == address(0)) {
-            revert ICM.HeterogeneousPremiumUnsupported();
-        }
         if (duration < MIN_STREAM_DURATION || duration > MAX_STREAM_DURATION) {
             revert ICM.StreamDurationOutOfBounds();
         }
@@ -655,13 +507,6 @@ library MutualLib {
         // helper pair (INV-P0) and INV-P1 holds on the manager's ACTUAL balance.
         uint256 received = _pullNumeraireMeasured(s, g.numeraire, msg.sender, amount);
         if (received == 0) revert ICM.ZeroAmount();
-
-        // Junior split (heterogeneous only; `juniorBps == 0` ⇒ no split ⇒ homogeneous behaviour exactly): route a
-        // fixed fraction of the MEASURED receipt to the junior shortfall absorber. The premium stream and
-        // the funding-time solvency guard see ONLY the premium remainder — the junior share is subordinate
-        // capital that never earns `Pi` and never enters the stream solvency accounting (INV-P13).
-        uint256 juniorShare = g.juniorBps == 0 ? 0 : (received * uint256(g.juniorBps)) / BPS_DENOMINATOR;
-        uint256 premiumPortion = received - juniorShare;
 
         _pokePremium(g);
 
@@ -674,7 +519,7 @@ library MutualLib {
         if (newFinish < g.periodFinish) newFinish = g.periodFinish; // only bites while live
         if (newFinish > type(uint64).max) revert ICM.StreamDurationOutOfBounds();
         uint256 window = newFinish - nowTs;
-        uint256 newRate = (premiumPortion + leftover) / window;
+        uint256 newRate = (received + leftover) / window;
         if (newRate > type(uint128).max) revert ICM.RewardRateOverflow();
         // LIVE-STREAM RATE GUARD: while a stream is running, funding may only maintain or raise
         // the rate. Otherwise a 1-wei fund over a huge window re-spreads the leftover, collapses
@@ -686,16 +531,10 @@ library MutualLib {
         g.lastUpdate = uint64(nowTs);
 
         // free[funder] -> premium pool
-        LedgerLib.freeToMutualPremium(s, g.numeraire, msg.sender, mutualId, premiumPortion);
-        if (juniorShare != 0) {
-            // free[funder] -> junior pool
-            LedgerLib.freeToMutualJunior(s, g.numeraire, msg.sender, mutualId, juniorShare);
-            emit ICM.MutualJuniorFunded(mutualId, msg.sender, juniorShare);
-        }
+        LedgerLib.freeToMutualPremium(s, g.numeraire, msg.sender, mutualId, received);
 
         // FUNDING-TIME SOLVENCY GUARD (the single source of premium solvency): everything the stream can
-        // still pay out, plus everything already banked, must be covered by the PREMIUM reserve (the junior
-        // share is excluded — it is not streamable cover).
+        // still pay out, plus everything already banked, must be covered by the premium reserve.
         if (uint256(g.rewardRate) * window + g.bankedTotal > s.mutualPremiumPool[mutualId]) {
             revert ICM.PremiumStreamUnderfunded();
         }
@@ -850,57 +689,21 @@ library MutualLib {
     function _initMemberPremium(ICM.Mutual storage g, ICM.Membership storage m, ICM.Commitment storage c) private {
         _pokePremium(g);
         m.premiumSnapshot = g.premiumPerShareStored;
-        // Homogeneous: effCover <= credited and Σ <= totalShares (<= uint128) — the guard never bites.
-        // Heterogeneous: `premiumWeight` is band-derived and independent of `totalShares`, so the running
-        // `activeCover` sum must be explicitly fenced against the uint128 cap (a silent cast-truncation
-        // here would corrupt the premium denominator). Same `TotalSharesOverflow` surface as join.
-        uint256 newCover = uint256(g.activeCover) + _effCover(m, c);
-        if (newCover > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
-        g.activeCover = uint128(newCover);
-    }
-
-    /// @dev Live DELIVERABLE cover of a member = its premium denominator weight. In homogeneous v1
-    ///      `premiumWeight == creditedValue == E_i`, so this collapses to `E_i − settledUnits` and the
-    ///      Belt-2 `min(·, c.amount)` clamp is provably inert (member commitments are fenced from every
-    ///      non-mutual `amount` mutation, so `c.amount >= E_i − settledUnits` always). The clamp is KEPT
-    ///      IN CODE (asserted inert in v1) so any future deliverability divergence degrades gracefully
-    ///      to a bounded, solvency-independent fairness deviation rather than over-attributing premium
-    ///      (INV-P4 / INV-P4b).
-    /// @dev Heterogeneous premium weight = the manipulation-resistant adapter value of `E_i` raw units of
-    ///      `token`, BAND-CLAMPED to `[floorBps, ceilBps] * adapterValue / 1e4` (with `ceilBps <= 1e4` so
-    ///      the result never exceeds the adapter value — no inflation, INV-P11), then HAIRCUT by the
-    ///      per-collateral `mutualHaircutBps[g][token]` (so `weight <= (1 − haircut)/1e4 * bandWeight`,
-    ///      INV-P14). The result feeds ONLY `premiumWeight` (and through it `effCover` / `activeCover`);
-    ///      it NEVER touches the loss denominator. Reverts `TotalSharesOverflow` if it would not fit the
-    ///      uint128 weight field (keeps the `activeCover` denominator within its cap).
-    function _bandHaircutWeight(
-        CommitmentManagerStorage.Layout storage s,
-        ICM.Mutual storage g,
-        uint256 mutualId,
-        address token,
-        uint256 ei
-    ) private view returns (uint128) {
-        uint256 raw = IBandValuationAdapter(g.bandAdapter).value(token, ei);
-        uint256 lo = (raw * uint256(g.valuationFloorBps)) / BPS_DENOMINATOR;
-        uint256 hi = (raw * uint256(g.valuationCeilBps)) / BPS_DENOMINATOR;
-        uint256 banded = raw;
-        if (banded > hi) banded = hi; // ceilBps <= 1e4 ⇒ this binds, capping at ceilBps*raw/1e4
-        if (banded < lo) banded = lo;
-        uint256 haircut = s.mutualHaircutBps[mutualId][token];
-        uint256 weighted = (banded * (BPS_DENOMINATOR - haircut)) / BPS_DENOMINATOR;
-        if (weighted > MAX_TOTAL_SHARES) revert ICM.TotalSharesOverflow();
-        // Safe: the guard above rejects anything above MAX_TOTAL_SHARES == type(uint128).max.
+        // effCover <= credited and Σ effCover <= totalShares (<= uint128), so the cast cannot truncate.
         // forge-lint: disable-next-line(unsafe-typecast)
-        return uint128(weighted);
+        g.activeCover = uint128(uint256(g.activeCover) + _effCover(m, c));
     }
 
+    /// @dev Live DELIVERABLE cover of a member = its premium denominator weight: `E_i − settledUnits`
+    ///      (`creditedValue == E_i`). The Belt-2 `min(·, c.amount)` clamp is provably inert (member
+    ///      commitments are fenced from every non-mutual `amount` mutation, so
+    ///      `c.amount >= E_i − settledUnits` always). It is KEPT IN CODE so any future deliverability
+    ///      divergence degrades to a bounded, solvency-independent fairness deviation rather than
+    ///      over-attributing premium (INV-P4 / INV-P4b).
     function _effCover(ICM.Membership storage m, ICM.Commitment storage c) private view returns (uint256) {
-        uint256 ei = m.forfeitableUnits;
-        if (ei == 0) return 0;
-        uint256 deliverable = ei - m.settledUnits; // remaining frozen liability (fully-settled ⇒ 0)
+        uint256 deliverable = m.forfeitableUnits - m.settledUnits; // remaining frozen liability (fully-settled ⇒ 0)
         uint256 amt = c.amount;
-        if (amt < deliverable) deliverable = amt; // Belt-2 deliverable cap (inert in v1)
-        return Math.mulDiv(m.premiumWeight, deliverable, ei);
+        return amt < deliverable ? amt : deliverable; // Belt-2 deliverable cap (inert)
     }
 
     /// @dev Bank a member's accrued premium up to the current `Pi` (Synthetix bank-on-change). Pokes
@@ -979,13 +782,6 @@ library MutualLib {
             LedgerLib.mutualPremiumToFree(s, g.numeraire, g.beneficiary, mutualId, residual);
             emit ICM.MutualPremiumSwept(mutualId, g.beneficiary, residual);
         }
-        // Sweep any residual junior reserve too, so the 5th partition compartment closes at zero on a
-        // wound-down mutual (INV-P13). Always zero for homogeneous mutuals (junior never funded) — no-op.
-        uint256 jr = s.mutualJuniorPool[mutualId];
-        if (jr > 0) {
-            LedgerLib.mutualJuniorToFree(s, g.numeraire, g.beneficiary, mutualId, jr);
-            emit ICM.MutualJuniorSwept(mutualId, g.beneficiary, jr);
-        }
     }
 
     function _mutual(CommitmentManagerStorage.Layout storage s, uint256 mutualId)
@@ -1000,47 +796,5 @@ library MutualLib {
     function _lossPending(CommitmentManagerStorage.Layout storage s, uint256 mutualId) private view returns (bool) {
         ICM.MutualLossProposal storage p = s.mutualLossProposals[mutualId];
         return p.initiatedAt != 0 && !p.executed && !p.cancelled;
-    }
-
-    /// @dev Self-contained valuation attestation (no EIP-712 plumbing through delegatecall): the
-    ///      `attestation` calldata is `abi.encode(uint256 deadline, bytes sig)`, where `sig` is a
-    ///      plain ECDSA signature by the mutual's valuationAuthority over a digest binding
-    ///      chainid + manager + the exact (mutual, committer, token, E_i, creditedValue, deadline).
-    ///      The deadline time-boxes the attestation so a stale/inflated valuation cannot be reused
-    ///      forever (red-team #2). The non-arbiter constraint is enforced at createMutual; the
-    ///      [lo,hi]*adapter band hardening and single-use nonce (OBJ-2) live in the periphery
-    ///      assembler / are a documented follow-up for when heterogeneous mode ships.
-    function _verifyValuation(
-        address authority,
-        uint256 mutualId,
-        address committer,
-        address token,
-        uint256 ei,
-        uint128 creditedValue,
-        bytes calldata attestation
-    ) private view {
-        (uint256 deadline, bytes memory sig) = abi.decode(attestation, (uint256, bytes));
-        // Deliberately WALL-CLOCK, not clock-stopped: `joinMutual` is never pause-blocked, so no attestation
-        // ever loses a usable validity window to a pause — while crediting the manager's LIFETIME
-        // pause time here would widen every signed deadline by pause episodes that predate the
-        // attestation, making stale (mispriced) valuations replayable. The signed deadline means
-        // exactly what the authority signed.
-        if (block.timestamp > deadline) revert ICM.InvalidValuationAttestation();
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
-            keccak256(
-                abi.encode(
-                    "MutualValuation",
-                    block.chainid,
-                    address(this),
-                    mutualId,
-                    committer,
-                    token,
-                    ei,
-                    creditedValue,
-                    deadline
-                )
-            )
-        );
-        if (ECDSA.recover(digest, sig) != authority) revert ICM.InvalidValuationAttestation();
     }
 }

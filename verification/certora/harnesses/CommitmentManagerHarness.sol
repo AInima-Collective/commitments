@@ -7,7 +7,7 @@ import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManag
 /// @title CommitmentManagerHarness — Certora scene root
 /// @notice Extends the manager with view accessors the specs need but the
 ///         production surface doesn't expose: the per-token mutual-pool
-///         aggregates (compartments 4 and 5 of the INV-P13 partition). The
+///         aggregate (compartment 4 of the INV-P1 partition). The
 ///         production contract sits at the EIP-170 ceiling, so these live in
 ///         a harness rather than the manager — the prover doesn't enforce
 ///         deploy size, and the harness storage layout is byte-identical
@@ -16,11 +16,6 @@ contract CommitmentManagerHarness is CommitmentManager {
     /// @notice Compartment 4: Σ mutualPremiumPool over mutuals with numeraire == `token`.
     function totalMutualPremiumOf(address token) external view returns (uint256) {
         return CommitmentManagerStorage.layout().totalMutualPremium[token];
-    }
-
-    /// @notice Compartment 5: Σ mutualJuniorPool over mutuals with numeraire == `token`.
-    function totalMutualJuniorOf(address token) external view returns (uint256) {
-        return CommitmentManagerStorage.layout().totalMutualJunior[token];
     }
 
     /// @notice Id-counter accessor for the INV-10 initialized-state discharge

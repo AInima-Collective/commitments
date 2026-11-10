@@ -104,7 +104,6 @@ contract PremiumPolicyTest is Test {
             arbiter: address(arbiter),
             numeraire: address(usdc),
             beneficiary: address(router),
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -124,7 +123,7 @@ contract PremiumPolicyTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     /// @dev A mutual with 200e18 of active cover (two equal underwriters).

@@ -230,7 +230,7 @@ test('governance decoding bindings retain the handler-consumed event fields', ()
 
 test('Mutual handlers retain the manager, registry, and policy event fields', () => {
   assertEventInputs('CommitmentManager', 'MutualCreated', [
-    'mutualId', 'arbiter', 'numeraire', 'beneficiary', 'valuationAuthority',
+    'mutualId', 'arbiter', 'numeraire', 'beneficiary',
   ])
   assertEventInputs('CommitmentManager', 'MemberJoined', [
     'mutualId', 'commitmentId', 'committer', 'creditedValue', 'forfeitableUnits',
