@@ -369,10 +369,13 @@ for (const line of lines) console.log(`  ${line}`)
 // the indexer's strict parser rejects a manifest missing a required one.
 const allFor = (name) =>
   (allImplsForName[name] ?? []).map((impl) => proxyForImpl.get(impl.toLowerCase()) ?? impl)
+// The lowest block one of the run's transactions landed in, so an indexer on a
+// public chain starts at the deployment and does not crawl from genesis.
+const receiptBlocks = (doc.receipts ?? []).map((r) => Number(r.blockNumber)).filter(Number.isFinite)
 const manifest = {
   schemaVersion: 1,
   chainId: Number(chainId),
-  startBlock: 0,
+  startBlock: receiptBlocks.length ? Math.min(...receiptBlocks) : 0,
   commitmentManagers: allFor('CommitmentManager'),
   operatorRegistries: allFor('OperatorRegistry'),
   vaultFactory: implForName.VaultFactory,

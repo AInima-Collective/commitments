@@ -225,11 +225,12 @@ and `meshFactory` are also required non-zero addresses. Vault instances are
 discovered from `VaultFactory.VaultDeployed`, so a vault address does not belong
 in this manifest.
 
-Optional subsystems are represented by `tokenWeighting`, `governorFactory`,
-`mutualRegistry`, `optimisticMutualArbiter`, `linkedMutualPolicy`,
-`skimmingStrategy`, and `vaultCoverConduit`. Each must be a non-zero address when
-present. `flatFeeStrategies` and `agentIdentityRegistries` are optional address
-arrays and default to `[]` when omitted.
+Optional subsystems are represented by `governorFactory`, `mutualRegistry`,
+`optimisticMutualArbiter`, `linkedMutualPolicy`, `skimmingStrategy`, and
+`vaultCoverConduit`. Each must be a non-zero address when present.
+`flatFeeStrategies`, `agentIdentityRegistries`, `optimisticInsuranceArbiters`,
+`twoTierArbiters` and `attestationArbiters` are optional address arrays and
+default to `[]` when omitted.
 
 Legacy `commitmentManager`, `operatorRegistry`, and `commitmentsVault` keys are
 not accepted in schema v1. Migrate the first two to their plural array forms and

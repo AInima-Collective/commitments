@@ -301,8 +301,7 @@ app.get('/:id/history', async (c) => {
   const rawDays = c.req.query('days') ?? '30'
   if (!HISTORY_DAYS.has(rawDays)) return c.json({ error: 'days must be 7, 30 or 90' }, 400)
   const days = Number(rawDays)
-  const now = BigInt(Math.floor(Date.now() / 1000))
-  const windowStart = now - (now % DAY) - BigInt(days - 1) * DAY
+  let now = BigInt(Math.floor(Date.now() / 1000))
 
   const [mutual] = await db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1)
   let rows: (typeof schema.mutualState.$inferSelect)[] = []
@@ -310,6 +309,17 @@ app.get('/:id/history', async (c) => {
   if (mutual) {
     const st = schema.mutualState
     const ofMutual = and(eq(st.manager, mutual.manager), eq(st.mutualId, mutualId))
+    // A dev chain can run ahead of the server clock (anvil after a time warp). Anchor "now"
+    // to the newest indexed state when it is later, as /vaults/:vault/periodic does, so those
+    // rows are not dropped as being in the future.
+    const [newest] = await db
+      .select({ t: st.blockTimestamp })
+      .from(st)
+      .where(ofMutual)
+      .orderBy(desc(st.blockTimestamp))
+      .limit(1)
+    if (newest && newest.t > now) now = newest.t
+    const windowStart = now - (now % DAY) - BigInt(days - 1) * DAY
     const [before, inWindow, bound] = await Promise.all([
       // The state carried into the window's first day.
       db
