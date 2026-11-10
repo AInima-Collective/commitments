@@ -974,7 +974,8 @@ export const commitmentManagerAbi = [
             internalType: 'uint256',
             type: 'uint256',
           },
-          { name: 'settledTotal', internalType: 'uint256', type: 'uint256' },
+          { name: 'settledTotal', internalType: 'uint128', type: 'uint128' },
+          { name: 'exitingCover', internalType: 'uint128', type: 'uint128' },
           {
             name: 'premiumRemainder',
             internalType: 'uint256',
@@ -2356,6 +2357,25 @@ export const commitmentManagerAbi = [
       },
     ],
     name: 'Initialized',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'mutualId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'commitmentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+    ],
+    name: 'MemberExitLapsed',
   },
   {
     type: 'event',

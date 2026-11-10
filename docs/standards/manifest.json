@@ -148,6 +148,7 @@
             "settleMembers"
           ],
           "events": [
+            "MemberExitLapsed",
             "MemberExitRequested",
             "MemberJoined",
             "MemberPremiumClaimed",

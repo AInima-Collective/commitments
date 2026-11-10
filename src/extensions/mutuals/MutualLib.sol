@@ -290,16 +290,27 @@ library MutualLib {
     ///         the exposure decrement and the balance-conserving ledger move are the only effects,
     ///         and member commitments carry no hooks, so there is no external-call reentrancy
     ///         surface. K deferred losses collapse into one settle (reads the current Lambda).
+    ///         It also clears a lapsed exit request, so anyone can take a member that will not
+    ///         leave out of `exitingCover` (INV-P11).
     function settleMemberLoss(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) public {
         ICM.Membership storage m = s.membership[commitmentId];
         uint256 mutualId = m.mutualId;
         if (mutualId == 0) revert ICM.NotMutualMember();
         ICM.Mutual storage g = s.mutuals[mutualId];
+        ICM.Commitment storage c = s.commitments[commitmentId];
+
+        // A lapsed request can no longer release, so its cover is staying: clear it at the cover it
+        // was counted at (before any loss below shrinks it; the loss leg then sees no request).
+        if (m.unbondRequestedAt != 0 && _exitLapsed(s, m, g)) {
+            m.unbondRequestedAt = 0;
+            m.memberExitCumulativePausedAtStart = 0;
+            // forge-lint: disable-next-line(unsafe-typecast)
+            g.exitingCover -= uint128(_effCover(m, c)); // effCover <= exitingCover (INV-P11)
+            emit ICM.MemberExitLapsed(mutualId, commitmentId);
+        }
 
         uint256 lambda = g.cumulativeLoss;
         if (lambda == m.lossSnapshot) return; // nothing new to settle (idempotent for batch convenience)
-
-        ICM.Commitment storage c = s.commitments[commitmentId];
 
         // ---- Premium: poke and bank on the OLD effCover BEFORE the loss shrinks it (INV-P8
         // poke-before-change). Unconditional: the stored `Pi` is stale whenever the stream is live and
@@ -339,9 +350,13 @@ library MutualLib {
             // Dual-track the premium denominator EXACTLY (INV-P9): the loss reduced deliverable cover by
             // `effOld − effNew`, so shrink `activeCover` by that delta and grow `settledTotal` by `owed`,
             // keeping `activeCover == totalShares − settledTotal == Σ effCover` — funded or not.
-            g.settledTotal += owed;
-            uint256 effNew = _effCover(m, c);
-            g.activeCover = uint128(uint256(g.activeCover) - (effOld - effNew)); // effOld >= effNew
+            // owed <= E_i, and settledTotal stays <= totalShares <= uint128 max.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            g.settledTotal += uint128(owed);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint128 shrink = uint128(effOld - _effCover(m, c)); // effOld >= effNew, both <= E_i
+            g.activeCover -= shrink;
+            if (m.unbondRequestedAt != 0) g.exitingCover -= shrink; // an exiting member's cover shrinks too (INV-P11)
         }
         m.lossSnapshot = SafeCast.toUint64(lambda); // Lambda <= 1e18 < 2^64
 
@@ -373,22 +388,24 @@ library MutualLib {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
         if (_lossLive(s.mutualLossProposals[mutualId])) revert ICM.MutualLossPending();
-        if (
-            m.unbondRequestedAt != 0
-                && PauseLib.effectiveElapsed(s, m.unbondRequestedAt, m.memberExitCumulativePausedAtStart)
-                    < 2 * uint256(s.mutuals[mutualId].deallocationWindow)
-        ) revert ICM.UnbondAlreadyRequested(); // not lapsed yet
+        ICM.Mutual storage g = s.mutuals[mutualId];
+        bool fresh = m.unbondRequestedAt == 0;
+        if (!fresh && !_exitLapsed(s, m, g)) revert ICM.UnbondAlreadyRequested(); // not lapsed yet
 
         // Bank accrued premium to date. The member STAYS in both denominators — still slashable in
         // `totalShares` AND still earning in `activeCover` through the deallocation window (still at
         // risk ⇒ still paid). `activeCover` is therefore deliberately NOT decremented here.
-        _syncMember(s.mutuals[mutualId], m, c);
+        _syncMember(g, m, c);
+        // The cover joins `exitingCover` once per request on record: a request made again over a
+        // lapsed, uncleared one is already counted (INV-P11).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (fresh) g.exitingCover += uint128(_effCover(m, c)); // <= activeCover <= uint128 max
 
         m.unbondRequestedAt = uint64(block.timestamp);
         // Anchors the deallocation clock-stop; shares the slot `unbondRequestedAt` was just written to.
         m.memberExitCumulativePausedAtStart = PauseLib.creditablePaused(s);
         // The emitted horizon is the no-further-pause estimate; clock-stop can move it out.
-        uint64 slashableUntil = uint64(block.timestamp) + s.mutuals[mutualId].deallocationWindow;
+        uint64 slashableUntil = uint64(block.timestamp) + g.deallocationWindow;
         emit ICM.MemberExitRequested(mutualId, commitmentId, slashableUntil);
     }
 
@@ -420,9 +437,12 @@ library MutualLib {
         // ---- Premium: final bank, then exit BOTH denominators (INV-P8 poke-before-change). Capture the
         // pay/committer/numeraire before the membership row is deleted below.
         _syncMember(g, m, c);
-        uint256 effCover = _effCover(m, c);
-        g.activeCover = uint128(uint256(g.activeCover) - effCover);
-        g.settledTotal -= m.settledUnits; // keep `activeCover == totalShares − settledTotal` exact (INV-P9)
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint128 effCover = uint128(_effCover(m, c)); // <= E_i <= uint128 max
+        g.activeCover -= effCover;
+        g.exitingCover -= effCover; // a releasable request is on record and has not lapsed (INV-P11)
+        // forge-lint: disable-next-line(unsafe-typecast)
+        g.settledTotal -= uint128(m.settledUnits); // keep `activeCover == totalShares − settledTotal` exact (INV-P9)
         uint256 pay = m.rewardBank;
         address committer = c.committer;
         address numeraire = g.numeraire;
@@ -744,6 +764,17 @@ library MutualLib {
     ///      and no premium from then on. Existing members still settle, claim and release.
     function _exhausted(ICM.Mutual storage g) private view returns (bool) {
         return LAMBDA_ONE - g.cumulativeLoss <= EXHAUSTION_DUST;
+    }
+
+    /// @dev Whether the member's exit request (`unbondRequestedAt != 0`) has run past its exit
+    ///      window, `2 * deallocationWindow` of pause-adjusted time, and can no longer release.
+    function _exitLapsed(CommitmentManagerStorage.Layout storage s, ICM.Membership storage m, ICM.Mutual storage g)
+        private
+        view
+        returns (bool)
+    {
+        return PauseLib.effectiveElapsed(s, m.unbondRequestedAt, m.memberExitCumulativePausedAtStart)
+            >= 2 * uint256(g.deallocationWindow);
     }
 
     /// @dev Whether a loss declaration is live: initiated and neither executed nor cancelled.

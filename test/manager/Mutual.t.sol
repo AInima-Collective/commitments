@@ -452,4 +452,102 @@ contract ManagerMutualTest is Test {
         vm.expectRevert(ICM.MutualLossPending.selector);
         manager.joinMutual(gid, p);
     }
+
+    // =========================================================================
+    // exitingCover: cover with an exit request on record
+    // =========================================================================
+
+    function _covers(uint256 gid) internal view returns (uint256 active, uint256 exiting) {
+        ICM.Mutual memory g = manager.getMutual(gid);
+        return (g.activeCover, g.exitingCover);
+    }
+
+    function test_exitingCover_requestCountsCoverActiveUnchanged() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 200e18, "activeCover unchanged by a request");
+        assertEq(exiting, 100e18, "exitingCover rises by the member's cover");
+    }
+
+    function test_exitingCover_lossOnExitingMember_bothFallTogether() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        _declareAndExecute(gid, 50e18); // 25% of every line
+        manager.settleMemberLoss(c1);
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 175e18, "activeCover falls by the settled loss");
+        assertEq(exiting, 75e18, "exitingCover falls by the same amount");
+    }
+
+    function test_exitingCover_releaseRemovesCoverFromBoth() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        _declareAndExecute(gid, 50e18);
+        manager.settleMemberLoss(c1);
+        manager.releaseMutualMember(c1); // the declaration ran the clock into the exit window
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 100e18, "activeCover falls by the member's cover");
+        assertEq(exiting, 0, "exitingCover falls by the member's cover");
+    }
+
+    function test_exitingCover_lapsedRequestClearedByStranger_thenCountedOnce() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        vm.warp(block.timestamp + 2 * uint256(MUTUAL_WINDOW)); // lapsed
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = c1;
+        vm.expectEmit(true, true, false, true, address(manager));
+        emit ICM.MemberExitLapsed(gid, c1);
+        vm.prank(u3); // a stranger
+        manager.settleMembers(ids);
+        assertEq(manager.getMembership(c1).unbondRequestedAt, 0, "request cleared");
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 100e18, "activeCover unchanged");
+        assertEq(exiting, 0, "cover counts as staying again");
+
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        (, exiting) = _covers(gid);
+        assertEq(exiting, 100e18, "a second request counts the cover once");
+    }
+
+    function test_exitingCover_lapsedRequestWithUnsettledLoss_clearedAtPostLossCover() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        _declareAndExecute(gid, 50e18);
+        vm.warp(block.timestamp + 2 * uint256(MUTUAL_WINDOW)); // lapsed, loss still unsettled
+        manager.settleMemberLoss(c1);
+        assertEq(manager.getMembership(c1).settledUnits, 25e18, "loss settled");
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 175e18, "activeCover falls by the loss only");
+        assertEq(exiting, 0, "the lapsed request is cleared");
+    }
+
+    function test_exitingCover_reRequestAfterLapseWithoutClear_countedOnce() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        vm.warp(block.timestamp + 2 * uint256(MUTUAL_WINDOW)); // lapsed, never cleared
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        (, uint256 exiting) = _covers(gid);
+        assertEq(exiting, 100e18, "a request made again after a lapse is counted once");
+    }
 }

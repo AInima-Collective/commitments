@@ -134,7 +134,8 @@ struct Mutual {
     uint64  lastUpdate;            // last _pokePremium time, clamped to periodFinish
     uint64  periodFinish;          // end of the current stream; accrual stops here
     uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing
-    uint256 settledTotal;          // Σ settledUnits — cross-checks activeCover == totalShares − settledTotal (INV-P9)
+    uint128 settledTotal;          // Σ settledUnits (<= totalShares) — cross-checks activeCover == totalShares − settledTotal (INV-P9)
+    uint128 exitingCover;          // Σ effCover_i over members with an exit request on record; <= activeCover (INV-P11)
     uint256 premiumRemainder;      // sub-1e27 dust carried forward between pokes (no value ever lost)
     uint256 bankedTotal;           // Σ rewardBank_i — outstandingBank for the funding-time solvency guard (INV-P2)
 }
@@ -144,9 +145,16 @@ The premium fields (`activeCover`, `rewardRate` … `bankedTotal`) drive the rew
 `Pi` (§6); the rest are the loss-path core. **The premium fields default to zero**, so a mutual
 that never funds premium is the pure-loss primitive: the premium index is inert while
 `rewardRate == 0`. The order packs the struct into ten slots: the join and loss-initiation
-guards (`arbiter`, `active`, `terminal`) share one, and the two denominators a join or release
-moves (`totalShares`, `activeCover`) share another. The reference layout is locked by the
+guards (`arbiter`, `active`, `terminal`) share one, the two denominators a join or release
+moves (`totalShares`, `activeCover`) share another, and `settledTotal` shares one with
+`exitingCover`, which settle and release write together. The reference layout is locked by the
 storage-slot test.
+
+`exitingCover` is the part of `activeCover` whose members have asked to leave: the sum of
+`effCover_i` over members whose `unbondRequestedAt` is non-zero, lapsed or not (INV-P11). Those
+members are still slashable and still earn premium, so they stay in `activeCover`; a consumer that
+sizes exposure against the mutual's cover reads `activeCover − exitingCover`, the cover that has
+not asked to leave, and stops counting a member's cover the moment its exit is requested.
 
 ### 1.2 `Membership`
 
@@ -309,8 +317,8 @@ the manager MUST mark the mutual `terminal`, emit `MutualLossShortfall(mutualId,
 ## 3. Lifecycle
 
 **Membership event indexing (normative).** `MemberJoined` indexes `(mutualId, commitmentId,
-committer)`. `MemberSettled`, `MemberExitRequested`, and `MemberReleased` index `(mutualId,
-commitmentId)`, so integrators can query every membership lifecycle transition within one mutual.
+committer)`. `MemberSettled`, `MemberExitRequested`, `MemberExitLapsed`, and `MemberReleased`
+index `(mutualId, commitmentId)`, so integrators can query every membership lifecycle transition within one mutual.
 
 ### 3.1 `createMutual`
 
@@ -426,6 +434,9 @@ shared window. The flow:
 
 ```
 m = membership[commitmentId];  require m.mutualId != 0     // NotMutualMember
+if (m.unbondRequestedAt != 0 && elapsed >= 2 * deallocationWindow):  // a lapsed exit request (§3.6)
+    exitingCover -= effCover(m); m.unbondRequestedAt = 0       // cleared at the cover it was counted at
+    emit MemberExitLapsed(mutualId, commitmentId)
 lambda = mutuals[m.mutualId].cumulativeLoss
 if (lambda == m.lossSnapshot) return                           // nothing new (idempotent)
 _syncMember(m)                                                 // poke + bank premium on pre-loss cover (INV-P8)
@@ -437,6 +448,8 @@ if (owed > 0):
     LedgerLib.forfeitTransfer(token, committer, beneficiary, owed)  // encumbered -> beneficiary free
     m.settledUnits += owed
     c.amount       -= owed                                     // residual stays ENCUMBERED; commitment survives
+    activeCover    -= effOld - effNew;  settledTotal += owed   // INV-P9
+    if (m.unbondRequestedAt != 0) exitingCover -= effOld - effNew  // INV-P11
 m.lossSnapshot = lambda
 emit MemberSettled(mutualId, commitmentId, owed, lambda)
 ```
@@ -453,6 +466,12 @@ eventually be released) — the key difference from the one-shot terminal `execu
 `settleMembers` is a batch convenience that loops `settleMemberLoss` (reverts `EmptyBatch` on
 empty input; unbounded, so the caller sizes the batch to the block). Because settlement is permissionless, the `O(N)` physical movement
 of a claim can never brick on a single uncooperative member.
+
+Settlement also clears a **lapsed** exit request (§3.6), before the idempotence return so it runs
+with or without a new loss: it zeroes `unbondRequestedAt` and its pause snapshot, removes the
+member's `effCover` from `exitingCover`, and emits `MemberExitLapsed(mutualId, commitmentId)`. A
+lapsed request can no longer release, so its cover is staying; because settlement is
+permissionless, anyone can return it to the cover that counts.
 
 ### 3.6 Two-step exit
 
@@ -474,7 +493,9 @@ request is not a standing option to leave the moment a loss becomes visible.
 (`UnbondAlreadyRequested` while a prior request has not lapsed). Stamps
 `unbondRequestedAt = block.timestamp` and a fresh pause snapshot; on a lapsed request this starts
 a new one. The line **stays in `totalShares` and remains mutual-slashable** until the deallocation
-window elapses, and keeps earning premium until release. Emits
+window elapses, and keeps earning premium until release. On a fresh request
+(`unbondRequestedAt == 0`) the member's `effCover` is added to `exitingCover`; a request made again
+over a lapsed one that was never cleared is already counted and adds nothing (INV-P11). Emits
 `MemberExitRequested(mutualId, commitmentId, unbondRequestedAt + deallocationWindow)`; the exit
 window runs from that `slashableUntil` for one more `deallocationWindow`.
 
@@ -491,7 +512,8 @@ the membership, and emits `MemberReleased(mutualId, commitmentId)`.
 Release also carries the member's **premium exit leg** (§6): it pokes the index and banks the
 member's accrued premium up to the current `Pi`, exits the member from *both* premium
 denominators (`activeCover -= effCover`, `settledTotal -= settledUnits`, keeping
-`activeCover == totalShares − settledTotal` exact), and — the leg the loss-only description
+`activeCover == totalShares − settledTotal` exact) and leaves `exitingCover` (`exitingCover -=
+effCover`; its request is on record and has not lapsed), and — the leg the loss-only description
 omits — **auto-pays the member's accrued `rewardBank` to the committer** through the premium
 reserve (`mutualPremiumToFree`), zeroing `rewardBank`, decrementing `bankedTotal`, and emitting
 `MemberPremiumClaimed(commitmentId, committer, amount)`. A member therefore never has to make a
@@ -573,6 +595,10 @@ so these hold trivially.
 - **INV-P8 (poke-before-change).** `_pokePremium` runs immediately before every mutation of
   `activeCover` or `Pi` (MasterChef discipline).
 - **INV-P9 (cover exactness).** `activeCover == totalShares − settledTotal == Σ effCover_i`.
+- **INV-P11 (exiting cover exactness).** `exitingCover == Σ effCover_i` over members with
+  `unbondRequestedAt != 0`, and `exitingCover <= activeCover`. A fresh `requestMutualExit` adds
+  the member's `effCover`; a settle shrinks it with the member's cover; release, or a settle that
+  clears a lapsed request, removes it. `exitingCover` never moves the premium index.
 - **INV-P10 (bank never bricks a loss).** Premium banking inside settle/release is failure-
   isolated (saturating, skip-not-revert on the infeasible overflow path), so a premium-arithmetic
   edge can never wedge the loss legs; a deferred accrual is recovered on a later poke, never lost.
@@ -830,5 +856,5 @@ This is a normative-optional extension of `ERC-COMMITMENTS`. It introduces no ch
 ## 12. Test cases
 
 - `test/manager/Mutual.t.sol`, `test/mutual/Mutual.t.sol`, `test/mutual/PremiumPolicy.t.sol` — the loss and premium mutual suites.
-- `test/manager/conformance/PartitionInvariant.t.sol` — the extended partition-invariant fuzz (INV-P1 premium compartment, INV-P9 cover exactness).
+- `test/manager/conformance/PartitionInvariant.t.sol` — the extended partition-invariant fuzz (INV-P1 premium compartment, INV-P9 cover exactness, INV-P11 exiting cover exactness over request, settle, release, lapse and clear).
 - `test/manager/StorageSlots.t.sol` — locks the mutual storage offsets.

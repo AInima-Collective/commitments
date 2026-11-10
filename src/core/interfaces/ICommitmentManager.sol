@@ -156,8 +156,9 @@ interface ICommitmentManager {
     ///         the index rebases *attribution*, not custody (INV-1 preserved). See the Mutuals standard
     ///         (ERC-COMMITMENTS-MUTUALS). Economically: Lloyd's several liability with a shared loss ratio.
     /// @dev Packed into ten slots: the join and loss-initiation guards (`arbiter`, `active`,
-    ///      `terminal`) share one, and the two denominators a join or release moves (`totalShares`,
-    ///      `activeCover`) share another.
+    ///      `terminal`) share one, the two denominators a join or release moves (`totalShares`,
+    ///      `activeCover`) share another, and `settledTotal` shares a slot with `exitingCover`,
+    ///      which settle and release write together.
     struct Mutual {
         address arbiter; // sole authority to INITIATE a mutual loss
         uint64 challengeWindow; // >= MUTUAL_MIN_CHALLENGE_WINDOW (longer than the per-commitment floor)
@@ -177,7 +178,11 @@ interface ICommitmentManager {
         uint64 lastUpdate; // last `_pokePremium` time, clamped to periodFinish
         uint64 periodFinish; // end of the current stream; accrual stops here
         uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing.
-        uint256 settledTotal; // Σ settledUnits — cross-checks `activeCover == totalShares − settledTotal` (INV-P9)
+        uint128 settledTotal; // Σ settledUnits (<= totalShares) — cross-checks `activeCover == totalShares − settledTotal` (INV-P9)
+        // Σ effCover_i over members with an exit request on record (`unbondRequestedAt != 0`), lapsed
+        // or not; <= activeCover (INV-P11). Such a member still earns premium and is still slashable;
+        // `activeCover − exitingCover` is the cover that has not asked to leave.
+        uint128 exitingCover;
         uint256 premiumRemainder; // sub-1e27 dust carried forward between pokes (no value ever lost)
         uint256 bankedTotal; // Σ rewardBank_i — `outstandingBank` for the funding-time solvency guard (INV-P2)
     }
@@ -401,6 +406,9 @@ interface ICommitmentManager {
     ///         one more `deallocationWindow`, after which the request lapses.
     event MemberExitRequested(uint256 indexed mutualId, uint256 indexed commitmentId, uint64 slashableUntil);
     event MemberReleased(uint256 indexed mutualId, uint256 indexed commitmentId);
+    /// @notice A lapsed exit request was cleared (by any settle of the member): the member is no
+    ///         longer exiting and its cover left `exitingCover`.
+    event MemberExitLapsed(uint256 indexed mutualId, uint256 indexed commitmentId);
 
     // ---- Premium index (reward side, Mutuals premium) ----
     /// @notice Policyholder funded/extended a mutual's premium stream. `received` is the MEASURED
@@ -820,15 +828,17 @@ interface ICommitmentManager {
     function cancelStaleMutualLoss(uint256 mutualId) external;
 
     /// @notice Permissionless, lazy: settle one member's accrued share of the shared loss. K
-    ///         deferred losses collapse into one O(1) settle (reads current Lambda).
+    ///         deferred losses collapse into one O(1) settle (reads current Lambda). Also clears a
+    ///         lapsed exit request (`MemberExitLapsed`), taking the member out of `exitingCover`.
     function settleMemberLoss(uint256 commitmentId) external;
 
     /// @notice Batch convenience over `settleMemberLoss`. Unbounded: the caller sizes the batch.
     function settleMembers(uint256[] calldata commitmentIds) external;
 
     /// @notice Member-only: start the deallocation window. The line stays in `totalShares` and
-    ///         mutual-slashable until the window elapses (pre-declaration escape defense). On a
-    ///         lapsed request this starts a fresh one; on one that has not lapsed it reverts
+    ///         mutual-slashable until the window elapses (pre-declaration escape defense), and its
+    ///         cover is counted in `exitingCover` until release or until a lapsed request is cleared.
+    ///         On a lapsed request this starts a fresh one; on one that has not lapsed it reverts
     ///         `UnbondAlreadyRequested`.
     function requestMutualExit(uint256 commitmentId) external;
 

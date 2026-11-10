@@ -464,6 +464,24 @@ contract ManagerHandler is Test {
         manager.releaseMutualMember(cid);
     }
 
+    /// @dev Let an exit request lapse (no pauses run here, so wall time is effective time), then
+    ///      either a stranger clears it through a settle or the member requests again over it.
+    function lapseMutualExit(uint256 cidSeed, bool clear) external {
+        if (allMutualCommitmentIds.length == 0) return;
+        uint256 cid = allMutualCommitmentIds[cidSeed % allMutualCommitmentIds.length];
+        ICM.Membership memory m = manager.getMembership(cid);
+        if (m.mutualId == 0 || m.unbondRequestedAt == 0) return;
+        uint256 lapseAt = uint256(m.unbondRequestedAt) + 2 * uint256(manager.getMutual(m.mutualId).deallocationWindow);
+        if (block.timestamp < lapseAt) vm.warp(lapseAt);
+        if (clear) {
+            manager.settleMemberLoss(cid);
+        } else {
+            if (_mutualLossPending(m.mutualId)) return;
+            vm.prank(manager.getCommitment(cid).committer);
+            manager.requestMutualExit(cid);
+        }
+    }
+
     // ---- Wave 5b — premium index (reward side) ----
 
     /// @dev A policyholder funds a mutual's premium stream from its WALLET (measured-receipt pull).
@@ -635,6 +653,26 @@ contract PartitionInvariantTest is Test {
                 sumEff += deliverable;
             }
             assertEq(uint256(activeCover), sumEff, "INV-P9: activeCover == sum effCover");
+        }
+    }
+
+    /// @dev INV-P11 (exiting cover exactness), beside INV-P9: for every mutual, `exitingCover` is
+    ///      Σ effCover_i over members with an exit request on record, and never exceeds `activeCover`.
+    function invariant_exitingCoverExact() public view {
+        uint256 nMutuals = handler.mutualCount();
+        uint256 nMutualCommitments = handler.mutualCommitmentCount();
+        for (uint256 gi = 0; gi < nMutuals; gi++) {
+            uint256 gid = handler.allMutualIds(gi);
+            ICM.Mutual memory g = manager.getMutual(gid);
+            uint256 sumExiting;
+            for (uint256 ci = 0; ci < nMutualCommitments; ci++) {
+                uint256 cid = handler.allMutualCommitmentIds(ci);
+                ICM.Membership memory m = manager.getMembership(cid);
+                if (m.mutualId != gid || m.unbondRequestedAt == 0) continue;
+                sumExiting += m.forfeitableUnits - m.settledUnits; // effCover (Belt-2 inert, INV-P9)
+            }
+            assertEq(uint256(g.exitingCover), sumExiting, "INV-P11: exitingCover == sum effCover of exiting members");
+            assertLe(g.exitingCover, g.activeCover, "INV-P11: exitingCover <= activeCover");
         }
     }
 

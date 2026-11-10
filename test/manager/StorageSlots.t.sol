@@ -92,6 +92,7 @@ contract ManagerStorageHarness {
         g.periodFinish = 308;
         g.premiumPerShareStored = 309;
         g.settledTotal = 310;
+        g.exitingCover = 313;
         g.premiumRemainder = 311;
         g.bankedTotal = 312;
     }
@@ -298,7 +299,9 @@ contract ManagerStorageSlotsTest is Test {
         assertEq(uint64(w >> 128), 307, "lastUpdate @5 bits 128..191");
         assertEq(uint64(w >> 192), 308, "periodFinish @5 bits 192..255");
         assertEq(_word(a, 1, 25, 6), 309, "premiumPerShareStored @6");
-        assertEq(_word(a, 1, 25, 7), 310, "settledTotal @7");
+        w = _word(a, 1, 25, 7);
+        assertEq(uint128(w), 310, "settledTotal @7 bits 0..127");
+        assertEq(uint128(w >> 128), 313, "exitingCover @7 bits 128..255");
         assertEq(_word(a, 1, 25, 8), 311, "premiumRemainder @8");
         assertEq(_word(a, 1, 25, 9), 312, "bankedTotal @9");
         assertEq(_word(a, 1, 25, 10), 0, "nothing past slot 9");
