@@ -9,7 +9,7 @@ import { and, asc, eq, gte, sql } from 'ponder'
 import { ponder } from 'ponder:registry'
 import { commitment, ledgerPosition, vault, vaultSnapshot } from 'ponder:schema'
 
-import { BaseError, ContractFunctionRevertedError } from 'viem'
+import { BaseError, ExecutionRevertedError } from 'viem'
 
 import { commitmentsVaultAbi } from './abis'
 import { APY_30D_SECONDS, APY_7D_SECONDS, rollingApyBps, sharePriceOf } from './api/snapshotMath'
@@ -31,8 +31,10 @@ ponder.on('VaultSnapshot:block', async ({ event, context }) => {
       // `totalAssets` calls into whatever yield strategy the vault's admin bound. A strategy
       // that reverts must cost that vault this point, not stop indexing for every contract
       // (a throw here is fatal to Ponder and repeats at the same block on restart). Anything
-      // that is not a contract revert still throws.
-      if (!(err instanceof BaseError && err.walk((e) => e instanceof ContractFunctionRevertedError))) throw err
+      // else still throws: viem also builds a ContractFunctionRevertedError for a provider's
+      // internal error (-32603), which is transient and must not cost every vault its point,
+      // so the test is the node's own "execution reverted".
+      if (!(err instanceof BaseError && err.walk((e) => e instanceof ExecutionRevertedError))) throw err
       console.warn(`[vaultSnapshot] ${address} reverted at block ${event.block.number}; no point this tick`)
       continue
     }

@@ -48,6 +48,12 @@ const AGENT_IDENTITY_REGISTRY_CANONICAL = '0x8004A169FB4a3325136EB29fA0ceB6D2e53
 const agentIdentityRegistries = IS_PROD
   ? [AGENT_IDENTITY_REGISTRY_CANONICAL]
   : deployments.agentIdentityRegistries
+// The canonical registry is older than this protocol's deployment, so on PROD
+// the manifest's startBlock (the protocol's deploy block) would miss every agent
+// registered before it. Start at the registry's own deploy block when
+// PONDER_START_BLOCK_AGENT_REGISTRY_1 gives it, and from genesis otherwise:
+// slower, never wrong. Dev and Sepolia deploy their own registry with the rest.
+const agentRegistryStartBlock = IS_PROD ? Number(process.env.PONDER_START_BLOCK_AGENT_REGISTRY_1 ?? 0) : startBlock
 
 // Factory event — new FanIn/FanOut/TokenWeighting clones are discovered from
 // the MeshFactory's NodeDeployed event and indexed automatically.
@@ -227,7 +233,7 @@ export default createConfig({
     AgentIdentityRegistry: {
       abi: agentIdentityRegistryAbi,
       chain: { [CORE_CHAIN]: { address: agentIdentityRegistries } },
-      startBlock,
+      startBlock: agentRegistryStartBlock,
     },
     // The contracts below may be absent from a deployment (PROD until launch).
     // Each is bound unconditionally with a possibly-empty address list so the

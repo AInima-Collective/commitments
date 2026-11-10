@@ -12,23 +12,32 @@ import Landing from './pages/Landing'
  * the shell no longer download every page.
  */
 export function page(panelName: string, load: () => Promise<{ default: ComponentType }>) {
-  const Page = lazy(() =>
-    load().catch((error: unknown) => {
-      // A redeploy renames the chunks under an open tab, and `lazy` keeps the
-      // rejection: reload once per path for the new build, then show the error.
-      const key = `reloaded:${location.pathname}`
+  const Page = lazy(async () => {
+    // A redeploy renames the chunks under an open tab, and `lazy` keeps the
+    // rejection: reload once per path for the new build, then show the error.
+    // A path that loads clears its mark, so the next redeploy gets a reload too.
+    const key = `reloaded:${location.pathname}`
+    try {
+      const mod = await load()
+      try {
+        sessionStorage.removeItem(key)
+      } catch {
+        // Storage blocked: nothing was marked.
+      }
+      return mod
+    } catch (error) {
       try {
         if (!sessionStorage.getItem(key)) {
           sessionStorage.setItem(key, '1')
           location.reload()
-          return new Promise<never>(() => {})
+          return await new Promise<never>(() => {})
         }
       } catch {
         // Storage blocked: no guard, so no reload.
       }
       throw error
-    }),
-  )
+    }
+  })
   return (
     <ErrorPanel panelName={panelName}>
       <Page />
