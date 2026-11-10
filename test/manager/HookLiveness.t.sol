@@ -74,8 +74,8 @@ contract HookLivenessTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 
     // =========================================================================

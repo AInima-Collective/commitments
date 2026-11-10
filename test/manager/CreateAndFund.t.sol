@@ -115,8 +115,8 @@ contract CreateAndFundTest is Test {
     }
 
     function _partitionHolds(address t) internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(t);
-        assertEq(free + enc + esc, ERC20(t).balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(t);
+        assertEq(free + enc + esc + mp, ERC20(t).balanceOf(address(manager)), "INV-1 partition");
     }
 
     // ---- Surplus stays free ----

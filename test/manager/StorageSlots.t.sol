@@ -53,7 +53,7 @@ contract ManagerStorageHarness {
         s.memberExitCumulativePausedAtStart[17] = 999; // offset 38
         // Appended per-record snapshot fields (append-only inside their structs).
         s.forfeitProposals[13].cumulativePausedAtStart = 91; // ForfeitProposal, packed slot bits 96..159
-        s.mutualLossProposals[14].cumulativePausedAtStart = 92; // MutualLossProposal, slot +3 bits 176..239
+        s.mutualLossProposals[14].cumulativePausedAtStart = 92; // MutualLossProposal, slot +3 bits 16..79
         s.commitments[16].cumulativePausedAtStart = 94; // Commitment, appended tail slot
     }
 }
@@ -175,7 +175,7 @@ contract ManagerStorageSlotsTest is Test {
         // Appended Mutual premium fields: mutuals (offset 28) value base, then the
         // in-struct slots +6 (premiumPerShareStored) and +7 (activeCover, low 128 bits). The +6/+7
         // offsets follow from the greedy packing of the header (beneficiary+challengeWindow share
-        // slot 2; deallocationWindow+lastInitiatedAt+totalShares share slot 3; active+terminal
+        // slot 2; deallocationWindow+totalShares share slot 3; active+terminal
         // share slot 5), so the premium block begins immediately after — proving the append point.
         bytes32 mutualBase = keccak256(abi.encode(uint256(1), bytes32(uint256(SLOT) + 28)));
         assertEq(
@@ -213,11 +213,11 @@ contract ManagerStorageSlotsTest is Test {
         bytes32 fpSlot = keccak256(abi.encode(uint256(13), bytes32(uint256(SLOT) + 10)));
         assertEq(uint64(uint256(vm.load(address(h), fpSlot)) >> 96), 91, "ForfeitProposal.cumulativePausedAtStart");
 
-        // MutualLossProposal (offset 31): slot +3 — proposer 0..159, executed 160..167,
-        // cancelled 168..175, cumulativePausedAtStart 176..239.
+        // MutualLossProposal (offset 31): slot +3 — executed 0..7, cancelled 8..15,
+        // cumulativePausedAtStart 16..79.
         bytes32 mlpBase = keccak256(abi.encode(uint256(14), bytes32(uint256(SLOT) + 31)));
         assertEq(
-            uint64(uint256(vm.load(address(h), bytes32(uint256(mlpBase) + 3))) >> 176),
+            uint64(uint256(vm.load(address(h), bytes32(uint256(mlpBase) + 3))) >> 16),
             92,
             "MutualLossProposal.cumulativePausedAtStart"
         );

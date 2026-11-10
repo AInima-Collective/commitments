@@ -71,8 +71,8 @@ contract MovementValidationTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 
     // =========================================================================
@@ -355,49 +355,5 @@ contract MovementValidationTest is Test {
         assertEq(strategy.distributeCalls(), 1);
         assertEq(manager.escrowOf(address(token), address(strategy)), 1e18);
     }
-
-    // =========================================================================
-    // distributeAndClaim (#60) — atomic distribute-then-claim
-    // =========================================================================
-
-    /// @dev The footgun this fixes: distribute banks live accrual into escrow, and claim pays only
-    ///      banked accrual. Bundled, the claim pays exactly what the distribute just banked.
-    function test_distributeAndClaim_banksThenPays_oneCall() public {
-        strategy.setMoves(
-            MOCK_DISTRIBUTE, _move(MovementKind.FromEncumberedToEscrow, alice, address(strategy), address(token), 20e18)
-        );
-        strategy.setMoves(
-            MOCK_CLAIM, _move(MovementKind.FromEscrowToFree, address(strategy), bob, address(token), 20e18)
-        );
-
-        uint256 bobFreeBefore = manager.freeBalance(address(token), bob);
-        manager.distributeAndClaim(id, address(strategy), "");
-
-        assertEq(strategy.distributeCalls(), 1, "distribute leg ran");
-        assertEq(strategy.claimCalls(), 1, "claim leg ran");
-        // The freshly-banked 20 flowed straight through to bob; escrow nets to zero.
-        assertEq(manager.escrowOf(address(token), address(strategy)), 0, "escrow drained");
-        assertEq(manager.freeBalance(address(token), bob) - bobFreeBefore, 20e18, "bob paid the banked accrual");
-        assertEq(manager.getCommitment(id).amount, 80e18, "encumbrance shrank by the distributed amount");
-        _partitionHolds();
-    }
-
-    function test_distributeAndClaim_unknownStrategyReverts() public {
-        vm.expectRevert(ICM.UnknownStrategy.selector);
-        manager.distributeAndClaim(id, mallory, "");
-    }
-
-    function test_distributeAndClaim_inactiveReverts() public {
-        vm.prank(arbiter);
-        manager.releaseCommitment(id);
-        vm.expectRevert(ICM.CommitmentInactive.selector);
-        manager.distributeAndClaim(id, address(strategy), "");
-    }
-
-    function test_distributeAndClaim_forfeitPendingReverts() public {
-        vm.prank(arbiter);
-        manager.initiateForfeit(id, 1000);
-        vm.expectRevert(ICM.ForfeitPending.selector);
-        manager.distributeAndClaim(id, address(strategy), "");
-    }
 }
+

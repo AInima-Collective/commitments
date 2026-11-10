@@ -326,7 +326,6 @@ contract ManualArbiterTest is ManagerTestBase {
 
         ICM.MutualLossProposal memory prop = manager.getMutualLossProposal(gid);
         assertEq(prop.lossNumeraire, 40e18, "loss declared");
-        assertEq(prop.proposer, address(arbiter), "arbiter is the proposer");
         assertGt(prop.initiatedAt, 0, "proposal open");
 
         vm.warp(block.timestamp + MUTUAL_WINDOW + 1);

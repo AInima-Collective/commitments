@@ -266,11 +266,6 @@ library AgreementLib {
             prop.metadataURI,
             prop.metadataHash
         );
-        // Companion discovery-axis event (indexed counterparty). Guarded on non-zero to mirror the
-        // direct create path; an agreement leg's counterparty is the opposing committer.
-        if (counterparty != address(0)) {
-            emit ICM.CommitmentCounterparty(commitmentId, counterparty);
-        }
     }
 
     function _bindLegStrategies(
@@ -388,7 +383,7 @@ library AgreementLib {
     }
 
     // =========================================================================
-    // Atomic bilateral release / symmetric unbond
+    // Atomic bilateral release
     // =========================================================================
 
     /// @notice Release both legs atomically (shared-arbiter-only). Each unresolved leg runs its
@@ -412,20 +407,6 @@ library AgreementLib {
             emit ICM.CommitmentReleased(cidB, msg.sender);
         }
         emit ICM.AgreementReleased(agreementId);
-    }
-
-    /// @notice Symmetric unbond start for both legs; either committer may call.
-    function requestAgreementUnbondCore(CommitmentManagerStorage.Layout storage s, uint256 agreementId) external {
-        uint256[2] storage pair = s.agreementPairs[agreementId];
-        (uint256 cidA, uint256 cidB) = (pair[0], pair[1]);
-        if (cidA == 0 && cidB == 0) revert ICM.AgreementNotFound();
-
-        if (msg.sender != s.commitments[cidA].committer && msg.sender != s.commitments[cidB].committer) {
-            revert ICM.NotCommitter();
-        }
-        CommitmentLifecycleLib.initiateUnbondIdempotent(s, cidA);
-        CommitmentLifecycleLib.initiateUnbondIdempotent(s, cidB);
-        emit ICM.AgreementUnbondRequested(agreementId);
     }
 
     // =========================================================================

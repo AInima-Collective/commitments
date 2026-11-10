@@ -411,7 +411,8 @@ contract ManagerHandler is Test {
         uint256 gid = allMutualIds[mutualSeed % allMutualIds.length];
         ICM.Mutual memory g = manager.getMutual(gid);
         if (!g.active || g.terminal || g.totalShares == 0 || _mutualLossPending(gid)) return;
-        if (g.lastInitiatedAt != 0 && block.timestamp < uint256(g.lastInitiatedAt) + 1 hours) return;
+        uint64 lastAt = manager.getMutualLossProposal(gid).initiatedAt;
+        if (lastAt != 0 && block.timestamp < uint256(lastAt) + 1 hours) return;
         uint256 loss = bound(lossSeed, 1, uint256(g.totalShares) * 2); // may exceed shares -> exercises the clamp
         vm.prank(arbiter);
         manager.initiateMutualLoss(gid, loss, bytes32(0));
@@ -506,14 +507,6 @@ contract ManagerHandler is Test {
         manager.claimMemberPremium(cid);
     }
 
-    /// @dev settle-then-claim under one guard; degrades to the two permissionless calls.
-    function settleAndClaimMember(uint256 cidSeed) external {
-        if (allMutualCommitmentIds.length == 0) return;
-        uint256 cid = allMutualCommitmentIds[cidSeed % allMutualCommitmentIds.length];
-        if (manager.getMembership(cid).mutualId == 0) return;
-        manager.settleAndClaim(cid);
-    }
-
     function reclaimPremium(uint256 mutualSeed) external {
         if (allMutualIds.length == 0) return;
         uint256 gid = allMutualIds[mutualSeed % allMutualIds.length];
@@ -600,9 +593,9 @@ contract PartitionInvariantTest is Test {
     function invariant_partition_aggregatesMatchBalance() public view {
         for (uint256 t = 0; t < tokens.length; t++) {
             address token = address(tokens[t]);
-            (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(token);
-            uint256 pool = _mutualPremiumForToken(token);
-            assertEq(free + enc + esc + pool, tokens[t].balanceOf(address(manager)), "INV-P1: 4-compartment partition");
+            (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(token);
+            assertEq(mp, _mutualPremiumForToken(token), "totalMutualPremium == sum of pools");
+            assertEq(free + enc + esc + mp, tokens[t].balanceOf(address(manager)), "INV-P1: 4-compartment partition");
         }
     }
 
@@ -667,7 +660,7 @@ contract PartitionInvariantTest is Test {
             for (uint256 sIdx = 0; sIdx < handler.strategyCount(); sIdx++) {
                 sumEsc += manager.escrowOf(token, handler.strategies(sIdx));
             }
-            (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(token);
+            (uint256 free, uint256 enc, uint256 esc,) = manager.ledgerTotals(token);
             assertEq(sumFree, free, "totalFree consistent with ledger walk");
             assertEq(sumEnc, enc, "totalEncumbered consistent with ledger walk");
             assertEq(sumEsc, esc, "totalEscrow consistent with ledger walk");

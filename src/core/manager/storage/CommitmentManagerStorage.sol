@@ -110,13 +110,13 @@ library CommitmentManagerStorage {
         // =====================================================================
         // Shared-loss mutuals (Mutual extension; offsets 28..31)
         // =====================================================================
-        /// @dev mutualId => Mutual header. Mutual ids are 1-indexed (lazily initialized in
-        ///      createMutual): id 0 is the Membership "not-a-member" sentinel.
+        /// @dev mutualId => Mutual header. Mutual ids are 1-indexed (`initialize` seeds
+        ///      `nextMutualId` to 1): id 0 is the Membership "not-a-member" sentinel.
         mapping(uint256 => ICommitmentManager.Mutual) mutuals;
         /// @dev commitmentId => Membership (sparse; `mutualId == 0` means not a member). A
         ///      commitment is bound to at most one mutual, non-rebindable (INV-G6).
         mapping(uint256 => ICommitmentManager.Membership) membership;
-        /// @dev Next mutual id. 0 (uninitialized) is treated as 1 on first createMutual.
+        /// @dev Next mutual id, seeded to 1 in `initialize`.
         uint256 nextMutualId;
         /// @dev mutualId => pending two-phase mutual-loss declaration (at most one active).
         mapping(uint256 => ICommitmentManager.MutualLossProposal) mutualLossProposals;

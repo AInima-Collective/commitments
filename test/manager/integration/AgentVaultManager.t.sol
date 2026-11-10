@@ -100,8 +100,8 @@ contract AgentVaultManagerTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(vault));
-        assertEq(free + enc + esc, vault.balanceOf(address(manager)), "INV-1 for the share token");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(vault));
+        assertEq(free + enc + esc + mp, vault.balanceOf(address(manager)), "INV-1 for the share token");
     }
 
     function test_restitutionLoop_slashedManagerMakesDepositorsWhole() public {

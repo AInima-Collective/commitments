@@ -709,24 +709,6 @@ ponder.on('CommitmentManager:EncumbrancePaidExternal', async ({ event, context }
   })
 })
 
-ponder.on('CommitmentManager:EncumbranceTransferred', async ({ event, context }) => {
-  const { from, to, token, units } = event.args
-  await bumpEncumbered(context.db, token, from, -units, event.block.number)
-  await bumpEncumbered(context.db, token, to, units, event.block.number)
-  await recordFlow(context.db, event, 'a', {
-    user: from,
-    token,
-    kind: 'transferOut',
-    encumberedDelta: -units,
-  })
-  await recordFlow(context.db, event, 'b', {
-    user: to,
-    token,
-    kind: 'transferIn',
-    encumberedDelta: units,
-  })
-})
-
 // ----------------------------------------------------------------------------
 // Distribution strategies
 // ----------------------------------------------------------------------------

@@ -15,8 +15,6 @@ export interface MutualHeader {
   beneficiary: Address
   challengeWindow: bigint
   deallocationWindow: bigint
-  /** 0n when no loss proposal has ever been initiated. */
-  lastInitiatedAt: bigint
   /** Sum of active members' creditedValue (changes only on join/release). */
   totalShares: bigint
   /** Lambda — 1e18-scaled cumulative loss FRACTION, monotonic, capped at 1e18. */
@@ -125,7 +123,6 @@ export function useMutual({
         beneficiary: mutualRaw.beneficiary,
         challengeWindow: BigInt(mutualRaw.challengeWindow),
         deallocationWindow: BigInt(mutualRaw.deallocationWindow),
-        lastInitiatedAt: BigInt(mutualRaw.lastInitiatedAt),
         totalShares: BigInt(mutualRaw.totalShares),
         cumulativeLoss: BigInt(mutualRaw.cumulativeLoss),
         active: mutualRaw.active,
@@ -137,12 +134,12 @@ export function useMutual({
   // recorded for this mutual; treat that as "no proposal" (Solidity returns the
   // zero struct for unset mappings).
   const proposal: MutualLossProposal | undefined =
-    proposalRaw && BigInt(proposalRaw.initiatedAt) > 0n
+    proposalRaw && mutualRaw && BigInt(proposalRaw.initiatedAt) > 0n
       ? {
           lossNumeraire: BigInt(proposalRaw.lossNumeraire),
           initiatedAt: BigInt(proposalRaw.initiatedAt),
           evidenceHash: proposalRaw.evidenceHash,
-          proposer: proposalRaw.proposer,
+          proposer: mutualRaw.arbiter, // only the mutual's arbiter can initiate a loss
           executed: proposalRaw.executed,
           cancelled: proposalRaw.cancelled,
         }

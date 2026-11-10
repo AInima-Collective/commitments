@@ -71,9 +71,13 @@ contract CustodyTest is Test {
         vm.stopPrank();
     }
 
+    function _paused() internal view returns (bool paused) {
+        (paused,,,,) = manager.pauseState();
+    }
+
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 
     // =========================================================================
@@ -92,7 +96,7 @@ contract CustodyTest is Test {
         assertEq(manager.unbondingPeriod(), UNBONDING);
         assertEq(manager.MIN_CHALLENGE_WINDOW(), 86_400);
         assertEq(manager.hookGasCap(), 500_000);
-        assertFalse(manager.forfeiturePaused());
+        assertFalse(_paused());
     }
 
     // =========================================================================
@@ -126,7 +130,7 @@ contract CustodyTest is Test {
 
         // 1% skimmed in transit: the ledger credits what actually arrived.
         assertEq(manager.freeBalance(address(fee), alice), 99e18, "credited measured delta");
-        (uint256 free,,) = manager.ledgerTotals(address(fee));
+        (uint256 free,,,) = manager.ledgerTotals(address(fee));
         assertEq(free, 99e18);
         assertEq(fee.balanceOf(address(manager)), 99e18, "INV-1 holds for fee token");
     }
@@ -281,7 +285,7 @@ contract CustodyTest is Test {
         manager.fundStrategy(strategy, address(token), 50e18);
 
         assertEq(manager.escrowOf(address(token), strategy), 50e18);
-        (,, uint256 esc) = manager.ledgerTotals(address(token));
+        (,, uint256 esc,) = manager.ledgerTotals(address(token));
         assertEq(esc, 50e18);
         _partitionHolds();
     }
@@ -314,7 +318,7 @@ contract CustodyTest is Test {
     function test_pause_roles() public {
         vm.prank(pauser);
         manager.pauseForfeiture();
-        assertTrue(manager.forfeiturePaused());
+        assertTrue(_paused());
 
         // Pauser cannot unpause (role separation).
         vm.prank(pauser);
@@ -323,7 +327,7 @@ contract CustodyTest is Test {
 
         vm.prank(unpauser);
         manager.unpauseForfeiture();
-        assertFalse(manager.forfeiturePaused());
+        assertFalse(_paused());
     }
 
     function test_pause_unauthorizedReverts() public {

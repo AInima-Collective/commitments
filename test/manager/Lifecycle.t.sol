@@ -136,8 +136,8 @@ contract LifecycleTestBase is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 }
 
@@ -165,17 +165,6 @@ contract CreateCommitmentTest is LifecycleTestBase {
         assertFalse(c.released);
         assertFalse(c.forfeited);
         _partitionHolds();
-    }
-
-    /// @dev The companion CommitmentCounterparty event fires with (commitmentId, counterparty) as
-    ///      its two indexed topics. The zero-counterparty guard is unreachable via the direct create
-    ///      path (validation reverts ZeroCounterparty first), so only the positive case is testable
-    ///      through the public API; the guard is defensive for future emitters.
-    function test_create_emitsCommitmentCounterparty() public {
-        vm.expectEmit(true, true, false, true, address(manager));
-        emit ICM.CommitmentCounterparty(1, bob);
-        vm.prank(alice);
-        manager.createCommitment(_params(100e18, 5000));
     }
 
     function test_create_insufficientFreeBalanceReverts() public {
@@ -774,30 +763,6 @@ contract RelayerBatchTest is LifecycleTestBase {
         manager.createCommitmentFor(address(wallet), p, deadline, 0, "");
     }
 
-    function test_batchCreate_and_batchRelease() public {
-        ICM.CommitmentParams[] memory ps = new ICM.CommitmentParams[](2);
-        ps[0] = _params(100e18, 5000);
-        ps[1] = _params(200e18, 1000);
-
-        vm.prank(alice);
-        uint256[] memory ids = manager.batchCreateCommitments(ps);
-        assertEq(ids.length, 2);
-        assertEq(manager.encumberedBalance(address(token), alice), 300e18);
-
-        vm.prank(arbiter);
-        manager.batchReleaseCommitments(ids);
-        assertEq(manager.encumberedBalance(address(token), alice), 0);
-    }
-
-    function test_batch_emptyReverts() public {
-        vm.prank(alice);
-        vm.expectRevert(ICM.EmptyBatch.selector);
-        manager.batchCreateCommitments(new ICM.CommitmentParams[](0));
-        vm.prank(arbiter);
-        vm.expectRevert(ICM.EmptyBatch.selector);
-        manager.batchReleaseCommitments(new uint256[](0));
-    }
-
     // ---- Signature revocation (#60) ----
 
     function test_invalidateCreateAuthorization_revokesOutstandingSignature() public {
@@ -980,15 +945,5 @@ contract MissingViewsTest is LifecycleTestBase {
         manager.executeForfeit(id);
         // getCommitment().amount is now the residual; forfeitedUnitsOf is the only surviving magnitude.
         assertEq(manager.forfeitedUnitsOf(id), 30e18, "forfeited units persisted post-close");
-    }
-
-    function test_acceptsContributions_falseByDefault_trueAfterCommitterOptIn() public {
-        uint256 id = _create(100e18, 5000);
-        assertFalse(manager.acceptsContributions(id), "contributions disabled by default");
-
-        // The committer's own first contribution flips the opt-in flag (AgreementLib.contributeCore).
-        vm.prank(alice);
-        manager.contributeEncumbered(id, 10e18);
-        assertTrue(manager.acceptsContributions(id), "committer opt-in enables contributions");
     }
 }

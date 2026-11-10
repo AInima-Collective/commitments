@@ -71,8 +71,7 @@ library MutualLib {
         if (p.challengeWindow < MUTUAL_MIN_CHALLENGE_WINDOW) revert ICM.MutualChallengeWindowTooShort();
         if (p.deallocationWindow < p.challengeWindow) revert ICM.DeallocationWindowTooShort();
 
-        if (s.nextMutualId == 0) s.nextMutualId = 1; // lazy 1-index (0 is the not-a-member sentinel)
-        mutualId = s.nextMutualId++;
+        mutualId = s.nextMutualId++; // seeded to 1 in `initialize` (0 is the not-a-member sentinel)
 
         ICM.Mutual storage g = s.mutuals[mutualId];
         g.arbiter = p.arbiter;
@@ -193,33 +192,26 @@ library MutualLib {
         if (!g.active || g.terminal) revert ICM.MutualNotActive();
         if (lossNumeraire == 0) revert ICM.ZeroAmount();
         if (_lossPending(s, mutualId)) revert ICM.MutualLossPending();
-        // Hoisted once: the rate-limit check and the new proposal's snapshot must see the SAME
-        // creditable-pause reading within this call.
-        uint64 pauseSnapshot = PauseLib.creditablePaused(s);
-        // Rate-limit only RE-initiation (lastInitiatedAt != 0): caps the initiate->cancel->re-init
-        // capital-freeze griefing without blocking the first honest declaration. Clock-stop (ERC
-        // §A.6 erratum): the interval elapses in effective time — `lastInitiatedAt` is written in
-        // the same breath as the proposal, so the (possibly resolved) proposal's snapshot anchors
-        // it. An honest arbiter whose declaration went TTL-stale during a pause re-initiates one
-        // effective interval after the unpause.
-        if (g.lastInitiatedAt != 0) {
-            uint256 wall = block.timestamp - g.lastInitiatedAt;
-            uint256 credit = pauseSnapshot - s.mutualLossProposals[mutualId].cumulativePausedAtStart;
-            // Same saturating belt as PauseLib.effectiveElapsed: a stale (e.g. pre-erratum zero)
-            // snapshot degrades to "interval not yet elapsed", never to an underflow revert.
-            if ((wall > credit ? wall - credit : 0) < MIN_REINIT_INTERVAL) revert ICM.ReinitTooSoon();
-        }
+        // Rate-limit only RE-initiation (a prior proposal exists — proposals are overwritten,
+        // never deleted): caps the initiate->cancel->re-init capital-freeze griefing without
+        // blocking the first honest declaration. Clock-stop (ERC §A.6 erratum): the interval
+        // elapses in effective time from the prior proposal's start. An honest arbiter whose
+        // declaration went TTL-stale during a pause re-initiates one effective interval after
+        // the unpause.
+        ICM.MutualLossProposal storage prior = s.mutualLossProposals[mutualId];
+        if (
+            prior.initiatedAt != 0
+                && PauseLib.effectiveElapsed(s, prior.initiatedAt, prior.cumulativePausedAtStart) < MIN_REINIT_INTERVAL
+        ) revert ICM.ReinitTooSoon();
 
         s.mutualLossProposals[mutualId] = ICM.MutualLossProposal({
             lossNumeraire: lossNumeraire,
             initiatedAt: uint64(block.timestamp),
             evidenceHash: evidenceHash,
-            proposer: msg.sender,
             executed: false,
             cancelled: false,
-            cumulativePausedAtStart: pauseSnapshot
+            cumulativePausedAtStart: PauseLib.creditablePaused(s)
         });
-        g.lastInitiatedAt = uint64(block.timestamp);
 
         emit ICM.MutualLossInitiated(mutualId, lossNumeraire, evidenceHash, msg.sender);
     }
@@ -255,8 +247,9 @@ library MutualLib {
         uint256 applied = declared > headroom ? headroom : declared;
 
         // Fixed-denominator additive index — denominator is totalShares, unchanged by the loss.
+        // Cannot pass LAMBDA_ONE: applied <= (LAMBDA_ONE - Lambda) * totalShares / LAMBDA_ONE, and
+        // both divisions round down.
         g.cumulativeLoss += (applied * LAMBDA_ONE) / g.totalShares;
-        if (g.cumulativeLoss > LAMBDA_ONE) g.cumulativeLoss = LAMBDA_ONE; // belt against rounding
 
         if (applied < declared) emit ICM.MutualLossShortfall(mutualId, declared - applied);
         emit ICM.MutualLossExecuted(mutualId, applied, g.cumulativeLoss);
@@ -355,7 +348,7 @@ library MutualLib {
         emit ICM.MemberSettled(mutualId, commitmentId, owed, lambda);
     }
 
-    /// @notice Bounded batch convenience over `settleMemberLoss`.
+    /// @notice Batch convenience over `settleMemberLoss`. Unbounded: the caller sizes the batch.
     function settleMembers(CommitmentManagerStorage.Layout storage s, uint256[] calldata commitmentIds) external {
         uint256 n = commitmentIds.length;
         if (n == 0) revert ICM.EmptyBatch();
@@ -567,15 +560,6 @@ library MutualLib {
         emit ICM.MemberPremiumClaimed(commitmentId, committer, pay);
     }
 
-    /// @notice Bounded batch convenience over `claimMemberPremium`.
-    function claimMembersPremium(CommitmentManagerStorage.Layout storage s, uint256[] calldata commitmentIds) external {
-        uint256 n = commitmentIds.length;
-        if (n == 0) revert ICM.EmptyBatch();
-        for (uint256 i; i < n; i++) {
-            claimMemberPremium(s, commitmentIds[i]);
-        }
-    }
-
     /// @notice Policyholder-of-record defunds the unstreamed remainder and halts the stream. The core uses
     ///         the mutual `beneficiary` as the policyholder-of-record proxy (the on-chain bindCover
     ///         record that distinguishes payer from beneficiary lives in the periphery). Already-banked
@@ -595,14 +579,6 @@ library MutualLib {
         }
 
         emit ICM.PremiumReclaimed(mutualId, g.beneficiary, unstreamed);
-    }
-
-    /// @notice Convenience: settle a member's loss then claim its premium under one reentrancy guard.
-    ///         PURE dispatch — two INDEPENDENT CEI passes with zero shared accounting; degrades exactly
-    ///         to calling the two permissionless entrypoints separately.
-    function settleAndClaim(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
-        settleMemberLoss(s, commitmentId);
-        claimMemberPremium(s, commitmentId);
     }
 
     // =========================================================================

@@ -564,14 +564,14 @@ contract PauseBudgetTest is Test {
         vm.warp(initiatedAt + MUTUAL_WINDOW + MUTUAL_TTL);
         manager.cancelStaleMutualLoss(gid);
 
-        // Now pause. The re-init interval (anchored at lastInitiatedAt via the resolved proposal's
+        // Now pause. The re-init interval (anchored at the resolved proposal's initiatedAt and
         // snapshot) must elapse in EFFECTIVE time. Pause for 1 hour: it should NOT count.
         _pause();
         vm.warp(block.timestamp + REINIT); // one paused hour
-        // Effective elapsed since lastInitiatedAt is (wall − pauseCredit). The paused hour is
+        // Effective elapsed since the prior initiatedAt is (wall − pauseCredit). The paused hour is
         // credited, so effective interval < REINIT ⇒ re-init too soon.
-        // But wall elapsed since lastInitiatedAt already includes the pre-pause TTL span... the
-        // re-init anchor is lastInitiatedAt (== initiatedAt), so effective elapsed = wall − credit.
+        // But wall elapsed since initiatedAt already includes the pre-pause TTL span, so
+        // effective elapsed = wall − credit.
         // wall since initiatedAt = MUTUAL_WINDOW + MUTUAL_TTL + REINIT; credit = REINIT (the paused
         // hour). effective = MUTUAL_WINDOW + MUTUAL_TTL, which is >> REINIT ⇒ re-init IS allowed.
         // To isolate the clock-stop, re-anchor: cancel-stale already reset nothing; instead assert
@@ -600,7 +600,7 @@ contract PauseBudgetTest is Test {
         vm.warp(block.timestamp + REINIT);
         vm.prank(arbiter);
         manager.initiateMutualLoss(gid, 50e18, bytes32("ev4"));
-        assertGt(manager.getMutual(gid).lastInitiatedAt, secondAt, "re-init allowed one effective hour later");
+        assertGt(manager.getMutualLossProposal(gid).initiatedAt, secondAt, "re-init allowed one effective hour later");
     }
 
     // =========================================================================

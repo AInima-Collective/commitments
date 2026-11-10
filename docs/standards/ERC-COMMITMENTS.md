@@ -214,7 +214,7 @@ interface ICommitmentManager /* Part A surface */ {
     // --- Circuit breaker ---
     function pauseForfeiture() external;
     function unpauseForfeiture() external;
-    function forfeiturePaused() external view returns (bool);
+    // Pause state is read through `pauseState()` (§A.6): its first return value is the paused flag.
 }
 ```
 
@@ -267,7 +267,7 @@ For every token `T` the manager custodies:
 
 This MUST hold after every state-mutating call (INV-1). The invariant's scope is manager-custodied tokens only: reward tokens held in self-custody strategy contracts or pulled from external sources at claim time (§D.8) are a separate accounting space those strategies own; the manager makes no claims about them.
 
-Implementations SHOULD maintain per-token aggregate counters (`totalFree`, `totalEncumbered`, `totalEscrow`) so the invariant is checkable in O(1) by monitoring and fuzz harnesses.
+Implementations SHOULD maintain per-token aggregate counters (`totalFree`, `totalEncumbered`, `totalEscrow`) so the invariant is checkable in O(1) by monitoring and fuzz harnesses. The reference implementation returns them from `ledgerTotals(token)`, together with the mutual premium reserve aggregate `totalMutualPremium` that closes the extended partition ([mutuals extension](./ERC-COMMITMENTS-MUTUALS.md) INV-P1).
 
 #### A.6 Circuit breaker
 
@@ -319,7 +319,6 @@ event EncumbranceMovedToEscrow(uint256 indexed commitmentId, address indexed str
 /// which carries the recipient.
 event EncumbrancePaidExternal(uint256 indexed commitmentId, address indexed strategy, address indexed token, uint256 units);
 
-event EncumbranceTransferred(address indexed from, address indexed to, address token, uint256 units);
 event EncumbranceContributed(uint256 indexed commitmentId, address indexed contributor, address indexed receiver, uint256 units);
 
 event ForfeiturePauseToggled(bool paused);
@@ -333,7 +332,7 @@ error ForfeitureIsPaused();
 error Unauthorized();
 ```
 
-**Why three decrement events instead of one.** A single combined `EncumbranceDecreased(user, token, units)` covering every encumbered-side debit would be **path-ambiguous**: a ledger-mirroring indexer could not tell from the event alone whether the holder's free balance grew (release), the value moved to a strategy's escrow, or the value left custody entirely — three cases with different conservation effects. The three events above partition the decrement paths so each can be mirrored without a state read; an implementation MUST NOT collapse them into a single combined decrement event. The forfeit-transfer path (encumbered → counterparty free) is carried by `ForfeitExecuted` (§C.7), and the bilateral-settlement path by `EncumbranceTransferred`.
+**Why three decrement events instead of one.** A single combined `EncumbranceDecreased(user, token, units)` covering every encumbered-side debit would be **path-ambiguous**: a ledger-mirroring indexer could not tell from the event alone whether the holder's free balance grew (release), the value moved to a strategy's escrow, or the value left custody entirely — three cases with different conservation effects. The three events above partition the decrement paths so each can be mirrored without a state read; an implementation MUST NOT collapse them into a single combined decrement event. The forfeit-transfer path (encumbered → counterparty free) is carried by `ForfeitExecuted` (§C.7), and the bilateral-settlement path (encumbered → receiver free) by the agreements extension's `AgreementSettled`.
 
 **Token screening.** The rebasing-token prohibition and fee-on-transfer screening of §A.2 are deployment policy; this standard does not mandate an on-chain screen or reserve an error for it (the reference implementation performs no on-chain token screening). Deployments that do screen SHOULD document the error they revert with.
 
@@ -468,7 +467,6 @@ interface ICommitmentManager /* Part C surface */ {
     function getUserCommitmentIds(address user) external view returns (uint256[] memory);
     function closedAt(uint256 commitmentId) external view returns (uint64);           // 0 while active
     function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256);  // units forfeited at execute
-    function acceptsContributions(uint256 commitmentId) external view returns (bool); // §C.6 opt-in state
 }
 ```
 
@@ -523,7 +521,7 @@ Forfeiture MUST be a two-phase process:
 
 **Phase 1 — Initiate.** `initiateForfeit(id, penaltyBps)` MUST be callable only by the arbiter. `penaltyBps` MUST NOT exceed the commitment's `maxPenaltyBps`. Multiple concurrent active proposals on the same commitment MUST be rejected (INV-7).
 
-**Phase 2 — Execute.** `executeForfeit(id)` MUST be callable by anyone after `initiatedAt + challengeWindow`. It MUST revert while `forfeiturePaused()` (§A.6). On execution, in this order:
+**Phase 2 — Execute.** `executeForfeit(id)` MUST be callable by anyone after `initiatedAt + challengeWindow`. It MUST revert while forfeiture is paused (§A.6). On execution, in this order:
 
 1. Mark the proposal executed and the commitment forfeited; decrement the committer's exposure by the commitment's full contribution.
 2. **Forfeit transfer (manager-internal, unconditional):** compute `unitsToForfeit = amount × penaltyBps / 10_000`; move `unitsToForfeit` from the committer's encumbered balance to the **counterparty's free balance** on the ledger. The residual (`amount − unitsToForfeit`) stays encumbered through step 3.
@@ -598,10 +596,6 @@ event CommitmentCreated(
     string metadataURI,
     bytes32 metadataHash
 );
-// Companion to CommitmentCreated, emitted only when counterparty != address(0). CommitmentCreated's three
-// indexed slots (commitmentId, committer, arbiter) are full; this carries the counterparty as a fourth
-// filterable discovery axis so an indexer can find "commitments where I am the counterparty" without a scan.
-event CommitmentCounterparty(uint256 indexed commitmentId, address indexed counterparty);
 event CommitmentReleased(uint256 indexed commitmentId, address indexed arbiter);
 event CommitmentExpired(uint256 indexed commitmentId, address indexed committer);
 
@@ -746,13 +740,11 @@ Manager-internal lifecycle moves (§A.3) do not go through `TokenMovement` and a
 ```solidity
 function distribute(uint256 commitmentId, address strategy) external;
 function claim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
-function distributeAndClaim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
 function pending(uint256 commitmentId, address strategy, bytes calldata claimData) external view returns (uint256);
 ```
 
 - `distribute(id, strategy)` MUST be permissionless, MUST revert `UnknownStrategy` if `strategy` is not bound to `id`, MUST revert `ForfeitPending` while a forfeit proposal is active on `id`, and MUST revert `CommitmentInactive` once the commitment is closed. It calls `strategy.distribute(ctx)` and applies the returned movements per §D.5. Reverts (from the strategy or from validation) bubble to the caller — the caller chose the strategy; failure is actionable feedback, not a liveness concern.
 - `claim(id, strategy, claimData)` is shaped the same; caller authorization is the strategy's job (the context carries `caller`). Claims MUST remain available after the commitment closes (released or forfeited) so parked accrual is recoverable; `ClaimContext.closedAt` carries the close timestamp (0 while active) so strategies can implement post-close policies.
-- `distributeAndClaim(id, strategy, claimData)` is `distribute(id, strategy)` immediately followed by `claim(id, strategy, claimData)` under a single guard. It exists to remove the pending-vs-banked ordering footgun: a caller who reads `pending()`, then `distribute()`s (moving newly-accrued value into escrow), then `claim()`s in separate transactions can otherwise observe a stale figure. Same authorization and revert rules as its two halves.
 - Implementations MAY add a `distributeAll(commitmentId)` convenience defined as the fold of `distribute(id, s)` over `strategiesOf(id)` in array order.
 
 **Iteration order.** Wherever multiple bound strategies are processed in one call (lifecycle hooks, `distributeAll`, the agreements extension's pre-settle distribute), the manager MUST iterate in `strategies[]` array order, validating and applying each strategy's movements before calling the next. Deterministic ordering is load-bearing for keepers and indexers.
@@ -794,7 +786,7 @@ The manager is the **sole executor** of movements. For every movement a strategy
 
 Strategies return only `(kind, from, to, token, units)`; they cannot specify, skip, or scale exposure effects. The proportional shrink leaves `maxPenaltyBps / 10_000` constant per commitment, so INV-3 holds across any movement sequence.
 
-**Forfeit-pending guard.** At the **`distribute` call site**, `FromEncumbered*` movements MUST be rejected (`MovementBlockedByForfeit`) while a forfeit proposal is active on the bound commitment — the encumbered position is spoken for until the proposal resolves, and `distribute` is permissionless, so without the guard anyone could race value out from under a pending forfeit. The guard is deliberately scoped to the distribute site — it does NOT apply to lifecycle-hook batches. The committer-driven close paths (`expireCommitment`, `finalizeUnbond`) already revert `ForfeitPending` at the entry point before any hook runs; the forfeit-site batch runs strictly after the forfeit transfer against the post-forfeit residual (§D.4); and the arbiter-immediate `releaseCommitment` may run release hooks while the arbiter's own proposal is still pending — that is the arbiter abandoning their own forfeit, which only the arbiter could have executed. The guard is therefore scoped to the distribute site specifically, rather than applied unconditionally over all `FromEncumbered*` movements.
+**Forfeit-pending guard.** At the **`distribute` call site**, `FromEncumbered*` movements MUST NOT be applied while a forfeit proposal is active on the bound commitment — the encumbered position is spoken for until the proposal resolves, and `distribute` is permissionless, so without the guard anyone could race value out from under a pending forfeit. The reference implementation enforces this at entry: `distribute` reverts `ForfeitPending` (§D.3), the agreements extension's pre-settle distribute skips a leg with a live proposal, and the reentrancy guard stops a proposal appearing mid-call, so no distribute-site batch ever runs against a pending forfeit. The guard is deliberately scoped to the distribute site — it does NOT apply to lifecycle-hook batches. The committer-driven close paths (`expireCommitment`, `finalizeUnbond`) already revert `ForfeitPending` at the entry point before any hook runs; the forfeit-site batch runs strictly after the forfeit transfer against the post-forfeit residual (§D.4); and the arbiter-immediate `releaseCommitment` may run release hooks while the arbiter's own proposal is still pending — that is the arbiter abandoning their own forfeit, which only the arbiter could have executed. The guard is therefore scoped to the distribute site specifically, rather than applied unconditionally over all `FromEncumbered*` movements.
 
 A validation failure in `distribute`/`claim` entry points reverts the transaction with the specific movement-validation error (see the Part D error vocabulary below). A validation failure inside a guarded lifecycle hook fails that strategy's batch per §D.6.
 
@@ -864,7 +856,6 @@ error MovementWrongToken(address token, address expected);
 error MovementEscrowRecipientNotStrategy(address to, address strategy);
 error MovementRecipientNotParty(address to);
 error MovementExceedsCommitment(uint256 units, uint256 amount);  // INV-4
-error MovementBlockedByForfeit();
 error MovementFromNotStrategy(address from, address strategy);   // INV-5
 ```
 
@@ -1105,8 +1096,6 @@ src/
 |---|---|
 | `createCommitmentFor(committer, params, deadline, nonce, sig)` | EIP-712 relayer pattern; canonical typehash per §C.8. |
 | `nonces(committer)` | View companion to `createCommitmentFor`. |
-| `batchCreateCommitments(params[])` | Atomic creation of multiple commitments. |
-| `batchReleaseCommitments(ids[])` | Atomic release; reverts whole batch on any item failure. |
 | `distributeAll(commitmentId)` | Array-order fold of `distribute` over the bound strategies (§D.3). |
 | `sweepFailedHook(commitmentId, strategy)` | Permissionless re-drive of a failed lifecycle hook (§D.6). |
 | `setOperatorRegistry(address)` | Admin wiring of registry callbacks ([services extension](./ERC-COMMITMENTS-SERVICES.md) §2.4). |

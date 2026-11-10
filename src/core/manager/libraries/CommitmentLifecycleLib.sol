@@ -172,12 +172,12 @@ library CommitmentLifecycleLib {
             IDistributionStrategy(strategy)
                 .onCommitmentCreated(
                     CreatedContext({
-                    base: MovementLib.baseContext(s, commitmentId),
-                    originalAmount: params.amount,
-                    maxPenaltyBps: params.maxPenaltyBps,
-                    challengeWindow: params.challengeWindow,
-                    strategyParams: params.strategies[i].params
-                })
+                        base: MovementLib.baseContext(s, commitmentId),
+                        originalAmount: params.amount,
+                        maxPenaltyBps: params.maxPenaltyBps,
+                        challengeWindow: params.challengeWindow,
+                        strategyParams: params.strategies[i].params
+                    })
                 );
         }
     }
@@ -238,12 +238,6 @@ library CommitmentLifecycleLib {
             params.metadataURI,
             params.metadataHash
         );
-        // Companion discovery-axis event (indexed counterparty). Guarded on non-zero so the zero
-        // counterparty — which carries no queryable identity — is never indexed. createCommitment
-        // requires a non-zero counterparty (validation), so this always fires on the direct path.
-        if (params.counterparty != address(0)) {
-            emit ICM.CommitmentCounterparty(commitmentId, params.counterparty);
-        }
     }
 
     // =========================================================================
@@ -283,7 +277,7 @@ library CommitmentLifecycleLib {
         _notifyRegistryRelease(s, commitmentId, amount);
     }
 
-    /// @notice Close with guarded release hooks — shared by release/expire/finalize/batch and
+    /// @notice Close with guarded release hooks — shared by release/expire/finalize and
     ///         the agreements extension. Silently no-ops on resolved commitments.
     function closeWithHooks(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         _closeWithHooks(s, commitmentId);
@@ -296,7 +290,7 @@ library CommitmentLifecycleLib {
         // INV-G8 / OBJ-5: a member commitment must never be terminally closed through the normal
         // path — it would use the bps-derived decrement and skip mutual accounting, leaving
         // `totalShares` stale and re-spending units the mutual still expects to draw as `E_i`. The
-        // gate lives HERE (the single convergence point of release/expire/finalize/batch/agreement)
+        // gate lives HERE (the single convergence point of release/expire/finalize/agreement)
         // rather than on the named cores, so every higher path inherits it. Member members exit
         // only via `requestMutualExit` → `releaseMutualMember` (MutualLib).
         if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
@@ -503,8 +497,7 @@ library CommitmentLifecycleLib {
     }
 
     /// @notice Idempotent unbond start: skips resolved or already-unbonding commitments.
-    /// @dev Internal so the agreements library shares the single implementation.
-    function initiateUnbondIdempotent(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) internal {
+    function initiateUnbondIdempotent(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) private {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (c.released || c.forfeited) return;
         if (s.unbondInitiatedAt[commitmentId] != 0) return;
@@ -541,12 +534,12 @@ library CommitmentLifecycleLib {
         agreed = true;
     }
 
-    /// @dev Swallowed hook failures emit RegistryHookFailed so indexers can detect
-    ///      partial corruption instead of silently diverging. The call is gas-capped and
-    ///      min-gas-guarded exactly like the strategy hooks (MovementLib §D.6 rule 3): a buggy or
-    ///      malicious registry cannot burn unbounded gas to grief the lifecycle transition, and a
-    ///      caller cannot hand-tune gas so the notification silently parks (a swallowed out-of-gas)
-    ///      while the release/forfeit still lands.
+    /// @dev A swallowed hook failure emits RegistryHookFailed; the registry's stake for that
+    ///      commitment is then stale until `OperatorRegistry.reconcile` repairs it. The call is
+    ///      gas-capped and min-gas-guarded exactly like the strategy hooks (MovementLib §D.6
+    ///      rule 3): a buggy or malicious registry cannot burn unbounded gas to grief the lifecycle
+    ///      transition, and a caller cannot hand-tune gas so the notification silently parks (a
+    ///      swallowed out-of-gas) while the release/forfeit still lands.
     function _notifyRegistryRelease(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint256 amount)
         private
     {

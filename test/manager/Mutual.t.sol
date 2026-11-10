@@ -307,12 +307,6 @@ contract ManagerMutualTest is Test {
         vm.prank(u1);
         vm.expectRevert(ICM.CommitmentInMutual.selector);
         manager.contributeEncumbered(cid, 1);
-
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = cid;
-        vm.prank(arbiter);
-        vm.expectRevert(ICM.CommitmentInMutual.selector);
-        manager.batchReleaseCommitments(ids);
     }
 
     // =========================================================================

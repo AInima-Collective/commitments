@@ -109,8 +109,8 @@ contract AgentBondTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(vault));
-        assertEq(free + enc + esc, vault.balanceOf(address(manager)), "INV-1 for the share token");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(vault));
+        assertEq(free + enc + esc + mp, vault.balanceOf(address(manager)), "INV-1 for the share token");
     }
 
     /// @dev Steps 1-3 shared by both paths: identity, productive backing, the bond itself.

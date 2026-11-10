@@ -841,7 +841,6 @@ contract AttestationArbiterTest is ManagerTestBase {
         _actMutual(gid, AttestationArbiter.Action.InitiateMutualLoss, 40e18, keccak256("evidence"));
         ICM.MutualLossProposal memory prop = manager.getMutualLossProposal(gid);
         assertEq(prop.lossNumeraire, 40e18, "loss declared");
-        assertEq(prop.proposer, address(arbiter), "arbiter is proposer");
         assertGt(prop.initiatedAt, 0, "proposal open");
         assertEq(arbiter.mutualOrdering(gid), 2, "mutual seq bumped on initiate");
 

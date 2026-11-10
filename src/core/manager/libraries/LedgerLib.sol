@@ -42,22 +42,6 @@ library LedgerLib {
         emit ICM.EncumbranceReleased(commitmentId, user, token, units);
     }
 
-    /// @dev Transfer encumbered: encumbered[from] -> encumbered[to] (bilateral settlement).
-    ///      Emits EncumbranceTransferred.
-    function transferEncumbered(
-        CommitmentManagerStorage.Layout storage s,
-        address token,
-        address from,
-        address to,
-        uint256 units
-    ) internal {
-        CommitmentManagerStorage.TokenLedger storage lf = s.ledger[token][from];
-        if (units > lf.encumberedBalance) revert ICM.InsufficientEncumberedBalance(units, lf.encumberedBalance);
-        lf.encumberedBalance -= units;
-        s.ledger[token][to].encumberedBalance += units;
-        emit ICM.EncumbranceTransferred(from, to, token, units);
-    }
-
     /// @dev Attribute encumbrance: free[contributor] -> encumbered[committer] (contributions).
     ///      Caller emits EncumbranceContributed with the commitment id.
     function attributeEncumbrance(

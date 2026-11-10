@@ -48,18 +48,14 @@ contract CommitmentManager is
     ///      `setMinChallengeWindow` may raise this floor but can never lower it.
     uint64 internal constant DEFAULT_MIN_CHALLENGE_WINDOW = 86_400; // 1 day
     /// @dev ERC §0.3 — MUST-level cap on bound strategies per commitment.
-    uint256 public constant MAX_STRATEGIES = 8;
-    uint64 public constant MAX_PROPOSAL_DURATION = 30 days;
+    uint256 internal constant MAX_STRATEGIES = 8;
     /// @notice Stale forfeit proposals can be force-cancelled by anyone after
     ///         `initiatedAt + challengeWindow + FORFEIT_PROPOSAL_TTL` (ERC §C.4).
     uint64 public constant FORFEIT_PROPOSAL_TTL = 14 days;
-    uint256 public constant MAX_METADATA_URI_LENGTH = 512;
-    /// @dev ERC §0.3 — SHOULD-level floor on the per-hook gas cap (§D.6). Admin may raise,
-    ///      never lower below this.
-    uint64 public constant HOOK_GAS_CAP_FLOOR = 500_000;
-    /// @dev Gas the manager reserves for its own post-hook bookkeeping when sizing the
-    ///      min-gas guard (§D.6 rule 3).
-    uint64 internal constant HOOK_GAS_RESERVE = 50_000;
+    uint256 internal constant MAX_METADATA_URI_LENGTH = 512;
+    /// @dev ERC §0.3 — SHOULD-level floor on the per-hook gas cap (§D.6). Admin may set any
+    ///      value at or above it, never below.
+    uint64 internal constant HOOK_GAS_CAP_FLOOR = 500_000;
 
     /// @notice Canonical relayer typehash (ERC §C.8). `strategiesHash` is
     ///         keccak256(abi.encode(params.strategies)).
@@ -189,7 +185,7 @@ contract CommitmentManager is
 
     /// @dev All creation logic — validation, exposure, encumber, store, strategy binding and
     ///      creation hooks — lives in CommitmentLifecycleLib.createFull (DELEGATECALL). Callers
-    ///      (createCommitment, batch, relayer) hold the reentrancy guard.
+    ///      (createCommitment, relayer) hold the reentrancy guard.
     function _createCommitmentInternal(address committer, ICM.CommitmentParams calldata params)
         internal
         returns (uint256 commitmentId)
@@ -295,20 +291,6 @@ contract CommitmentManager is
         MovementLib.claimCore(s, commitmentId, strategy, claimData);
     }
 
-    /// @notice Advance one strategy's accrual, then claim, atomically under one reentrancy guard.
-    /// @dev Fixes the distribute-then-claim ordering footgun: `pending()` reflects LIVE accrual but
-    ///      `claim()` only pays BANKED accrual, so a caller who claims without distributing first can
-    ///      see `pending() > 0` yet receive 0. Bundling the two makes the claim pay the just-distributed
-    ///      amount (mirrors `settleAndClaim`). Requires the commitment active and un-forfeited — the
-    ///      `distribute` leg does. After close, no new accrual is possible; use `claim` directly to
-    ///      recover parked accrual. Body in MovementLib (DELEGATECALL) to keep the manager under EIP-170.
-    function distributeAndClaim(uint256 commitmentId, address strategy, bytes calldata claimData)
-        external
-        nonReentrant
-    {
-        MovementLib.distributeAndClaimCore(CommitmentManagerStorage.layout(), commitmentId, strategy, claimData);
-    }
-
     /// @notice Pending amount claimable via `claim` for the caller-implied recipient.
     function pending(uint256 commitmentId, address strategy, bytes calldata claimData) external view returns (uint256) {
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
@@ -326,7 +308,9 @@ contract CommitmentManager is
         if (sel == bytes4(0)) revert ICM.NoFailedHook();
 
         uint8 hook = sel == IDistributionStrategy.onCommitmentForfeited.selector ? HOOK_FORFEITED : HOOK_RELEASED;
-        MovementLib.guardedCall(s, commitmentId, strategy, hook);
+        if (MovementLib.guardedCall(s, commitmentId, strategy, hook)) {
+            delete s.failedHookSelector[commitmentId][strategy];
+        }
     }
 
     /// @notice Self-call-only frame putting the strategy call, the validation of its returned
@@ -378,11 +362,6 @@ contract CommitmentManager is
     ///         its guarded release hooks before its encumbrance frees.
     function releaseAgreement(uint256 agreementId) external nonReentrant {
         AgreementLib.releaseAgreementCore(CommitmentManagerStorage.layout(), agreementId);
-    }
-
-    /// @notice Symmetric unbond start for both legs; either committer may call.
-    function requestAgreementUnbond(uint256 agreementId) external nonReentrant {
-        AgreementLib.requestAgreementUnbondCore(CommitmentManagerStorage.layout(), agreementId);
     }
 
     /// @notice Arbiter-instructed bilateral value flow, bounded by per-direction lifetime caps.
@@ -494,7 +473,7 @@ contract CommitmentManager is
         MutualLib.settleMemberLoss(CommitmentManagerStorage.layout(), commitmentId);
     }
 
-    /// @notice Bounded batch settle convenience.
+    /// @notice Batch settle convenience. Unbounded: the caller sizes the batch to fit the block.
     function settleMembers(uint256[] calldata commitmentIds) external nonReentrant {
         MutualLib.settleMembers(CommitmentManagerStorage.layout(), commitmentIds);
     }
@@ -522,19 +501,9 @@ contract CommitmentManager is
         MutualLib.claimMemberPremium(CommitmentManagerStorage.layout(), commitmentId);
     }
 
-    /// @notice Bounded batch claim convenience.
-    function claimMembersPremium(uint256[] calldata commitmentIds) external nonReentrant {
-        MutualLib.claimMembersPremium(CommitmentManagerStorage.layout(), commitmentIds);
-    }
-
     /// @notice Policyholder-of-record reclaim of the unstreamed premium remainder.
     function reclaimPremium(uint256 mutualId) external nonReentrant {
         MutualLib.reclaimPremium(CommitmentManagerStorage.layout(), mutualId);
-    }
-
-    /// @notice Settle a member's loss then claim its premium under one reentrancy guard (pure dispatch).
-    function settleAndClaim(uint256 commitmentId) external nonReentrant {
-        MutualLib.settleAndClaim(CommitmentManagerStorage.layout(), commitmentId);
     }
 
     // ---- Mutual views ----
@@ -591,7 +560,7 @@ contract CommitmentManager is
     }
 
     // =========================================================================
-    // Relayer / batch (ERC §C.8)
+    // Relayer (ERC §C.8)
     // =========================================================================
 
     /// @notice Create a commitment on behalf of `committer` using an EIP-712 signature over the
@@ -618,30 +587,6 @@ contract CommitmentManager is
             )) revert ICM.InvalidSignature();
 
         commitmentId = _createCommitmentInternal(committer, params);
-    }
-
-    /// @notice Create multiple commitments atomically for the caller.
-    function batchCreateCommitments(ICM.CommitmentParams[] calldata params)
-        external
-        nonReentrant
-        returns (uint256[] memory commitmentIds)
-    {
-        uint256 len = params.length;
-        if (len == 0) revert ICM.EmptyBatch();
-        commitmentIds = new uint256[](len);
-        for (uint256 i = 0; i < len; i++) {
-            commitmentIds[i] = _createCommitmentInternal(msg.sender, params[i]);
-        }
-    }
-
-    /// @notice Release multiple commitments atomically; caller must be arbiter for all.
-    function batchReleaseCommitments(uint256[] calldata commitmentIds) external nonReentrant {
-        uint256 len = commitmentIds.length;
-        if (len == 0) revert ICM.EmptyBatch();
-        CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        for (uint256 i = 0; i < len; i++) {
-            CommitmentLifecycleLib.releaseCore(s, commitmentIds[i]);
-        }
     }
 
     /// @notice Current relayer nonce for `committer`.
@@ -693,11 +638,6 @@ contract CommitmentManager is
         emit ICM.ForfeiturePauseToggled(false);
     }
 
-    /// @notice Whether forfeit execution is paused.
-    function forfeiturePaused() external view returns (bool) {
-        return CommitmentManagerStorage.layout().forfeiturePaused;
-    }
-
     /// @inheritdoc ICM
     function pauseState()
         external
@@ -728,21 +668,21 @@ contract CommitmentManager is
         return CommitmentManagerStorage.layout().escrow[strategy][token];
     }
 
-    /// @notice Per-token aggregate counters for the base O(1) partition check (ERC §A.5). The full
-    ///         partition closes over four compartments — `free + encumbered + escrow +
-    ///         mutualPremium == IERC20(token).balanceOf(manager)` (INV-P1); this getter exposes
-    ///         the base three. The mutual compartment is read via `totalMutualPremium`.
+    /// @notice Per-token aggregate counters for the O(1) partition check (ERC §A.5, INV-P1):
+    ///         `totalFree + totalEncumbered + totalEscrow + totalMutualPremium ==
+    ///         IERC20(token).balanceOf(manager)`. `totalMutualPremium` is the mutual premium
+    ///         reserve (ERC-COMMITMENTS-MUTUALS); it is 0 for a token no mutual uses as numeraire.
     function ledgerTotals(address token)
         external
         view
-        returns (uint256 totalFree, uint256 totalEncumbered, uint256 totalEscrow)
+        returns (uint256 totalFree, uint256 totalEncumbered, uint256 totalEscrow, uint256 totalMutualPremium)
     {
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();
-        return (s.totalFree[token], s.totalEncumbered[token], s.totalEscrow[token]);
+        return (s.totalFree[token], s.totalEncumbered[token], s.totalEscrow[token], s.totalMutualPremium[token]);
     }
 
-    /// @notice Full Commitment struct. After a forfeit, `amount` reflects the post-forfeit residual
-    ///         retained through the close (historical pre-forfeit amount is in the event stream).
+    /// @notice Full Commitment struct. `amount` is zeroed when the commitment closes (release,
+    ///         expire, finalize or forfeit); the historical amounts are in the event stream.
     function getCommitment(uint256 commitmentId) external view returns (ICM.Commitment memory) {
         return CommitmentManagerStorage.layout().commitments[commitmentId];
     }
@@ -777,11 +717,6 @@ contract CommitmentManager is
     /// @notice Units forfeited at `executeForfeit` (0 = never forfeited).
     function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256) {
         return CommitmentManagerStorage.layout().forfeitedUnits[commitmentId];
-    }
-
-    /// @notice Whether the commitment accepts third-party `contributeEncumbered` calls (ERC §C.6).
-    function acceptsContributions(uint256 commitmentId) external view returns (bool) {
-        return CommitmentManagerStorage.layout().acceptsContributions[commitmentId];
     }
 
     /// @notice Selector of a failed guarded hook awaiting `sweepFailedHook` (0 = none).
@@ -835,8 +770,9 @@ contract CommitmentManager is
         s.minChallengeWindow = newValue;
     }
 
-    /// @notice Raise (never lower) the per-hook gas cap. Passing 0 restores the 500k default;
-    ///         non-zero values below the floor are rejected (ERC §0.3).
+    /// @notice Set the per-hook gas cap to any value at or above the 500k floor (ERC §0.3), or
+    ///         pass 0 to restore the 500k default. A non-zero value below the floor reverts
+    ///         `ZeroAmount`.
     function setHookGasCap(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newValue != 0 && newValue < HOOK_GAS_CAP_FLOOR) revert ICM.ZeroAmount();
         CommitmentManagerStorage.Layout storage s = CommitmentManagerStorage.layout();

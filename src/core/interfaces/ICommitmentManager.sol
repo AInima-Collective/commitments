@@ -4,8 +4,10 @@ pragma solidity ^0.8.27;
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 
 /// @title ICommitmentManager
-/// @notice Full interface for the direct-custody commitment manager (ERC-COMMITMENTS Parts A–D
-///         plus the agreements extension). The manager is the custody root: it holds backing
+/// @notice Interface for the direct-custody commitment manager (ERC-COMMITMENTS Parts A–D
+///         plus the agreements and mutuals extensions). It covers the protocol surface, not the
+///         whole contract: `ledgerTotals`, `failedHook`, `MIN_CHALLENGE_WINDOW` and the admin
+///         setters are on CommitmentManager only, though their events and errors are declared here. The manager is the custody root: it holds backing
 ///         tokens, maintains the per-(token, user) free/encumbered ledger and per-strategy escrow,
 ///         owns the commitment state machine, and is the sole executor of token movements.
 /// @dev Getter naming convention: use `getX` for record or aggregate snapshots (especially struct
@@ -153,7 +155,6 @@ interface ICommitmentManager {
         address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
         uint64 challengeWindow; // >= MUTUAL_MIN_CHALLENGE_WINDOW (longer than the per-commitment floor)
         uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
-        uint64 lastInitiatedAt; // re-initiation rate-limit cursor (griefing guard)
         uint128 totalShares; // Σ creditedValue of non-exited members. join / release ONLY — never on loss.
         uint256 cumulativeLoss; // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18.
         bool active; // set by the arbiter; members can only join an active mutual
@@ -190,13 +191,12 @@ interface ICommitmentManager {
     }
 
     /// @notice Pending two-phase mutual-loss declaration (at most one active per mutual).
-    /// @dev `proposer`/`evidenceHash` make the dispute model storage-ready; bond custody itself
-    ///      lives in the pluggable mutual arbiter (periphery), keeping the custody root ETH-free.
+    /// @dev The proposer is always the mutual's arbiter (`MutualLossInitiated` carries it). Bond
+    ///      custody lives in the pluggable mutual arbiter (periphery), keeping the custody root ETH-free.
     struct MutualLossProposal {
         uint256 lossNumeraire; // declared loss L in the mutual's numeraire
         uint64 initiatedAt; // 0 == none
         bytes32 evidenceHash;
-        address proposer; // the mutual arbiter that initiated
         bool executed;
         bool cancelled;
         // ---- Pause erratum (append-only) ----
@@ -243,7 +243,6 @@ interface ICommitmentManager {
         uint256 indexed commitmentId, address indexed strategy, address indexed token, uint256 units
     );
 
-    event EncumbranceTransferred(address indexed from, address indexed to, address indexed token, uint256 units);
     event EncumbranceContributed(
         uint256 indexed commitmentId, address indexed contributor, address indexed receiver, uint256 units
     );
@@ -268,14 +267,6 @@ interface ICommitmentManager {
         string metadataURI,
         bytes32 metadataHash
     );
-
-    /// @notice Companion to CommitmentCreated: exposes `counterparty` as an indexed discovery axis.
-    /// @dev CommitmentCreated's three topic slots are full (commitmentId, committer, arbiter), so the
-    ///      counterparty discovery axis ("commitments where I am the counterparty") is emitted here,
-    ///      joined to the creation event by `commitmentId`. Emitted from the libraries, so it costs
-    ///      the manager's bytecode budget nothing. Only emitted when `counterparty != address(0)` —
-    ///      the zero counterparty carries no queryable identity and is never indexed.
-    event CommitmentCounterparty(uint256 indexed commitmentId, address indexed counterparty);
 
     event CommitmentReleased(uint256 indexed commitmentId, address indexed arbiter);
     event CommitmentExpired(uint256 indexed commitmentId, address indexed committer);
@@ -361,7 +352,6 @@ interface ICommitmentManager {
     event AgreementForfeited(uint256 indexed agreementId);
     event AgreementReleased(uint256 indexed agreementId);
     event AgreementPartialForfeit(uint256 indexed agreementId, uint256 indexed commitmentId);
-    event AgreementUnbondRequested(uint256 indexed agreementId);
     event AgreementSettled(
         uint256 indexed agreementId,
         bool fromProposer,
@@ -411,8 +401,8 @@ interface ICommitmentManager {
     event MutualPremiumFunded(
         uint256 indexed mutualId, address indexed funder, uint256 received, uint128 rewardRate, uint64 periodFinish
     );
-    /// @notice A member's accrued premium was paid to its committer (via `claimMemberPremium`,
-    ///         `settleAndClaim`, or the auto-pay on `releaseMutualMember`).
+    /// @notice A member's accrued premium was paid to its committer (via `claimMemberPremium` or
+    ///         the auto-pay on `releaseMutualMember`).
     event MemberPremiumClaimed(uint256 indexed commitmentId, address indexed recipient, uint256 amount);
     /// @notice The policyholder-of-record reclaimed the unstreamed premium remainder and halted the stream.
     event PremiumReclaimed(uint256 indexed mutualId, address indexed recipient, uint256 unstreamed);
@@ -510,8 +500,6 @@ interface ICommitmentManager {
     error MovementRecipientNotParty(address to);
     /// @notice A FromEncumbered* movement exceeded the commitment's live amount cap (INV-4).
     error MovementExceedsCommitment(uint256 units, uint256 amount);
-    /// @notice A distribute-site movement was attempted while a forfeit proposal is active.
-    error MovementBlockedByForfeit();
     /// @notice A FromEscrow* movement's `from` was not the calling strategy (INV-5).
     error MovementFromNotStrategy(address from, address strategy);
 
@@ -629,9 +617,6 @@ interface ICommitmentManager {
     /// @notice Unpause forfeit execution (UNPAUSER_ROLE).
     function unpauseForfeiture() external;
 
-    /// @notice Whether forfeit execution is paused.
-    function forfeiturePaused() external view returns (bool);
-
     /// @notice Pause-budget accounting (ERC §A.6 erratum): the raw episode state plus the
     ///         budget-clamped total (`creditable`) that constraining windows subtract as
     ///         stopped-clock time. `creditable` is monotone non-decreasing and never exceeds
@@ -740,9 +725,6 @@ interface ICommitmentManager {
     ///         can reconstruct the forfeit magnitude after the commitment `amount` is zeroed.
     function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256);
 
-    /// @notice Whether the commitment accepts third-party `contributeEncumbered` calls (ERC §C.6).
-    function acceptsContributions(uint256 commitmentId) external view returns (bool);
-
     // =========================================================================
     // Part D — Strategy entry points
     // =========================================================================
@@ -756,10 +738,6 @@ interface ICommitmentManager {
     /// @notice Strategy-mediated claim. Remains available after the commitment closes so parked
     ///         accrual is recoverable (ERC §D.3).
     function claim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
-
-    /// @notice Distribute one strategy's accrual then claim it, atomically. Resolves the ordering
-    ///         footgun where `pending()` shows live accrual but `claim()` pays only banked accrual.
-    function distributeAndClaim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
 
     /// @notice Pending amount claimable via `claim` for the caller-implied recipient.
     function pending(uint256 commitmentId, address strategy, bytes calldata claimData) external view returns (uint256);
@@ -795,7 +773,6 @@ interface ICommitmentManager {
     function forfeitAgreement(uint256 agreementId, uint16 penaltyBps) external;
 
     function releaseAgreement(uint256 agreementId) external;
-    function requestAgreementUnbond(uint256 agreementId) external;
 
     /// @notice Arbiter-instructed value flow between the two parties of an agreement, bounded
     ///         by per-direction lifetime caps. Manager-internal encumbered transfer.
@@ -841,7 +818,7 @@ interface ICommitmentManager {
     ///         deferred losses collapse into one O(1) settle (reads current Lambda).
     function settleMemberLoss(uint256 commitmentId) external;
 
-    /// @notice Bounded batch convenience over `settleMemberLoss`.
+    /// @notice Batch convenience over `settleMemberLoss`. Unbounded: the caller sizes the batch.
     function settleMembers(uint256[] calldata commitmentIds) external;
 
     /// @notice Member-only: start the deallocation window. The line stays in `totalShares` and
@@ -874,15 +851,8 @@ interface ICommitmentManager {
     /// @notice Permissionless: bank-and-pay a member's accrued premium to its committer (CEI-strict).
     function claimMemberPremium(uint256 commitmentId) external;
 
-    /// @notice Bounded batch convenience over `claimMemberPremium`.
-    function claimMembersPremium(uint256[] calldata commitmentIds) external;
-
     /// @notice Policyholder-of-record reclaims the unstreamed premium remainder and halts the stream.
     function reclaimPremium(uint256 mutualId) external;
-
-    /// @notice Convenience: `settleMemberLoss` then `claimMemberPremium` for one member under a
-    ///         single reentrancy guard — two INDEPENDENT CEI passes with zero shared accounting.
-    function settleAndClaim(uint256 commitmentId) external;
 
     // ---- Mutual views ----
 
@@ -921,7 +891,7 @@ interface ICommitmentManager {
     function pendingMemberLoss(uint256 commitmentId) external view returns (uint256 owedUnits);
 
     // =========================================================================
-    // Relayer / batch (ERC §C.8, non-normative surface with canonical typehash)
+    // Relayer (ERC §C.8, non-normative surface with canonical typehash)
     // =========================================================================
 
     function createCommitmentFor(
@@ -931,12 +901,6 @@ interface ICommitmentManager {
         uint256 nonce,
         bytes calldata sig
     ) external returns (uint256 commitmentId);
-
-    function batchCreateCommitments(CommitmentParams[] calldata params)
-        external
-        returns (uint256[] memory commitmentIds);
-
-    function batchReleaseCommitments(uint256[] calldata commitmentIds) external;
 
     function nonces(address committer) external view returns (uint256);
 

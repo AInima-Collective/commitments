@@ -91,8 +91,8 @@ contract AgreementTestBase is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 }
 
@@ -344,14 +344,14 @@ contract AgreementForfeitReleaseTest is AgreementTestBase {
     }
 
     function test_agreementUnbond_symmetric() public {
-        (uint256 agreementId, uint256 cidA, uint256 cidB) = _proposeAndAccept();
+        (, uint256 cidA, uint256 cidB) = _proposeAndAccept();
 
         vm.prank(carol);
         vm.expectRevert(ICM.NotCommitter.selector);
-        manager.requestAgreementUnbond(agreementId);
+        manager.requestUnbond(cidB);
 
-        vm.prank(bob); // either committer may initiate
-        manager.requestAgreementUnbond(agreementId);
+        vm.prank(bob); // either committer may initiate; the partner leg follows
+        manager.requestUnbond(cidB);
         assertGt(manager.unbondInitiatedAt(cidA), 0);
         assertGt(manager.unbondInitiatedAt(cidB), 0);
 
@@ -737,8 +737,8 @@ contract CrossTokenAgreementTest is AgreementTestBase {
     }
 
     function _partitionHoldsFor(MockERC20 t) internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(t));
-        assertEq(free + enc + esc, t.balanceOf(address(manager)), "INV-1 partition per token");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(t));
+        assertEq(free + enc + esc + mp, t.balanceOf(address(manager)), "INV-1 partition per token");
     }
 
     function test_crossToken_legsCarryIndependentTerms() public {

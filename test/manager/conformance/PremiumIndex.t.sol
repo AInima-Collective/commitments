@@ -45,8 +45,8 @@ contract FeeOnTransferToken is ERC20 {
 ///         exercise the reward half against the (already-audited, frozen) loss half and lock:
 ///         pool == funded−claimed (P0), extended partition (P1), funding-time solvency + NoActiveCover
 ///         (P2), poke-before-stake-change non-retroactivity (P5/P8), exact dual-track activeCover with
-///         Belt-2 asserted inert (P9), zombie-freeness (P4/P4b), dust conservation, overflow
-///         failure-isolation (P10), and settleAndClaim == the two separate calls.
+///         Belt-2 asserted inert (P9), zombie-freeness (P4/P4b), dust conservation, and overflow
+///         failure-isolation (P10).
 contract PremiumIndexTest is Test {
     CommitmentManager internal manager;
     MockERC20 internal token; // homogeneous numeraire
@@ -233,12 +233,9 @@ contract PremiumIndexTest is Test {
 
     /// @dev INV-P1 (extended partition) on `numeraire`, single premium-funded mutual `gid`.
     function _assertP1(uint256 gid, MockERC20 numeraire) internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(numeraire));
-        assertEq(
-            free + enc + esc + _ps(gid).pool,
-            numeraire.balanceOf(address(manager)),
-            "INV-P1: free+enc+esc+pool == balanceOf"
-        );
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(numeraire));
+        assertEq(mp, _ps(gid).pool, "totalMutualPremium == the mutual's pool");
+        assertEq(free + enc + esc + mp, numeraire.balanceOf(address(manager)), "INV-P1: free+enc+esc+pool == balanceOf");
     }
 
     /// @dev INV-P2 (Synthetix solvency): rewardRate·(periodFinish−lastUpdate) + Σ rewardBank ≤ pool.
@@ -547,9 +544,9 @@ contract PremiumIndexTest is Test {
         _fund(gid, 61, 61); // 61 units over 61s (rate 1/s); 61 is not divisible by activeCover 3
         vm.warp(block.timestamp + 61);
 
-        uint256[] memory ids = new uint256[](3);
-        (ids[0], ids[1], ids[2]) = (c1, c2, c3);
-        manager.claimMembersPremium(ids);
+        manager.claimMemberPremium(c1);
+        manager.claimMemberPremium(c2);
+        manager.claimMemberPremium(c3);
 
         // Each member earns floor(61/3) == 20; the leftover 1 unit is carried as remainder dust.
         assertEq(manager.freeBalance(address(token), u1), 1_000_000e18 - 1 + 20, "u1 paid 20");
@@ -597,40 +594,6 @@ contract PremiumIndexTest is Test {
         _declareAndExecute(gid, ei);
         manager.settleMemberLoss(cid); // must not revert
         assertGt(manager.getMembership(cid).settledUnits, 0, "loss leg applied (not bricked)");
-    }
-
-    // =========================================================================
-    // settleAndClaim == settleMemberLoss + claimMemberPremium (independent CEI passes)
-    // =========================================================================
-
-    function test_settleAndClaim_equalsSeparateCalls() public {
-        uint256 gid = _createMutual(token);
-        uint256 c1 = _join(gid, token, u1, 100e18, 10_000);
-        _join(gid, token, u2, 100e18, 10_000);
-
-        _fund(gid, 200e18, 200);
-        _declareAndExecute(gid, 50e18); // Λ = 0.25e18; c1 owes 25e18 (stream fully accrued by execute)
-
-        uint256 snap = vm.snapshotState();
-
-        manager.settleAndClaim(c1);
-        uint256 benA = manager.freeBalance(address(token), beneficiary);
-        uint256 comA = manager.freeBalance(address(token), u1);
-        uint256 setA = manager.getMembership(c1).settledUnits;
-        uint256 poolA = _ps(gid).pool;
-        uint256 acA = _ps(gid).activeCover;
-        uint256 amtA = manager.getCommitment(c1).amount;
-
-        vm.revertToState(snap);
-
-        manager.settleMemberLoss(c1);
-        manager.claimMemberPremium(c1);
-        assertEq(manager.freeBalance(address(token), beneficiary), benA, "beneficiary identical");
-        assertEq(manager.freeBalance(address(token), u1), comA, "committer identical");
-        assertEq(manager.getMembership(c1).settledUnits, setA, "settledUnits identical");
-        assertEq(_ps(gid).pool, poolA, "pool identical");
-        assertEq(_ps(gid).activeCover, acA, "activeCover identical");
-        assertEq(manager.getCommitment(c1).amount, amtA, "residual amount identical");
     }
 
     // =========================================================================
@@ -721,7 +684,8 @@ contract PremiumIndexTest is Test {
         assertEq(uint256(_ps(gid).rewardRate), 90e18 / 100, "rate uses the received delta");
 
         // INV-P1 closes on the ACTUAL balance (free 800e18 + enc 100e18 + pool 90e18 == 990e18 held).
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(fot));
-        assertEq(free + enc + esc + _ps(gid).pool, fot.balanceOf(address(manager)), "INV-P1 on FOT actual balance");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(fot));
+        assertEq(mp, _ps(gid).pool, "totalMutualPremium == the mutual's pool");
+        assertEq(free + enc + esc + mp, fot.balanceOf(address(manager)), "INV-P1 on FOT actual balance");
     }
 }

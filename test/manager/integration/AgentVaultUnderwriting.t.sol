@@ -169,10 +169,11 @@ contract AgentVaultUnderwritingTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(vault));
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(vault));
         (,,,,,,,, uint256 premiumPool) = manager.getMutualPremiumState(mutualId);
+        assertEq(mp, premiumPool, "one mutual: aggregate == its pool");
         // INV-1 extended by the mutual premium pool: the share token's whole partition.
-        assertEq(free + enc + esc + premiumPool, vault.balanceOf(address(manager)), "INV-1 for the share token");
+        assertEq(free + enc + esc + mp, vault.balanceOf(address(manager)), "INV-1 for the share token");
     }
 
     function _premiumState() internal view returns (uint128 activeCover, uint128 rate, uint64 finish) {

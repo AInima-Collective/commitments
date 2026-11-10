@@ -129,7 +129,6 @@ struct Mutual {
     address beneficiary;        // who settled units pay to (typically a ClaimRouter) — REQUIRED
     uint64  challengeWindow;    // >= MUTUAL_MIN_CHALLENGE_WINDOW
     uint64  deallocationWindow; // post-exit-request slashable window; >= challengeWindow
-    uint64  lastInitiatedAt;    // re-initiation rate-limit cursor (griefing guard)
     uint128 totalShares;        // Σ creditedValue of non-exited members. join / release ONLY — never on loss
     uint256 cumulativeLoss;     // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18
     bool    active;             // set by the arbiter; members can only join an active mutual
@@ -188,7 +187,6 @@ struct MutualLossProposal {
     uint256 lossNumeraire; // declared loss L in the mutual's numeraire
     uint64  initiatedAt;   // 0 == none
     bytes32 evidenceHash;  // off-chain evidence commitment
-    address proposer;      // the mutual arbiter that initiated
     bool    executed;
     bool    cancelled;
 }
@@ -392,10 +390,12 @@ function cancelStaleMutualLoss(uint256 mutualId) external;   // anyone, after wi
 
 **Phase 1 — `initiateMutualLoss`.** Arbiter-only (`NotMutualArbiter`); mutual active and
 non-terminal (`MutualNotActive`); `lossNumeraire != 0` (`ZeroAmount`); no loss already pending
-(`MutualLossPending`). Re-initiation is rate-limited: if `lastInitiatedAt != 0` and
-`block.timestamp < lastInitiatedAt + MIN_REINIT_INTERVAL`, revert `ReinitTooSoon` (the *first*
-honest declaration is never blocked). Records the proposal, stamps `lastInitiatedAt`, and emits
-`MutualLossInitiated(mutualId, lossNumeraire, evidenceHash, proposer)`. From this point joins and
+(`MutualLossPending`). Re-initiation is rate-limited: if a prior proposal exists (its `initiatedAt != 0`;
+proposals are overwritten, never deleted) and less than `MIN_REINIT_INTERVAL` of effective time
+(§A.6 clock-stop) has passed since its `initiatedAt`, revert `ReinitTooSoon` (the *first* honest
+declaration is never blocked). Records the proposal and emits
+`MutualLossInitiated(mutualId, lossNumeraire, evidenceHash, proposer)`, where `proposer` is the
+mutual's arbiter. From this point joins and
 exits are frozen until the proposal resolves.
 
 **Phase 2 — `executeMutualLoss`.** Permissionless. A pending proposal MUST exist
@@ -452,8 +452,8 @@ the balance-conserving ledger move are the only effects, and member commitments 
 on a mutual settle**. The commitment **survives** settlement (it may take future losses or
 eventually be released) — the key difference from the one-shot terminal `executeForfeit`.
 
-`settleMembers` is a bounded batch convenience that loops `settleMemberLoss` (reverts
-`EmptyBatch` on empty input). Because settlement is permissionless, the `O(N)` physical movement
+`settleMembers` is a batch convenience that loops `settleMemberLoss` (reverts `EmptyBatch` on
+empty input; unbounded, so the caller sizes the batch to the block). Because settlement is permissionless, the `O(N)` physical movement
 of a claim can never brick on a single uncooperative member.
 
 ### 3.6 Two-step exit
@@ -599,7 +599,7 @@ realizes this as a **single gate at the internal convergence point** plus negati
 remaining entry surfaces, rather than scattering guards on the named wrappers.
 
 The convergence gate lives in the internal `_closeWithHooks` — the single point through which
-`release`, `expire`, `finalizeUnbond`, `batchReleaseCommitments`, and the agreements close path
+`release`, `expire`, `finalizeUnbond`, and the agreements close path
 all flow: if `membership[commitmentId].mutualId != 0`, revert `CommitmentInMutual`. Every
 higher path inherits the gate. In addition, the manager MUST revert `CommitmentInMutual` (or the
 appropriate mutual error) on:
@@ -649,7 +649,8 @@ the per-token aggregate `totalMutualPremium` (§1 storage, offsets 32..33). It i
 each through the `LedgerLib` `freeToMutualPremium` / `mutualPremiumToFree` helper pair (INV-P0), so
 the extended partition **INV-P1**
 (`totalFree + totalEncumbered + totalEscrow + totalMutualPremium == balanceOf(manager)`) holds on
-the manager's actual balance. Premium solvency is enforced at a single point — funding time —
+the manager's actual balance. The reference implementation returns all four aggregates from
+`ledgerTotals(token)`, so the partition is checkable from the deployed ABI. Premium solvency is enforced at a single point — funding time —
 by the full-funding guard **INV-P2**: `rewardRate × duration + bankedTotal <= mutualPremiumPool`.
 
 ### 6.2 API
@@ -657,9 +658,7 @@ by the full-funding guard **INV-P2**: `rewardRate × duration + bankedTotal <= m
 ```solidity
 function fundMutualPremium(uint256 mutualId, uint256 amount, uint64 duration) external; // policyholder
 function claimMemberPremium(uint256 commitmentId) external;                             // permissionless
-function claimMembersPremium(uint256[] calldata commitmentIds) external;                // bounded batch
 function reclaimPremium(uint256 mutualId) external;                                      // policyholder-of-record
-function settleAndClaim(uint256 commitmentId) external;                                  // settle loss then claim
 function pendingMemberPremium(uint256 commitmentId) external view returns (uint256 claimable);
 function getMutualPremiumState(uint256 mutualId) external view returns (
     uint256 premiumPerShareStored, uint128 activeCover, uint256 settledTotal,
@@ -697,9 +696,7 @@ where `received` is the **measured** receipt.
 **`claimMemberPremium`** is permissionless and CEI-strict: it syncs the member (poke + accrue on
 live `effCover`), zeroes `rewardBank` before the reserve→free move, decrements `bankedTotal`, and
 pays the committer, emitting `MemberPremiumClaimed(commitmentId, committer, amount)` (a zero
-balance is a no-op emit). `claimMembersPremium` is the bounded batch (reverts `EmptyBatch`).
-`settleAndClaim` is pure dispatch — `settleMemberLoss` then `claimMemberPremium` under one
-reentrancy guard, two independent CEI passes with no shared accounting.
+balance is a no-op emit).
 
 **`reclaimPremium`** lets the policyholder-of-record (the mutual `beneficiary`) defund the
 *unstreamed* remainder and halt the stream (`periodFinish = now`, `rewardRate = 0`); already-banked

@@ -102,7 +102,6 @@ function acceptAgreement(uint256 proposalId)
 function cancelAgreementProposal(uint256 proposalId) external;
 function forfeitAgreement(uint256 agreementId, uint16 penaltyBps) external;
 function releaseAgreement(uint256 agreementId) external;
-function requestAgreementUnbond(uint256 agreementId) external;
 
 /// The agreement a proposal produced (0 = never accepted); the canonical
 /// terminal-state read for a proposalId.
@@ -140,8 +139,6 @@ This gating is a deliberate, consented override of the core §C.1/§C.3 per-comm
 ### 4. Symmetric unbond
 
 `requestUnbond(commitmentId)` (core §C.5) MUST auto-propagate to the partner commitment when the input commitment is part of an agreement. `finalizeUnbond` on either side after the window MUST be permitted. `cancelUnbond` on either side MUST cancel the unbond on both sides — the agreement simply continues.
-
-`requestAgreementUnbond(agreementId)` is a convenience that performs `requestUnbond` on both sides explicitly and emits `AgreementUnbondRequested(agreementId)`.
 
 This preserves the bilateral-symmetry guarantee under committer-liveness: when one party walks, both walk; when one party stays, neither party is forced out.
 
@@ -232,7 +229,6 @@ event AgreementProposalExpiredCancelled(uint256 indexed proposalId, address inde
 event AgreementForfeited(uint256 indexed agreementId);
 event AgreementReleased(uint256 indexed agreementId);
 event AgreementPartialForfeit(uint256 indexed agreementId, uint256 indexed commitmentId);
-event AgreementUnbondRequested(uint256 indexed agreementId);
 event AgreementSettled(uint256 indexed agreementId, bool fromProposer, uint256 units, uint256 cumulativeProposerToAcceptor, uint256 cumulativeAcceptorToProposer, bytes32 evidenceHash);
 
 // Extension-specific errors.
@@ -292,8 +288,8 @@ The reference implementation ships an agreements suite at `test/manager/Agreemen
 
 The agreements extension is implemented as an external delegatecall library:
 
-- `src/extensions/agreements/AgreementLib.sol` — propose/accept/cancel, atomic bilateral forfeit and release, symmetric unbond, and bilateral settlement (guarded pre-settle distribute plus the per-direction cap and encumbered→free shift).
-- `src/core/manager/CommitmentManager.sol` — the thin dispatch wrappers (`proposeAgreement`, `acceptAgreement`, `cancelAgreementProposal`, `forfeitAgreement`, `releaseAgreement`, `requestAgreementUnbond`, `settleAgreement`) and the `getAgreementPair` / `agreementOf` / `agreementOfProposal` / `getAgreementSettlement` views.
+- `src/extensions/agreements/AgreementLib.sol` — propose/accept/cancel, atomic bilateral forfeit and release, and bilateral settlement (guarded pre-settle distribute plus the per-direction cap and encumbered→free shift).
+- `src/core/manager/CommitmentManager.sol` — the thin dispatch wrappers (`proposeAgreement`, `acceptAgreement`, `cancelAgreementProposal`, `forfeitAgreement`, `releaseAgreement`, `settleAgreement`) and the `getAgreementPair` / `agreementOf` / `agreementOfProposal` / `getAgreementSettlement` views.
 - `src/core/interfaces/ICommitmentManager.sol` — the `LegTerms` / `AgreementParams` / `AgreementProposal` / `AgreementSettlement` structs, events, and errors.
 
 ## Security Considerations

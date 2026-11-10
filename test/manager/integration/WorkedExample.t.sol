@@ -80,8 +80,8 @@ contract WorkedExampleTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(mUSDC));
-        assertEq(free + enc + esc, mUSDC.balanceOf(address(manager)), "INV-1 inside the manager");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(mUSDC));
+        assertEq(free + enc + esc + mp, mUSDC.balanceOf(address(manager)), "INV-1 inside the manager");
     }
 
     function test_workedExample_endToEnd() public {

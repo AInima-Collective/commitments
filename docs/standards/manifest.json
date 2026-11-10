@@ -64,7 +64,6 @@
             "getAgreementSettlement",
             "proposeAgreement",
             "releaseAgreement",
-            "requestAgreementUnbond",
             "settleAgreement"
           ],
           "events": [
@@ -76,8 +75,7 @@
             "AgreementProposed",
             "AgreementProposedTerms",
             "AgreementReleased",
-            "AgreementSettled",
-            "AgreementUnbondRequested"
+            "AgreementSettled"
           ],
           "errors": [
             "AgreementBothResolved",
@@ -132,7 +130,6 @@
             "cancelMutualLoss",
             "cancelStaleMutualLoss",
             "claimMemberPremium",
-            "claimMembersPremium",
             "createMutual",
             "executeMutualLoss",
             "fundMutualPremium",
@@ -147,7 +144,6 @@
             "reclaimPremium",
             "releaseMutualMember",
             "requestMutualExit",
-            "settleAndClaim",
             "settleMemberLoss",
             "settleMembers"
           ],

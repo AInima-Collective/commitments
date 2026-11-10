@@ -339,34 +339,6 @@ export const commitmentManagerAbi = [
   {
     type: 'function',
     inputs: [],
-    name: 'HOOK_GAS_CAP_FLOOR',
-    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MAX_METADATA_URI_LENGTH',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MAX_PROPOSAL_DURATION',
-    outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'MAX_STRATEGIES',
-    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
     name: 'MIN_CHALLENGE_WINDOW',
     outputs: [{ name: '', internalType: 'uint64', type: 'uint64' }],
     stateMutability: 'view',
@@ -416,15 +388,6 @@ export const commitmentManagerAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'acceptsContributions',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
     inputs: [{ name: 'mutualId', internalType: 'uint256', type: 'uint256' }],
     name: 'activateMutual',
     outputs: [],
@@ -445,51 +408,6 @@ export const commitmentManagerAbi = [
     name: 'agreementOfProposal',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [
-      {
-        name: 'params',
-        internalType: 'struct ICommitmentManager.CommitmentParams[]',
-        type: 'tuple[]',
-        components: [
-          { name: 'arbiter', internalType: 'address', type: 'address' },
-          { name: 'counterparty', internalType: 'address', type: 'address' },
-          { name: 'token', internalType: 'address', type: 'address' },
-          { name: 'adapter', internalType: 'address', type: 'address' },
-          { name: 'amount', internalType: 'uint256', type: 'uint256' },
-          { name: 'maxPenaltyBps', internalType: 'uint16', type: 'uint16' },
-          { name: 'challengeWindow', internalType: 'uint64', type: 'uint64' },
-          { name: 'expiresAt', internalType: 'uint64', type: 'uint64' },
-          {
-            name: 'strategies',
-            internalType: 'struct StrategyBinding[]',
-            type: 'tuple[]',
-            components: [
-              { name: 'strategy', internalType: 'address', type: 'address' },
-              { name: 'params', internalType: 'bytes', type: 'bytes' },
-            ],
-          },
-          { name: 'metadataURI', internalType: 'string', type: 'string' },
-          { name: 'metadataHash', internalType: 'bytes32', type: 'bytes32' },
-        ],
-      },
-    ],
-    name: 'batchCreateCommitments',
-    outputs: [
-      { name: 'commitmentIds', internalType: 'uint256[]', type: 'uint256[]' },
-    ],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'commitmentIds', internalType: 'uint256[]', type: 'uint256[]' },
-    ],
-    name: 'batchReleaseCommitments',
-    outputs: [],
-    stateMutability: 'nonpayable',
   },
   {
     type: 'function',
@@ -556,15 +474,6 @@ export const commitmentManagerAbi = [
       { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
     ],
     name: 'claimMemberPremium',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'commitmentIds', internalType: 'uint256[]', type: 'uint256[]' },
-    ],
-    name: 'claimMembersPremium',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -780,17 +689,6 @@ export const commitmentManagerAbi = [
   },
   {
     type: 'function',
-    inputs: [
-      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
-      { name: 'strategy', internalType: 'address', type: 'address' },
-      { name: 'claimData', internalType: 'bytes', type: 'bytes' },
-    ],
-    name: 'distributeAndClaim',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
     inputs: [],
     name: 'eip712Domain',
     outputs: [
@@ -894,13 +792,6 @@ export const commitmentManagerAbi = [
     ],
     name: 'forfeitedUnitsOf',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
-    stateMutability: 'view',
-  },
-  {
-    type: 'function',
-    inputs: [],
-    name: 'forfeiturePaused',
-    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
     stateMutability: 'view',
   },
   {
@@ -1067,7 +958,6 @@ export const commitmentManagerAbi = [
             internalType: 'uint64',
             type: 'uint64',
           },
-          { name: 'lastInitiatedAt', internalType: 'uint64', type: 'uint64' },
           { name: 'totalShares', internalType: 'uint128', type: 'uint128' },
           { name: 'cumulativeLoss', internalType: 'uint256', type: 'uint256' },
           { name: 'active', internalType: 'bool', type: 'bool' },
@@ -1106,7 +996,6 @@ export const commitmentManagerAbi = [
           { name: 'lossNumeraire', internalType: 'uint256', type: 'uint256' },
           { name: 'initiatedAt', internalType: 'uint64', type: 'uint64' },
           { name: 'evidenceHash', internalType: 'bytes32', type: 'bytes32' },
-          { name: 'proposer', internalType: 'address', type: 'address' },
           { name: 'executed', internalType: 'bool', type: 'bool' },
           { name: 'cancelled', internalType: 'bool', type: 'bool' },
           {
@@ -1289,6 +1178,7 @@ export const commitmentManagerAbi = [
       { name: 'totalFree', internalType: 'uint256', type: 'uint256' },
       { name: 'totalEncumbered', internalType: 'uint256', type: 'uint256' },
       { name: 'totalEscrow', internalType: 'uint256', type: 'uint256' },
+      { name: 'totalMutualPremium', internalType: 'uint256', type: 'uint256' },
     ],
     stateMutability: 'view',
   },
@@ -1485,13 +1375,6 @@ export const commitmentManagerAbi = [
   },
   {
     type: 'function',
-    inputs: [{ name: 'agreementId', internalType: 'uint256', type: 'uint256' }],
-    name: 'requestAgreementUnbond',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
     inputs: [
       { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
     ],
@@ -1557,15 +1440,6 @@ export const commitmentManagerAbi = [
       { name: 'evidenceHash', internalType: 'bytes32', type: 'bytes32' },
     ],
     name: 'settleAgreement',
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-  {
-    type: 'function',
-    inputs: [
-      { name: 'commitmentId', internalType: 'uint256', type: 'uint256' },
-    ],
-    name: 'settleAndClaim',
     outputs: [],
     stateMutability: 'nonpayable',
   },
@@ -1942,19 +1816,6 @@ export const commitmentManagerAbi = [
     anonymous: false,
     inputs: [
       {
-        name: 'agreementId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-    ],
-    name: 'AgreementUnbondRequested',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
         name: 'commitmentId',
         internalType: 'uint256',
         type: 'uint256',
@@ -1974,25 +1835,6 @@ export const commitmentManagerAbi = [
       },
     ],
     name: 'CommitmentBoundToStrategy',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      {
-        name: 'commitmentId',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: true,
-      },
-      {
-        name: 'counterparty',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-    ],
-    name: 'CommitmentCounterparty',
   },
   {
     type: 'event',
@@ -2402,27 +2244,6 @@ export const commitmentManagerAbi = [
       },
     ],
     name: 'EncumbranceReleased',
-  },
-  {
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { name: 'from', internalType: 'address', type: 'address', indexed: true },
-      { name: 'to', internalType: 'address', type: 'address', indexed: true },
-      {
-        name: 'token',
-        internalType: 'address',
-        type: 'address',
-        indexed: true,
-      },
-      {
-        name: 'units',
-        internalType: 'uint256',
-        type: 'uint256',
-        indexed: false,
-      },
-    ],
-    name: 'EncumbranceTransferred',
   },
   {
     type: 'event',
@@ -3226,7 +3047,6 @@ export const commitmentManagerAbi = [
   { type: 'error', inputs: [], name: 'MemberStrategyForbidden' },
   { type: 'error', inputs: [], name: 'MemberUnsettled' },
   { type: 'error', inputs: [], name: 'MinChallengeWindowBelowFloor' },
-  { type: 'error', inputs: [], name: 'MovementBlockedByForfeit' },
   {
     type: 'error',
     inputs: [
@@ -13897,42 +13717,6 @@ export const useReadCommitmentManagerForfeitProposalTtl =
   })
 
 /**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"HOOK_GAS_CAP_FLOOR"`
- */
-export const useReadCommitmentManagerHookGasCapFloor =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'HOOK_GAS_CAP_FLOOR',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"MAX_METADATA_URI_LENGTH"`
- */
-export const useReadCommitmentManagerMaxMetadataUriLength =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'MAX_METADATA_URI_LENGTH',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"MAX_PROPOSAL_DURATION"`
- */
-export const useReadCommitmentManagerMaxProposalDuration =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'MAX_PROPOSAL_DURATION',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"MAX_STRATEGIES"`
- */
-export const useReadCommitmentManagerMaxStrategies =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'MAX_STRATEGIES',
-  })
-
-/**
  * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"MIN_CHALLENGE_WINDOW"`
  */
 export const useReadCommitmentManagerMinChallengeWindow =
@@ -13966,15 +13750,6 @@ export const useReadCommitmentManagerUpgradeInterfaceVersion =
   /*#__PURE__*/ createUseReadContract({
     abi: commitmentManagerAbi,
     functionName: 'UPGRADE_INTERFACE_VERSION',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"acceptsContributions"`
- */
-export const useReadCommitmentManagerAcceptsContributions =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'acceptsContributions',
   })
 
 /**
@@ -14047,15 +13822,6 @@ export const useReadCommitmentManagerForfeitedUnitsOf =
   /*#__PURE__*/ createUseReadContract({
     abi: commitmentManagerAbi,
     functionName: 'forfeitedUnitsOf',
-  })
-
-/**
- * Wraps __{@link useReadContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"forfeiturePaused"`
- */
-export const useReadCommitmentManagerForfeiturePaused =
-  /*#__PURE__*/ createUseReadContract({
-    abi: commitmentManagerAbi,
-    functionName: 'forfeiturePaused',
   })
 
 /**
@@ -14327,24 +14093,6 @@ export const useWriteCommitmentManagerActivateMutual =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"batchCreateCommitments"`
- */
-export const useWriteCommitmentManagerBatchCreateCommitments =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'batchCreateCommitments',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"batchReleaseCommitments"`
- */
-export const useWriteCommitmentManagerBatchReleaseCommitments =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'batchReleaseCommitments',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"cancelAgreementProposal"`
  */
 export const useWriteCommitmentManagerCancelAgreementProposal =
@@ -14414,15 +14162,6 @@ export const useWriteCommitmentManagerClaimMemberPremium =
   /*#__PURE__*/ createUseWriteContract({
     abi: commitmentManagerAbi,
     functionName: 'claimMemberPremium',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"claimMembersPremium"`
- */
-export const useWriteCommitmentManagerClaimMembersPremium =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'claimMembersPremium',
   })
 
 /**
@@ -14513,15 +14252,6 @@ export const useWriteCommitmentManagerDistributeAll =
   /*#__PURE__*/ createUseWriteContract({
     abi: commitmentManagerAbi,
     functionName: 'distributeAll',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"distributeAndClaim"`
- */
-export const useWriteCommitmentManagerDistributeAndClaim =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'distributeAndClaim',
   })
 
 /**
@@ -14714,15 +14444,6 @@ export const useWriteCommitmentManagerRenounceRole =
   })
 
 /**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"requestAgreementUnbond"`
- */
-export const useWriteCommitmentManagerRequestAgreementUnbond =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'requestAgreementUnbond',
-  })
-
-/**
  * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"requestMutualExit"`
  */
 export const useWriteCommitmentManagerRequestMutualExit =
@@ -14792,15 +14513,6 @@ export const useWriteCommitmentManagerSettleAgreement =
   /*#__PURE__*/ createUseWriteContract({
     abi: commitmentManagerAbi,
     functionName: 'settleAgreement',
-  })
-
-/**
- * Wraps __{@link useWriteContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"settleAndClaim"`
- */
-export const useWriteCommitmentManagerSettleAndClaim =
-  /*#__PURE__*/ createUseWriteContract({
-    abi: commitmentManagerAbi,
-    functionName: 'settleAndClaim',
   })
 
 /**
@@ -14891,24 +14603,6 @@ export const useSimulateCommitmentManagerActivateMutual =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"batchCreateCommitments"`
- */
-export const useSimulateCommitmentManagerBatchCreateCommitments =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'batchCreateCommitments',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"batchReleaseCommitments"`
- */
-export const useSimulateCommitmentManagerBatchReleaseCommitments =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'batchReleaseCommitments',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"cancelAgreementProposal"`
  */
 export const useSimulateCommitmentManagerCancelAgreementProposal =
@@ -14978,15 +14672,6 @@ export const useSimulateCommitmentManagerClaimMemberPremium =
   /*#__PURE__*/ createUseSimulateContract({
     abi: commitmentManagerAbi,
     functionName: 'claimMemberPremium',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"claimMembersPremium"`
- */
-export const useSimulateCommitmentManagerClaimMembersPremium =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'claimMembersPremium',
   })
 
 /**
@@ -15077,15 +14762,6 @@ export const useSimulateCommitmentManagerDistributeAll =
   /*#__PURE__*/ createUseSimulateContract({
     abi: commitmentManagerAbi,
     functionName: 'distributeAll',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"distributeAndClaim"`
- */
-export const useSimulateCommitmentManagerDistributeAndClaim =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'distributeAndClaim',
   })
 
 /**
@@ -15278,15 +14954,6 @@ export const useSimulateCommitmentManagerRenounceRole =
   })
 
 /**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"requestAgreementUnbond"`
- */
-export const useSimulateCommitmentManagerRequestAgreementUnbond =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'requestAgreementUnbond',
-  })
-
-/**
  * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"requestMutualExit"`
  */
 export const useSimulateCommitmentManagerRequestMutualExit =
@@ -15356,15 +15023,6 @@ export const useSimulateCommitmentManagerSettleAgreement =
   /*#__PURE__*/ createUseSimulateContract({
     abi: commitmentManagerAbi,
     functionName: 'settleAgreement',
-  })
-
-/**
- * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link commitmentManagerAbi}__ and `functionName` set to `"settleAndClaim"`
- */
-export const useSimulateCommitmentManagerSettleAndClaim =
-  /*#__PURE__*/ createUseSimulateContract({
-    abi: commitmentManagerAbi,
-    functionName: 'settleAndClaim',
   })
 
 /**
@@ -15509,30 +15167,12 @@ export const useWatchCommitmentManagerAgreementSettledEvent =
   })
 
 /**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"AgreementUnbondRequested"`
- */
-export const useWatchCommitmentManagerAgreementUnbondRequestedEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'AgreementUnbondRequested',
-  })
-
-/**
  * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"CommitmentBoundToStrategy"`
  */
 export const useWatchCommitmentManagerCommitmentBoundToStrategyEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: commitmentManagerAbi,
     eventName: 'CommitmentBoundToStrategy',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"CommitmentCounterparty"`
- */
-export const useWatchCommitmentManagerCommitmentCounterpartyEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'CommitmentCounterparty',
   })
 
 /**
@@ -15677,15 +15317,6 @@ export const useWatchCommitmentManagerEncumbranceReleasedEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: commitmentManagerAbi,
     eventName: 'EncumbranceReleased',
-  })
-
-/**
- * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link commitmentManagerAbi}__ and `eventName` set to `"EncumbranceTransferred"`
- */
-export const useWatchCommitmentManagerEncumbranceTransferredEvent =
-  /*#__PURE__*/ createUseWatchContractEvent({
-    abi: commitmentManagerAbi,
-    eventName: 'EncumbranceTransferred',
   })
 
 /**

@@ -251,7 +251,7 @@ contract MedusaManagerHarness is ManagerHandler {
     function property_partition_inv1() public view returns (bool) {
         for (uint256 t = 0; t < tokens.length; t++) {
             address token = address(tokens[t]);
-            (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(token);
+            (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(token);
             uint256 pool;
             for (uint256 i = 0; i < allMutualIds.length; i++) {
                 uint256 gid = allMutualIds[i];
@@ -259,7 +259,7 @@ contract MedusaManagerHarness is ManagerHandler {
                 (,,,,,,,, uint256 p) = manager.getMutualPremiumState(gid);
                 pool += p;
             }
-            if (free + enc + esc + pool != tokens[t].balanceOf(address(manager))) return false;
+            if (mp != pool || free + enc + esc + mp != tokens[t].balanceOf(address(manager))) return false;
         }
         return true;
     }

@@ -36,7 +36,7 @@ methods {
     // Unresolved-call routing (run-260713 triage, family A): OZ v5 SafeERC20's
     // assembly-built token call defeats static sighash matching and fell to
     // AUTO havoc — the havoc-bloated SMT is the prime suspect in the
-    // batchReleaseCommitments parametric timeout. Same justification as
+    // parametric timeout on the since-removed batchReleaseCommitments. Same justification as
     // ManagerLedger.spec.
     unresolved external in _._ => DISPATCH [
         backing.transfer(address, uint256),
