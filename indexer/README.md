@@ -185,9 +185,11 @@ UI control caching/invalidation.
 
 ## Config
 
-`ponder.config.ts` resolves deployment addresses by parsing the latest
-`../broadcast/**/<chainId>/run-latest.json` Foundry run when `DEPLOYMENTS_JSON`
-is unset. To use an explicit deployment manifest instead:
+`ponder.config.ts` reads deployment addresses from a schema-v1 manifest. When
+`DEPLOYMENTS_JSON` is unset it reads `deployments.<chainId>.json` in this
+folder, which `script/write-frontend-env.mjs` writes from the seed's broadcast
+(`just dev-up` runs it); if that file is missing, startup stops and says to run
+`just dev-up`. To use an explicit deployment manifest instead:
 
 ```bash
 DEPLOYMENTS_JSON=/path/to/deployments.json pnpm --filter @commitments/indexer dev
@@ -195,7 +197,7 @@ DEPLOYMENTS_JSON=/path/to/deployments.json pnpm --filter @commitments/indexer de
 
 When set, `DEPLOYMENTS_JSON` is authoritative. An empty value, missing or
 unreadable path, malformed JSON, schema error, or chain mismatch stops startup
-immediately; the loader never falls back to local broadcast artifacts.
+immediately; the loader never falls back to the generated manifest.
 
 Schema v1 is a strict contract. A minimal manifest is checked in at
 [`fixtures/deployments.v1.example.json`](fixtures/deployments.v1.example.json):
@@ -234,7 +236,8 @@ not accepted in schema v1. Migrate the first two to their plural array forms and
 replace `commitmentsVault` with the actual `vaultFactory` address. Unknown fields
 are rejected so address-key typos cannot silently disable indexing.
 
-The example fixture is also suitable for config-only tooling from a clean tree:
+`ponder codegen` does not read the manifest, so a clean tree needs neither. For
+other config-only tooling, the example fixture stands in:
 
 ```bash
 DEPLOYMENTS_JSON=fixtures/deployments.v1.example.json \

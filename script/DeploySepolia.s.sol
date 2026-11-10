@@ -1,23 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {Script, console} from "forge-std/Script.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {console} from "forge-std/Script.sol";
 
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
 import {VaultFactory} from "src/periphery/vaults/VaultFactory.sol";
-import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
-import {ERC4626Adapter} from "src/backing/ERC4626Adapter.sol";
-import {IndexAppreciationYield} from "src/distributions/IndexAppreciationYield.sol";
-import {FlatFeeAtCreate} from "src/distributions/FlatFeeAtCreate.sol";
-import {OperatorRegistry} from "src/extensions/services/operator-registry/OperatorRegistry.sol";
-import {ManualArbiter} from "src/periphery/arbiters/ManualArbiter.sol";
-import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
-import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
-import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
-import {MeshFactory} from "src/extensions/mesh/MeshFactory.sol";
-import {OperatorServiceRegistry} from "src/extensions/services/service-registry/OperatorServiceRegistry.sol";
 import {CommitmentsGovernor} from "src/periphery/governance/CommitmentsGovernor.sol";
 import {CommitmentsTimelock} from "src/periphery/governance/CommitmentsTimelock.sol";
 import {GovernorFactory} from "src/periphery/governance/GovernorFactory.sol";
@@ -26,38 +13,30 @@ import {CommitmentsRewardsCoordinator} from "src/extensions/rewards/CommitmentsR
 import {RewardsCoordinatorFactory} from "src/extensions/rewards/RewardsCoordinatorFactory.sol";
 import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
-// The faucet backing token. MockERC20 (under test/) has a permissionless
-// `mint(to, amount)` — exactly the "anyone can mint and exercise commitments"
-// faucet the deployment plan calls for. We deploy it as-is rather than adding a
-// near-identical src/ token; for Sepolia a public mint is the desired behavior.
-import {MockERC20} from "../test/helpers/MockERC20.sol";
+import {DeployCore} from "./DeployCore.sol";
+import {FaucetToken} from "./FaucetToken.sol";
 
 /// @title DeploySepolia
 /// @notice Composing, broadcast-ready deploy of the full v2 Commitments stack to
 ///         Ethereum Sepolia (chainId 11155111). UNLIKE `Simulate.s.sol` this
 ///         script does NOT derive Anvil-mnemonic accounts and does NOT seed any
 ///         demo state (deposits / commitments / operators / agreements). It
-///         deploys contracts in dependency order, wires the manager↔registry
-///         callback, and prints every address for the deployment record.
+///         deploys contracts in dependency order and prints every address for the
+///         deployment record.
 ///
-/// @dev Deploys in the order the issue checklist mandates:
-///        1. Faucet backing ERC-20 (MockERC20, public mint).
+/// @dev Deploys:
+///        1. Faucet backing ERC-20 (`FaucetToken`, public mint).
 ///        2. VaultFactory + one ERC-4626 vault wrapping the faucet token.
-///        3. CommitmentManager impl + libs (forge auto-links) + ERC1967Proxy.
-///        4. Backing adapters (ERC20Static, ERC4626) + strategies.
-///        5. ManualArbiter (the registry requires a *contract* arbiter).
-///        6. OperatorRegistry impl + proxy.
-///        7. Manager → registry wiring (`setOperatorRegistry`).
-///        8. Mesh impls + MeshFactory + one TokenWeighting node whose provider is
-///           the OperatorRegistry, a 1:1 weight on the registry's stake denom, and
-///           `operatorRegistry.setMeshWiring`.
-///        9. OperatorServiceRegistry impl + proxy, reading the same node.
-///       10. Optional governance + rewards factories (DEPLOY_GOVERNANCE / DEPLOY_REWARDS).
+///        3. The shared core (`DeployCore`): manager, adapters, strategies,
+///           ManualArbiter, OperatorRegistry staked in raw faucet tokens, the mesh
+///           with a 1:1 weight on that stake denom, and the service registry.
+///        4. Optional governance + rewards factories (DEPLOY_GOVERNANCE / DEPLOY_REWARDS).
 ///
-/// All roles default to the broadcaster (`msg.sender`) but can be overridden:
+/// Roles default to the broadcaster (`msg.sender`):
 ///
 ///   PRIVATE_KEY            — deployer key (required by `--broadcast`; not read here)
-///   ADMIN_ADDRESS          — DEFAULT_ADMIN_ROLE / PAUSER holder    (default: msg.sender)
+///   ADMIN_ADDRESS          — DEFAULT_ADMIN_ROLE / PAUSER holder. Must equal the
+///                            broadcaster: the deploy makes admin-only wiring calls.
 ///   ARBITER_OWNER_ADDRESS  — owner of the ManualArbiter            (default: msg.sender)
 ///   FAUCET_NAME            — backing token name      (default: "Commitments Test USD")
 ///   FAUCET_SYMBOL          — backing token symbol    (default: "tUSD")
@@ -80,7 +59,7 @@ import {MockERC20} from "../test/helpers/MockERC20.sol";
 ///   `--slow` (one tx per block) matches Simulate's rationale: OZ Checkpoints in
 ///   TokenWeighting are block.number-sensitive. `--verify` uses the [etherscan]
 ///   table in foundry.toml (ETHERSCAN_API_KEY).
-contract DeploySepolia is Script {
+contract DeploySepolia is DeployCore {
     // ─── Config (env overridable) ────────────────────────────────────────────
     address admin;
     address arbiterOwner;
@@ -98,24 +77,15 @@ contract DeploySepolia is Script {
     uint64 minActivationDelay;
 
     // ─── Deployed contracts ──────────────────────────────────────────────────
-    MockERC20 faucetToken;
+    FaucetToken faucetToken;
     VaultFactory vaultFactory;
     CommitmentsVault vault;
-    CommitmentManager manager;
-    ERC20StaticAdapter erc20Adapter;
-    ERC4626Adapter erc4626Adapter;
-    IndexAppreciationYield indexYield;
-    FlatFeeAtCreate flatFee;
-    ManualArbiter manualArbiter;
-    OperatorRegistry operatorRegistry;
-    MeshFactory meshFactory;
-    address tokenWeightingNode;
-    OperatorServiceRegistry stakeRegistry;
     GovernorFactory governorFactory;
     RewardsCoordinatorFactory rewardsFactory;
 
     function run() external {
         _loadConfig();
+        require(admin == msg.sender, "DeploySepolia: ADMIN_ADDRESS must be the broadcaster");
 
         vm.startBroadcast();
         _deploy();
@@ -125,10 +95,10 @@ contract DeploySepolia is Script {
     }
 
     /// @dev The whole composition, split out of `run` so a test can run it without a broadcast.
-    ///      Every call is made by the caller, which must hold `admin`'s roles.
+    ///      The caller must be `admin`.
     function _deploy() internal {
         // 1. Faucet backing token (public mint).
-        faucetToken = new MockERC20(faucetName, faucetSymbol, faucetDecimals);
+        faucetToken = new FaucetToken(faucetName, faucetSymbol, faucetDecimals);
         console.log("FaucetToken (%s):", faucetSymbol, address(faucetToken));
 
         // 2. VaultFactory + one ERC-4626 vault wrapping the faucet token. Idle
@@ -142,82 +112,25 @@ contract DeploySepolia is Script {
         console.log("VaultFactory:        ", address(vaultFactory));
         console.log("CommitmentsVault:    ", address(vault));
 
-        // 3. CommitmentManager — impl + (forge auto-deployed/linked libs) + proxy.
-        CommitmentManager cmImpl = new CommitmentManager();
-        bytes memory cmInit = abi.encodeCall(CommitmentManager.initialize, (admin, unbondingPeriod, 14 days));
-        manager = CommitmentManager(address(new ERC1967Proxy(address(cmImpl), cmInit)));
-        console.log("CommitmentManager impl:", address(cmImpl));
-        console.log("CommitmentManager:   ", address(manager));
-
-        // 4. Backing adapters + distribution strategies (strategies are
-        //    manager-scoped: hooks are gated to this manager).
-        erc20Adapter = new ERC20StaticAdapter();
-        erc4626Adapter = new ERC4626Adapter();
-        indexYield = new IndexAppreciationYield(address(manager));
-        flatFee = new FlatFeeAtCreate(address(manager));
-        console.log("ERC20StaticAdapter:  ", address(erc20Adapter));
-        console.log("ERC4626Adapter:      ", address(erc4626Adapter));
-        console.log("IndexAppreciationYield:", address(indexYield));
-        console.log("FlatFeeAtCreate:     ", address(flatFee));
-
-        // 5. ManualArbiter — the registry's requiredArbiter must be a contract,
-        //    not an EOA. Owned by arbiterOwner, bound to the manager.
-        manualArbiter = new ManualArbiter(arbiterOwner, address(manager));
-        console.log("ManualArbiter:       ", address(manualArbiter));
-
-        // 6. OperatorRegistry impl + proxy. v2 acceptance policy (7-arg init):
-        //    arbiter == manualArbiter, maxPenaltyBps >= 10_000, requiredToken ==
-        //    raw faucet token (stake denomination), no bound strategies.
-        OperatorRegistry orImpl = new OperatorRegistry();
-        bytes memory orInit = abi.encodeCall(
-            OperatorRegistry.initialize,
-            (
-                address(manager),
-                minOperatorStake,
-                maxOperators,
-                admin,
-                address(manualArbiter),
-                uint16(10_000),
-                address(faucetToken)
-            )
+        // 3. The shared core. Stake is raw faucet tokens at a 1:1 weight, so voting
+        //    power is in raw faucet units, like STAKE_THRESHOLD.
+        _deployCore(
+            CoreConfig({
+                admin: admin,
+                arbiterOwner: arbiterOwner,
+                stakeToken: address(faucetToken),
+                unbondingPeriod: unbondingPeriod,
+                minOperatorStake: minOperatorStake,
+                maxOperators: maxOperators,
+                weightingSalt: keccak256("sepolia.tw.v1"),
+                stakeWeight: BPS_DENOMINATOR,
+                serviceThreshold: stakeThreshold,
+                quorumNumerator: quorumNumerator,
+                quorumDenominator: quorumDenominator
+            })
         );
-        operatorRegistry = OperatorRegistry(address(new ERC1967Proxy(address(orImpl), orInit)));
-        console.log("OperatorRegistry impl:", address(orImpl));
-        console.log("OperatorRegistry:    ", address(operatorRegistry));
 
-        // 7. Post-deploy wiring: manager delegation callbacks -> registry.
-        manager.setOperatorRegistry(address(operatorRegistry));
-        console.log("Wired: manager.setOperatorRegistry(registry)");
-
-        // 8. Mesh impls + factory + one TokenWeighting node. The registry is the
-        //    node's provider: register/delegate/release/forfeit/deregister credit and
-        //    release operator stake through it. Admin is governance and sets a 1:1
-        //    weight on the registry's stake denom, so voting power is in raw faucet
-        //    units, like STAKE_THRESHOLD.
-        FanInNode fanInImpl = new FanInNode();
-        FanOutNode fanOutImpl = new FanOutNode();
-        TokenWeighting twImpl = new TokenWeighting();
-        meshFactory = new MeshFactory(address(fanInImpl), address(fanOutImpl), address(twImpl));
-        tokenWeightingNode =
-            meshFactory.deployTokenWeightingAt(keccak256("sepolia.tw.v1"), address(operatorRegistry), admin);
-        TokenWeighting(tokenWeightingNode).updateWeight(operatorRegistry.stakeDenom(), BPS_DENOMINATOR);
-        operatorRegistry.setMeshWiring(tokenWeightingNode, address(meshFactory));
-        console.log("MeshFactory:         ", address(meshFactory));
-        console.log("TokenWeighting node: ", tokenWeightingNode);
-        console.log("Wired: operatorRegistry.setMeshWiring(tokenWeighting, meshFactory)");
-
-        // 9. OperatorServiceRegistry impl + proxy. Voting-power source is the
-        //    TokenWeighting node deployed above.
-        OperatorServiceRegistry srImpl = new OperatorServiceRegistry();
-        bytes memory srInit = abi.encodeCall(
-            OperatorServiceRegistry.initialize,
-            (address(operatorRegistry), tokenWeightingNode, admin, stakeThreshold, quorumNumerator, quorumDenominator)
-        );
-        stakeRegistry = OperatorServiceRegistry(address(new ERC1967Proxy(address(srImpl), srInit)));
-        console.log("OperatorServiceRegistry impl:", address(srImpl));
-        console.log("OperatorServiceRegistry:", address(stakeRegistry));
-
-        // 10. Optional governance / rewards factories (impls only; instances are
+        // 4. Optional governance / rewards factories (impls only; instances are
         //     spawned later via factory.deploy / deployCoordinator). Only this
         //     broadcaster, the factory's deployer, may later call setCanonicalGovernor.
         if (deployGovernance) {

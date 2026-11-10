@@ -46,7 +46,7 @@ docs/               Contracts-first overview, standards family, current protocol
 
 frontend/           Vite + React 19 + wagmi v3 + viem dapp (@commitments/frontend)
 indexer/            Ponder indexer, pglite in dev (@commitments/indexer)
-broadcast/          Foundry deploy artifacts (parsed by indexer + frontend env writer)
+broadcast/          Foundry deploy artifacts (parsed by the frontend env writer)
 ```
 
 `pnpm-workspace.yaml` ties `frontend/` and `indexer/` together. Install from
@@ -100,9 +100,12 @@ up. Interval mining (one block every 2 seconds) then advances governance states
 without a user tx. The argument is in seconds; 2000 was a bug (see the
 `justfile`).
 
-`script/write-frontend-env.mjs` parses `broadcast/**/run-latest.json` for the
-freshly-deployed addresses and writes `frontend/.env.local`. The indexer reads
-the same broadcast files via `loadDeployments(chainId)` in `ponder.config.ts`.
+`script/write-frontend-env.mjs` is the one broadcast parser. It reads the
+latest seed run (`broadcast/Simulate.s.sol/<chainId>/run-latest.json`) and writes both
+`frontend/.env.local` and `indexer/deployments.<chainId>.json` (git-ignored), the
+schema-v1 manifest the indexer reads via `loadDeployments(chainId)` in
+`ponder.config.ts`. Both deploy scripts build the protocol core through
+`script/DeployCore.sol`, so the seed and the Sepolia deploy wire it the same way.
 
 ---
 
@@ -349,9 +352,9 @@ event does not say whether the payout went to free balance or out of custody
 `StandbyFunded` is not indexed (see `src/mutual.ts`).
 
 `indexer/ponder.config.ts` resolves contract addresses with
-`loadDeployments(chainId)`: from `DEPLOYMENTS_JSON` when set, otherwise by
-parsing `broadcast/**/<chainId>/run-latest.json`. Hono route groups, each
-mounted in `src/api/index.ts` and documented in `src/api/<group>.ts`, sit
+`loadDeployments(chainId)`: from `DEPLOYMENTS_JSON` when set, otherwise from
+`indexer/deployments.<chainId>.json`, written by `just dev-up`. Hono route
+groups, each mounted in `src/api/index.ts` and documented in `src/api/<group>.ts`, sit
 beside Ponder's GraphQL (`/graphql`) and SQL-over-HTTP (`/sql/*`):
 
 - `/graph` (`agreements`, `mesh`, `mesh-topology`, `mesh-security`)
@@ -415,8 +418,8 @@ the chain clock; `useVaultApy` reads `?latest=1`.
 `SEPOLIA` (11155111) or `PROD` (Ethereum mainnet). Sepolia reads
 `PONDER_RPC_URL_11155111` / `PONDER_WS_URL_11155111` and should set
 `PONDER_START_BLOCK_11155111` to the deploy block; PROD reads
-`PONDER_RPC_URL_1` / `PONDER_WS_URL_1`. `DEPLOYMENTS_JSON` replaces broadcast
-discovery. `IPFS_GATEWAY` is the gateway the metadata fetcher resolves
+`PONDER_RPC_URL_1` / `PONDER_WS_URL_1`. `DEPLOYMENTS_JSON` replaces the generated
+manifest. `IPFS_GATEWAY` is the gateway the metadata fetcher resolves
 `ipfs://` through. `POST /metadata/pin` pins with `PINATA_JWT`, else
 `IPFS_API_URL` (a Kubo node), else returns an inline `data:` URI.
 `indexer/.env.example` documents each.

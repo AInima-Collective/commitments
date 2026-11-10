@@ -187,8 +187,8 @@ ws-typecheck:
 # Indexer
 # ---------------------------------------------------------------------------
 
-# Run the indexer in dev mode (pglite, port 65422). Requires contracts to be
-# deployed via `just anvil-seed` first so `broadcast/` has addresses.
+# Run the indexer in dev mode (pglite, port 65422). Requires `just dev-up` first:
+# it seeds anvil and writes indexer/deployments.31337.json, the address manifest.
 # The seed pins to the local node, so those CIDs are not necessarily
 # retrievable from the public gateway the fetcher otherwise defaults to. Probe
 # the conventional local gateway and trust it explicitly when it answers.
@@ -209,7 +209,7 @@ indexer-typecheck:
 # dev mode bumps an internal instance number on schema bumps, but doesn't
 # clear the old instance's rows, so old runs can shadow new ones until the
 # DB is dropped. Safe to run at any time; the next `just indexer-dev` will
-# rebuild from scratch by replaying broadcast events.
+# rebuild from scratch by replaying the chain's events.
 indexer-reset:
     rm -rf indexer/.ponder/pglite
     @echo "indexer: pglite cleared — run 'just indexer-dev' to rebuild"
@@ -314,7 +314,7 @@ dev-up:
     # not milliseconds — 2000 here silently meant one block every ~33 minutes,
     # stalling every post-seed cast send until the next epoch tick.
     cast rpc --rpc-url http://127.0.0.1:8545 evm_setIntervalMining 2 > /dev/null
-    echo "env: syncing frontend/.env.local with fresh deployment"
+    echo "env: writing frontend/.env.local and the indexer's deployment manifest"
     node script/write-frontend-env.mjs
 
 # Stop the background anvil started by `just dev-up`.

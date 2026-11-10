@@ -163,7 +163,7 @@ A runnable end-to-end test lives at
 Three pieces close the loop (`src/periphery/vaults/`):
 
 - **`PremiumSkimStrategy`** (`strategies/PremiumSkimStrategy.sol`; abstract, dev
-  concrete `test/helpers/SkimmingMockStrategy.sol`)
+  concrete `strategies/SkimmingMockStrategy.sol`)
   — the agent's yield strategy with a high-water-mark skim: a permissionless
   `skim()` charges `skimBps` of NEW gains above the charged mark, pays
   `operatorFeeBps` of that fee to the agent (its fixed operator leg) and routes

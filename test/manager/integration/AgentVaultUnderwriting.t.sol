@@ -16,7 +16,7 @@ import {PremiumScheduler} from "src/extensions/mutuals/PremiumScheduler.sol";
 import {LinkedMutualPolicy} from "src/extensions/mutuals/LinkedMutualPolicy.sol";
 import {OptimisticMutualArbiter} from "src/extensions/mutuals/OptimisticMutualArbiter.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
-import {SkimmingMockStrategy} from "../../helpers/SkimmingMockStrategy.sol";
+import {SkimmingMockStrategy} from "src/periphery/vaults/strategies/SkimmingMockStrategy.sol";
 
 /// @title AgentVaultUnderwritingTest
 /// @notice End-to-end walk of the underwritten-vault pattern (the coverage-market successor to

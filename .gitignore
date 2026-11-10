@@ -52,3 +52,7 @@ emv-*-certora-*/
 # pinning, so a shared manifest would resolve to `unreachable` for everyone
 # else. Regenerate it instead — same catalogue bytes produce the same CIDs.
 script/metadata-manifest.json
+
+# Written by script/write-frontend-env.mjs from the latest seed (`just dev-up`);
+# the indexer reads it when DEPLOYMENTS_JSON is unset.
+indexer/deployments.*.json

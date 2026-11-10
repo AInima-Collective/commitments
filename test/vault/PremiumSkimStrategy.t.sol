@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import "forge-std/Test.sol";
 
 import {PremiumSkimStrategy} from "src/periphery/vaults/strategies/PremiumSkimStrategy.sol";
-import {SkimmingMockStrategy} from "../helpers/SkimmingMockStrategy.sol";
+import {SkimmingMockStrategy} from "src/periphery/vaults/strategies/SkimmingMockStrategy.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 
 /// @title PremiumSkimStrategyTest

@@ -10,6 +10,8 @@ import {PremiumSkimStrategy} from "src/periphery/vaults/strategies/PremiumSkimSt
 /// @notice Dev/demo concrete of `PremiumSkimStrategy`: a `MockStrategy`-style reported-assets
 ///         ledger with yield/loss simulation, plus the skim leg. Used by the anvil seed and the
 ///         admin Risk tab for the underwritten agent vault (cvaDAI).
+///         Its yield/loss simulators are permissionless: dev chains only, never deploy it to a
+///         real network.
 /// @dev `simulateYield` is ledger-only (no backing tokens): a later `skim()` reverts on the fee
 ///      transfer because the contract holds nothing to pay it with — intentionally loud. Drive
 ///      demo yield with {simulateBackedYield}, which pulls real underlying from the caller so

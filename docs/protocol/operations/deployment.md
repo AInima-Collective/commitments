@@ -11,7 +11,7 @@ No address in this page is a canonical production deployment. Verify the selecte
 
 ## Integrated deployment
 
-script/DeploySepolia.s.sol is the current composed reference deployment for a development network. It deploys the selected stack in dependency order, wires the manager to OperatorRegistry, and optionally includes governance and Rewards.
+script/DeploySepolia.s.sol is the current composed reference deployment for a development network. It deploys a faucet token and one vault, then the protocol core through script/DeployCore.sol, the same core the local seed (script/Simulate.s.sol) uses, and optionally includes governance and Rewards. ADMIN_ADDRESS must be the broadcasting account, because the core's mesh weight and wiring calls are admin-only; transfer roles afterwards if the admin should be another account.
 
 A typical broadcast uses:
 
@@ -48,3 +48,5 @@ Read the environment-variable block in that script before use. PRIVATE_KEY, ADMI
 ## Local rehearsal
 
 Run the deployment without broadcast against Anvil first, then execute the relevant integration tests. script/Simulate.s.sol provides a larger local composition used by the frontend and integration workflow; it is not a production deployment manifest. Its `CHALLENGE_WINDOW` override must still satisfy the shipping manager's one-day minimum.
+
+After a broadcast, `node script/write-frontend-env.mjs` (with `CHAIN_ID` set for a network other than Anvil) reads the run and writes both frontend/.env.local and indexer/deployments.<chainId>.json, the schema-v1 manifest the indexer reads when `DEPLOYMENTS_JSON` is unset.

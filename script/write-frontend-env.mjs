@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Reads the latest Simulate broadcast and writes frontend/.env.local so the UI
-// points at the live deployment. Run by `just dev-up` after seeding.
+// points at the live deployment, plus indexer/deployments.<chainId>.json, the
+// schema-v1 deployment manifest the indexer reads (see indexer/src/loadDeployments.ts).
+// Run by `just dev-up` after seeding. This is the one broadcast parser: the
+// frontend and the indexer get their addresses from the same pass.
 //
 // Strategy:
 //   - CREATE transactions give us named contracts (impl) and ERC1967Proxy pairings.
@@ -82,12 +85,13 @@ const proxyForImpl = new Map()
 const ctorArgsByName = {}
 // Foundry can emit `contractName: null` when additional compiler profiles
 // produce several artifacts for one source. Recover only the contracts this
-// env writer consumes, and only when exactly one distinct artifact name matches
-// the raw CREATE input. This is the same conservative rule as the indexer
-// deployment loader; it avoids turning artifact ambiguity into a wrong address.
-const FRONTEND_CONTRACT_NAMES = new Set([
+// writer consumes, and only when exactly one distinct artifact name matches
+// the raw CREATE input; that avoids turning artifact ambiguity into a wrong address.
+const CONTRACT_NAMES = new Set([
   'ERC1967Proxy',
   'CommitmentManager',
+  'VaultFactory',
+  'GovernorFactory',
   'CommitmentsVault',
   'OperatorRegistry',
   'ManualArbiter',
@@ -102,7 +106,6 @@ const FRONTEND_CONTRACT_NAMES = new Set([
   'OptimisticMutualArbiter',
   'PremiumScheduler',
   'LinkedMutualPolicy',
-  'ClaimRouter',
   'ForfeitDonationBeneficiary',
   'ERC8004IdentityRegistryDev',
   'SkimmingMockStrategy',
@@ -110,7 +113,7 @@ const FRONTEND_CONTRACT_NAMES = new Set([
   'IndexAppreciationYield',
   'FlatFeeAtCreate',
 ])
-const creationMatchers = loadCreationMatchers(join(repoRoot, 'out'), FRONTEND_CONTRACT_NAMES)
+const creationMatchers = loadCreationMatchers(join(repoRoot, 'out'), CONTRACT_NAMES)
 for (const tx of doc.transactions ?? []) {
   if (tx.transactionType !== 'CREATE' || !tx.contractAddress) continue
   const name = tx.contractName
@@ -318,16 +321,6 @@ const lines = [
   implForName.FlatFeeAtCreate
     ? `VITE_FLAT_FEE_STRATEGY_ADDRESS=${implForName.FlatFeeAtCreate}`
     : undefined,
-  // Per-peril ClaimRouter beneficiaries, in seed order: NAV, De-Peg, Slashing.
-  allImplsForName.ClaimRouter?.[0]
-    ? `VITE_CLAIM_ROUTER_ADDRESS=${allImplsForName.ClaimRouter[0]}`
-    : undefined,
-  allImplsForName.ClaimRouter?.[1]
-    ? `VITE_DEPEG_CLAIM_ROUTER_ADDRESS=${allImplsForName.ClaimRouter[1]}`
-    : undefined,
-  allImplsForName.ClaimRouter?.[2]
-    ? `VITE_SLASHING_CLAIM_ROUTER_ADDRESS=${allImplsForName.ClaimRouter[2]}`
-    : undefined,
   // Underwritten agent vault (agent-bonds use case): cvaDAI is the 4th
   // VaultDeployed (usdc, weth, usdt, dai); SkimmingMockStrategy is the agent's
   // fee-skimming strategy (operator fee + premium routing); VaultCoverConduit is
@@ -370,3 +363,33 @@ const envPath = join(repoRoot, 'frontend', '.env.local')
 writeFileSync(envPath, lines.join('\n') + '\n')
 console.log(`[write-frontend-env] wrote ${envPath}`)
 for (const line of lines) console.log(`  ${line}`)
+
+// The indexer's deployment manifest (schema v1). Proxied contracts resolve to
+// their proxy, where events are emitted. Absent optional fields are omitted;
+// the indexer's strict parser rejects a manifest missing a required one.
+const allFor = (name) =>
+  (allImplsForName[name] ?? []).map((impl) => proxyForImpl.get(impl.toLowerCase()) ?? impl)
+const manifest = {
+  schemaVersion: 1,
+  chainId: Number(chainId),
+  startBlock: 0,
+  commitmentManagers: allFor('CommitmentManager'),
+  operatorRegistries: allFor('OperatorRegistry'),
+  vaultFactory: implForName.VaultFactory,
+  stakeRegistry: proxyFor('OperatorServiceRegistry'),
+  meshFactory: implForName.MeshFactory,
+  governorFactory: implForName.GovernorFactory,
+  mutualRegistry: implForName.MutualRegistry,
+  optimisticMutualArbiter: implForName.OptimisticMutualArbiter,
+  linkedMutualPolicy: implForName.LinkedMutualPolicy,
+  skimmingStrategy: agentSkimStrategy || undefined,
+  vaultCoverConduit: vaultCoverConduit || undefined,
+  flatFeeStrategies: allFor('FlatFeeAtCreate'),
+  agentIdentityRegistries: agentIdentityRegistry ? [agentIdentityRegistry] : [],
+  optimisticInsuranceArbiters: allFor('OptimisticInsuranceArbiter'),
+  twoTierArbiters: allFor('TwoTierArbiter'),
+  attestationArbiters: allFor('AttestationArbiter'),
+}
+const manifestPath = join(repoRoot, 'indexer', `deployments.${chainId}.json`)
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+console.log(`[write-frontend-env] wrote ${manifestPath}`)

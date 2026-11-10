@@ -96,7 +96,7 @@ just frontend-dev  # Terminal 3: Vite dev server on :5173
 just dev-down      # stop the background anvil when done
 ```
 
-Connect a wallet to `http://127.0.0.1:8545` (chain ID 31337) and import anvil's default private key (`0xac0974...ff80`) to interact with the seeded protocol. The indexer discovers contract addresses by parsing `broadcast/**/run-latest.json`, so it needs no manual configuration.
+Connect a wallet to `http://127.0.0.1:8545` (chain ID 31337) and import anvil's default private key (`0xac0974...ff80`) to interact with the seeded protocol. `just dev-up` also writes the indexer's deployment manifest (`indexer/deployments.31337.json`) from the seed's broadcast, so the indexer needs no manual configuration.
 
 #### Commitment metadata, and why `just ipfs-up` is worth one command
 

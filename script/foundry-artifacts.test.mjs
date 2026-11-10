@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  baseName,
   creationInputMatchesArtifact,
   recoverContractName,
 } from './foundry-artifacts.mjs'
@@ -32,4 +33,15 @@ test('recovers only an unambiguous contract name', () => {
     ]),
     undefined,
   )
+})
+
+// Foundry qualifies a CREATE's `contractName` with the compiler profile when a
+// contract has artifacts under more than one profile. Profile names can contain
+// a hyphen (`manager-size`); an earlier strip regex missed that and resolved
+// every proxied singleton to its implementation.
+test('baseName strips a plain or hyphenated profile qualifier', () => {
+  assert.equal(baseName('OperatorRegistry'), 'OperatorRegistry')
+  assert.equal(baseName('ERC1967Proxy.default'), 'ERC1967Proxy')
+  assert.equal(baseName('OperatorRegistry.manager-size'), 'OperatorRegistry')
+  assert.equal(baseName(null), null)
 })
