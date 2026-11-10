@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
 
-import { hasIndexer, indexerFetch, indexerGraphql } from '../config/indexer'
+import { hasIndexer, indexerGraphql, indexerGraphqlData, indexerJson } from '../config/indexer'
+import { parseCommitmentRow, type CommitmentRowWire } from '../lib/indexerRows'
 import type { CommitmentStatus } from '../utils/commitments'
+import { POLL } from './polling'
 
 /**
  * Hooks that power the Explorer's Etherscan-style entity browser tabs.
@@ -12,15 +14,6 @@ import type { CommitmentStatus } from '../utils/commitments'
  * vaults tab, so there are no hooks for them here (the indexer does index
  * both).
  */
-
-const STATUS_WIRE_TO_DOMAIN: Record<string, CommitmentStatus> = {
-  active: 'ACTIVE',
-  unbonding: 'UNBONDING',
-  forfeitPending: 'FORFEIT_PENDING',
-  forfeited: 'FORFEITED',
-  released: 'RELEASED',
-  expired: 'EXPIRED',
-}
 
 export interface ProtocolCommitmentRow {
   id: bigint
@@ -40,24 +33,8 @@ export interface ProtocolCommitmentRow {
   createdAt: bigint | null
 }
 
-interface CommitmentWire {
-  id: string
-  manager: string
-  committer: string
-  arbiter: string
-  counterparty: string
-  token: string
-  amount: string
-  maxPenaltyBps: number
-  status: string
-  forfeitChallengeEnd: string | null
-  unbondMaturesAt: string | null
-  createdBlock: string
-  createdAt: string | null
-}
-
 interface UrgentEnvelope {
-  rows: CommitmentWire[]
+  rows: CommitmentRowWire[]
 }
 
 /**
@@ -81,28 +58,27 @@ export function useProtocolCommitmentsList(options: {
       const params = new URLSearchParams()
       params.set('limit', String(limit))
       if (status) params.set('status', status)
-      const res = await indexerFetch(`/commitments/urgent?${params.toString()}`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const env = (await res.json()) as UrgentEnvelope
-      return (env.rows ?? []).map(
-        (w): ProtocolCommitmentRow => ({
-          id: BigInt(w.id),
+      const env = await indexerJson<UrgentEnvelope>(`/commitments/urgent?${params.toString()}`)
+      return (env.rows ?? []).map((w): ProtocolCommitmentRow => {
+        const r = parseCommitmentRow(w)
+        return {
+          id: r.id,
           manager: w.manager as Address,
-          committer: w.committer as Address,
-          arbiter: w.arbiter as Address,
-          counterparty: w.counterparty as Address,
-          token: w.token as Address,
-          amount: BigInt(w.amount),
-          maxPenaltyBps: w.maxPenaltyBps,
-          status: STATUS_WIRE_TO_DOMAIN[w.status] ?? 'ACTIVE',
-          forfeitChallengeEnd: w.forfeitChallengeEnd ? BigInt(w.forfeitChallengeEnd) : null,
-          unbondMaturesAt: w.unbondMaturesAt ? BigInt(w.unbondMaturesAt) : null,
-          createdBlock: BigInt(w.createdBlock),
-          createdAt: w.createdAt ? BigInt(w.createdAt) : null,
-        }),
-      )
+          committer: r.committer,
+          arbiter: r.arbiter,
+          counterparty: r.counterparty,
+          token: r.token,
+          amount: r.amount,
+          maxPenaltyBps: r.maxPenaltyBps,
+          status: r.status,
+          forfeitChallengeEnd: r.forfeitChallengeEnd ?? null,
+          unbondMaturesAt: r.unbondMaturesAt ?? null,
+          createdBlock: r.createdBlock,
+          createdAt: r.createdAt ?? null,
+        }
+      })
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return {
     rows: query.data ?? [],
@@ -196,14 +172,11 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
     enabled: hasIndexer,
     queryKey: ['protocol-agreements-list', limit],
     queryFn: async (): Promise<ProtocolAgreementRow[]> => {
-      const res = await indexerGraphql<{ agreements: { items: AgreementWire[] } }>(
+      const data = await indexerGraphqlData<{ agreements: { items: AgreementWire[] } }>(
         AGREEMENTS_QUERY,
         { limit },
       )
-      if (res.errors && res.errors.length > 0) {
-        throw new Error(res.errors[0].message)
-      }
-      const items = res.data?.agreements.items ?? []
+      const items = data.agreements.items
       if (items.length === 0) return []
 
       const ids = new Set<string>()
@@ -242,7 +215,7 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
         }
       })
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return {
     rows: query.data ?? [],
@@ -289,15 +262,13 @@ export function useProtocolArbitersList(options: {
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
       if (address) params.set('address', address.toLowerCase())
-      const response = await indexerFetch(`/protocol/arbiters?${params.toString()}`)
-      if (!response.ok) throw new Error(`Arbiter directory error: ${response.status}`)
-      const body = (await response.json()) as ArbiterDirectoryWire
+      const body = await indexerJson<ArbiterDirectoryWire>(`/protocol/arbiters?${params.toString()}`)
       return {
         rows: body.rows.map((row) => ({ ...row, address: row.address as Address })),
         page: body.page,
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     rows: query.data?.rows ?? [],
@@ -357,9 +328,7 @@ export function useProtocolCasesList(options: {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
       if (arbiter) params.set('arbiter', arbiter.toLowerCase())
       if (openOnly) params.set('open', 'true')
-      const response = await indexerFetch(`/protocol/cases?${params.toString()}`)
-      if (!response.ok) throw new Error(`Cases explorer error: ${response.status}`)
-      const body = (await response.json()) as CasesWire
+      const body = await indexerJson<CasesWire>(`/protocol/cases?${params.toString()}`)
       return {
         rows: body.rows.map((row) => ({
           ...row,
@@ -371,7 +340,7 @@ export function useProtocolCasesList(options: {
         page: body.page,
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     rows: query.data?.rows ?? [],

@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useChainId } from 'wagmi'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /**
  * A single value-flow event affecting an account, from the indexer's
@@ -77,11 +78,9 @@ export function useAccountActivity(address: Address | undefined): UseAccountActi
     enabled,
     queryKey: ['account-activity', chainId, address?.toLowerCase()],
     queryFn: async () => {
-      const res = await indexerFetch(`/account/${address!.toLowerCase()}/activity?limit=100`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as ActivityFeedWire
+      return indexerJson<ActivityFeedWire>(`/account/${address!.toLowerCase()}/activity?limit=100`)
     },
-    refetchInterval: 20_000,
+    refetchInterval: POLL.fast,
     retry: false,
   })
 

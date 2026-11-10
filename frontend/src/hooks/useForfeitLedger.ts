@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 export type LedgerEventKind = 'forfeit' | 'settlement' | 'contribution' | 'donation'
 export type ForfeitEventKind = 'initiated' | 'executed' | 'cancelled' | 'cancelledStale'
@@ -178,11 +179,9 @@ export function useForfeitLedger({ vaultAddress, limit = 100 }: UseForfeitLedger
     queryKey: ['forfeit-ledger', vaultAddress, limit],
     queryFn: async () => {
       if (!vaultAddress) throw new Error('vaultAddress required')
-      const res = await indexerFetch(
+      const wire = await indexerJson<LedgerWire>(
         `/vaults/${vaultAddress.toLowerCase()}/forfeit-ledger?limit=${limit}`,
       )
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as LedgerWire
       const events: LedgerEvent[] = []
       for (const e of wire.events) {
         const parsed = parseEvent(e)
@@ -194,7 +193,7 @@ export function useForfeitLedger({ vaultAddress, limit = 100 }: UseForfeitLedger
         counts: wire.counts,
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

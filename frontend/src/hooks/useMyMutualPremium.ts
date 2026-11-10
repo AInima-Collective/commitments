@@ -3,6 +3,7 @@ import { type Abi, type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
 
 import { commitmentManagerAbi } from '../generated'
+import { POLL } from './polling'
 
 /** A single mutual membership with its live claimable premium. */
 export interface MyMutualPremiumEntry {
@@ -90,7 +91,7 @@ export function useMyMutualPremium({
 
   const { data, isLoading, refetch } = useReadContracts({
     contracts,
-    query: { enabled: contracts.length > 0, refetchInterval: 15_000 },
+    query: { enabled: contracts.length > 0, refetchInterval: POLL.fast },
   })
 
   return useMemo(() => {

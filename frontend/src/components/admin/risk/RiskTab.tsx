@@ -13,6 +13,7 @@ import {
   vaultCoverConduitAbi,
 } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
+import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 import { useAnvilTime } from '../../../hooks/useAnvilTime'
 import { AdminActionPanel } from '../AdminActionPanel'
 import { useAdminAction } from '../useAdminAction'
@@ -154,7 +155,7 @@ function SimulateYieldPanel({ env }: { env: Env }) {
         const account = walletClient.account!
         await walletClient.writeContract({
           address: asset,
-          abi: MINT_ABI,
+          abi: MOCK_ERC20_MINT_ABI,
           functionName: 'mint',
           args: [account.address, wei],
           chain: walletClient.chain,
@@ -198,7 +199,7 @@ function SimulateYieldPanel({ env }: { env: Env }) {
       if (balance < wei) {
         const mintHash = await walletClient.writeContract({
           address: asset,
-          abi: MINT_ABI,
+          abi: MOCK_ERC20_MINT_ABI,
           functionName: 'mint',
           args: [actorAddress, wei - balance],
           chain: walletClient.chain,
@@ -279,7 +280,8 @@ function SimulateYieldPanel({ env }: { env: Env }) {
 /* -------------------------------------------------------------------------- */
 /* Simulate vault loss — only where a mock/skimming strategy still exists. There */
 /* is no on-chain "un-donate", so strategy-less plain vaults have no NAV-loss    */
-/* action; the option list is env-gated on VITE_*_STRATEGY_ADDRESS.             */
+/* action; the plain usdc/weth/usdt vaults run idle, so the only option is the */
+/* agent vault's skimming strategy (VITE_AGENT_STRATEGY_ADDRESS).              */
 /* -------------------------------------------------------------------------- */
 
 interface LossStrategyOption {
@@ -291,12 +293,6 @@ interface LossStrategyOption {
 
 function lossStrategyOptions(env: Env): LossStrategyOption[] {
   const out: LossStrategyOption[] = []
-  if (env.usdcStrategy)
-    out.push({ value: env.usdcStrategy, label: 'cvUSDC vault (USDC)', decimals: 6, assetSymbol: 'USDC' })
-  if (env.wethStrategy)
-    out.push({ value: env.wethStrategy, label: 'cvWETH vault (WETH)', decimals: 18, assetSymbol: 'WETH' })
-  if (env.usdtStrategy)
-    out.push({ value: env.usdtStrategy, label: 'cvUSDT vault (USDT)', decimals: 6, assetSymbol: 'USDT' })
   if (env.agentStrategy)
     out.push({ value: env.agentStrategy, label: 'cvaDAI vault (DAI, agent-managed)', decimals: DAI_DECIMALS, assetSymbol: 'DAI' })
   return out
@@ -486,7 +482,7 @@ function BuyCoverPanel({ env }: { env: Env }) {
       const budget = parseUnits(String(PREMIUM_BUDGET_USDC), 6)
       await walletClient.writeContract({
         address: usdcToken,
-        abi: MINT_ABI,
+        abi: MOCK_ERC20_MINT_ABI,
         functionName: 'mint',
         args: [account.address, budget],
         chain: walletClient.chain,
@@ -669,7 +665,7 @@ function MutualLossComboPanel({ env }: { env: Env }) {
       // Fund + approve the loss-declaration bond (raw bond token), then propose.
       await walletClient.writeContract({
         address: bondToken,
-        abi: MINT_ABI,
+        abi: MOCK_ERC20_MINT_ABI,
         functionName: 'mint',
         args: [account.address, bondWei],
         chain: walletClient.chain,
@@ -791,17 +787,3 @@ function MutualLossComboPanel({ env }: { env: Env }) {
     </AdminActionPanel>
   )
 }
-
-// MockERC20.mint(address,uint256) — test-token faucet, not in wagmi codegen.
-const MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const

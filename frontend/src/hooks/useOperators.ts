@@ -2,6 +2,7 @@ import { useReadContracts } from 'wagmi'
 import { type Address, type ReadContractReturnType } from 'viem'
 import { operatorRegistryAbi } from '../generated'
 import { type OperatorInfo, deriveOperatorStatus, type OperatorStatus } from '../utils/mesh'
+import { POLL } from './polling'
 
 /** ABI-derived shape of `getOperator`'s returned struct. */
 type OperatorStruct = ReadContractReturnType<typeof operatorRegistryAbi, 'getOperator'>
@@ -44,7 +45,7 @@ export function useOperators({ registryAddress }: UseOperatorsOptions) {
       functionName: 'getOperator' as const,
       args: [addr] as const,
     })),
-    query: { enabled: addresses.length > 0, refetchInterval: 30_000 },
+    query: { enabled: addresses.length > 0, refetchInterval: POLL.slow },
   })
 
   // Build typed operator list

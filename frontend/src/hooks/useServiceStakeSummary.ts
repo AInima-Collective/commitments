@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 export interface ServiceStakeDenom {
   vault: Address
@@ -99,11 +100,9 @@ export function useServiceStakeSummary(
     enabled,
     queryKey: ['service-stake-summary', stakeRegistry?.toLowerCase()],
     queryFn: async () => {
-      const res = await indexerFetch(`/services/${stakeRegistry}/stake-summary`)
-      if (!res.ok) throw new Error(`Indexer /services HTTP ${res.status}`)
-      return (await res.json()) as RawResponse
+      return indexerJson<RawResponse>(`/services/${stakeRegistry}/stake-summary`)
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
     staleTime: 15_000,
   })
 

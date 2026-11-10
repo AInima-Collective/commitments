@@ -2,6 +2,7 @@ import { type Address, type Hex } from 'viem'
 import { useReadContracts } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
 import { useReadCommitmentManagerStrategiesOf } from '../generated'
+import { POLL } from './polling'
 
 export interface CommitmentYieldEntry {
   /** The bound distribution strategy. */
@@ -49,7 +50,7 @@ export function useCommitmentYield({
   } = useReadCommitmentManagerStrategiesOf({
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled, refetchInterval: 15_000 },
+    query: { enabled, refetchInterval: POLL.fast },
   })
 
   const strategies = (strategiesData as readonly Address[] | undefined)?.slice() ?? []
@@ -65,7 +66,7 @@ export function useCommitmentYield({
       functionName: 'pending' as const,
       args: [commitmentId as bigint, strategy, EMPTY_CLAIM_DATA] as const,
     })),
-    query: { enabled: enabled && strategies.length > 0, refetchInterval: 15_000 },
+    query: { enabled: enabled && strategies.length > 0, refetchInterval: POLL.fast },
   })
 
   const entries: CommitmentYieldEntry[] = strategies.map((strategy, i) => ({

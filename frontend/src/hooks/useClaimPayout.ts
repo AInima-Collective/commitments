@@ -4,6 +4,7 @@ import {
   useReadClaimRouterClaimant,
   useReadCommitmentManagerFreeBalance,
 } from '../generated'
+import { POLL } from './polling'
 
 export interface ClaimPayout {
   /** True when the mutual's beneficiary answers `claimant()` — i.e. it is a
@@ -67,7 +68,7 @@ export function useClaimPayout({
     args: token && beneficiary ? [token, beneficiary] : undefined,
     query: {
       enabled: Boolean(managerAddress && token && beneficiary && isRouter),
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
 

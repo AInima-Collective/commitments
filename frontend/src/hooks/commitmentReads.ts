@@ -63,7 +63,7 @@ export function commitmentReadContracts(manager: Address, id: bigint) {
 }
 
 /** Narrow forfeit-proposal view consumed by status derivation. */
-interface ForfeitProposalView {
+export interface ForfeitProposalView {
   penaltyBps: number
   initiatedAt: bigint
   executed: boolean
@@ -71,7 +71,7 @@ interface ForfeitProposalView {
   cumulativePausedAtStart: bigint
 }
 
-function toForfeitProposal(sp: ForfeitProposalStruct | undefined): ForfeitProposalView | undefined {
+export function toForfeitProposal(sp: ForfeitProposalStruct | undefined): ForfeitProposalView | undefined {
   return sp && sp.initiatedAt !== undefined
     ? {
         penaltyBps: Number(sp.penaltyBps),

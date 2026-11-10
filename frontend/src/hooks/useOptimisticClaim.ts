@@ -1,9 +1,8 @@
-import { erc20Abi, type Address } from 'viem'
+import { erc20Abi, type Address, zeroAddress } from 'viem'
 import { useReadContract, useReadContracts } from 'wagmi'
 
 import { optimisticInsuranceArbiterAbi } from '../generated'
 
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address
 
 /**
  * Numeric values map to OptimisticInsuranceArbiter.ClaimState in the same
@@ -204,7 +203,7 @@ export function useOptimisticClaim(
       answerTimeout: data[3].result as bigint,
       // Fallback-arbitrator escalation was removed; resolution is timeout-only.
       // These fields are retained for the config shape but are always inert.
-      fallbackArbitrator: ZERO_ADDRESS,
+      fallbackArbitrator: zeroAddress,
       fallbackEnabled: false,
       winnerShareBps: Number(data[4].result),
       treasury: data[5].result as Address,
@@ -227,7 +226,7 @@ export function useOptimisticClaim(
             amountBps: Number(e.amountBps),
             bond: e.bond,
           })),
-          top: topRaw && topRaw[0] !== ZERO_ADDRESS
+          top: topRaw && topRaw[0] !== zeroAddress
             ? { asserter: topRaw[0], amountBps: Number(topRaw[1]), bond: topRaw[2] }
             : undefined,
           answerDeadline: claimRaw.lastBondAt + config.answerTimeout,

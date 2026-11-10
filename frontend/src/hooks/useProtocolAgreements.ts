@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Hex } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 import type {
   CommitmentLifecycle,
   AgreementsGraphPayload,
   GraphEdge,
   GraphNode,
 } from '../lib/graph/types'
+import { POLL } from './polling'
 
 /** Wire shape from GET /graph/agreements (no address). */
 interface NodeWire {
@@ -67,9 +68,7 @@ export function useProtocolAgreements({
     enabled: hasIndexer,
     queryKey: ['protocol-agreements', limit],
     queryFn: async (): Promise<AgreementsGraphPayload> => {
-      const res = await indexerFetch(`/graph/agreements?limit=${limit}`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as PayloadWire
+      const wire = await indexerJson<PayloadWire>(`/graph/agreements?limit=${limit}`)
       const nodes: GraphNode[] = wire.nodes.map((n) => ({
         id: n.id as Hex,
         commitmentsOut: n.commitmentsOut,
@@ -96,7 +95,7 @@ export function useProtocolAgreements({
       }))
       return { nodes, edges }
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

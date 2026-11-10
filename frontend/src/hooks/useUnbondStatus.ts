@@ -4,6 +4,7 @@ import {
   useReadCommitmentManagerUnbondingPeriod,
 } from '../generated'
 import { useNowSeconds } from './useNow'
+import { POLL } from './polling'
 
 export interface UnbondStatus {
   /** 0n means no unbond pending. */
@@ -42,7 +43,7 @@ export function useUnbondStatus({
   } = useReadCommitmentManagerUnbondInitiatedAt({
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled: enabledManager, refetchInterval: 15_000 },
+    query: { enabled: enabledManager, refetchInterval: POLL.fast },
   })
 
   const {
@@ -51,7 +52,7 @@ export function useUnbondStatus({
     refetch: refetchPeriod,
   } = useReadCommitmentManagerUnbondingPeriod({
     address: managerAddress,
-    query: { enabled: !!managerAddress, refetchInterval: 60_000 },
+    query: { enabled: !!managerAddress, refetchInterval: POLL.idle },
   })
 
   const unbondInitiatedAt =

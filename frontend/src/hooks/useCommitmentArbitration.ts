@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 export type ManagerForfeitEventKind = 'initiated' | 'executed' | 'cancelled' | 'cancelledStale'
 
@@ -163,9 +164,7 @@ async function fetchCompleteMechanismHistory(
       limit: '100',
       offset: String(offset),
     })
-    const response = await indexerFetch(`/protocol/mechanism-activity?${params.toString()}`)
-    if (!response.ok) throw new Error(`Mechanism activity error: ${response.status}`)
-    const page = (await response.json()) as MechanismActivityPageWire
+    const page = await indexerJson<MechanismActivityPageWire>(`/protocol/mechanism-activity?${params.toString()}`)
     events.push(...page.events.map(parseMechanismArbitrationEvent))
     if (page.page.nextOffset === null) {
       hasMore = false
@@ -192,11 +191,9 @@ async function fetchCompleteHistory(
   do {
     const params = new URLSearchParams({ manager: manager.toLowerCase(), limit: '100' })
     if (cursor) params.set('cursor', cursor)
-    const response = await indexerFetch(
+    const page = await indexerJson<ArbitrationPageWire>(
       `/commitments/${commitmentId.toString()}/arbitration?${params.toString()}`,
     )
-    if (!response.ok) throw new Error(`Indexer arbitration error: ${response.status}`)
-    const page = (await response.json()) as ArbitrationPageWire
     first ??= page
     events.push(...page.events.map(parseManagerForfeitEvent))
     cursor = page.page.nextCursor
@@ -231,7 +228,7 @@ export function useCommitmentArbitration(
     enabled: hasIndexer && commitmentId !== undefined && Boolean(manager),
     queryKey: ['commitment-arbitration', manager?.toLowerCase(), commitmentId?.toString()],
     queryFn: () => fetchCompleteHistory(commitmentId!, manager!),
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     data: query.data,

@@ -4,7 +4,7 @@ import { useChainId, usePublicClient } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { commitmentsVaultAbi } from '../generated'
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 import { useAnvilTime } from './useAnvilTime'
 import { useDevWalletClient } from './useDevWalletClient'
 import { MOCK_ERC20_MINT_ABI } from '../lib/mockErc20Abi'
@@ -67,13 +67,9 @@ export interface UseSimulateYieldToApyParams {
 }
 
 async function postSnapshot(vault: Address): Promise<SnapshotResult> {
-  const res = await indexerFetch(`/vaults/${vault.toLowerCase()}/periodic/snapshot`, {
+  const wire = await indexerJson<SnapshotWireResult>(`/vaults/${vault.toLowerCase()}/periodic/snapshot`, {
     method: 'POST',
   })
-  if (!res.ok) {
-    throw new Error(`snapshot failed: indexer returned ${res.status}`)
-  }
-  const wire = (await res.json()) as SnapshotWireResult
   return {
     status: wire.status,
     timestamp: Number(wire.data?.timestamp ?? wire.timestamp),

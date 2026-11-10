@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
-import { asMetadataObject } from '../lib/commitmentMetadata'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { parseCommitmentRow, type CommitmentRowWire } from '../lib/indexerRows'
 import { type CommitmentWithStatus } from '../utils/commitments'
 import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
+import { POLL } from './polling'
 
 /**
  * Commitment enriched with its backing vault address for existing vault views.
@@ -24,16 +25,6 @@ export interface ArbiterCommitment extends CommitmentWithStatus {
   metadataHash: string | undefined
   metadataStatus: 'empty' | 'ok' | 'mismatch' | 'unreachable' | undefined
   metadataContent: Record<string, unknown> | undefined
-}
-
-/** Minimal wire shape we consume from `/commitments/urgent`. */
-interface UrgentRowWire {
-  id: string
-  vault?: string | null
-  metadataURI?: string | null
-  metadataHash?: string | null
-  metadataStatus?: 'empty' | 'ok' | 'mismatch' | 'unreachable' | null
-  metadataContent?: Record<string, unknown> | null
 }
 
 /** The id-row shape carried between the indexer fetch and the multicall. */
@@ -110,29 +101,30 @@ export function useArbiterCommitments({
     queryKey: ['arbiter-commitments', viewAddress?.toLowerCase(), managerAddress?.toLowerCase(), limit, offset],
     queryFn: async () => {
       const lower = viewAddress!.toLowerCase()
-      const res = await indexerFetch(
-        `/commitments/urgent?arbiter=${lower}&manager=${managerAddress!.toLowerCase()}&limit=${limit}&offset=${offset}`,
-      )
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const payload = (await res.json()) as {
-        rows?: UrgentRowWire[]
+      const payload = await indexerJson<{
+        rows?: CommitmentRowWire[]
         counts?: UseArbiterCommitmentsReturn['counts']
         page?: UseArbiterCommitmentsReturn['page']
-      }
+      }>(
+        `/commitments/urgent?arbiter=${lower}&manager=${managerAddress!.toLowerCase()}&limit=${limit}&offset=${offset}`,
+      )
       return {
-        rows: (payload.rows ?? []).map((r) => ({
-          id: BigInt(r.id),
-          vault: (r.vault ?? undefined) as Address | undefined,
-          metadataURI: r.metadataURI ?? undefined,
-          metadataHash: r.metadataHash ?? undefined,
-          metadataStatus: r.metadataStatus ?? undefined,
-          metadataContent: asMetadataObject(r.metadataContent),
-        })),
+        rows: (payload.rows ?? []).map((w) => {
+          const r = parseCommitmentRow(w)
+          return {
+            id: r.id,
+            vault: r.vault,
+            metadataURI: r.metadataURI,
+            metadataHash: r.metadataHash,
+            metadataStatus: r.metadataStatus,
+            metadataContent: r.metadataContent,
+          }
+        }),
         counts: payload.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
         page: payload.page ?? { limit, offset, nextOffset: null },
       }
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
 
   const ids = idRows?.rows ?? []
@@ -146,7 +138,7 @@ export function useArbiterCommitments({
     contracts: ids.flatMap((r) => commitmentReadContracts(managerAddress!, r.id)),
     query: {
       enabled: ids.length > 0 && !!managerAddress,
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
 

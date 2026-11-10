@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 export type LeaderboardMetric = 'arbiter' | 'counterparty' | 'operator'
 
@@ -64,11 +65,11 @@ export function useProtocolLeaderboards<M extends LeaderboardMetric>(
     enabled: hasIndexer,
     queryKey: ['protocol-leaderboard', metric, limit],
     queryFn: async () => {
-      const res = await indexerFetch(`/protocol/leaderboard?metric=${metric}&limit=${limit}`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
+      const env = await indexerJson<LeaderboardEnvelope<OperatorWire | PartyWire>>(
+        `/protocol/leaderboard?metric=${metric}&limit=${limit}`,
+      )
       if (metric === 'operator') {
-        const env = (await res.json()) as LeaderboardEnvelope<OperatorWire>
-        const rows: OperatorLeaderboardRow[] = env.rows.map((r) => ({
+        const rows: OperatorLeaderboardRow[] = (env as LeaderboardEnvelope<OperatorWire>).rows.map((r) => ({
           address: r.address as Address,
           totalDelegatedStake: BigInt(r.totalDelegatedStake),
           activeDelegationCount: r.activeDelegationCount,
@@ -76,15 +77,14 @@ export function useProtocolLeaderboards<M extends LeaderboardMetric>(
         }))
         return rows
       }
-      const env = (await res.json()) as LeaderboardEnvelope<PartyWire>
-      const rows: PartyLeaderboardRow[] = env.rows.map((r) => ({
+      const rows: PartyLeaderboardRow[] = (env as LeaderboardEnvelope<PartyWire>).rows.map((r) => ({
         address: r.address as Address,
         commitmentCount: r.commitmentCount,
         activeCount: r.activeCount,
       }))
       return rows
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     data: query.data as

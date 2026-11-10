@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /**
  * Wire shape returned by GET /protocol/stats. BigInts come down as strings.
@@ -111,11 +112,9 @@ export function useProtocolStats(): {
     enabled: hasIndexer,
     queryKey: ['protocol-stats'],
     queryFn: async (): Promise<ProtocolStats> => {
-      const res = await indexerFetch('/protocol/stats')
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return toProtocolStats((await res.json()) as ProtocolStatsWire)
+      return toProtocolStats(await indexerJson<ProtocolStatsWire>('/protocol/stats'))
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

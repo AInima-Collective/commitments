@@ -7,8 +7,9 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Hex } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJsonOrNull } from '../config/indexer'
 import type { GovernorRow } from './useGovernors'
+import { POLL } from './polling'
 
 export interface ProposalRow {
   id: string
@@ -47,11 +48,8 @@ export function useGovernor(address: Hex | undefined) {
     queryKey: ['governor', address?.toLowerCase()] as const,
     queryFn: async () => {
       if (!address) return null
-      const res = await indexerFetch(`/governors/${address}`)
-      if (res.status === 404) return null
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as GovernorDetailPayload
+      return indexerJsonOrNull<GovernorDetailPayload>(`/governors/${address}`)
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
 }

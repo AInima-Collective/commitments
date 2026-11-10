@@ -9,7 +9,7 @@ import {
   useReadSkimmingMockStrategySkimBps,
 } from '../generated'
 import { getContractAddresses } from '../config/contracts'
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 import { parsePerilURI, type PerilMeta } from '../lib/peril'
 import { useMutualListings } from './useMutualListings'
 import { useMutualPremium, type MutualPremiumStream } from './useMutualPremium'
@@ -127,9 +127,7 @@ export function useVaultCoverage(vaultAddress: Address | undefined): {
     enabled: hasIndexer && covered,
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await indexerFetch(`/vaults/${vaultLower}/coverage`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as CoverageWire
+      const wire = await indexerJson<CoverageWire>(`/vaults/${vaultLower}/coverage`)
       if (!wire.totals) return null
       return {
         skimmed: BigInt(wire.totals.skimmed),

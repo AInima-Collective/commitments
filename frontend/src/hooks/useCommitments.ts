@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { getAbiItem, type Address } from 'viem'
-import { usePublicClient, useReadContracts, useWatchContractEvent } from 'wagmi'
+import { useChainId, usePublicClient, useReadContracts, useWatchContractEvent } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
 import { type CommitmentWithStatus } from '../utils/commitments'
 import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
+import { POLL } from './polling'
 
 const commitmentCreatedEvent = getAbiItem({
   abi: commitmentManagerAbi,
@@ -22,58 +23,31 @@ interface UseCommitmentsReturn {
   isError: boolean
   error: Error | null
   refetch: () => void
-  addOptimistic: (commitment: CommitmentWithStatus) => void
 }
 
 export function useCommitments({
   managerAddress,
   committerAddress,
 }: UseCommitmentsParams): UseCommitmentsReturn {
+  const chainId = useChainId()
   const client = usePublicClient()
-  const [commitmentIds, setCommitmentIds] = useState<bigint[]>([])
-  const [isLoadingLogs, setIsLoadingLogs] = useState(true)
-  const [logsError, setLogsError] = useState<Error | null>(null)
-  // Optimistic entries prepended to the list until the next refetch
-  const optimisticRef = useRef<CommitmentWithStatus[]>([])
 
   // ── Step 1: Scan CommitmentCreated logs for this committer ──────────────────
-  const fetchLogs = () => {
-    if (!client || !managerAddress || !committerAddress) {
-      setIsLoadingLogs(false)
-      return
-    }
-    setIsLoadingLogs(true)
-    setLogsError(null)
-    // TODO: replace fromBlock: 0n with deployment block once known
-    client
-      .getLogs({
-        address: managerAddress,
+  const logs = useQuery({
+    enabled: !!client && !!managerAddress && !!committerAddress,
+    queryKey: ['commitment-created-ids', chainId, managerAddress, committerAddress],
+    queryFn: async () => {
+      // TODO: replace fromBlock: 0n with deployment block once known
+      const found = await client!.getLogs({
+        address: managerAddress!,
         event: commitmentCreatedEvent,
         args: { committer: committerAddress },
         fromBlock: 0n,
       })
-      .then((logs) => {
-        const ids = logs
-          .map((l) => l.args.commitmentId)
-          .filter((id): id is bigint => id !== undefined)
-        setCommitmentIds(ids)
-        // Clear optimistic entries once we have fresh log data
-        optimisticRef.current = []
-        setIsLoadingLogs(false)
-      })
-      .catch((err: unknown) => {
-        // Surface the failure — a failed log scan otherwise looks identical to
-        // "this committer has no commitments".
-        setLogsError(err instanceof Error ? err : new Error(String(err)))
-        setIsLoadingLogs(false)
-      })
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription (RPC log scan); see frontend/docs/eslint-disable-rationale.md §Pattern-3
-    fetchLogs()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, managerAddress, committerAddress])
+      return found.map((l) => l.args.commitmentId).filter((id): id is bigint => id !== undefined)
+    },
+  })
+  const commitmentIds = logs.data ?? []
 
   // ── Step 2: Multicall enrichment ────────────────────────────────────────────
   // Batch four reads for every ID in a single useReadContracts call.
@@ -83,7 +57,7 @@ export function useCommitments({
       contracts: commitmentIds.flatMap((id) => commitmentReadContracts(managerAddress!, id)),
       query: {
         enabled: commitmentIds.length > 0 && !!managerAddress,
-        refetchInterval: 15_000,
+        refetchInterval: POLL.fast,
       },
     })
 
@@ -103,15 +77,7 @@ export function useCommitments({
     // Sort newest-first by createdAt (D-04)
     result.sort((a, b) => (a.createdAt > b.createdAt ? -1 : a.createdAt < b.createdAt ? 1 : 0))
 
-    // Prepend any optimistic entries not yet replaced by on-chain data.
-    // The ref is mutated only by event handlers (`fetchLogs`, `addOptimistic`)
-    // that schedule a re-render the next tick, so a render-time read returns
-    // a stable value for this render. See frontend/docs/eslint-disable-rationale.md §Pattern-4.
-    // eslint-disable-next-line react-hooks/refs -- intentional render-time read for optimistic-update merge; see frontend/docs/eslint-disable-rationale.md §Pattern-4
-    const optimistic = optimisticRef.current.filter(
-      (opt) => !result.some((r) => r.id === opt.id),
-    )
-    return [...optimistic, ...result]
+    return result
   })()
 
   // ── Step 4: Real-time watcher — re-scan logs on new CommitmentCreated ───────
@@ -122,30 +88,24 @@ export function useCommitments({
     args: { committer: committerAddress },
     enabled: !!managerAddress && !!committerAddress,
     onLogs: () => {
-      fetchLogs()
+      void logs.refetch()
     },
   })
 
-  // ── Step 5: Optimistic update ─────────────────────────────────────────────
-  const addOptimistic = (commitment: CommitmentWithStatus) => {
-    optimisticRef.current = [commitment, ...optimisticRef.current]
-    // Immediately trigger a log rescan to pick up the real event
-    fetchLogs()
-  }
-
   function refetch() {
-    fetchLogs()
+    void logs.refetch()
     void refetchMulticall()
   }
 
-  const error = logsError ?? (multicallError as Error | null) ?? null
+  // A failed log scan must surface: it otherwise looks identical to
+  // "this committer has no commitments".
+  const error = logs.error ?? (multicallError as Error | null) ?? null
 
   return {
     commitments,
-    isLoading: isLoadingLogs || (commitmentIds.length > 0 && isLoadingData),
+    isLoading: logs.isLoading || (commitmentIds.length > 0 && isLoadingData),
     isError: error !== null,
     error,
     refetch,
-    addOptimistic,
   }
 }

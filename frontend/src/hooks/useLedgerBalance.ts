@@ -1,6 +1,7 @@
 import { type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
+import { POLL } from './polling'
 
 export interface LedgerBalance {
   /** Free balance in the manager ledger — withdrawable + available to back new
@@ -48,7 +49,7 @@ export function useLedgerBalance({
         args: token && user ? [token, user] : undefined,
       },
     ],
-    query: { enabled, refetchInterval: 15_000 },
+    query: { enabled, refetchInterval: POLL.fast },
   })
 
   const free = data?.[0]?.result as bigint | undefined

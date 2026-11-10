@@ -28,12 +28,6 @@ interface ContractAddresses {
   usdtToken: Address | undefined
   /** Underlying DAI MockERC20 of the agent-managed cvaDAI vault (open mint on anvil). */
   daiToken: Address | undefined
-  // Live demo yield strategies (MockStrategy) bound to each vault. The admin
-  // Risk tab drives donate()/simulateLoss() through these to move NAV (seed
-  // base yield, or trigger the NAV-shortfall peril). Undefined off Anvil.
-  usdcStrategy: Address | undefined
-  wethStrategy: Address | undefined
-  usdtStrategy: Address | undefined
   indexYieldStrategy: Address | undefined
   flatFeeStrategy: Address | undefined
   optimisticInsuranceArbiter: Address | undefined
@@ -94,9 +88,6 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
     wethToken: import.meta.env.VITE_WETH_TOKEN_ADDRESS as Address | undefined,
     usdtToken: import.meta.env.VITE_USDT_TOKEN_ADDRESS as Address | undefined,
     daiToken: import.meta.env.VITE_DAI_TOKEN_ADDRESS as Address | undefined,
-    usdcStrategy: import.meta.env.VITE_USDC_STRATEGY_ADDRESS as Address | undefined,
-    wethStrategy: import.meta.env.VITE_WETH_STRATEGY_ADDRESS as Address | undefined,
-    usdtStrategy: import.meta.env.VITE_USDT_STRATEGY_ADDRESS as Address | undefined,
     indexYieldStrategy: import.meta.env.VITE_INDEX_YIELD_STRATEGY_ADDRESS as Address | undefined,
     flatFeeStrategy: import.meta.env.VITE_FLAT_FEE_STRATEGY_ADDRESS as Address | undefined,
     optimisticInsuranceArbiter: import.meta.env.VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS as Address | undefined,

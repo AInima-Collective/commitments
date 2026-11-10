@@ -10,6 +10,7 @@ import {
   type ArbiterProfile,
   type IndependentRead,
 } from '../lib/arbiterProfile'
+import { POLL } from './polling'
 
 const I_ARBITER_ABI = [
   {
@@ -154,7 +155,7 @@ export function useArbiterProfile(
     queryKey: ['arbiter-profile', chainId, address?.toLowerCase(), expectedManager?.toLowerCase()],
     queryFn: () => readArbiterIntrospection(client!, address!),
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: POLL.idle,
   })
   const profile =
     address && query.data

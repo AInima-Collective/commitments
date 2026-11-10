@@ -1,4 +1,4 @@
-import { type Address } from 'viem'
+import { type Address, zeroAddress } from 'viem'
 
 import {
   useReadCommitmentManagerGetMutual,
@@ -6,6 +6,7 @@ import {
 } from '../generated'
 import { lambdaToFraction } from '../lib/format'
 import { useMutuals } from './useMutuals'
+import { POLL } from './polling'
 
 /** Header view of a Mutual (the `getMutual` tuple, typed). */
 export interface MutualHeader {
@@ -71,8 +72,6 @@ interface UseMutualParams {
   enabled?: boolean
 }
 
-const ZERO = '0x0000000000000000000000000000000000000000'
-
 /**
  * useMutual — reads a Mutual header (`getMutual`) and its pending bonded loss
  * proposal (`getMutualLossProposal`) for one mutual, and derives the cumulative
@@ -99,7 +98,7 @@ export function useMutual({
   } = useReadCommitmentManagerGetMutual({
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
+    query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
 
   const {
@@ -111,7 +110,7 @@ export function useMutual({
   } = useReadCommitmentManagerGetMutualLossProposal({
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
+    query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
 
   // Indexer enrichment: the loss-adjusted live coverage that the on-chain
@@ -160,7 +159,7 @@ export function useMutual({
   // activated, no shares. Treat that as "not found" rather than a real mutual.
   const notFound =
     mutual !== undefined &&
-    mutual.arbiter.toLowerCase() === ZERO &&
+    mutual.arbiter.toLowerCase() === zeroAddress &&
     !mutual.active &&
     !mutual.terminal &&
     mutual.totalShares === 0n &&

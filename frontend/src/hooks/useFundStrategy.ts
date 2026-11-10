@@ -6,6 +6,7 @@ import {
   useWriteContract,
 } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
+import { POLL } from './polling'
 
 export type FundStrategyStep =
   | 'idle'
@@ -59,7 +60,7 @@ export function useFundStrategy({
     address: token,
     functionName: 'allowance',
     args: userAddress && managerAddress ? [userAddress, managerAddress] : undefined,
-    query: { enabled: readEnabled, refetchInterval: 15_000 },
+    query: { enabled: readEnabled, refetchInterval: POLL.fast },
   })
 
   const {

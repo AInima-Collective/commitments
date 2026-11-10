@@ -8,7 +8,8 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Hex } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 export interface GovernorRow {
   address: Hex
@@ -36,10 +37,8 @@ export function useGovernors(canonicalOnly = false) {
     queryKey: ['governors', canonicalOnly] as const,
     queryFn: async () => {
       const path = canonicalOnly ? '/governors?canonical=1' : '/governors'
-      const res = await indexerFetch(path)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as GovernorRow[]
+      return indexerJson<GovernorRow[]>(path)
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
 }

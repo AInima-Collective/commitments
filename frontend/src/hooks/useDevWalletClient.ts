@@ -1,16 +1,7 @@
 import { useMemo } from 'react'
 import { createWalletClient, http, type WalletClient } from 'viem'
 import { useDevWallet } from '../contexts/devWallet'
-
-const ANVIL_RPC_URL =
-  (import.meta.env.VITE_RPC_URL_ANVIL as string | undefined) ?? 'http://127.0.0.1:8545'
-
-const ANVIL_CHAIN = {
-  id: 31337,
-  name: 'Anvil',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: { default: { http: [ANVIL_RPC_URL] } },
-} as const
+import { ANVIL_RPC_URL, anvil } from '../config/wagmi'
 
 /**
  * Returns a viem walletClient bound to the actor currently selected in
@@ -26,7 +17,7 @@ export function useDevWalletClient(): WalletClient {
   return useMemo(() => {
     return createWalletClient({
       account: current.account,
-      chain: ANVIL_CHAIN,
+      chain: anvil,
       transport: http(ANVIL_RPC_URL),
     })
   }, [current])

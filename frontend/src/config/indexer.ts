@@ -31,6 +31,38 @@ export async function indexerFetch(path: string, init?: RequestInit): Promise<Re
   return fetch(`${requireIndexerBase()}${path}`, init)
 }
 
+/** A non-2xx response from the indexer REST API. */
+export class IndexerError extends Error {
+  readonly status: number
+  readonly path: string
+  constructor(status: number, path: string) {
+    super(`Indexer error: ${status} (${path})`)
+    this.name = 'IndexerError'
+    this.status = status
+    this.path = path
+  }
+}
+
+/**
+ * REST fetch, `res.ok` check and JSON parse. Throws {@link IndexerError} on a
+ * non-2xx response. The one way read hooks call the indexer's REST API.
+ */
+export async function indexerJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await indexerFetch(path, init)
+  if (!res.ok) throw new IndexerError(res.status, path)
+  return (await res.json()) as T
+}
+
+/** {@link indexerJson}, but a 404 resolves to `null` (entity not indexed). */
+export async function indexerJsonOrNull<T>(path: string, init?: RequestInit): Promise<T | null> {
+  try {
+    return await indexerJson<T>(path, init)
+  } catch (e) {
+    if (e instanceof IndexerError && e.status === 404) return null
+    throw e
+  }
+}
+
 export interface GraphqlError {
   message: string
   path?: ReadonlyArray<string | number>
@@ -62,4 +94,15 @@ export async function indexerGraphql<T>(
   }
   const json = (await res.json()) as GraphqlResponse<T>
   return json
+}
+
+/** {@link indexerGraphql}, throwing the first GraphQL error instead of returning it. */
+export async function indexerGraphqlData<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  const res = await indexerGraphql<T>(query, variables)
+  if (res.errors && res.errors.length > 0) throw new Error(res.errors[0].message)
+  if (!res.data) throw new Error('Indexer GraphQL returned no data')
+  return res.data
 }

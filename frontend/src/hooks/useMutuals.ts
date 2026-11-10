@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useChainId } from 'wagmi'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /** Seconds in a 365-day year — the basis for annualizing the premium stream. */
 const SECONDS_PER_YEAR = 31_536_000n
@@ -138,11 +139,9 @@ export function useMutuals(): UseMutualsReturn {
     enabled: hasIndexer,
     queryKey: ['mutuals', chainId],
     queryFn: async () => {
-      const res = await indexerFetch('/mutuals')
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as MutualWire[]
+      return indexerJson<MutualWire[]>('/mutuals')
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
     retry: false,
   })
 

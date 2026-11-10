@@ -10,6 +10,8 @@ import {
   type ForfeitEnforcementState,
   type ManagerPauseSnapshot,
 } from '../lib/forfeitEnforcement'
+import { toForfeitProposal, type ForfeitProposalView } from './commitmentReads'
+import { POLL } from './polling'
 import { useDisplayNow } from './useDisplayNow'
 
 interface UseForfeitProposalParams {
@@ -20,15 +22,7 @@ interface UseForfeitProposalParams {
 }
 
 interface UseForfeitProposalReturn {
-  proposal:
-    | {
-        initiatedAt: bigint
-        penaltyBps: number
-        executed: boolean
-        cancelled: boolean
-        cumulativePausedAtStart: bigint
-      }
-    | undefined
+  proposal: ForfeitProposalView | undefined
   state: ForfeitEnforcementState
   enforcement: ForfeitEnforcement
   pauseState: ManagerPauseSnapshot | undefined
@@ -53,7 +47,7 @@ export function useForfeitProposal({
     args: commitmentId !== undefined ? [commitmentId] : undefined,
     query: {
       enabled: queryEnabled,
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
   const {
@@ -63,7 +57,7 @@ export function useForfeitProposal({
     refetch: refetchPause,
   } = useReadCommitmentManagerPauseState({
     address: managerAddress,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
+    query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
   const {
     data: ttl,
@@ -76,16 +70,8 @@ export function useForfeitProposal({
   })
 
   // Guard initiatedAt === 0n — Solidity returns zero-value struct when no proposal exists (Pitfall 2)
-  const proposal =
-    data && (data as { initiatedAt: bigint }).initiatedAt > 0n
-      ? {
-          initiatedAt: (data as { initiatedAt: bigint }).initiatedAt,
-          penaltyBps: Number((data as { penaltyBps: number }).penaltyBps),
-          executed: (data as { executed: boolean }).executed,
-          cancelled: (data as { cancelled: boolean }).cancelled,
-          cumulativePausedAtStart: (data as { cumulativePausedAtStart: bigint }).cumulativePausedAtStart,
-        }
-      : undefined
+  const view = toForfeitProposal(data)
+  const proposal = view && view.initiatedAt > 0n ? view : undefined
 
   const pauseState = pauseRaw
     ? {

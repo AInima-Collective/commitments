@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 export type PriceSource = 'coingecko' | 'fallback'
 
@@ -53,11 +54,9 @@ export function useAssetPrices({ symbols }: UseAssetPricesParams): UseAssetPrice
     enabled,
     queryKey: ['asset-prices', dedup],
     queryFn: async () => {
-      const res = await indexerFetch(`/prices?symbols=${encodeURIComponent(dedup)}`)
-      if (!res.ok) throw new Error(`Indexer /prices HTTP ${res.status}`)
-      return (await res.json()) as PricesResponse
+      return indexerJson<PricesResponse>(`/prices?symbols=${encodeURIComponent(dedup)}`)
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
     staleTime: 30_000,
   })
 

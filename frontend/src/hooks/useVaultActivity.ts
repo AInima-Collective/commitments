@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address, parseAbiItem } from 'viem'
 import { usePublicClient } from 'wagmi'
+import { POLL } from './polling'
 
 export type VaultActivityKind = 'deposit' | 'withdraw'
 
@@ -56,7 +57,7 @@ export function useVaultActivity({
       String(fromBlockOffset),
     ],
     enabled,
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
     queryFn: async () => {
       if (!client || !vaultAddress || !userAddress) return []
 

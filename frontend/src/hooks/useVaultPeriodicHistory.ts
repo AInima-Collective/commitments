@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 interface PeriodicSnapshotWire {
   vault: string
@@ -72,11 +73,9 @@ export function useVaultPeriodicHistory({
     queryKey: ['vault-periodic-history', vaultAddress, days],
     queryFn: async () => {
       if (!vaultAddress) throw new Error('vaultAddress required')
-      const res = await indexerFetch(
+      const wire = await indexerJson<PeriodicHistoryWire>(
         `/vaults/${vaultAddress.toLowerCase()}/periodic?days=${days}`,
       )
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as PeriodicHistoryWire
       const rows: PeriodicSnapshot[] = wire.rows.map((r) => ({
         vault: r.vault as Address,
         timestamp: Number(r.timestamp),
@@ -96,7 +95,7 @@ export function useVaultPeriodicHistory({
         rows,
       }
     },
-    refetchInterval: 60_000,
+    refetchInterval: POLL.idle,
   })
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

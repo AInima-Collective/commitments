@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
-import { hasIndexer, indexerGraphql } from '../config/indexer'
-import { type OperatorInfo, type OperatorStatus } from '../utils/mesh'
+import { useChainId, useReadContract } from 'wagmi'
+import { getContractAddresses } from '../config/contracts'
+import { hasIndexer, indexerGraphqlData } from '../config/indexer'
+import { operatorRegistryAbi } from '../generated'
+import { deriveOperatorStatus, type OperatorInfo, type OperatorStatus } from '../utils/mesh'
 
 interface OperatorWithStatus extends OperatorInfo {
   status: OperatorStatus
@@ -58,68 +62,53 @@ const QUERY = /* GraphQL */ `
  * GraphQL round-trip yields everything the operator list needs.
  *
  * Status mapping: indexer rows carry `status: 'registered' | 'deregistered'`
- * (a binary registry-state signal) — we widen that to the frontend's
- * `OperatorStatus` enum (`ACTIVE / INACTIVE / BELOW_MIN_STAKE`) using the same
- * derivation rule as `useOperators` (no min-stake input → `BELOW_MIN_STAKE` is
- * unreachable here; the on-chain fallback is the canonical source for that bit).
+ * (a binary registry-state signal). We widen that to the frontend's
+ * `OperatorStatus` enum (`ACTIVE / INACTIVE / BELOW_MIN_STAKE`) with the same
+ * rule as `useOperators`: `BELOW_MIN_STAKE` compares the indexed
+ * `totalDelegatedStake` against the registry's live `minOperatorStake`.
  *
  * Callers MUST gate on `isReady` to choose between this and the chain hook —
  * `isReady === false` means either the indexer is unconfigured or the query
  * failed, in which case the chain-read `useOperators` should be used instead.
  */
 export function useOperatorsIndexed(): UseOperatorsIndexedReturn {
-  const [state, setState] = useState<{
-    operators: OperatorWithStatus[]
-    isLoading: boolean
-    isReady: boolean
-  }>({ operators: [], isLoading: hasIndexer, isReady: false })
-  const [tick, setTick] = useState(0)
-  const requestIdRef = useRef(0)
-
-  useEffect(() => {
-    if (!hasIndexer) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription reset on indexer flag flip
-      setState({ operators: [], isLoading: false, isReady: false })
-      return
-    }
-    const reqId = ++requestIdRef.current
-    setState((s) => ({ ...s, isLoading: true }))
-    indexerGraphql<{ operators: { items: RawOperatorRow[] } }>(QUERY)
-      .then((res) => {
-        if (reqId !== requestIdRef.current) return
-        if (res.errors && res.errors.length > 0) {
-          setState({ operators: [], isLoading: false, isReady: false })
-          return
-        }
-        const rows = res.data?.operators.items ?? []
-        const operators = rows.map(toOperatorWithStatus)
-        setState({ operators, isLoading: false, isReady: true })
-      })
-      .catch(() => {
-        if (reqId !== requestIdRef.current) return
-        setState({ operators: [], isLoading: false, isReady: false })
-      })
-  }, [tick])
-
-  function refetch() {
-    setTick((t) => t + 1)
+  const chainId = useChainId()
+  const registry = getContractAddresses(chainId).operatorRegistry
+  // The registry stores no below-minimum flag; derive it from the current threshold.
+  const { data: minStake } = useReadContract({
+    abi: operatorRegistryAbi,
+    address: registry,
+    functionName: 'minOperatorStake',
+    query: { enabled: !!registry },
+  })
+  const query = useQuery({
+    enabled: hasIndexer,
+    queryKey: ['operators-indexed'],
+    queryFn: async () =>
+      (await indexerGraphqlData<{ operators: { items: RawOperatorRow[] } }>(QUERY)).operators.items,
+  })
+  const operators = useMemo(
+    () => (query.isSuccess ? query.data.map((row) => toOperatorWithStatus(row, minStake)) : []),
+    [query.isSuccess, query.data, minStake],
+  )
+  return {
+    operators,
+    isLoading: query.isLoading,
+    isReady: query.isSuccess,
+    refetch: () => void query.refetch(),
   }
-
-  return { ...state, refetch }
 }
 
-function toOperatorWithStatus(row: RawOperatorRow): OperatorWithStatus {
-  const active = row.status === 'registered'
-  return {
+function toOperatorWithStatus(row: RawOperatorRow, minStake: bigint | undefined): OperatorWithStatus {
+  const info: OperatorInfo = {
     address: row.address as Address,
-    active,
+    active: row.status === 'registered',
     selfStake: BigInt(row.selfStake),
     selfStakeCommitmentId: row.selfStakeCommitmentId ? BigInt(row.selfStakeCommitmentId) : 0n,
     totalDelegatedStake: BigInt(row.totalDelegatedStake),
     activeDelegationCount: BigInt(row.activeDelegationCount),
     registeredAt: BigInt(row.registeredAt),
-    services: row.services ?? [],
-    status: active ? 'ACTIVE' : 'INACTIVE',
-    belowMinStake: false,
   }
+  const status = deriveOperatorStatus(info, minStake)
+  return { ...info, services: row.services ?? [], status, belowMinStake: status === 'BELOW_MIN_STAKE' }
 }

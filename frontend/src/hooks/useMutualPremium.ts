@@ -4,6 +4,7 @@ import {
   useReadCommitmentManagerGetMutualPremiumState,
 } from '../generated'
 import { useNowSeconds } from './useNow'
+import { POLL } from './polling'
 
 /** Seconds in a 365-day year — the basis for annualizing the premium stream. */
 const SECONDS_PER_YEAR = 31_536_000n
@@ -85,7 +86,7 @@ export function useMutualPremium({
   } = useReadCommitmentManagerGetMutualPremiumState({
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
+    query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
 
   // getMutualPremiumState returns a positional 9-tuple (named uint256 outputs,

@@ -155,15 +155,11 @@ export function NameCell({
   ctx,
   size = 'md',
   maxTags = 3,
-  onSelectTag,
-  activeTags,
 }: {
   row: UnifiedRow
   ctx: CommitmentLabelContext
   size?: 'sm' | 'md' | 'lg'
   maxTags?: number
-  onSelectTag?: (tag: string) => void
-  activeTags?: readonly string[]
 }) {
   const label = commitmentLabel(row, ctx)
   const tags = metadataTags(row)
@@ -203,7 +199,7 @@ export function NameCell({
               side {side}
             </span>
           )}
-          <CommitmentTags tags={tags} max={maxTags} onSelect={onSelectTag} active={activeTags} />
+          <CommitmentTags tags={tags} max={maxTags} />
         </span>
       )}
     </span>

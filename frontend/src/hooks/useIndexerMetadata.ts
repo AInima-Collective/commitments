@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { type Address } from 'viem'
+import { useQuery } from '@tanstack/react-query'
+import { type Address, zeroHash } from 'viem'
 import { hasIndexer, indexerGraphql } from '../config/indexer'
 
 export type MetadataStatus = 'empty' | 'ok' | 'mismatch' | 'unreachable'
@@ -13,13 +13,6 @@ export interface MetadataResult {
   error: string | null
   refetch: () => void
 }
-
-interface CachedMetadata {
-  result: Omit<MetadataResult, 'refetch'>
-  fetchedAt: number
-}
-
-const cache = new Map<string, CachedMetadata>()
 
 function emptyResult(): Omit<MetadataResult, 'refetch'> {
   return {
@@ -46,7 +39,7 @@ function fromRow(row: RawMetadataRow | null | undefined): Omit<MetadataResult, '
     content: row.metadataContent ?? null,
     uri: row.metadataURI && row.metadataURI.length > 0 ? row.metadataURI : null,
     hash:
-      row.metadataHash && row.metadataHash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+      row.metadataHash && row.metadataHash !== zeroHash
         ? (row.metadataHash as `0x${string}`)
         : null,
     isLoading: false,
@@ -90,41 +83,20 @@ function useMetadata(
   collection: MetadataCollection,
   address: string | undefined,
 ): MetadataResult {
-  const key = address ? `${collection}:${address.toLowerCase()}` : undefined
-  const [tick, setTick] = useState(0)
-  const [state, setState] = useState<Omit<MetadataResult, 'refetch'>>(() => {
-    if (!key || !hasIndexer) return emptyResult()
-    const cached = cache.get(key)
-    return cached ? cached.result : { ...emptyResult(), isLoading: true }
+  // Metadata changes only by a deliberate on-chain update, so a fetched value
+  // is kept for the session; `refetch` is the explicit refresh.
+  const query = useQuery({
+    enabled: hasIndexer && !!address,
+    queryKey: ['indexer-metadata', collection, address],
+    queryFn: () => fetchOne(collection, address!),
+    staleTime: Infinity,
   })
-  const requestIdRef = useRef(0)
-
-  useEffect(() => {
-    if (!key || !hasIndexer) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription reset on key change; see frontend/docs/eslint-disable-rationale.md §Pattern-3
-      setState(emptyResult())
-      return
-    }
-    const cached = cache.get(key)
-    if (cached && tick === 0) {
-      setState(cached.result)
-      return
-    }
-    const reqId = ++requestIdRef.current
-    setState((s) => ({ ...s, isLoading: true }))
-    fetchOne(collection, address!).then((result) => {
-      if (reqId !== requestIdRef.current) return
-      cache.set(key, { result, fetchedAt: Date.now() })
-      setState(result)
-    })
-  }, [collection, address, key, tick])
-
-  const refetch = useCallback(() => {
-    if (key) cache.delete(key)
-    setTick((t) => t + 1)
-  }, [key])
-
-  return { ...state, refetch }
+  const result = query.data ?? emptyResult()
+  return {
+    ...result,
+    isLoading: query.isFetching,
+    refetch: () => void query.refetch(),
+  }
 }
 
 export function useOperatorMetadata(address: Address | undefined): MetadataResult {

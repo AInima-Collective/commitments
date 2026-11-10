@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { getAbiItem } from 'viem'
 import { useAccount, useChainId, usePublicClient } from 'wagmi'
 
@@ -51,48 +52,28 @@ export function useMyDelegations(): MyDelegationsResult {
   const { commitmentManager, operatorRegistry } = getContractAddresses(chainId)
 
   // commitmentId(string) → operator(lowercased) from DelegationCreated logs.
-  const [operatorByCommitment, setOperatorByCommitment] = useState<Map<string, string>>(
-    new Map(),
-  )
-  const [isScanning, setIsScanning] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    if (!client || !operatorRegistry || !account) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription (RPC log scan); see frontend/docs/eslint-disable-rationale.md §Pattern-3
-      setOperatorByCommitment(new Map())
-      setIsScanning(false)
-      return
-    }
-    setIsScanning(true)
-    client
-      .getLogs({
-        address: operatorRegistry,
+  // A failed scan reads as "no delegations", as before.
+  const scan = useQuery({
+    enabled: !!client && !!operatorRegistry && !!account,
+    queryKey: ['delegation-created', chainId, operatorRegistry, account],
+    queryFn: async () => {
+      const logs = await client!.getLogs({
+        address: operatorRegistry!,
         event: delegationCreatedEvent,
         args: { staker: account },
         fromBlock: 0n,
       })
-      .then((logs) => {
-        if (cancelled) return
-        const next = new Map<string, string>()
-        for (const l of logs) {
-          const id = l.args.commitmentId
-          const operator = l.args.operator
-          if (id === undefined || operator === undefined) continue
-          next.set(id.toString(), operator.toLowerCase())
-        }
-        setOperatorByCommitment(next)
-        setIsScanning(false)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setOperatorByCommitment(new Map())
-        setIsScanning(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [client, operatorRegistry, account])
+      const next = new Map<string, string>()
+      for (const l of logs) {
+        const id = l.args.commitmentId
+        const operator = l.args.operator
+        if (id === undefined || operator === undefined) continue
+        next.set(id.toString(), operator.toLowerCase())
+      }
+      return next
+    },
+  })
+  const operatorByCommitment = scan.data
 
   const { commitments, isLoading: isLoadingCommitments, refetch } = useCommitments({
     managerAddress: commitmentManager,
@@ -104,7 +85,7 @@ export function useMyDelegations(): MyDelegationsResult {
     const byOperator = new Map<string, CommitmentWithStatus[]>()
     const delegatedOperators = new Set<string>()
     for (const c of commitments) {
-      const operator = operatorByCommitment.get(c.id.toString())
+      const operator = operatorByCommitment?.get(c.id.toString())
       if (!operator) continue
       if (c.status === 'RELEASED' || c.status === 'FORFEITED') continue
       delegatedOperators.add(operator)
@@ -116,5 +97,5 @@ export function useMyDelegations(): MyDelegationsResult {
   }, [commitments, operatorByCommitment])
 
   if (!account) return EMPTY
-  return { ...grouped, isLoading: isScanning || isLoadingCommitments, refetch }
+  return { ...grouped, isLoading: scan.isLoading || isLoadingCommitments, refetch }
 }

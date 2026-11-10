@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address, type Hex, parseAbiItem } from 'viem'
 import { usePublicClient } from 'wagmi'
+import { POLL } from './polling'
 
 const ROLE_GRANTED_EVENT = parseAbiItem(
   'event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)',
@@ -44,7 +45,7 @@ export function useRoleHolders({
     queryKey: ['role-holders', chainId, contract, role, String(fromBlockOffset)],
     enabled,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: POLL.idle,
     queryFn: async () => {
       if (!client || !contract || !role) return { holders: [], isExhaustive: false }
       const head = await client.getBlockNumber()

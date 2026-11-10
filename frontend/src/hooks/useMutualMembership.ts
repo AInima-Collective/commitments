@@ -5,6 +5,7 @@ import {
   useReadCommitmentManagerGetMutualLossProposal,
   useReadCommitmentManagerPendingMemberLoss,
 } from '../generated'
+import { POLL } from './polling'
 
 export interface MutualMembership {
   /** Mutual the commitment belongs to. `undefined` while loading, `0n` == not a member. */
@@ -55,7 +56,7 @@ export function useMutualMembership({
   } = useReadCommitmentManagerGetMembership({
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled, refetchInterval: 15_000 },
+    query: { enabled, refetchInterval: POLL.fast },
   })
 
   // mutualId 0 is the "not a member" sentinel (mutual ids are 1-based).
@@ -65,20 +66,20 @@ export function useMutualMembership({
   const { data: mutual, refetch: refetchMutual } = useReadCommitmentManagerGetMutual({
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: isMember, refetchInterval: 15_000 },
+    query: { enabled: isMember, refetchInterval: POLL.fast },
   })
 
   const { data: lossProposal, refetch: refetchLoss } =
     useReadCommitmentManagerGetMutualLossProposal({
       address: managerAddress,
       args: mutualId !== undefined ? [mutualId] : undefined,
-      query: { enabled: isMember, refetchInterval: 15_000 },
+      query: { enabled: isMember, refetchInterval: POLL.fast },
     })
 
   const { data: owedRaw, refetch: refetchOwed } = useReadCommitmentManagerPendingMemberLoss({
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled: isMember, refetchInterval: 15_000 },
+    query: { enabled: isMember, refetchInterval: POLL.fast },
   })
 
   const lossPending =

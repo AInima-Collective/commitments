@@ -2,6 +2,7 @@ import { useReadContracts } from 'wagmi'
 import { type Address, zeroAddress } from 'viem'
 import { operatorServiceRegistryAbi } from '../generated'
 import { type ServiceOperatorInfo } from '../utils/mesh'
+import { POLL } from './polling'
 
 interface UseServiceOperatorsOptions {
   stakeRegistryAddress: Address | undefined
@@ -44,7 +45,7 @@ export function useServiceOperators({ stakeRegistryAddress, operatorAddresses }:
 
   const { data: results, isLoading } = useReadContracts({
     contracts: [...perOperatorContracts, ...globalContracts],
-    query: { enabled, refetchInterval: 30_000 },
+    query: { enabled, refetchInterval: POLL.slow },
   })
 
   // Parse per-operator results (3 calls per operator)

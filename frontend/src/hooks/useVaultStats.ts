@@ -3,6 +3,7 @@ import {
   useReadCommitmentsVaultTotalAssets,
   useReadCommitmentsVaultTotalSupply,
 } from '../generated'
+import { POLL } from './polling'
 
 export interface VaultStats {
   /** Underlying assets currently held by the vault (TVL in asset units). */
@@ -18,7 +19,7 @@ export interface VaultStats {
  */
 export function useVaultStats(vaultAddress: Address | undefined): VaultStats {
   const enabled = !!vaultAddress
-  const queryOpts = { enabled, refetchInterval: 15_000 }
+  const queryOpts = { enabled, refetchInterval: POLL.fast }
 
   const { data: totalAssets, isLoading: tvlLoading } = useReadCommitmentsVaultTotalAssets({
     address: vaultAddress,

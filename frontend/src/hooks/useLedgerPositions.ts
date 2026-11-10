@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /** One per-token ledger position as reported by the indexer `/account/:address`
  *  endpoint. `encumbered` is authoritative from indexed events; `free` is read
@@ -43,15 +44,13 @@ export function useLedgerPositions({ address }: UseLedgerPositionsParams): UseLe
     enabled,
     queryKey: ['ledger-positions', address?.toLowerCase()],
     queryFn: async () => {
-      const res = await indexerFetch(`/account/${address}`)
-      if (!res.ok) throw new Error(`Indexer /account HTTP ${res.status}`)
-      const json = (await res.json()) as AccountResponse
+      const json = await indexerJson<AccountResponse>(`/account/${address}`)
       return (json.ledgerPositions ?? []).map((p) => ({
         token: p.token as Address,
         encumbered: BigInt(p.encumbered),
       }))
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
     staleTime: 30_000,
   })
 

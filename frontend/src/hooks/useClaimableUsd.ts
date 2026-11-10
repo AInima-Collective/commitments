@@ -10,6 +10,7 @@ import {
 } from '../lib/claimableYield'
 import { useAssetPrices } from './useAssetPrices'
 import { useTokenMetaMap } from './useTokenMeta'
+import { POLL } from './polling'
 
 interface UseClaimableUsdReturn {
   /** Token-aware USD valuation: prices `amount` of `token` in USD (6-decimal
@@ -77,7 +78,7 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
     // the transient 18-decimal fallback, or the two would briefly disagree.
     query: {
       enabled: vaultTokens.length > 0 && !tokenMeta.isLoading,
-      refetchInterval: 30_000,
+      refetchInterval: POLL.slow,
     },
   })
 

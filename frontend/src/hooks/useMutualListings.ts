@@ -1,10 +1,11 @@
 import { useMemo } from 'react'
-import { type Address } from 'viem'
+import { type Address, zeroAddress, zeroHash } from 'viem'
 import { useChainId, useReadContract, useReadContracts } from 'wagmi'
 
 import { commitmentManagerAbi, mutualRegistryAbi } from '../generated'
 import { getContractAddresses } from '../config/contracts'
 import { useMutuals } from './useMutuals'
+import { POLL } from './polling'
 
 /**
  * A registered Mutual listing: the `getMutualListing` terms plus the core
@@ -64,7 +65,7 @@ export function useMutualListings(): UseMutualListingsReturn {
     abi: mutualRegistryAbi,
     address: registry,
     functionName: 'allMutualIds',
-    query: { enabled: Boolean(registry), refetchInterval: 30_000 },
+    query: { enabled: Boolean(registry), refetchInterval: POLL.slow },
   })
 
   const ids = useMemo(() => (idsRaw as readonly bigint[] | undefined) ?? [], [idsRaw])
@@ -85,7 +86,7 @@ export function useMutualListings(): UseMutualListingsReturn {
     refetch: refetchDetail,
   } = useReadContracts({
     contracts,
-    query: { enabled: Boolean(registry) && Boolean(manager) && ids.length > 0, refetchInterval: 20_000 },
+    query: { enabled: Boolean(registry) && Boolean(manager) && ids.length > 0, refetchInterval: POLL.fast },
   })
 
   const listings = useMemo<MutualListing[]>(() => {
@@ -111,15 +112,15 @@ export function useMutualListings(): UseMutualListingsReturn {
 
       return {
         mutualId: id,
-        creator: (s?.creator ?? ZERO) as Address,
-        numeraire: (core?.numeraire ?? grp?.numeraire ?? ZERO) as Address,
-        beneficiary: (core?.beneficiary ?? grp?.beneficiary ?? ZERO) as Address,
+        creator: (s?.creator ?? zeroAddress) as Address,
+        numeraire: (core?.numeraire ?? grp?.numeraire ?? zeroAddress) as Address,
+        beneficiary: (core?.beneficiary ?? grp?.beneficiary ?? zeroAddress) as Address,
         targetCapacity: target,
         filled,
         liveCapacity: grp?.liveCapacity,
         termEnd: s?.termEnd ?? 0n,
         perilURI: s?.perilURI ?? '',
-        perilHash: (s?.perilHash ?? EMPTY_HASH),
+        perilHash: (s?.perilHash ?? zeroHash),
         isFilled: s !== undefined && filled >= target,
       }
     })
@@ -135,6 +136,3 @@ export function useMutualListings(): UseMutualListingsReturn {
     },
   }
 }
-
-const ZERO = '0x0000000000000000000000000000000000000000'
-const EMPTY_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000' as const

@@ -8,6 +8,7 @@ import { type Address, type Hex } from 'viem'
 import { useAccount, useReadContract } from 'wagmi'
 
 import { tokenWeightingVotesShimAbi } from '../generated'
+import { POLL } from './polling'
 
 export interface UseVotingPowerOptions {
   /** Override the connected wallet — useful for displaying another account. */
@@ -38,7 +39,7 @@ export function useVotingPower(
     args: account ? [account] : undefined,
     query: {
       enabled: Boolean(shim) && Boolean(account),
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
 

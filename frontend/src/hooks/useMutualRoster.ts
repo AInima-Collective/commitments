@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useChainId } from 'wagmi'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /**
  * A single mutual member, as returned by the indexer's
@@ -77,11 +78,9 @@ export function useMutualRoster(mutualId: bigint | undefined): UseMutualRosterRe
     enabled,
     queryKey: ['mutual-roster', chainId, mutualId?.toString()],
     queryFn: async () => {
-      const res = await indexerFetch(`/mutuals/${mutualId!.toString()}/members`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as MutualRosterWire[]
+      return indexerJson<MutualRosterWire[]>(`/mutuals/${mutualId!.toString()}/members`)
     },
-    refetchInterval: 20_000,
+    refetchInterval: POLL.fast,
     retry: false,
   })
 

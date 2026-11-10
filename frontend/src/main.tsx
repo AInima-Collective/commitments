@@ -13,7 +13,14 @@ import './index.css'
 // lib/bigintJson.ts for why this app-wide prototype patch is required.
 installBigIntJsonSerialization()
 
-const queryClient = new QueryClient()
+// Reads poll on their own cadence (hooks/polling.ts). These defaults stop
+// sibling components re-fetching the same key on mount, and keep a dead
+// indexer or RPC from tripling every failed request.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 5_000, retry: 1 },
+  },
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
