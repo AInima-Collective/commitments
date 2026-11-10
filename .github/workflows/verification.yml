@@ -17,6 +17,15 @@ on:
     - cron: "30 3 * * *" # nightly medusa campaign
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read # dorny/paths-filter lists a PR's changed files via the API
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Never cancel the nightly campaign; only superseded PR pushes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   halmos:
     name: halmos (symbolic, per PR)
@@ -61,8 +70,6 @@ jobs:
               - 'src/extensions/**'
               - 'src/periphery/**'
               - 'src/shared/**'
-              - 'test/manager/conformance/**'
-              - 'test/vault/**'
               - 'verification/certora/**'
               - 'foundry.toml'
               - 'justfile'

@@ -17,7 +17,7 @@
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.6.0"
   },
   "dependencies": {
     "@react-sigma/core": "^5.0.4",

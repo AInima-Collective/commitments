@@ -1,20 +1,9 @@
 # Foundry
 cache/
 out/
-/lib/
-
-# CosmWasm
-cosmwasm/target/
-
-# Compiled files and executables
-artifacts/
-internal/
 
 # Code coverage
 codecov.json
-
-# Rust backup files
-**/*.rs.bk
 
 # IDE
 .idea
@@ -24,15 +13,8 @@ codecov.json
 # Logs
 *.log
 
-# CosmWasm schemas
-schema/
-schemas/
-
 # Node.js
 dist/
-mjs/
-main/
-module/
 node_modules/
 .npm/
 .vite/

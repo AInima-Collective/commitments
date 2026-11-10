@@ -35,7 +35,7 @@ fv-certora-local conf:
     verification/certora/certora-local.sh {{conf}}
 
 # Coverage-guided fuzz campaign reusing the conformance ManagerHandler.
-# Pass seconds, e.g. `just fv-medusa 3600` for the nightly hour.
+# Pass seconds, e.g. `just fv-medusa 14400` for the nightly campaign's length.
 fv-medusa timeout="120":
     FOUNDRY_PROFILE=medusa medusa fuzz --config verification/medusa/medusa.json --timeout {{timeout}}
 
@@ -178,7 +178,7 @@ install:
     pnpm install
 
 ws-test:
-    pnpm -r --if-present test
+    pnpm test
 
 ws-typecheck:
     pnpm -r --if-present typecheck
@@ -234,8 +234,7 @@ frontend-test:
 # Start a local Kubo node so metadata can be pinned as `ipfs://` instead of
 # inlined into the URI. Without it, POST /metadata/pin falls back to a
 # `data:application/json;base64,…` URI, which is self-contained but has to fit
-# the whole document inside the contract's 512-byte URI cap (~360 bytes of
-# Start a local Kubo node so metadata can be pinned as ipfs:// instead of inlined.
+# the whole document inside the contract's 512-byte URI cap (~360 bytes of JSON).
 ipfs-up:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -261,9 +260,9 @@ ipfs-down:
 # ---------------------------------------------------------------------------
 
 # One-shot: starts anvil in the background, waits for it to be ready, then
-# deploys + seeds the full protocol. Idempotent — skips anvil start if :8545
-# is already bound. Logs go to /tmp/commitments-anvil.log, pid to
-# /tmp/commitments-anvil.pid.
+# deploys + seeds the full protocol. Skips the anvil start if :8545 is already
+# bound, but always re-runs the deploy and seed. Logs go to
+# /tmp/commitments-anvil.log, pid to /tmp/commitments-anvil.pid.
 dev-up:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -328,7 +327,12 @@ dev-down:
         fi
         rm -f /tmp/commitments-anvil.pid
     else
-        pkill -x anvil 2>/dev/null && echo "anvil: stopped" || echo "anvil: not running"
+        pid=$(lsof -ti tcp:8545 -sTCP:LISTEN 2>/dev/null || true)
+        if [ -n "$pid" ] && kill $pid 2>/dev/null; then
+            echo "anvil: stopped (pid $pid on :8545)"
+        else
+            echo "anvil: not running"
+        fi
     fi
 
 dev-guide:
