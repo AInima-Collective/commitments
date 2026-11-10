@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { type Address, type Hex } from 'viem'
-import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { operatorRegistryAbi } from '../../generated'
 import {
   ZERO_HASH,
@@ -10,7 +9,8 @@ import {
   validateMetadataURI,
 } from '../../utils/metadataForm'
 import { type MetadataResult } from '../../hooks/useIndexerMetadata'
-import { Input, Notice, useToasts } from '../ui'
+import { useWriteAction } from '../../hooks/useWriteAction'
+import { Input, Notice } from '../ui'
 import { OperatorProfileCard } from './OperatorProfileCard'
 
 interface Props {
@@ -23,7 +23,7 @@ interface Props {
  * `OperatorProfileEditor` — Phase 26-02 v2.4 design-system editor for the
  * `OperatorRegistry.setOperatorMetadata(uri, hash)` write path.
  *
- * - URI input: `<textarea className="ds-input">` (per 24-03 DelegateMode pattern
+ * - URI input: `<textarea className="ds-input">` (per 24-03 CreateCommitmentForm pattern
  *   for textareas — the `<Input>` primitive wraps `<input>` only).
  * - Content hash: `<Input>` primitive.
  * - Validation errors / warnings surface via `<Notice tone="danger|warn">`.
@@ -62,42 +62,12 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
     }
   }, [scratch])
 
-  const { writeContract, data: txHash, isPending, reset: resetWrite, error: writeError } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
-    useWaitForTransactionReceipt({ hash: txHash })
-
-  const { push } = useToasts()
-
-  // Effect 1 — panel-owns-success per 24-03 split: PROFILE UPDATED toast on
-  // receipt success; refresh the indexer-driven metadata; reset write state
-  // after a moment so the SAVE button re-enables cleanly.
-  useEffect(() => {
-    if (isSuccess) {
-      push({ tone: 'success', title: 'PROFILE UPDATED' })
-      metadata.refetch()
-      const t = setTimeout(() => resetWrite(), 3000)
-      return () => clearTimeout(t)
-    }
-    return undefined
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  // Effect 2 — button-owns-error per 24-03 split: TRANSACTION FAILED toast on
-  // either writeError or receipt error. shortMessage extraction mirrors the
-  // pattern in DelegateMode.
-  useEffect(() => {
-    if (writeError || isReceiptError) {
-      const shortMessage =
-        ((writeError ?? receiptError) as { shortMessage?: string } | undefined)
-          ?.shortMessage ?? 'Unknown error'
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body: shortMessage,
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [writeError, isReceiptError])
+  // PROFILE UPDATED toast on receipt success, then refresh the indexer-driven
+  // metadata; the write resets after a moment so SAVE re-enables cleanly.
+  const { write: writeContract, isPending, isConfirming } = useWriteAction({
+    successTitle: 'PROFILE UPDATED',
+    onSuccess: () => metadata.refetch(),
+  })
 
   function handleUri(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setUri(e.target.value)

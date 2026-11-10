@@ -314,7 +314,7 @@ drift on a status rule.
 `src/hooks/*` wraps wagmi and indexer reads/writes for protocol concepts:
 `useCommitments`, `useAgreements`, `useVaultPosition`, `useVaultApy`,
 `useUnbondStatus`, `useBalanceHistory`, `useForfeitProposal`, `useDepositFlow`,
-`useDistributeYield`, `useClaimableYield`, `useOperatorsIndexed`,
+`useWriteAction`, `useClaimableYield`, `useOperatorsIndexed`,
 `useServiceOperators`, `useViewAddress`, `useRegistryPolicy`, `useNowSeconds`,
 `useCountdown`, `useDebouncedValue`. Reach for these before adding a new fetch;
 most page state is already covered.

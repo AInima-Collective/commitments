@@ -1,15 +1,9 @@
-import { useEffect, useState } from 'react'
-import { type Address, erc20Abi, parseSignature } from 'viem'
-import {
-  useChainId,
-  usePublicClient,
-  useReadContract,
-  useSignTypedData,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi'
+import { useState } from 'react'
+import { type Address, parseSignature } from 'viem'
+import { useChainId, usePublicClient, useReadContract, useSignTypedData } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
 import { ERC2612_ABI, buildPermitTypedData, resolvePermitDomain } from '../lib/erc2612'
+import { useApproveThenWrite } from './useApproveThenWrite'
 
 export type LedgerFlowStep =
   | 'idle'
@@ -45,7 +39,6 @@ export interface ManagerLedgerFlow {
   withdraw: (amount: bigint) => void
   reset: () => void
   error: Error | null
-  txHash: `0x${string}` | undefined
 }
 
 interface UseManagerLedgerFlowParams {
@@ -71,29 +64,19 @@ export function useManagerLedgerFlow({
   userAddress,
   onSuccess,
 }: UseManagerLedgerFlowParams): ManagerLedgerFlow {
-  const [step, setStep] = useState<LedgerFlowStep>('idle')
-  const [error, setError] = useState<Error | null>(null)
+  // The permit path signs off-chain before its one write; this holds that
+  // phase. Every action clears it, so it never outlives the latest action.
+  const [permit, setPermit] = useState<'idle' | 'signing' | Error>('idle')
 
   const chainId = useChainId()
   const publicClient = usePublicClient()
   const { signTypedDataAsync } = useSignTypedData()
 
-  const readEnabled = !!token && !!userAddress && !!managerAddress
-
-  const { data: walletBalance } = useReadContract({
-    abi: erc20Abi,
-    address: token,
-    functionName: 'balanceOf',
-    args: userAddress ? [userAddress] : undefined,
-    query: { enabled: readEnabled, refetchInterval: 15_000 },
-  })
-
-  const { data: currentAllowance, refetch: refetchAllowance } = useReadContract({
-    abi: erc20Abi,
-    address: token,
-    functionName: 'allowance',
-    args: userAddress && managerAddress ? [userAddress, managerAddress] : undefined,
-    query: { enabled: readEnabled, refetchInterval: 15_000 },
+  const flow = useApproveThenWrite({
+    token,
+    spender: managerAddress,
+    owner: userAddress,
+    onSuccess: () => onSuccess?.(),
   })
 
   // Permit probe: a successful `nonces(owner)` read means the token is ERC-2612
@@ -105,81 +88,19 @@ export function useManagerLedgerFlow({
     address: token,
     functionName: 'nonces',
     args: userAddress ? [userAddress] : undefined,
-    query: { enabled: readEnabled },
+    query: { enabled: !!token && !!userAddress && !!managerAddress },
   })
   const supportsPermit = permitProbeError ? false : permitNonce !== undefined ? true : undefined
 
-  const {
-    writeContract: writeApprove,
-    data: approveTxHash,
-    isError: approveIsError,
-    error: approveError,
-    reset: resetApprove,
-  } = useWriteContract()
-  const { isSuccess: approveSuccess, isError: approveReceiptError } =
-    useWaitForTransactionReceipt({ hash: approveTxHash })
-
-  const {
-    writeContract: writeMutation,
-    data: mutationTxHash,
-    isError: mutationIsError,
-    error: mutationError,
-    reset: resetMutation,
-  } = useWriteContract()
-  const { isSuccess: mutationSuccess, isError: mutationReceiptError } =
-    useWaitForTransactionReceipt({ hash: mutationTxHash })
-
-  // Advance when approve confirms.
-  useEffect(() => {
-    if (approveSuccess && step === 'approving') {
-      void refetchAllowance()
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setStep('approved')
-    }
-  }, [approveSuccess, step, refetchAllowance])
-
-  useEffect(() => {
-    if ((approveIsError || approveReceiptError) && step === 'approving') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setError(approveError ?? new Error('Approve transaction failed'))
-      setStep('error')
-    }
-  }, [approveIsError, approveReceiptError, approveError, step])
-
-  // Advance when deposit/withdraw confirms.
-  useEffect(() => {
-    if (mutationSuccess && (step === 'depositing' || step === 'withdrawing')) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setStep('complete')
-      onSuccess?.()
-    }
-  }, [mutationSuccess, step, onSuccess])
-
-  useEffect(() => {
-    if ((mutationIsError || mutationReceiptError) && (step === 'depositing' || step === 'withdrawing')) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setError(mutationError ?? new Error('Transaction failed'))
-      setStep('error')
-    }
-  }, [mutationIsError, mutationReceiptError, mutationError, step])
-
   function approve(amount: bigint) {
-    if (!token || !managerAddress) return
-    setError(null)
-    setStep('approving')
-    writeApprove({
-      abi: erc20Abi,
-      address: token,
-      functionName: 'approve',
-      args: [managerAddress, amount],
-    })
+    setPermit('idle')
+    flow.approve(amount)
   }
 
   function deposit(amount: bigint) {
     if (!managerAddress || !token) return
-    setError(null)
-    setStep('depositing')
-    writeMutation({
+    setPermit('idle')
+    flow.write({
       abi: commitmentManagerAbi,
       address: managerAddress,
       functionName: 'deposit',
@@ -189,8 +110,8 @@ export function useManagerLedgerFlow({
 
   async function depositWithPermit(amount: bigint) {
     if (!managerAddress || !token || !userAddress || !publicClient) return
-    setError(null)
-    setStep('signing')
+    flow.reset()
+    setPermit('signing')
     try {
       // 1-hour window; the manager tolerates an already-consumed permit
       // (front-run defense), so a slightly generous deadline is safe.
@@ -214,24 +135,22 @@ export function useManagerLedgerFlow({
       )
       const { r, s, v, yParity } = parseSignature(signature)
       const vByte = v !== undefined ? Number(v) : yParity + 27
-      setStep('depositing')
-      writeMutation({
+      setPermit('idle')
+      flow.write({
         abi: commitmentManagerAbi,
         address: managerAddress,
         functionName: 'depositWithPermit',
         args: [token, amount, deadline, vByte, r, s],
       })
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Permit signing failed'))
-      setStep('error')
+      setPermit(err instanceof Error ? err : new Error('Permit signing failed'))
     }
   }
 
   function withdraw(amount: bigint) {
     if (!managerAddress || !token) return
-    setError(null)
-    setStep('withdrawing')
-    writeMutation({
+    setPermit('idle')
+    flow.write({
       abi: commitmentManagerAbi,
       address: managerAddress,
       functionName: 'withdraw',
@@ -240,30 +159,31 @@ export function useManagerLedgerFlow({
   }
 
   function reset() {
-    resetApprove()
-    resetMutation()
-    setStep('idle')
-    setError(null)
+    setPermit('idle')
+    flow.reset()
   }
 
-  const txHash =
-    step === 'approving'
-      ? approveTxHash
-      : step === 'depositing' || step === 'withdrawing'
-        ? mutationTxHash
-        : undefined
+  const step: LedgerFlowStep =
+    permit === 'signing'
+      ? 'signing'
+      : permit instanceof Error
+        ? 'error'
+        : flow.step === 'writing'
+          ? flow.writeVariables?.functionName === 'withdraw'
+            ? 'withdrawing'
+            : 'depositing'
+          : flow.step
 
   return {
     step,
-    walletBalance: walletBalance as bigint | undefined,
-    currentAllowance: currentAllowance as bigint | undefined,
+    walletBalance: flow.balance,
+    currentAllowance: flow.allowance,
     supportsPermit,
     approve,
     deposit,
     depositWithPermit,
     withdraw,
     reset,
-    error,
-    txHash,
+    error: permit instanceof Error ? permit : flow.error,
   }
 }

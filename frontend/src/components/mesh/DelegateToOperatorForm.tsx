@@ -1,23 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { erc20Abi, parseUnits, parseEventLogs, type Address } from 'viem'
-import { formatTokenAmount } from '../../lib/format'
-import {
-  useReadContract,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useAccount,
-  useChainId,
-} from 'wagmi'
+import { useMemo } from 'react'
+import { parseEventLogs, type Address, type TransactionReceipt } from 'viem'
+import { useAccount, useChainId } from 'wagmi'
 import { commitmentManagerAbi, operatorRegistryAbi } from '../../generated'
-import { type FullCommitmentParams } from '../../hooks/useCreateCommitmentFlow'
+import { type FullCommitmentParams, useCreateCommitmentFlow } from '../../hooks/useCreateCommitmentFlow'
+import { useAmountInput } from '../../hooks/useAmountInput'
 import { useRegistryPolicy } from '../../hooks/useRegistryPolicy'
+import { useTx, useTxFeedback } from '../../hooks/useWriteAction'
 import { getDefaultBacking } from '../../config/contracts'
-import {
-  Input,
-  Notice,
-  TokenAmount,
-  useToasts,
-} from '../ui'
+import { Input, Notice, TokenAmount } from '../ui'
+import { FundingNotice } from '../commitment/FundingNotice'
 
 /**
  * Delegation is a two-tx flow (three when the stake exceeds free shares and the
@@ -26,9 +17,10 @@ import {
  *   1. CommitmentManager.createCommitment / createAndFund(arbiter, operatorRegistry, amount, ...)
  *   2. OperatorRegistry.delegate(operator, commitmentId)
  *
- * The commitmentId isn't known until tx1's receipt emits CommitmentCreated; we
- * parse it out with viem and auto-fire tx2. Phase state mirrors the UI so the
- * user sees what's happening.
+ * Steps 0 and 1 are `useCreateCommitmentFlow`. The commitmentId isn't known
+ * until tx1's receipt emits CommitmentCreated; we parse it out with viem and
+ * auto-fire tx2. The phase is derived from the two flows so the user sees
+ * what's happening.
  */
 type Phase =
   | { kind: 'idle' }
@@ -40,7 +32,7 @@ type Phase =
   | { kind: 'delegating'; commitmentId: bigint }
   | { kind: 'confirmingDelegate'; commitmentId: bigint }
   | { kind: 'done'; commitmentId: bigint }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
 
 interface Props {
   operatorAddress: Address
@@ -51,6 +43,17 @@ interface Props {
 }
 
 const CHALLENGE_WINDOW_DEFAULT = 86400 // 1 day — min allowed by contract
+
+/** The new commitment's id from the create receipt's CommitmentCreated log. */
+function createdIdOf(receipt: TransactionReceipt): bigint {
+  const created = parseEventLogs({
+    abi: commitmentManagerAbi,
+    eventName: 'CommitmentCreated',
+    logs: receipt.logs,
+  })[0]
+  if (!created) throw new Error('CommitmentCreated event not found in receipt')
+  return created.args.commitmentId
+}
 
 export function DelegateToOperatorForm({
   operatorAddress,
@@ -69,11 +72,8 @@ export function DelegateToOperatorForm({
     operatorRegistryAddress,
   )
 
-  const { push } = useToasts()
-  const lastToastedIdRef = useRef<string | null>(null)
-
-  const [amountText, setAmountText] = useState('')
-  const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
+  const amountInput = useAmountInput(decimals)
+  const parsedAmount = amountInput.amount !== 0n ? amountInput.amount : undefined
 
   // Max penalty is not a delegator-facing knob. The registry policy fixes the
   // floor, and a delegator gains nothing by committing to more slashing
@@ -83,40 +83,79 @@ export function DelegateToOperatorForm({
   // the fallback never reaches the contract).
   const maxPenaltyBps = minMaxPenaltyBps ?? 5000
 
-  const parsedAmount = useMemo(() => {
-    if (!amountText) return undefined
+  // ── tx2: delegate, fired once the create receipt names the new id ─────────
+  const delegate = useTx()
+  // ── tx0 + tx1: approve the shortfall if needed, then create ───────────────
+  const flow = useCreateCommitmentFlow({
+    managerAddress: commitmentManagerAddress,
+    token: shareToken,
+    userAddress: address,
+    onSuccess: (receipt) => {
+      if (!operatorRegistryAddress) return
+      let commitmentId: bigint
+      try {
+        commitmentId = createdIdOf(receipt)
+      } catch {
+        return // surfaced as the phase error below
+      }
+      delegate.write({
+        abi: operatorRegistryAbi,
+        address: operatorRegistryAddress,
+        functionName: 'delegate',
+        args: [operatorAddress, commitmentId],
+      })
+    },
+  })
+
+  // The parsed id, or the parse failure (memoised so it toasts once).
+  const created = useMemo(() => {
+    if (!flow.receipt) return { id: undefined, error: null }
     try {
-      const v = parseUnits(amountText, decimals)
-      return v > 0n ? v : undefined
-    } catch {
-      return undefined
+      return { id: createdIdOf(flow.receipt), error: null }
+    } catch (err) {
+      return { id: undefined, error: err instanceof Error ? err : new Error('Failed to parse commitment receipt') }
     }
-  }, [amountText, decimals])
+  }, [flow.receipt])
+  const createdId = created.id
+
+  const phase: Phase =
+    delegate.step !== 'idle' && createdId !== undefined
+      ? delegate.step === 'signing'
+        ? { kind: 'delegating', commitmentId: createdId }
+        : delegate.step === 'confirming'
+          ? { kind: 'confirmingDelegate', commitmentId: createdId }
+          : delegate.step === 'confirmed'
+            ? { kind: 'done', commitmentId: createdId }
+            : { kind: 'error' }
+      : flow.step === 'complete'
+        ? created.error
+          ? { kind: 'error' }
+          : { kind: 'extractingId' }
+        : flow.step === 'approving'
+          ? { kind: flow.awaitingWallet ? 'approving' : 'confirmingApprove' }
+          : flow.step === 'creating'
+            ? { kind: flow.awaitingWallet ? 'creating' : 'confirmingCreate' }
+            : flow.step === 'error'
+              ? { kind: 'error' }
+              : { kind: 'idle' }
+
+  // Success and failure toasts for the whole flow. Each error object toasts once.
+  const flowError = delegate.error ?? flow.error ?? created.error
+  useTxFeedback(delegate.receipt, flowError, {
+    successTitle: createdId !== undefined ? `DELEGATED COMMITMENT #${createdId}` : undefined,
+    successBody:
+      parsedAmount !== undefined ? <TokenAmount amount={parsedAmount} decimals={decimals} /> : null,
+  })
 
   // Shortfall between the staked amount and free shares. When positive it's
   // deposited from the wallet in the same flow (approve → createAndFund) rather
   // than blocking submit; only a wallet that can't cover it is a hard stop.
-  const { data: walletBalance } = useReadContract({
-    abi: erc20Abi,
-    address: shareToken,
-    functionName: 'balanceOf',
-    args: address ? [address] : undefined,
-    query: { enabled: !!shareToken && !!address, refetchInterval: 15_000 },
-  })
-  const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    abi: erc20Abi,
-    address: shareToken,
-    functionName: 'allowance',
-    args: address && commitmentManagerAddress ? [address, commitmentManagerAddress] : undefined,
-    query: { enabled: !!shareToken && !!address && !!commitmentManagerAddress, refetchInterval: 15_000 },
-  })
-
   const shortfall =
     parsedAmount !== undefined && freeShares !== undefined && parsedAmount > freeShares
       ? parsedAmount - freeShares
       : 0n
   const needsDeposit = shortfall > 0n
-  const exceedsWallet = needsDeposit && walletBalance !== undefined && shortfall > (walletBalance as bigint)
+  const exceedsWallet = needsDeposit && flow.walletBalance !== undefined && shortfall > flow.walletBalance
 
   const canSubmit =
     isConnected &&
@@ -131,212 +170,8 @@ export function DelegateToOperatorForm({
     !exceedsWallet &&
     (phase.kind === 'idle' || phase.kind === 'done' || phase.kind === 'error')
 
-  // ── tx1: createCommitment ────────────────────────────────────────────────
-  const {
-    writeContract: writeCreate,
-    data: createHash,
-    reset: resetCreate,
-    error: createWriteError,
-  } = useWriteContract()
-  const {
-    data: createReceipt,
-    isSuccess: createConfirmed,
-    isError: createReceiptFailed,
-    error: createReceiptError,
-  } = useWaitForTransactionReceipt({ hash: createHash })
-
-  // ── tx2: delegate ─────────────────────────────────────────────────────────
-  const {
-    writeContract: writeDelegate,
-    data: delegateHash,
-    reset: resetDelegate,
-    error: delegateWriteError,
-  } = useWriteContract()
-  const {
-    isSuccess: delegateConfirmed,
-    isError: delegateReceiptFailed,
-    error: delegateReceiptError,
-  } = useWaitForTransactionReceipt({ hash: delegateHash })
-
-  // ── tx0 (optional): approve the funding shortfall ─────────────────────────
-  const {
-    writeContract: writeApprove,
-    data: approveHash,
-    reset: resetApprove,
-    error: approveWriteError,
-  } = useWriteContract()
-  const {
-    isSuccess: approveConfirmed,
-    isError: approveReceiptFailed,
-    error: approveReceiptError,
-  } = useWaitForTransactionReceipt({ hash: approveHash })
-
-  // Create params + shortfall stashed at submit so the create can fire after the
-  // approve confirms (and isn't recomputed against a mid-flight balance refetch).
-  const pendingCreateRef = useRef<{ params: FullCommitmentParams; depositAmount: bigint } | null>(null)
-
-  function fireCreate(pending: NonNullable<typeof pendingCreateRef.current>) {
-    if (!commitmentManagerAddress) return
-    if (pending.depositAmount > 0n) {
-      writeCreate({
-        abi: commitmentManagerAbi,
-        address: commitmentManagerAddress,
-        functionName: 'createAndFund',
-        args: [pending.depositAmount, pending.params],
-      })
-    } else {
-      writeCreate({
-        abi: commitmentManagerAbi,
-        address: commitmentManagerAddress,
-        functionName: 'createCommitment',
-        args: [pending.params],
-      })
-    }
-  }
-
-  // Phase transitions driven by tx lifecycle
-  useEffect(() => {
-    if (approveHash && phase.kind === 'approving') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setPhase({ kind: 'confirmingApprove' })
-    }
-  }, [approveHash, phase])
-
-  useEffect(() => {
-    if (approveConfirmed && phase.kind === 'confirmingApprove') {
-      void refetchAllowance()
-      const pending = pendingCreateRef.current
-      if (pending) {
-        setPhase({ kind: 'creating' })
-        fireCreate(pending)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [approveConfirmed, phase])
-
-  useEffect(() => {
-    if (createHash && phase.kind === 'creating') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setPhase({ kind: 'confirmingCreate' })
-    }
-  }, [createHash, phase])
-
-  useEffect(() => {
-    if (createConfirmed && createReceipt && phase.kind === 'confirmingCreate') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setPhase({ kind: 'extractingId' })
-      try {
-        const logs = parseEventLogs({
-          abi: commitmentManagerAbi,
-          eventName: 'CommitmentCreated',
-          logs: createReceipt.logs,
-        })
-        const created = logs[0]
-        if (!created) throw new Error('CommitmentCreated event not found in receipt')
-        const commitmentId = created.args.commitmentId as bigint
-        setPhase({ kind: 'delegating', commitmentId })
-        writeDelegate({
-          abi: operatorRegistryAbi,
-          address: operatorRegistryAddress!,
-          functionName: 'delegate',
-          args: [operatorAddress, commitmentId],
-        })
-      } catch (err) {
-        setPhase({
-          kind: 'error',
-          message: err instanceof Error ? err.message : 'Failed to parse commitment receipt',
-        })
-      }
-    }
-  }, [
-    createConfirmed,
-    createReceipt,
-    phase,
-    operatorRegistryAddress,
-    operatorAddress,
-    writeDelegate,
-  ])
-
-  useEffect(() => {
-    if (delegateHash && phase.kind === 'delegating') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setPhase({ kind: 'confirmingDelegate', commitmentId: phase.commitmentId })
-    }
-  }, [delegateHash, phase])
-
-  useEffect(() => {
-    if (delegateConfirmed && phase.kind === 'confirmingDelegate') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setPhase({ kind: 'done', commitmentId: phase.commitmentId })
-    }
-  }, [delegateConfirmed, phase])
-
-  // Surface errors from any tx
-  useEffect(() => {
-    const err =
-      approveWriteError ??
-      approveReceiptError ??
-      createWriteError ??
-      createReceiptError ??
-      delegateWriteError ??
-      delegateReceiptError
-    if (!err) return
-    if (phase.kind === 'idle' || phase.kind === 'done' || phase.kind === 'error') return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-    setPhase({
-      kind: 'error',
-      message: (err as { shortMessage?: string }).shortMessage ?? (err as Error).message,
-    })
-  }, [
-    approveWriteError,
-    approveReceiptError,
-    createWriteError,
-    createReceiptError,
-    delegateWriteError,
-    delegateReceiptError,
-    phase,
-  ])
-
-  useEffect(() => {
-    if (approveReceiptFailed || createReceiptFailed || delegateReceiptFailed) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setPhase({ kind: 'error', message: 'Transaction reverted on-chain' })
-    }
-  }, [approveReceiptFailed, createReceiptFailed, delegateReceiptFailed])
-
-  // ── useToasts panel-owns-success / button-owns-error split ───────────────
-  // Effect 1: success — push DELEGATED COMMITMENT #N once on phase=done.
-  useEffect(() => {
-    if (phase.kind !== 'done') return
-    const id = `done-${phase.commitmentId.toString()}`
-    if (lastToastedIdRef.current === id) return
-    lastToastedIdRef.current = id
-    push({
-      tone: 'success',
-      title: `DELEGATED COMMITMENT #${phase.commitmentId}`,
-      body:
-        parsedAmount !== undefined ? (
-          <TokenAmount amount={parsedAmount} decimals={decimals} />
-        ) : null,
-    })
-  }, [phase, parsedAmount, decimals, push])
-
-  // Effect 2: error — push TRANSACTION FAILED once on phase=error.
-  useEffect(() => {
-    if (phase.kind !== 'error') return
-    const id = `error-${phase.message}`
-    if (lastToastedIdRef.current === id) return
-    lastToastedIdRef.current = id
-    push({
-      tone: 'danger',
-      title: 'TRANSACTION FAILED',
-      body: phase.message,
-    })
-  }, [phase, push])
-
   function handleMaxFree() {
-    if (freeShares === undefined) return
-    setAmountText(formatTokenAmount(freeShares, decimals).full)
+    if (freeShares !== undefined) amountInput.setMax(freeShares)
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -351,10 +186,7 @@ export function DelegateToOperatorForm({
     )
       return
 
-    resetApprove()
-    resetCreate()
-    resetDelegate()
-    lastToastedIdRef.current = null
+    delegate.reset()
 
     const params: FullCommitmentParams = {
       arbiter: requiredArbiter,
@@ -370,34 +202,14 @@ export function DelegateToOperatorForm({
       metadataHash: ('0x' + '00'.repeat(32)) as `0x${string}`,
     }
     // Fund the shortfall from the wallet in-flow (0 ⇒ free shares cover it).
-    const depositAmount =
-      freeShares !== undefined && parsedAmount > freeShares ? parsedAmount - freeShares : 0n
-    const pending = { params, depositAmount }
-    pendingCreateRef.current = pending
-
-    // Approve first only when funding and the manager lacks allowance.
-    if (depositAmount > 0n && shareToken && (allowance === undefined || (allowance as bigint) < depositAmount)) {
-      setPhase({ kind: 'approving' })
-      writeApprove({
-        abi: erc20Abi,
-        address: shareToken,
-        functionName: 'approve',
-        args: [commitmentManagerAddress, depositAmount],
-      })
-      return
-    }
-
-    setPhase({ kind: 'creating' })
-    fireCreate(pending)
+    // The flow approves first only when the manager lacks allowance.
+    flow.submit(params, shortfall)
   }
 
   function handleReset() {
-    resetApprove()
-    resetCreate()
-    resetDelegate()
-    lastToastedIdRef.current = null
-    setPhase({ kind: 'idle' })
-    setAmountText('')
+    flow.reset()
+    delegate.reset()
+    amountInput.clear()
   }
 
   const statusText = (() => {
@@ -444,8 +256,8 @@ export function DelegateToOperatorForm({
           <Input
             id="delegate-amount"
             type="text"
-            value={amountText}
-            onChange={(e) => setAmountText(e.target.value)}
+            value={amountInput.text}
+            onChange={(e) => amountInput.setText(e.target.value)}
             placeholder="0.0000"
             disabled={!isConnected}
           />
@@ -458,23 +270,15 @@ export function DelegateToOperatorForm({
             MAX FREE
           </button>
         </span>
-        {needsDeposit && !exceedsWallet && (
-          <Notice tone="info" size="sm" title="WILL FUND FROM WALLET">
-            Free shares cover{' '}
-            <TokenAmount amount={freeShares ?? 0n} decimals={decimals} size="inline" /> — the remaining{' '}
-            <TokenAmount amount={shortfall} decimals={decimals} size="inline" /> is deposited from your wallet
-            in the same flow.
-          </Notice>
-        )}
-        {exceedsWallet && (
-          <Notice tone="warn" size="sm" title="NOT ENOUGH SHARES">
-            This delegation locks{' '}
-            <TokenAmount amount={parsedAmount ?? 0n} decimals={decimals} size="inline" />, but you have only{' '}
-            <TokenAmount amount={freeShares ?? 0n} decimals={decimals} size="inline" /> free plus{' '}
-            <TokenAmount amount={(walletBalance as bigint) ?? 0n} decimals={decimals} size="inline" /> in your
-            wallet.
-          </Notice>
-        )}
+        <FundingNotice
+          amount={parsedAmount}
+          free={freeShares}
+          shortfall={shortfall}
+          wallet={flow.walletBalance}
+          decimals={decimals}
+          noun="shares"
+          subject="delegation"
+        />
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>

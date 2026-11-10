@@ -1,8 +1,6 @@
-import { useEffect } from 'react'
 import { useWaitForTransactionReceipt } from 'wagmi'
-import { useToasts } from '../components/ui'
-import { legibleWriteError } from '../utils/contractErrors'
 import type { ReactNode } from 'react'
+import { useTxFeedback } from './useWriteAction'
 
 export interface UseTxReceiptOptions {
   /** The write hook's tx hash (`writeContract` `data`). */
@@ -18,42 +16,21 @@ export interface UseTxReceiptOptions {
 }
 
 /**
- * Watch a write transaction's receipt and fire the canonical success toast +
- * `onSuccess` + `reset` once it confirms. A reverted or failed receipt (wagmi
- * throws on `status: 'reverted'`) gets a danger toast and a `reset` instead.
- *
- * Pairs with any write hook that exposes `{ data: hash, reset }` — including the
- * wagmi-generated typed hooks (`useWriteCommitmentManagerJoinGroup`, …) and a
- * bare `useWriteContract`. Lets pages compose typed writes with the shared
- * receipt/toast UX instead of hand-rolling a `useWaitForTransactionReceipt` +
- * `useEffect(() => { if (isSuccess) { push(...); ...; reset() } })` block per
- * action. Returns the receipt query so callers can read `isLoading` for button
- * state.
+ * The feedback half of `useWriteAction` for a write sent elsewhere (a
+ * wagmi-generated typed hook such as `useWriteCommitmentManagerJoinGroup`):
+ * watch `hash`, toast on success or failure, then `reset`. Returns the receipt
+ * query so callers can read `isLoading` for button state.
  */
-export function useTxReceipt({
-  hash,
-  successTitle,
-  successBody,
-  onSuccess,
-  reset,
-}: UseTxReceiptOptions) {
+export function useTxReceipt({ hash, successTitle, successBody, onSuccess, reset }: UseTxReceiptOptions) {
   const receipt = useWaitForTransactionReceipt({ hash })
-  const { push } = useToasts()
-
-  useEffect(() => {
-    if (!receipt.isSuccess) return
-    push({ tone: 'success', title: successTitle, body: successBody })
-    onSuccess?.()
-    reset?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receipt.isSuccess])
-
-  useEffect(() => {
-    if (!receipt.isError) return
-    push({ tone: 'danger', title: 'TRANSACTION FAILED', body: legibleWriteError(receipt.error) })
-    reset?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receipt.isError])
-
+  useTxFeedback(receipt.data, receipt.error, {
+    successTitle,
+    successBody,
+    onSuccess: () => {
+      onSuccess?.()
+      reset?.()
+    },
+    onError: reset,
+  })
   return receipt
 }

@@ -1,9 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { type Address, type Hex, type TransactionReceipt, encodeAbiParameters } from 'viem'
 import { useChainId } from 'wagmi'
 import { commitmentManagerAbi } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
-import { useDistributeYield } from '../../../hooks/useDistributeYield'
 import { type CommitmentYieldEntry } from '../../../hooks/useCommitmentYield'
 import {
   formatBps,
@@ -14,7 +13,7 @@ import {
   type ResolveActionKind,
 } from '../../../utils/resolveActions'
 import { Input, TokenAmount } from '../../ui'
-import { useWriteAction } from './useWriteAction'
+import { useWriteAction } from '../../../hooks/useWriteAction'
 
 interface ResolveActionRowProps {
   action: ResolveAction
@@ -472,16 +471,18 @@ function DistributeYieldAction({
   // v2 has no aggregate pending-yield read — distributeAll is permissionless and
   // idempotent, so we offer it whenever a strategy is bound (caller-gated). The
   // per-strategy pending estimate is deferred (FUTURE_WORK §2).
-  const { distribute, isPending, isConfirming, isSuccess } = useDistributeYield({
-    managerAddress,
-    commitmentId: commitment.id,
-  })
+  const { write, isPending, isConfirming, isSuccess } = useWriteAction({ onSuccess: onActed })
   const isPendingAny = isPending || isConfirming
 
-  useEffect(() => {
-    if (isSuccess) onActed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
+  function distribute() {
+    if (!managerAddress) return
+    write({
+      abi: commitmentManagerAbi,
+      address: managerAddress,
+      functionName: 'distributeAll',
+      args: [commitment.id],
+    })
+  }
 
   return (
     <div className="ds-stack ds-stack-2">

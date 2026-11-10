@@ -175,6 +175,29 @@ describe('getAvailableActions — ACTIVE state', () => {
       expect(release.reason).toMatch(/settle/i)
       expect(kinds(result)).toContain('settle-mutual-loss')
     })
+
+    it('a request lapses at twice the window: no release, request again', () => {
+      const result = getAvailableActions(
+        input({
+          viewerRole: 'committer',
+          mutual: member({ exitRequestedAt: NOW - 6n * 86_400n }),
+        }),
+      )
+      const k = kinds(result)
+      expect(k).not.toContain('release-mutual-member')
+      expect(k).toContain('request-mutual-exit')
+      expect(result.find((a) => a.kind === 'request-mutual-exit')!.enabled).toBe(true)
+    })
+
+    it('release is still open one second before the request lapses', () => {
+      const result = getAvailableActions(
+        input({
+          viewerRole: 'committer',
+          mutual: member({ exitRequestedAt: NOW - 6n * 86_400n + 1n }),
+        }),
+      )
+      expect(result.find((a) => a.kind === 'release-mutual-member')!.enabled).toBe(true)
+    })
   })
 
   it('committer sees expire (disabled) + request-unbond when not yet past expiresAt', () => {

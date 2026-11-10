@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
-import { type Address, erc20Abi, parseUnits } from 'viem'
+import { useEffect } from 'react'
+import { type Address, erc20Abi } from 'viem'
 import { useReadContracts } from 'wagmi'
 
 import { BalanceLine, Notice, StatBlock, TokenAmount, useToasts } from '../ui'
-import { formatTokenAmount } from '../../lib/format'
+import { useAmountInput } from '../../hooks/useAmountInput'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useManagerLedgerFlow } from '../../hooks/useManagerLedgerFlow'
 import type { BackingOption } from '../../config/contracts'
+import { legibleWriteError } from '../../utils/contractErrors'
 
 interface BackingWithdrawFormProps {
   managerAddress: Address | undefined
@@ -36,9 +37,6 @@ export function BackingWithdrawForm({
   onWithdrawn,
 }: BackingWithdrawFormProps) {
   const { push } = useToasts()
-  const [inputValue, setInputValue] = useState('')
-  const [parsed, setParsed] = useState<bigint | undefined>(undefined)
-  const [parseError, setParseError] = useState(false)
 
   // Token metadata (the backing token — a vault share or raw ERC-20).
   const { data: meta } = useReadContracts({
@@ -49,6 +47,9 @@ export function BackingWithdrawForm({
     query: { enabled: !!option.token },
   })
   const decimals = (meta?.[0]?.result as number | undefined) ?? 18
+  const amountInput = useAmountInput(decimals)
+  const parsed = amountInput.amount
+  const parseError = amountInput.invalid
   const symbol = (meta?.[1]?.result as string | undefined) ?? 'TOKEN'
 
   const ledger = useLedgerBalance({ managerAddress, token: option.token, user: userAddress })
@@ -68,25 +69,8 @@ export function BackingWithdrawForm({
 
   const inProgress = flow.step === 'withdrawing'
 
-  function handleInputChange(value: string) {
-    setInputValue(value)
-    if (!value) {
-      setParsed(undefined)
-      setParseError(false)
-      return
-    }
-    try {
-      setParsed(parseUnits(value, decimals))
-      setParseError(false)
-    } catch {
-      setParsed(undefined)
-      setParseError(true)
-    }
-  }
-
   function handleMax() {
-    if (ledger.free === undefined) return
-    handleInputChange(formatTokenAmount(ledger.free, decimals).full)
+    if (ledger.free !== undefined) amountInput.setMax(ledger.free)
   }
 
   const exceedsBalance =
@@ -109,8 +93,7 @@ export function BackingWithdrawForm({
       onWithdrawn?.()
       const timer = setTimeout(() => {
         flow.reset()
-        setInputValue('')
-        setParsed(undefined)
+        amountInput.clear()
       }, 3000)
       return () => clearTimeout(timer)
     }
@@ -118,7 +101,7 @@ export function BackingWithdrawForm({
       push({
         tone: 'danger',
         title: 'TRANSACTION FAILED',
-        body: flow.error?.message?.split('\n')[0] ?? 'Unknown error.',
+        body: legibleWriteError(flow.error),
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,8 +147,8 @@ export function BackingWithdrawForm({
         className="ds-input"
         placeholder={`Amount (${symbol})`}
         aria-label={`Amount in ${symbol}`}
-        value={inputValue}
-        onChange={(e) => handleInputChange(e.target.value)}
+        value={amountInput.text}
+        onChange={(e) => amountInput.setText(e.target.value)}
         disabled={!isConnected || inProgress}
       />
 

@@ -128,8 +128,11 @@ export function ResolveCommitmentModal({
     ? Math.max(0, Math.min(executionDelayTotalSecs, Number(nowSec - forfeit.proposal.initiatedAt)))
     : 0
 
-  // Deallocation-window countdown state (mutual member exit).
-  const exitRequested = membership.exitRequestedAt > 0n
+  // Deallocation-window countdown state (mutual member exit). A request lapses
+  // at twice the window and then reads as no request, as in `getAvailableActions`.
+  const exitRequested =
+    membership.exitRequestedAt > 0n &&
+    nowSec < membership.exitRequestedAt + 2n * membership.deallocationWindow
   const exitTotalSecs = Number(membership.deallocationWindow)
   const exitElapsed = exitRequested
     ? Math.max(0, Math.min(exitTotalSecs, Number(nowSec - membership.exitRequestedAt)))

@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { type Address, type Hex } from 'viem'
-import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { commitmentManagerAbi } from '../../generated'
+import { useWriteAction } from '../../hooks/useWriteAction'
 import {
   AddressDisplay,
   Button,
   Modal,
   TokenAmount,
   UsdAmount,
-  useToasts,
 } from '../ui'
 
 interface ClaimYieldButtonProps {
@@ -41,8 +40,8 @@ interface ClaimYieldButtonProps {
 /**
  * ClaimYieldButton — per-row CLAIM action on ClaimableYieldPanel.
  *
- * Standard write-button lifecycle (useWriteContract +
- * useWaitForTransactionReceipt + 3s success auto-clear).
+ * Standard write-button lifecycle (useWriteAction: error toast, 3s success
+ * auto-clear).
  *
  * Spectator-mode gate (WARNING W11): the button is disabled when the connected
  * wallet does NOT match `viewAddress` (the address the user is inspecting).
@@ -69,46 +68,22 @@ export function ClaimYieldButton({
   onClaimed,
 }: ClaimYieldButtonProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const { writeContract, data: hash, isPending, reset } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess, isError, error } =
-    useWaitForTransactionReceipt({ hash })
-
-  const { push } = useToasts()
+  // On success: notify the panel for optimistic removal + toast emission. The
+  // success toast is pushed from the panel so the tone+body stay co-located
+  // with the row data; this button only emits the error toast.
+  const { write: writeContract, isPending, isConfirming } = useWriteAction({
+    onSuccess: () => {
+      onClaimed?.(commitmentId)
+      setConfirmOpen(false)
+    },
+    onError: () => setConfirmOpen(false),
+  })
 
   const isViewerConnected =
     !!connectedAddress &&
     !!viewAddress &&
     connectedAddress.toLowerCase() === viewAddress.toLowerCase()
 
-  // On success: notify the panel for optimistic removal + toast emission, then
-  // clear state after 3s. The success toast is pushed from the panel so the
-  // tone+body stay co-located with the row data; this button only emits the
-  // error toast (out-of-flow notification on transaction revert).
-  useEffect(() => {
-    if (isSuccess) {
-      onClaimed?.(commitmentId)
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription (wagmi receipt) closes the confirmation modal on success
-      setConfirmOpen(false)
-      const timer = setTimeout(() => reset(), 3000)
-      return () => clearTimeout(timer)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  useEffect(() => {
-    if (isError) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription (wagmi revert) closes the confirmation modal on failure
-      setConfirmOpen(false)
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body:
-          (error as { shortMessage?: string })?.shortMessage ??
-          'Yield claim reverted.',
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isError])
 
   function handleConfirm() {
     // v2 claim is per-(commitment, strategy): claim(id, strategy, claimData).

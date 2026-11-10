@@ -6,10 +6,10 @@
  * Wave-6 handlers persist both shapes.
  */
 import type { Address, Hex } from 'viem'
-import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 
 import { commitmentsGovernorAbi } from '../generated'
 import type { ProposalStep } from './useCreateProposal'
+import { useTx } from './useWriteAction'
 
 export interface CastVoteFlow {
   step: ProposalStep
@@ -24,32 +24,12 @@ export function useCastVote(
   governor: Address | undefined,
   proposalId: bigint | string | undefined,
 ): CastVoteFlow {
-  const {
-    writeContract,
-    data: txHash,
-    error: writeError,
-    reset,
-    isPending: writePending,
-    isSuccess: writeSuccess,
-  } = useWriteContract()
-
-  const { isSuccess: receiptSuccess, isError: receiptError, error: receiptErr } =
-    useWaitForTransactionReceipt({ hash: txHash })
-
-  const step: ProposalStep = receiptSuccess
-    ? 'confirmed'
-    : receiptError || writeError
-      ? 'error'
-      : writeSuccess
-        ? 'confirming'
-        : writePending
-          ? 'signing'
-          : 'idle'
+  const tx = useTx()
 
   function castVote(support: 0 | 1 | 2, reason: string = '') {
     if (!governor || proposalId == null) return
     const id = typeof proposalId === 'bigint' ? proposalId : BigInt(proposalId)
-    writeContract({
+    tx.write({
       abi: commitmentsGovernorAbi,
       address: governor,
       functionName: 'castVoteWithReason',
@@ -57,11 +37,5 @@ export function useCastVote(
     })
   }
 
-  return {
-    step,
-    txHash,
-    error: writeError ?? receiptErr ?? null,
-    castVote,
-    reset,
-  }
+  return { step: tx.step, txHash: tx.hash, error: tx.error, castVote, reset: tx.reset }
 }

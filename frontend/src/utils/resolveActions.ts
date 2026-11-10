@@ -86,7 +86,8 @@ export interface MutualResolveContext {
   unsettled: boolean
   /** Raw token units owed to the beneficiary if settled now. */
   owedUnits: bigint
-  /** When exit was requested (deallocation window start). 0n == not requested. */
+  /** When exit was requested (deallocation window start). 0n == not requested.
+   *  The request lapses at twice the window from here. */
   exitRequestedAt: bigint
   /** The mutual's deallocation window in seconds. */
   deallocationWindow: bigint
@@ -206,11 +207,12 @@ export function getAvailableActions(input: AvailableActionsInput): ResolveAction
   // Mutual member lifecycle: settle loss → request exit → release after the
   // deallocation window. Settle and release are permissionless (any connected
   // wallet can pay the gas); requesting the exit is committer-only on-chain.
+  // Release is open only while deallocationWindow <= elapsed < 2 * window from
+  // the request; after that the request has lapsed and must be made again.
   if (inMutual && mutual && !isClosed) {
-    const exitRequested = mutual.exitRequestedAt > 0n
-    const exitMaturesAt = exitRequested
-      ? mutual.exitRequestedAt + mutual.deallocationWindow
-      : 0n
+    const exitMaturesAt = mutual.exitRequestedAt + mutual.deallocationWindow
+    const exitRequested =
+      mutual.exitRequestedAt > 0n && nowSec < exitMaturesAt + mutual.deallocationWindow
     const exitMature = exitRequested && nowSec >= exitMaturesAt
 
     // Outstanding loss share — must settle before release (and the member's

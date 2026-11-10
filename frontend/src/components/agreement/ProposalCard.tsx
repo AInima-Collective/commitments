@@ -1,14 +1,14 @@
-import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount } from 'wagmi'
 import { commitmentManagerAbi } from '../../generated'
 import { type AgreementProposalWithStatus } from '../../utils/agreements'
-import { AddressDisplay, Notice, OperatorAvatar, TokenAmount, useToasts } from '../ui'
+import { AddressDisplay, Notice, OperatorAvatar, TokenAmount } from '../ui'
 import { CommitmentStatusBadge } from '../protocol'
 import { useCountdown } from '../../hooks/useCountdown'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
+import { useWriteAction } from '../../hooks/useWriteAction'
 import { formatDuration } from '../../lib/format'
 import { formatBps } from '../../utils/commitments'
 
@@ -32,7 +32,6 @@ export function ProposalCard({
   const remainingMs = useCountdown(proposal.expiresAt)
   const remainingSecs = Math.max(0, Math.floor(remainingMs / 1000))
   const isExpired = remainingMs === 0 && proposal.expiresAt > 0n
-  const { push } = useToasts()
 
   // My amount and their amount from viewer's perspective
   const myAmount = proposal.viewerIsProposer
@@ -60,92 +59,16 @@ export function ProposalCard({
     myAmount > freeBalance
 
   // Accept tx (incoming proposals only)
-  const {
-    writeContract: writeAccept,
-    data: acceptHash,
-    isPending: isAcceptPending,
-    error: acceptWriteError,
-    reset: resetAccept,
-  } = useWriteContract()
-  const {
-    isLoading: isAcceptConfirming,
-    isSuccess: isAcceptSuccess,
-    isError: isAcceptError,
-    error: acceptReceiptError,
-  } = useWaitForTransactionReceipt({ hash: acceptHash })
-
+  const accept = useWriteAction({ successTitle: 'AGREEMENT ACCEPTED', onSuccess: () => onAccepted?.() })
   // Cancel/reject tx (outgoing or incoming reject)
-  const {
-    writeContract: writeCancel,
-    data: cancelHash,
-    isPending: isCancelPending,
-    error: cancelWriteError,
-    reset: resetCancel,
-  } = useWriteContract()
-  const {
-    isLoading: isCancelConfirming,
-    isSuccess: isCancelSuccess,
-    isError: isCancelError,
-    error: cancelReceiptError,
-  } = useWaitForTransactionReceipt({ hash: cancelHash })
-
-  // Toast effects — panel-owns-success / button-owns-error split (Phase 24
-  // reference). Reset write state shortly after the success toast so a stale
-  // hash doesn't keep firing on subsequent renders.
-  useEffect(() => {
-    if (isAcceptSuccess) {
-      push({ tone: 'success', title: 'AGREEMENT ACCEPTED' })
-      onAccepted?.()
-      const t = setTimeout(() => resetAccept(), 3000)
-      return () => clearTimeout(t)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAcceptSuccess])
-
-  useEffect(() => {
-    if (acceptWriteError || isAcceptError) {
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body:
-          (acceptWriteError as { shortMessage?: string } | undefined)?.shortMessage ??
-          (acceptReceiptError as { shortMessage?: string } | undefined)?.shortMessage ??
-          'Unknown error.',
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acceptWriteError, isAcceptError])
-
-  useEffect(() => {
-    if (isCancelSuccess) {
-      push({
-        tone: 'success',
-        title: proposal.viewerIsProposer ? 'PROPOSAL CANCELLED' : 'PROPOSAL REJECTED',
-      })
-      onRejected?.()
-      const t = setTimeout(() => resetCancel(), 3000)
-      return () => clearTimeout(t)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCancelSuccess])
-
-  useEffect(() => {
-    if (cancelWriteError || isCancelError) {
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body:
-          (cancelWriteError as { shortMessage?: string } | undefined)?.shortMessage ??
-          (cancelReceiptError as { shortMessage?: string } | undefined)?.shortMessage ??
-          'Unknown error.',
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cancelWriteError, isCancelError])
+  const cancel = useWriteAction({
+    successTitle: proposal.viewerIsProposer ? 'PROPOSAL CANCELLED' : 'PROPOSAL REJECTED',
+    onSuccess: () => onRejected?.(),
+  })
 
   function handleAccept() {
     if (!managerAddress) return
-    writeAccept({
+    accept.write({
       abi: commitmentManagerAbi,
       address: managerAddress,
       functionName: 'acceptAgreement',
@@ -155,7 +78,7 @@ export function ProposalCard({
 
   function handleCancelOrReject() {
     if (!managerAddress) return
-    writeCancel({
+    cancel.write({
       abi: commitmentManagerAbi,
       address: managerAddress,
       functionName: 'cancelAgreementProposal',
@@ -163,8 +86,8 @@ export function ProposalCard({
     })
   }
 
-  const isAcceptPendingAny = isAcceptPending || isAcceptConfirming
-  const isCancelPendingAny = isCancelPending || isCancelConfirming
+  const isAcceptPendingAny = accept.isPending || accept.isConfirming
+  const isCancelPendingAny = cancel.isPending || cancel.isConfirming
 
   const expiryLabel = isExpired
     ? 'EXPIRED'

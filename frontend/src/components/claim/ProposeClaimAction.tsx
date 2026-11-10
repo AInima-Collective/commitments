@@ -15,6 +15,7 @@ import { formatTokenAmount } from '../../lib/format'
 import { formatBps } from '../../utils/commitments'
 import { ZERO_HASH, computeHashFromJsonText } from '../../utils/metadataForm'
 import { Input, Modal, Notice, TokenAmount, useToasts } from '../ui'
+import { legibleWriteError } from '../../utils/contractErrors'
 
 /** Claim-size presets as a fraction of the commitment's maxPenaltyBps. */
 const CLAIM_PRESETS = [
@@ -350,7 +351,7 @@ function ProposeClaimBody({
 
       {flow.error && (
         <Notice tone="danger" size="sm" title="TRANSACTION FAILED">
-          {(flow.error as { shortMessage?: string }).shortMessage ?? flow.error.message}
+          {legibleWriteError(flow.error)}
         </Notice>
       )}
 
