@@ -27,6 +27,7 @@ import {
   coverBinding,
   mutual,
   mutualEvent,
+  mutualState,
   membership,
   premiumClaim,
   premiumFunding,
@@ -150,11 +151,14 @@ async function recordMutualEvent(
     numeraireAmount?: bigint | null
     cumulativeLoss?: bigint | null
     actor?: Hex | null
+    evidenceHash?: Hex | null
+    stale?: boolean | null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     event: any
   },
 ): Promise<void> {
-  const { manager, mutualId, commitmentId, kind, numeraireAmount, cumulativeLoss, actor, event } = args
+  const { manager, mutualId, commitmentId, kind, numeraireAmount, cumulativeLoss, actor, evidenceHash, stale, event } =
+    args
   await context.db.insert(mutualEvent).values({
     id: `${mutualId.toString()}-${event.block.number}-${event.log.logIndex}`,
     manager,
@@ -164,7 +168,10 @@ async function recordMutualEvent(
     numeraireAmount: numeraireAmount ?? null,
     cumulativeLoss: cumulativeLoss ?? null,
     actor: actor ?? null,
+    evidenceHash: evidenceHash ?? null,
+    stale: stale ?? null,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
@@ -210,13 +217,15 @@ async function recordPoolCredit(
   })
 }
 
-// Re-read the mutual's snapshot and persist the value-moving fields.
+// Re-read the mutual's snapshot, persist the value-moving fields, and upsert
+// this block's `mutualState` row. The reads are end-of-block state, so every
+// event in a block writes the same row.
 async function refreshMutual(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
   manager: Hex,
   mutualId: bigint,
-  block: bigint,
+  block: { number: bigint; timestamp: bigint },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extra: Record<string, any> = {},
 ): Promise<void> {
@@ -234,8 +243,22 @@ async function refreshMutual(
     terminal: snap.terminal,
     ...premium,
     ...extra,
-    updatedBlock: block,
+    updatedBlock: block.number,
   })
+  const state = {
+    blockTimestamp: block.timestamp,
+    totalShares: snap.totalShares,
+    activeCover: premium.activeCover,
+    cumulativeLoss: snap.cumulativeLoss,
+    settledTotal: premium.settledTotal,
+    rewardRate: premium.rewardRate,
+    periodFinish: premium.periodFinish,
+    premiumPool: premium.premiumPool,
+  }
+  await context.db
+    .insert(mutualState)
+    .values({ id: `${id}-${block.number}`, manager, mutualId, blockNumber: block.number, ...state })
+    .onConflictDoUpdate(state)
 }
 
 // ----------------------------------------------------------------------------
@@ -259,7 +282,6 @@ ponder.on('CommitmentManager:MutualCreated', async ({ event, context }) => {
     cumulativeLoss: snap.cumulativeLoss,
     active: snap.active,
     terminal: snap.terminal,
-    status: 'forming',
     targetCapacity: null,
     termEnd: null,
     perilURI: null,
@@ -278,7 +300,7 @@ ponder.on('CommitmentManager:MutualActivated', async ({ event, context }) => {
   if (row) {
     await context.db
       .update(mutual, { id })
-      .set({ status: 'active', active: true, updatedBlock: event.block.number })
+      .set({ active: true, updatedBlock: event.block.number })
   }
   await recordMutualEvent(context, { manager, mutualId, kind: 'activated', event })
 })
@@ -304,7 +326,7 @@ ponder.on('CommitmentManager:MemberJoined', async ({ event, context }) => {
     updatedBlock: event.block.number,
   })
   // totalShares moves on join — refresh from chain.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -317,7 +339,7 @@ ponder.on('CommitmentManager:MemberJoined', async ({ event, context }) => {
 })
 
 ponder.on('CommitmentManager:MutualLossInitiated', async ({ event, context }) => {
-  const { mutualId, lossNumeraire, proposer } = event.args
+  const { mutualId, lossNumeraire, evidenceHash, proposer } = event.args
   const manager = event.log.address
   // Opening a loss proposal moves no indexed mutual field.
   await recordMutualEvent(context, {
@@ -326,6 +348,7 @@ ponder.on('CommitmentManager:MutualLossInitiated', async ({ event, context }) =>
     kind: 'lossInitiated',
     numeraireAmount: lossNumeraire,
     actor: proposer,
+    evidenceHash,
     event,
   })
 })
@@ -335,7 +358,7 @@ ponder.on('CommitmentManager:MutualLossExecuted', async ({ event, context }) => 
   const manager = event.log.address
   // The event carries the authoritative post-execution Lambda; pin it directly
   // (refreshMutual also re-reads totalShares/active/terminal).
-  await refreshMutual(context, manager, mutualId, event.block.number, { cumulativeLoss })
+  await refreshMutual(context, manager, mutualId, event.block, { cumulativeLoss })
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -347,8 +370,8 @@ ponder.on('CommitmentManager:MutualLossExecuted', async ({ event, context }) => 
 })
 
 ponder.on('CommitmentManager:MutualLossCancelled', async ({ event, context }) => {
-  const { mutualId } = event.args
-  await recordMutualEvent(context, { manager: event.log.address, mutualId, kind: 'lossCancelled', event })
+  const { mutualId, stale } = event.args
+  await recordMutualEvent(context, { manager: event.log.address, mutualId, kind: 'lossCancelled', stale, event })
 })
 
 ponder.on('CommitmentManager:MutualLossShortfall', async ({ event, context }) => {
@@ -417,7 +440,7 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
     }
   }
   // The settle moves settledTotal, activeCover and the premium accumulator.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -430,7 +453,7 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
 })
 
 ponder.on('CommitmentManager:MemberExitRequested', async ({ event, context }) => {
-  const { mutualId, commitmentId } = event.args
+  const { mutualId, commitmentId, slashableUntil } = event.args
   const manager = event.log.address
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
@@ -439,6 +462,8 @@ ponder.on('CommitmentManager:MemberExitRequested', async ({ event, context }) =>
     const mem = await readMembership(context, manager, commitmentId)
     await context.db.update(membership, { id }).set({
       status: 'exitRequested',
+      exitRequestedAt: event.block.timestamp,
+      slashableUntil,
       premiumSnapshot: mem.premiumSnapshot,
       rewardBank: mem.rewardBank,
       updatedBlock: event.block.number,
@@ -479,7 +504,7 @@ ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
     await bumpAccount(context.db, c.committer, { activeDelta: -1, releasedDelta: 1 })
   }
   // totalShares decremented on release — refresh from chain.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'memberReleased', event })
 })
 
@@ -491,7 +516,7 @@ ponder.on('CommitmentManager:MutualTerminated', async ({ event, context }) => {
   if (row) {
     await context.db
       .update(mutual, { id })
-      .set({ status: 'terminated', terminal: true, updatedBlock: event.block.number })
+      .set({ terminal: true, updatedBlock: event.block.number })
   }
   await recordMutualEvent(context, { manager, mutualId, kind: 'terminated', event })
 })
@@ -527,6 +552,7 @@ async function recordPremiumFunding(
     rewardRate: rewardRate ?? null,
     periodFinish: periodFinish ?? null,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
@@ -536,7 +562,7 @@ ponder.on('CommitmentManager:MutualPremiumFunded', async ({ event, context }) =>
   const { mutualId, funder, received, rewardRate, periodFinish } = event.args
   const manager = event.log.address
   // Premium fields (rewardRate / periodFinish / pool) all move on funding.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPremiumFunding(context, {
     manager,
     mutualId,
@@ -566,6 +592,7 @@ ponder.on('CommitmentManager:MemberPremiumClaimed', async ({ event, context }) =
     recipient,
     amount,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
@@ -578,14 +605,14 @@ ponder.on('CommitmentManager:MemberPremiumClaimed', async ({ event, context }) =
     })
   }
   // bankedTotal / premiumPool move on claim — refresh the mutual.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPoolCredit(context, manager, mutualId, recipient, amount, 'premiumIn', event, commitmentId)
 })
 
 ponder.on('CommitmentManager:PremiumReclaimed', async ({ event, context }) => {
   const { mutualId, recipient, unstreamed } = event.args
   const manager = event.log.address
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPremiumFunding(context, {
     manager,
     mutualId,
@@ -600,7 +627,7 @@ ponder.on('CommitmentManager:PremiumReclaimed', async ({ event, context }) => {
 ponder.on('CommitmentManager:MutualPremiumSwept', async ({ event, context }) => {
   const { mutualId, recipient, amount } = event.args
   const manager = event.log.address
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPremiumFunding(context, {
     manager,
     mutualId,
@@ -652,7 +679,6 @@ ponder.on('MutualRegistry:MutualRegistered', async ({ event, context }) => {
     cumulativeLoss: snap.cumulativeLoss,
     active: snap.active,
     terminal: snap.terminal,
-    status: snap.active ? 'active' : 'forming',
     ...annotation,
     createdBlock: event.block.number,
     updatedBlock: event.block.number,
@@ -680,6 +706,7 @@ ponder.on('LinkedMutualPolicy:CoverBound', async ({ event, context }) => {
     premiumPaid,
     active: true,
     createdBlock: event.block.number,
+    createdAt: event.block.timestamp,
     updatedBlock: event.block.number,
   })
 })
@@ -694,6 +721,6 @@ ponder.on('LinkedMutualPolicy:BindingExpired', async ({ event, context }) => {
   if (row) {
     await context.db
       .update(coverBinding, { id })
-      .set({ active: false, updatedBlock: event.block.number })
+      .set({ active: false, expiredAt: event.block.timestamp, updatedBlock: event.block.number })
   }
 })

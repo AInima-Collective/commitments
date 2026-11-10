@@ -23,7 +23,7 @@ docs live in the matching `src/api/<group>.ts`.
 - `/account/:address` — dossier, plus `claimable-yield`, `premium`, `balance-history`, `activity`
 - `/commitments` — `urgent` (canonical urgency-ordered list; see "Canonical sort orders" below), `/:id`, `/:id/contributions`, `/:id/arbitration`, `arbitration/activity`
 - `/agreements/:id/settlements`
-- `/mutuals` — list, `/:id/members`, `/:id/ledger`, `/:id/premium`
+- `/mutuals` — list, `/:id/members`, `/:id/ledger`, `/:id/premium`, `/:id/history?days=7|30|90` (daily premium APR, capital, cover sold)
 - `/vaults/:vault` — `forfeit-ledger`, `donations`, `coverage`, `periodic` (and `POST periodic/snapshot`)
 - `/services/:address/stake-summary`
 - `/protocol` — `stats`, `arbiters`, `cases`, `leaderboard`, `mechanism-activity`

@@ -1,50 +1,9 @@
 import { Hono } from 'hono'
-import { desc, eq, or, sql } from 'ponder'
-import { db, publicClients } from 'ponder:api'
+import { desc, eq, inArray, or, sql } from 'ponder'
+import { db } from 'ponder:api'
 import schema from 'ponder:schema'
-import { erc20Abi, pad, type Hex } from 'viem'
-import { CHAIN_NAME } from '../env'
+import { pad } from 'viem'
 import { parseLimit } from './http'
-
-// Per-process cache of (chainId, asset address) → resolved asset symbol.
-// Asset symbols are immutable for the canonical mock + production tokens we
-// care about, so a single read per vault is sufficient for the lifetime of
-// the indexer process. Falls back to the vault's own symbol if the chain
-// read fails.
-const ASSET_SYMBOL_CACHE = new Map<string, string | null>()
-
-interface PublicClientReadable {
-  readContract(args: {
-    address: Hex
-    abi: typeof erc20Abi
-    functionName: 'symbol'
-  }): Promise<string>
-}
-
-async function resolveAssetSymbol(
-  client: PublicClientReadable | undefined,
-  asset: Hex,
-): Promise<string | null> {
-  const key = asset.toLowerCase()
-  const cached = ASSET_SYMBOL_CACHE.get(key)
-  if (cached !== undefined) return cached
-  if (!client) {
-    ASSET_SYMBOL_CACHE.set(key, null)
-    return null
-  }
-  try {
-    const sym = await client.readContract({
-      address: asset,
-      abi: erc20Abi,
-      functionName: 'symbol',
-    })
-    ASSET_SYMBOL_CACHE.set(key, sym)
-    return sym
-  } catch {
-    ASSET_SYMBOL_CACHE.set(key, null)
-    return null
-  }
-}
 
 const app = new Hono()
 
@@ -77,8 +36,27 @@ app.get('/agreements', async (c) => {
         .where(or(eq(schema.commitment.committer, addr), eq(schema.commitment.counterparty, addr)))
     : await db.select().from(schema.commitment).orderBy(desc(schema.commitment.id)).limit(limit)
 
-  const agreements = await db.select().from(schema.agreement)
-  const stats = await db.select().from(schema.accountStats)
+  // Only the agreements and stats rows this page's commitments touch. The id
+  // match is per manager, checked by the composite key below.
+  const ids = [...new Set(commitments.map((cm) => cm.id))]
+  const participants = new Set<string>()
+  for (const cm of commitments) {
+    participants.add(cm.committer.toLowerCase())
+    participants.add(cm.counterparty.toLowerCase())
+  }
+  const [agreements, stats] =
+    commitments.length === 0
+      ? [[], []]
+      : await Promise.all([
+          db
+            .select()
+            .from(schema.agreement)
+            .where(or(inArray(schema.agreement.commitmentIdA, ids), inArray(schema.agreement.commitmentIdB, ids))),
+          db
+            .select()
+            .from(schema.accountStats)
+            .where(inArray(schema.accountStats.address, [...participants] as `0x${string}`[])),
+        ])
 
   // Commitment ids are per-manager — each CommitmentManager numbers its
   // commitments from 0, so a bare id collides across managers. Key every
@@ -100,11 +78,6 @@ app.get('/agreements', async (c) => {
   }
 
   const statsByAddr = new Map(stats.map((s) => [s.address.toLowerCase(), s]))
-  const participants = new Set<string>()
-  for (const cm of commitments) {
-    participants.add(cm.committer.toLowerCase())
-    participants.add(cm.counterparty.toLowerCase())
-  }
 
   const nodes = Array.from(participants).map((a) => {
     const s = statsByAddr.get(a)
@@ -300,32 +273,22 @@ app.get('/mesh-topology', async (c) => {
     weightsByNode.set(key, list)
   }
 
-  // Resolve the asset symbol for each vault so we can a) label the vault
-  // node and b) derive the implied denom hash. Denoms are now TOKEN-ADDRESS-
-  // keyed (`bytes32(uint160(token))`, matching OperatorRegistry._stakeDenom and
-  // the seed's `_denomFor`), not keccak of a "<symbol>Shares" string. The denom
-  // the registry/TokenWeighting credits is keyed by the requiredToken — the
-  // vault's underlying asset — so we left-pad `v.asset` to bytes32. Reads are
-  // cached process-wide; misses fall back to the vault's own ERC4626 symbol.
-  const clientsRecord = publicClients as Record<string, PublicClientReadable | undefined>
-  const localClient =
-    clientsRecord[CHAIN_NAME] ?? clientsRecord.local ?? Object.values(clientsRecord)[0]
-  const vaultMeta = await Promise.all(
-    vaultRows.map(async (v) => {
-      const assetSymbol = v.asset
-        ? await resolveAssetSymbol(localClient, v.asset)
-        : null
-      const symbolForLabel = assetSymbol ?? v.symbol ?? null
-      // Token-address-keyed denom: bytes32(uint160(asset)) === asset left-padded
-      // to 32 bytes. Matches the bytes32 denom emitted in TokenWeighting weights.
-      const denomHash = v.asset ? pad(v.asset, { size: 32 }) : null
-      return {
-        address: v.address.toLowerCase(),
-        symbol: symbolForLabel,
-        denomHash: denomHash?.toLowerCase() ?? null,
-      }
-    }),
-  )
+  // Label each vault node with its asset symbol and derive the implied denom
+  // hash. Denoms are TOKEN-ADDRESS-keyed (`bytes32(uint160(token))`, matching
+  // OperatorRegistry._stakeDenom and the seed's `_denomFor`), not keccak of a
+  // "<symbol>Shares" string. The denom the registry/TokenWeighting credits is
+  // keyed by the requiredToken — the vault's underlying asset — so we left-pad
+  // `v.asset` to bytes32. A missing asset symbol falls back to the vault's own.
+  const vaultMeta = vaultRows.map((v) => {
+    // Token-address-keyed denom: bytes32(uint160(asset)) === asset left-padded
+    // to 32 bytes. Matches the bytes32 denom emitted in TokenWeighting weights.
+    const denomHash = v.asset ? pad(v.asset, { size: 32 }) : null
+    return {
+      address: v.address.toLowerCase(),
+      symbol: v.assetSymbol ?? v.symbol ?? null,
+      denomHash: denomHash?.toLowerCase() ?? null,
+    }
+  })
 
   const nodes: Array<{
     id: string

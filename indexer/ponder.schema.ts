@@ -103,7 +103,6 @@ export const commitment = onchainTable(
     arbiterIdx: index().on(t.arbiter),
     tokenIdx: index().on(t.token),
     statusIdx: index().on(t.status),
-    metadataStatusIdx: index().on(t.metadataStatus),
     vaultIdx: index().on(t.vault),
     managerIdx: index().on(t.manager),
     operatorBeneficiaryIdx: index().on(t.operatorBeneficiary),
@@ -156,6 +155,7 @@ export const forfeitEvent = onchainTable(
     vaultIdx: index().on(t.vault),
     managerIdx: index().on(t.manager),
     kindIdx: index().on(t.kind),
+    arbiterIdx: index().on(t.arbiter),
   }),
 )
 
@@ -255,7 +255,6 @@ export const agreement = onchainTable(
     bIdx: index().on(t.commitmentIdB),
     managerIdx: index().on(t.manager),
     statusIdx: index().on(t.status),
-    metadataStatusIdx: index().on(t.metadataStatus),
   })
 )
 
@@ -393,7 +392,6 @@ export const agreementProposal = onchainTable(
     acceptorIdx: index().on(t.acceptor),
     managerIdx: index().on(t.manager),
     statusIdx: index().on(t.status),
-    metadataStatusIdx: index().on(t.metadataStatus),
   })
 )
 
@@ -401,9 +399,6 @@ export const operator = onchainTable(
   'operator',
   (t) => ({
     address: t.hex().primaryKey(),
-    // Snapshot at registration time per StakeRegistry — may drift after delegations move.
-    // For a current authoritative value query the on-chain TokenWeighting voting power.
-    weight: t.bigint().notNull().default(0n),
     signingKey: t.hex(),
     status: t.text().notNull(), // 'registered' | 'deregistered'
     registeredBlock: t.bigint().notNull(),
@@ -442,7 +437,6 @@ export const operator = onchainTable(
   }),
   (t) => ({
     statusIdx: index().on(t.status),
-    metadataStatusIdx: index().on(t.metadataStatus),
   })
 )
 
@@ -489,7 +483,6 @@ export const agent = onchainTable(
     ownerIdx: index().on(t.owner),
     agentWalletIdx: index().on(t.agentWallet),
     registryIdx: index().on(t.registry),
-    metadataStatusIdx: index().on(t.metadataStatus),
   })
 )
 
@@ -566,18 +559,6 @@ export const stakeFlow = onchainTable(
     toIdx: index().on(t.toNode),
     denomIdx: index().on(t.denom),
     blockIdx: index().on(t.blockNumber),
-  })
-)
-
-/**
- * Current voting power per operator in OperatorServiceRegistry.
- */
-export const operatorWeight = onchainTable(
-  'operator_weight',
-  (t) => ({
-    operator: t.hex().primaryKey(),
-    weight: t.bigint().notNull(),
-    updatedBlock: t.bigint().notNull(),
   })
 )
 
@@ -923,6 +904,10 @@ export const vault = onchainTable(
     name: t.text(),
     symbol: t.text(),
     decimals: t.integer(),
+    // The underlying asset's ERC-20 symbol / decimals (e.g. USDC at 6), for
+    // labels and formatting `totalAssets`. NULL when the asset's read failed.
+    assetSymbol: t.text(),
+    assetDecimals: t.integer(),
     deployedBlock: t.bigint(),
     // Metadata — current value only; updated on every VaultMetadataUpdated event.
     metadataURI: t.text(),
@@ -931,9 +916,6 @@ export const vault = onchainTable(
     metadataContent: t.jsonb(),
     metadataContentRaw: t.text(),
   }),
-  (t) => ({
-    metadataStatusIdx: index().on(t.metadataStatus),
-  })
 )
 
 /**
@@ -953,9 +935,6 @@ export const service = onchainTable(
     metadataContentRaw: t.text(),
     updatedBlock: t.bigint(),
   }),
-  (t) => ({
-    metadataStatusIdx: index().on(t.metadataStatus),
-  })
 )
 
 /**
@@ -976,7 +955,6 @@ export const serviceOperator = onchainTable(
     service: t.hex().notNull(),
     operator: t.hex().notNull(),
     status: t.text().notNull(), // 'registered' | 'deregistered'
-    weight: t.bigint().notNull().default(0n), // snapshot at registration
     registeredBlock: t.bigint().notNull(),
     updatedBlock: t.bigint().notNull(),
   }),
@@ -1150,11 +1128,6 @@ export const vote = onchainTable(
  * the denormalized "synthetic mutual" annotation: they are NULL for a bare
  * mutual and populated from `MutualRegistry.MutualRegistered` when a mutual is
  * wrapped as an insurance mutual (see src/mutual.ts).
- *
- * `status`:
- *   'forming'    — created, not yet activated (no new members admitted to cover yet).
- *   'active'     — activated; accepting members / covering the peril.
- *   'terminated' — mutual wound down (`MutualTerminated`; `terminal` is also true).
  */
 export const mutual = onchainTable(
   'mutual',
@@ -1171,7 +1144,6 @@ export const mutual = onchainTable(
     cumulativeLoss: t.bigint().notNull().default(0n), // Lambda, 1e18-scaled, monotonic, ≤1e18
     active: t.boolean().notNull().default(false),
     terminal: t.boolean().notNull().default(false),
-    status: t.text().notNull(), // 'forming' | 'active' | 'terminated'
     // ---- Premium index (reward side, §G premium) — refreshed via getMutualPremiumState ----
     premiumPerShareStored: t.bigint().notNull().default(0n), // Pi — 1e18-scaled cumulative premium-per-share
     activeCover: t.bigint().notNull().default(0n), // uint128 on chain; the streaming reward denominator
@@ -1201,7 +1173,33 @@ export const mutual = onchainTable(
     mutualIdIdx: index().on(t.mutualId),
     arbiterIdx: index().on(t.arbiter),
     beneficiaryIdx: index().on(t.beneficiary),
-    statusIdx: index().on(t.status),
+  }),
+)
+
+/**
+ * One row per block in which a value-moving mutual event fired, written by
+ * `refreshMutual` from its end-of-block chain reads. Feeds
+ * `GET /mutuals/:id/history`: the last row at or before a time is the mutual's
+ * state at that time, exactly. Units as on `mutual`.
+ */
+export const mutualState = onchainTable(
+  'mutual_state',
+  (t) => ({
+    id: t.text().primaryKey(), // `${manager}-${mutualId}-${blockNumber}` (manager lowercased)
+    manager: t.hex().notNull(),
+    mutualId: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    blockTimestamp: t.bigint().notNull(),
+    totalShares: t.bigint().notNull(),
+    activeCover: t.bigint().notNull(),
+    cumulativeLoss: t.bigint().notNull(),
+    settledTotal: t.bigint().notNull(),
+    rewardRate: t.bigint().notNull(),
+    periodFinish: t.bigint().notNull(),
+    premiumPool: t.bigint().notNull(),
+  }),
+  (t) => ({
+    mutualTimeIdx: index().on(t.manager, t.mutualId, t.blockTimestamp),
   }),
 )
 
@@ -1240,6 +1238,10 @@ export const membership = onchainTable(
     premiumSnapshot: t.bigint().notNull().default(0n), // Pi at join / last sync (reward non-retroactivity)
     rewardBank: t.bigint().notNull().default(0n), // accrued-but-unclaimed premium in numeraire
     status: t.text().notNull(), // 'active' | 'exitRequested' | 'released'
+    // MemberExitRequested: its block time (the on-chain unbondRequestedAt) and the
+    // event's slashableUntil. NULL until the member asks to exit.
+    exitRequestedAt: t.bigint(),
+    slashableUntil: t.bigint(),
     createdBlock: t.bigint().notNull(),
     updatedBlock: t.bigint().notNull(),
   }),
@@ -1259,9 +1261,14 @@ export const membership = onchainTable(
  *
  * `commitmentId` is populated for member-scoped transitions (memberJoined,
  * memberSettled, exitRequested, memberReleased) and NULL for mutual-scoped ones.
- * `numeraireAmount` carries the event's loss/credit exposure where applicable;
+ * `numeraireAmount` means a different thing per kind:
+ *   memberJoined                      — the member's creditedValue (numeraire units)
+ *   lossInitiated                     — the declared loss (numeraire units)
+ *   lossExecuted / lossShortfall      — the applied / unattributed loss (numeraire units)
+ *   memberSettled                     — owedUnits, in the member's STAKE-TOKEN units
  * `cumulativeLoss` carries the post-event Lambda for loss-execution / settlement
  * rows. `actor` is the proposer / committer where the event identifies one.
+ * `evidenceHash` is set on lossInitiated, `stale` on lossCancelled.
  */
 export const mutualEvent = onchainTable(
   'mutual_event',
@@ -1274,15 +1281,19 @@ export const mutualEvent = onchainTable(
     // 'lossCancelled' | 'lossShortfall' | 'memberSettled' | 'exitRequested' |
     // 'memberReleased' | 'terminated'
     kind: t.text().notNull(),
-    numeraireAmount: t.bigint(), // loss/credit exposure where applicable
+    numeraireAmount: t.bigint(), // per-kind meaning: see the comment above
     cumulativeLoss: t.bigint(), // post-event Lambda (lossExecuted / memberSettled)
     actor: t.hex(), // proposer / committer where identified
+    evidenceHash: t.hex(), // lossInitiated only
+    stale: t.boolean(), // lossCancelled only: true when force-cancelled as stale
     blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
     blockTimestamp: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
   (t) => ({
     mutualIdx: index().on(t.manager, t.mutualId),
+    mutualOrderIdx: index().on(t.mutualId, t.blockNumber, t.logIndex),
     commitmentIdx: index().on(t.commitmentId),
     kindIdx: index().on(t.kind),
     blockIdx: index().on(t.blockNumber),
@@ -1316,11 +1327,13 @@ export const premiumFunding = onchainTable(
     rewardRate: t.bigint(), // post-funding stream rate (funded only); NULL otherwise
     periodFinish: t.bigint(), // post-funding stream end (funded only); NULL otherwise
     blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
     blockTimestamp: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
   (t) => ({
     mutualIdx: index().on(t.manager, t.mutualId),
+    mutualOrderIdx: index().on(t.mutualId, t.blockNumber, t.logIndex),
     kindIdx: index().on(t.kind),
     blockIdx: index().on(t.blockNumber),
   }),
@@ -1342,6 +1355,7 @@ export const premiumClaim = onchainTable(
     recipient: t.hex().notNull(),
     amount: t.bigint().notNull(),
     blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
     blockTimestamp: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
@@ -1349,6 +1363,7 @@ export const premiumClaim = onchainTable(
     recipientIdx: index().on(t.recipient),
     commitmentIdx: index().on(t.commitmentId),
     mutualIdx: index().on(t.manager, t.mutualId),
+    mutualOrderIdx: index().on(t.mutualId, t.blockNumber, t.logIndex),
     blockIdx: index().on(t.blockNumber),
   }),
 )
@@ -1372,6 +1387,10 @@ export const coverBinding = onchainTable(
     premiumPaid: t.bigint().notNull(),
     active: t.boolean().notNull().default(true),
     createdBlock: t.bigint().notNull(),
+    createdAt: t.bigint().notNull(), // CoverBound block time
+    // BindingExpired block time. The poke is permissionless and can lag `expiry`;
+    // cover stops at `expiry` regardless. NULL until poked.
+    expiredAt: t.bigint(),
     updatedBlock: t.bigint().notNull(),
   }),
   (t) => ({

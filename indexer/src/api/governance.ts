@@ -15,7 +15,7 @@
  * the way out.
  */
 import { Hono } from 'hono'
-import { and, asc, desc, eq, gte, lt, or, sql } from 'ponder'
+import { and, asc, desc, eq, lt, or, sql } from 'ponder'
 import { db, publicClients } from 'ponder:api'
 import schema from 'ponder:schema'
 import type { Hex } from 'viem'
@@ -380,7 +380,11 @@ app.get('/:address/proposals/:id/votes', async (c) => {
   const address = c.req.param('address').toLowerCase() as Hex
   const proposalIdBig = parseId(c.req.param('id'))
   if (proposalIdBig === null) return c.json({ error: 'invalid proposal id' }, 400)
+  // GovernorCountingSimple: 0 against, 1 for, 2 abstain.
   const supportFilter = c.req.query('support')
+  if (supportFilter !== undefined && !/^[012]$/.test(supportFilter)) {
+    return c.json({ error: 'invalid support' }, 400)
+  }
   const limit = parseLimit(c, 100, 500)
   const rawCursor = c.req.query('cursor')
   const cursor = rawCursor ? parseBlockCursor(rawCursor) : null
@@ -426,9 +430,5 @@ app.get('/:address/proposals/:id/votes', async (c) => {
     nextCursor,
   })
 })
-
-// `gte` is imported above for future range filters; reference it here so the
-// typecheck doesn't complain about unused imports while the surface evolves.
-void gte
 
 export default app

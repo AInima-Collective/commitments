@@ -23,6 +23,7 @@ import {
   strategyHookFailure,
   vault,
 } from 'ponder:schema'
+import { erc20Abi } from 'viem'
 import { fetchMetadata } from './metadataFetcher'
 import { bumpAccount } from './accountStats'
 import { attributedCommitment, bumpEncumbered, recordFlow } from './ledgerFlow'
@@ -882,7 +883,14 @@ async function readVaultStaticFields(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
   address: `0x${string}`,
-): Promise<{ asset: `0x${string}`; name: string; symbol: string; decimals: number }> {
+): Promise<{
+  asset: `0x${string}`
+  name: string
+  symbol: string
+  decimals: number
+  assetSymbol: string | null
+  assetDecimals: number | null
+}> {
   const read = (functionName: string) =>
     context.client.readContract({ abi: context.contracts.CommitmentsVault.abi, address, functionName })
   const [asset, name, symbol, decimals] = await Promise.all([
@@ -891,7 +899,13 @@ async function readVaultStaticFields(
     read('symbol'),
     read('decimals'),
   ])
-  return { asset, name, symbol, decimals }
+  // The underlying asset's own vocabulary (USDC at 6, not the share's cvUSDC at
+  // 15). Best-effort: a token without IERC20Metadata leaves NULLs rather than
+  // halting the indexer.
+  const readAsset = (functionName: 'symbol' | 'decimals') =>
+    context.client.readContract({ abi: erc20Abi, address: asset, functionName, cache: 'immutable' }).catch(() => null)
+  const [assetSymbol, assetDecimals] = await Promise.all([readAsset('symbol'), readAsset('decimals')])
+  return { asset, name, symbol, decimals, assetSymbol, assetDecimals }
 }
 
 ponder.on('VaultFactory:VaultDeployed', async ({ event, context }) => {
@@ -908,6 +922,8 @@ ponder.on('VaultFactory:VaultDeployed', async ({ event, context }) => {
       name: statics.name,
       symbol: statics.symbol,
       decimals: statics.decimals,
+      assetSymbol: statics.assetSymbol,
+      assetDecimals: statics.assetDecimals,
       deployedBlock: event.block.number,
       metadataURI: null,
       metadataHash: null,
@@ -959,6 +975,8 @@ ponder.on('CommitmentsVault:VaultMetadataUpdated', async ({ event, context }) =>
     name: statics.name,
     symbol: statics.symbol,
     decimals: statics.decimals,
+    assetSymbol: statics.assetSymbol,
+    assetDecimals: statics.assetDecimals,
     deployedBlock: event.block.number,
     ...metaPatch,
   })
@@ -1058,7 +1076,6 @@ ponder.on('OperatorRegistry:OperatorRegistered', async ({ event, context }) => {
     // Stub row — OperatorServiceRegistry.OperatorRegistered may not have fired yet.
     await context.db.insert(operator).values({
       address: op,
-      weight: 0n,
       signingKey: null,
       registeredBlock: event.block.number,
       registeredAt: event.block.timestamp,
@@ -1215,8 +1232,7 @@ ponder.on('OperatorServiceRegistry:OperatorDeregistered', async ({ event, contex
 // `OperatorWeightSynced` was removed when StakeRegistry stopped tracking stake
 // locally. Per-operator voting power is now live-read from the TokenWeighting
 // IVotingPowerSource. Frontends should query `stakeRegistry.getVotingPower(op)`
-// (or TokenWeighting directly) for an authoritative current value. The `weight`
-// column on the operator row is a snapshot at registration time and may drift.
+// (or TokenWeighting directly) for an authoritative current value.
 
 ponder.on('OperatorServiceRegistry:OperatorSigningKeyUpdated', async ({ event, context }) => {
   const { operator: op, newKey } = event.args
@@ -1244,7 +1260,6 @@ ponder.on('OperatorRegistry:OperatorMetadataUpdated', async ({ event, context })
     .insert(operator)
     .values({
       address: op,
-      weight: 0n,
       signingKey: null,
       status: 'registered',
       registeredBlock: event.block.number,
