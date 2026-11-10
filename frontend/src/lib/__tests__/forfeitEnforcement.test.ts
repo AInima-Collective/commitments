@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   calculateForfeitEnforcement,
-  DEFAULT_FORFEIT_PROPOSAL_TTL,
   FORFEIT_STATE_LABEL,
   type ForfeitProposalSnapshot,
   type ManagerPauseSnapshot,
 } from '../forfeitEnforcement'
+
+const PROPOSAL_TTL = 14n * 86_400n
 
 const proposal = (overrides: Partial<ForfeitProposalSnapshot> = {}): ForfeitProposalSnapshot => ({
   penaltyBps: 2_500,
@@ -29,7 +30,7 @@ const calculate = (overrides: Partial<Parameters<typeof calculateForfeitEnforcem
     proposal: proposal(),
     challengeWindow: 100n,
     pauseState: pause(),
-    proposalTtl: DEFAULT_FORFEIT_PROPOSAL_TTL,
+    proposalTtl: PROPOSAL_TTL,
     now: 1_050n,
     ...overrides,
   })
@@ -102,7 +103,7 @@ describe('calculateForfeitEnforcement', () => {
   })
 
   it('can be executable and stale-cancellable at the same time', () => {
-    const staleAt = 1_100n + DEFAULT_FORFEIT_PROPOSAL_TTL
+    const staleAt = 1_100n + PROPOSAL_TTL
     const result = calculate({ now: staleAt })
     expect(result.state).toBe('STALE')
     expect(result.executionAvailable).toBe(true)

@@ -33,47 +33,6 @@ export const COMMITMENT_STATUS_FILTER_OPTIONS = [
   { value: 'EXPIRED', label: 'expired' },
 ]
 
-/** Status options for the unified table — adds the pending-proposal tier. */
-export const UNIFIED_STATUS_FILTER_OPTIONS = [
-  { value: 'ACTIVE', label: 'active' },
-  { value: 'UNBONDING', label: 'unbonding' },
-  { value: 'FORFEIT_PENDING', label: 'forfeit pending' },
-  { value: 'PENDING', label: 'pending proposal' },
-  { value: 'RELEASED', label: 'released' },
-  { value: 'FORFEITED', label: 'forfeited' },
-  { value: 'EXPIRED', label: 'expired' },
-]
-
-/**
- * Sort options offered by the FilterBar.
- *
- * The card view has no column headers to click, so the sort control has to
- * live somewhere both layouts can reach. Values map to the same
- * `DataTableSort` the table's headers write, which is what lets switching
- * layout preserve the ordering instead of silently resetting it.
- */
-export const SORT_OPTIONS = [
-  { value: 'urgency', label: 'most urgent' },
-  { value: 'id:desc', label: 'newest first' },
-  { value: 'id:asc', label: 'oldest first' },
-  { value: 'amount:desc', label: 'largest stake' },
-  { value: 'amount:asc', label: 'smallest stake' },
-]
-
-/** Parse a {@link SORT_OPTIONS} value. `undefined` means the urgency default. */
-export function parseSortValue(
-  value: string,
-): { columnId: string; direction: 'asc' | 'desc' } | undefined {
-  const [columnId, direction] = value.split(':')
-  if (!columnId || (direction !== 'asc' && direction !== 'desc')) return undefined
-  return { columnId, direction }
-}
-
-/** Inverse of {@link parseSortValue}, for driving the select from table state. */
-export function toSortValue(sort: { columnId: string; direction: 'asc' | 'desc' } | undefined): string {
-  return sort ? `${sort.columnId}:${sort.direction}` : 'urgency'
-}
-
 /**
  * Returns the address of the *other* party from the viewer's vantage point.
  * Each row's `committer`/`counterparty` slots already point to the right

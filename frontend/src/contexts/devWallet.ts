@@ -38,8 +38,3 @@ export function useDevWallet(): DevWalletContextValue {
   }
   return ctx
 }
-
-/** Read-only helper for components that may render outside the provider. */
-export function useOptionalDevWallet(): DevWalletContextValue | null {
-  return useContext(DevWalletContext)
-}

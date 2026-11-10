@@ -257,10 +257,3 @@ export function useAgentIdentity(address: Address | string | undefined): {
   const map = useAgentIdentities(list)
   return { identity: map.get(address), isLoading: map.isLoading }
 }
-
-/** Test/dev helper — wipe the cache (e.g. when switching networks). */
-export function __resetAgentIdentitiesCache(): void {
-  cache.clear()
-  pending.clear()
-  inFlight = null
-}

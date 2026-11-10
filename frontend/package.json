@@ -9,10 +9,8 @@
     "generate": "wagmi generate",
     "lint": "eslint .",
     "lint:css": "stylelint \"src/**/*.css\"",
-    "lint:legacy": "node scripts/audit-legacy.mjs",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "screenshot:vault": "node scripts/screenshot-vault.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

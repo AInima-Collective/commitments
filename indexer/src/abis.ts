@@ -41,4 +41,13 @@ export {
   // (PremiumFunded), both singleton bindings gated on the seed deploying them.
   skimmingMockStrategyAbi,
   vaultCoverConduitAbi,
+  // Governance: the governor and factory have Ponder bindings; the timelock
+  // ABI serves the indexer's chain reads in src/governance.ts.
+  commitmentsGovernorAbi,
+  governorFactoryAbi,
+  commitmentsTimelockAbi,
+  // ERC-8004 IdentityRegistry. The Dev bootstrap subclass shares the full
+  // canonical registry ABI, so one ABI serves the local dev proxy and the
+  // production registry at 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432.
+  erc8004IdentityRegistryDevAbi as agentIdentityRegistryAbi,
 } from '../../frontend/src/generated.ts'

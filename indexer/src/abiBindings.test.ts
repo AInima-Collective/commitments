@@ -6,7 +6,6 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
-import { agentIdentityRegistryAbi } from './agent-abis.ts'
 import {
   commitmentManagerAbi,
   commitmentsVaultAbi,
@@ -26,8 +25,10 @@ import {
   twoTierArbiterAbi,
   vaultCoverConduitAbi,
   vaultFactoryAbi,
+  commitmentsGovernorAbi,
+  governorFactoryAbi,
+  agentIdentityRegistryAbi,
 } from './abis.ts'
-import { commitmentsGovernorAbi, governorFactoryAbi } from './governance-abis.ts'
 
 type AbiItem = {
   type: string

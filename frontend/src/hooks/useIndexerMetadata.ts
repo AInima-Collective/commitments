@@ -54,23 +54,15 @@ function fromRow(row: RawMetadataRow | null | undefined): Omit<MetadataResult, '
   }
 }
 
-type MetadataCollection = 'commitment' | 'agreementProposal' | 'operator' | 'vault' | 'service'
-
-const ADDRESS_KEYED: ReadonlySet<MetadataCollection> = new Set(['operator', 'vault', 'service'])
+type MetadataCollection = 'operator' | 'vault' | 'service'
 
 async function fetchOne(
   collection: MetadataCollection,
-  idOrAddress: string,
-  manager?: string,
+  address: string,
 ): Promise<Omit<MetadataResult, 'refetch'>> {
-  // Ponder auto-exposes one GraphQL field per onchainTable. Query shape:
-  //   - commitment — composite PK (manager, id); fetched via the plural
-  //     `commitments(where: …)` filter so callers without the manager in hand
-  //     (single-manager deployments) still resolve
-  //   - agreementProposal(id: BigInt!) — primary key `id` is t.bigint()
-  //   - operator/vault/service(address: String!) — primary key is `address` (t.hex())
-  const isAddressKeyed = ADDRESS_KEYED.has(collection)
-
+  // Ponder auto-exposes one GraphQL field per onchainTable; operator, vault
+  // and service are keyed by `address` (t.hex()).
+  //
   // The service table omits metadataHash (the stake registry stores no
   // contentHash on chain). Build the selection set per collection so the
   // GraphQL request only references fields that exist.
@@ -78,37 +70,17 @@ async function fetchOne(
     ? 'metadataURI metadataStatus metadataContent'
     : 'metadataURI metadataHash metadataStatus metadataContent'
 
-  let query: string
-  let variables: Record<string, unknown>
-  if (collection === 'commitment') {
-    query = manager
-      ? `query M($v: BigInt, $m: String) {
-          rows: commitments(where: { id: $v, manager: $m }, limit: 1) { items { ${fields} } }
-        }`
-      : `query M($v: BigInt) {
-          rows: commitments(where: { id: $v }, limit: 1) { items { ${fields} } }
-        }`
-    variables = manager ? { v: idOrAddress, m: manager } : { v: idOrAddress }
-  } else {
-    const argName = isAddressKeyed ? 'address' : 'id'
-    const argType = isAddressKeyed ? 'String!' : 'BigInt!'
-    query = `query M($v: ${argType}) {
-      row: ${collection}(${argName}: $v) {
-        ${fields}
-      }
-    }`
-    variables = { v: idOrAddress }
-  }
+  const query = `query M($v: String!) {
+    row: ${collection}(address: $v) {
+      ${fields}
+    }
+  }`
   try {
-    const res = await indexerGraphql<{
-      row?: RawMetadataRow | null
-      rows?: { items: RawMetadataRow[] }
-    }>(query, variables)
+    const res = await indexerGraphql<{ row?: RawMetadataRow | null }>(query, { v: address })
     if (res.errors && res.errors.length > 0) {
       return { ...emptyResult(), error: res.errors[0].message }
     }
-    const row = collection === 'commitment' ? res.data?.rows?.items[0] : res.data?.row
-    return fromRow(row)
+    return fromRow(res.data?.row)
   } catch (e) {
     return { ...emptyResult(), error: (e as Error).message }
   }
@@ -116,12 +88,9 @@ async function fetchOne(
 
 function useMetadata(
   collection: MetadataCollection,
-  idOrAddress: string | undefined,
-  manager?: string,
+  address: string | undefined,
 ): MetadataResult {
-  const key = idOrAddress
-    ? `${collection}:${manager ? `${manager.toLowerCase()}:` : ''}${idOrAddress.toLowerCase()}`
-    : undefined
+  const key = address ? `${collection}:${address.toLowerCase()}` : undefined
   const [tick, setTick] = useState(0)
   const [state, setState] = useState<Omit<MetadataResult, 'refetch'>>(() => {
     if (!key || !hasIndexer) return emptyResult()
@@ -143,12 +112,12 @@ function useMetadata(
     }
     const reqId = ++requestIdRef.current
     setState((s) => ({ ...s, isLoading: true }))
-    fetchOne(collection, idOrAddress!, manager).then((result) => {
+    fetchOne(collection, address!).then((result) => {
       if (reqId !== requestIdRef.current) return
       cache.set(key, { result, fetchedAt: Date.now() })
       setState(result)
     })
-  }, [collection, idOrAddress, key, tick, manager])
+  }, [collection, address, key, tick])
 
   const refetch = useCallback(() => {
     if (key) cache.delete(key)
@@ -156,20 +125,6 @@ function useMetadata(
   }, [key])
 
   return { ...state, refetch }
-}
-
-/**
- * Commitment metadata by id. The commitment table is keyed by the composite
- * (manager, id) — pass `manager` when the caller has it (indexer rows carry
- * it) so multi-manager deployments resolve unambiguously; without it the
- * first match wins (fine on single-manager chains).
- */
-export function useCommitmentMetadata(id: bigint | undefined, manager?: Address): MetadataResult {
-  return useMetadata('commitment', id === undefined ? undefined : id.toString(), manager)
-}
-
-export function useAgreementMetadata(proposalId: bigint | undefined): MetadataResult {
-  return useMetadata('agreementProposal', proposalId === undefined ? undefined : proposalId.toString())
 }
 
 export function useOperatorMetadata(address: Address | undefined): MetadataResult {
@@ -182,9 +137,4 @@ export function useVaultMetadata(address: Address | undefined): MetadataResult {
 
 export function useServiceMetadata(address: Address | undefined): MetadataResult {
   return useMetadata('service', address === undefined ? undefined : address.toLowerCase())
-}
-
-// Test-only helper: clear cache (used by unit tests and when switching wallets).
-export function __resetMetadataCacheForTests(): void {
-  cache.clear()
 }

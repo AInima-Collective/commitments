@@ -1,7 +1,16 @@
 import { type Address } from 'viem'
 
 import { getContractAddresses } from './contracts'
-import type { MarketArbiterKind } from './marketOffers'
+
+/** Kind of contract sitting at `commitment.arbiter`: the trust assumption. */
+export type MarketArbiterKind =
+  | 'eoa'
+  | 'multisig'
+  | 'committee'
+  | 'service'
+  | 'optimistic'
+  | 'zk'
+  | 'self'
 
 /** Sentinel id for the "you arbitrate this yourself" option. */
 export const SELF_ARBITER_ID = 'self'

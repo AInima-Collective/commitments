@@ -5840,6 +5840,604 @@ export const commitmentsVaultAbi = [
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ERC8004IdentityRegistryDev
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+export const erc8004IdentityRegistryDevAbi = [
+  {
+    type: 'function',
+    inputs: [],
+    name: 'UPGRADE_INTERFACE_VERSION',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'to', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'approve',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'eip712Domain',
+    outputs: [
+      { name: 'fields', internalType: 'bytes1', type: 'bytes1' },
+      { name: 'name', internalType: 'string', type: 'string' },
+      { name: 'version', internalType: 'string', type: 'string' },
+      { name: 'chainId', internalType: 'uint256', type: 'uint256' },
+      { name: 'verifyingContract', internalType: 'address', type: 'address' },
+      { name: 'salt', internalType: 'bytes32', type: 'bytes32' },
+      { name: 'extensions', internalType: 'uint256[]', type: 'uint256[]' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'agentId', internalType: 'uint256', type: 'uint256' }],
+    name: 'getAgentWallet',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
+    name: 'getApproved',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'agentId', internalType: 'uint256', type: 'uint256' },
+      { name: 'metadataKey', internalType: 'string', type: 'string' },
+    ],
+    name: 'getMetadata',
+    outputs: [{ name: '', internalType: 'bytes', type: 'bytes' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'getVersion',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'pure',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'initialize',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'owner_', internalType: 'address', type: 'address' }],
+    name: 'initializeDev',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'owner', internalType: 'address', type: 'address' },
+      { name: 'operator', internalType: 'address', type: 'address' },
+    ],
+    name: 'isApprovedForAll',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'spender', internalType: 'address', type: 'address' },
+      { name: 'agentId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'isAuthorizedOrOwner',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'name',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
+    name: 'ownerOf',
+    outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'proxiableUUID',
+    outputs: [{ name: '', internalType: 'bytes32', type: 'bytes32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'register',
+    outputs: [{ name: 'agentId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'agentURI', internalType: 'string', type: 'string' },
+      {
+        name: 'metadata',
+        internalType: 'struct IdentityRegistryUpgradeable.MetadataEntry[]',
+        type: 'tuple[]',
+        components: [
+          { name: 'metadataKey', internalType: 'string', type: 'string' },
+          { name: 'metadataValue', internalType: 'bytes', type: 'bytes' },
+        ],
+      },
+    ],
+    name: 'register',
+    outputs: [{ name: 'agentId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'agentURI', internalType: 'string', type: 'string' }],
+    name: 'register',
+    outputs: [{ name: 'agentId', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'renounceOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'from', internalType: 'address', type: 'address' },
+      { name: 'to', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'safeTransferFrom',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'from', internalType: 'address', type: 'address' },
+      { name: 'to', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'safeTransferFrom',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'agentId', internalType: 'uint256', type: 'uint256' },
+      { name: 'newURI', internalType: 'string', type: 'string' },
+    ],
+    name: 'setAgentURI',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'agentId', internalType: 'uint256', type: 'uint256' },
+      { name: 'newWallet', internalType: 'address', type: 'address' },
+      { name: 'deadline', internalType: 'uint256', type: 'uint256' },
+      { name: 'signature', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'setAgentWallet',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'operator', internalType: 'address', type: 'address' },
+      { name: 'approved', internalType: 'bool', type: 'bool' },
+    ],
+    name: 'setApprovalForAll',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'agentId', internalType: 'uint256', type: 'uint256' },
+      { name: 'metadataKey', internalType: 'string', type: 'string' },
+      { name: 'metadataValue', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'setMetadata',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'interfaceId', internalType: 'bytes4', type: 'bytes4' }],
+    name: 'supportsInterface',
+    outputs: [{ name: '', internalType: 'bool', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'symbol',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
+    name: 'tokenURI',
+    outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'from', internalType: 'address', type: 'address' },
+      { name: 'to', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'transferFrom',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'newOwner', internalType: 'address', type: 'address' }],
+    name: 'transferOwnership',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: 'agentId', internalType: 'uint256', type: 'uint256' }],
+    name: 'unsetAgentWallet',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'newImplementation', internalType: 'address', type: 'address' },
+      { name: 'data', internalType: 'bytes', type: 'bytes' },
+    ],
+    name: 'upgradeToAndCall',
+    outputs: [],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'approved',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'tokenId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+    ],
+    name: 'Approval',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'operator',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'approved', internalType: 'bool', type: 'bool', indexed: false },
+    ],
+    name: 'ApprovalForAll',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: '_fromTokenId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: '_toTokenId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'BatchMetadataUpdate',
+  },
+  { type: 'event', anonymous: false, inputs: [], name: 'EIP712DomainChanged' },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'version',
+        internalType: 'uint64',
+        type: 'uint64',
+        indexed: false,
+      },
+    ],
+    name: 'Initialized',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'agentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'indexedMetadataKey',
+        internalType: 'string',
+        type: 'string',
+        indexed: true,
+      },
+      {
+        name: 'metadataKey',
+        internalType: 'string',
+        type: 'string',
+        indexed: false,
+      },
+      {
+        name: 'metadataValue',
+        internalType: 'bytes',
+        type: 'bytes',
+        indexed: false,
+      },
+    ],
+    name: 'MetadataSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: '_tokenId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'MetadataUpdate',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'previousOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'newOwner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'OwnershipTransferred',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'agentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'agentURI',
+        internalType: 'string',
+        type: 'string',
+        indexed: false,
+      },
+      {
+        name: 'owner',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Registered',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      { name: 'from', internalType: 'address', type: 'address', indexed: true },
+      { name: 'to', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'tokenId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+    ],
+    name: 'Transfer',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'agentId',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: true,
+      },
+      {
+        name: 'newURI',
+        internalType: 'string',
+        type: 'string',
+        indexed: false,
+      },
+      {
+        name: 'updatedBy',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'URIUpdated',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'implementation',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+    ],
+    name: 'Upgraded',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'target', internalType: 'address', type: 'address' }],
+    name: 'AddressEmptyCode',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'implementation', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC1967InvalidImplementation',
+  },
+  { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'sender', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+      { name: 'owner', internalType: 'address', type: 'address' },
+    ],
+    name: 'ERC721IncorrectOwner',
+  },
+  {
+    type: 'error',
+    inputs: [
+      { name: 'operator', internalType: 'address', type: 'address' },
+      { name: 'tokenId', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'ERC721InsufficientApproval',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'approver', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidApprover',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'operator', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidOperator',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'receiver', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidReceiver',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'sender', internalType: 'address', type: 'address' }],
+    name: 'ERC721InvalidSender',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'tokenId', internalType: 'uint256', type: 'uint256' }],
+    name: 'ERC721NonexistentToken',
+  },
+  { type: 'error', inputs: [], name: 'FailedCall' },
+  { type: 'error', inputs: [], name: 'InvalidInitialization' },
+  { type: 'error', inputs: [], name: 'NotInitializing' },
+  {
+    type: 'error',
+    inputs: [{ name: 'owner', internalType: 'address', type: 'address' }],
+    name: 'OwnableInvalidOwner',
+  },
+  {
+    type: 'error',
+    inputs: [{ name: 'account', internalType: 'address', type: 'address' }],
+    name: 'OwnableUnauthorizedAccount',
+  },
+  { type: 'error', inputs: [], name: 'UUPSUnauthorizedCallContext' },
+  {
+    type: 'error',
+    inputs: [{ name: 'slot', internalType: 'bytes32', type: 'bytes32' }],
+    name: 'UUPSUnsupportedProxiableUUID',
+  },
+] as const
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // FanInNode
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -18683,6 +19281,538 @@ export const useWatchCommitmentsVaultYieldStrategyUpdatedEvent =
   /*#__PURE__*/ createUseWatchContractEvent({
     abi: commitmentsVaultAbi,
     eventName: 'YieldStrategyUpdated',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__
+ */
+export const useReadErc8004IdentityRegistryDev =
+  /*#__PURE__*/ createUseReadContract({ abi: erc8004IdentityRegistryDevAbi })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"UPGRADE_INTERFACE_VERSION"`
+ */
+export const useReadErc8004IdentityRegistryDevUpgradeInterfaceVersion =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'UPGRADE_INTERFACE_VERSION',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"balanceOf"`
+ */
+export const useReadErc8004IdentityRegistryDevBalanceOf =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'balanceOf',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"eip712Domain"`
+ */
+export const useReadErc8004IdentityRegistryDevEip712Domain =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'eip712Domain',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"getAgentWallet"`
+ */
+export const useReadErc8004IdentityRegistryDevGetAgentWallet =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'getAgentWallet',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"getApproved"`
+ */
+export const useReadErc8004IdentityRegistryDevGetApproved =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'getApproved',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"getMetadata"`
+ */
+export const useReadErc8004IdentityRegistryDevGetMetadata =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'getMetadata',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"getVersion"`
+ */
+export const useReadErc8004IdentityRegistryDevGetVersion =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'getVersion',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"isApprovedForAll"`
+ */
+export const useReadErc8004IdentityRegistryDevIsApprovedForAll =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'isApprovedForAll',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"isAuthorizedOrOwner"`
+ */
+export const useReadErc8004IdentityRegistryDevIsAuthorizedOrOwner =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'isAuthorizedOrOwner',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"name"`
+ */
+export const useReadErc8004IdentityRegistryDevName =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'name',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"owner"`
+ */
+export const useReadErc8004IdentityRegistryDevOwner =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'owner',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"ownerOf"`
+ */
+export const useReadErc8004IdentityRegistryDevOwnerOf =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'ownerOf',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"proxiableUUID"`
+ */
+export const useReadErc8004IdentityRegistryDevProxiableUuid =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'proxiableUUID',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"supportsInterface"`
+ */
+export const useReadErc8004IdentityRegistryDevSupportsInterface =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'supportsInterface',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"symbol"`
+ */
+export const useReadErc8004IdentityRegistryDevSymbol =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'symbol',
+  })
+
+/**
+ * Wraps __{@link useReadContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"tokenURI"`
+ */
+export const useReadErc8004IdentityRegistryDevTokenUri =
+  /*#__PURE__*/ createUseReadContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'tokenURI',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__
+ */
+export const useWriteErc8004IdentityRegistryDev =
+  /*#__PURE__*/ createUseWriteContract({ abi: erc8004IdentityRegistryDevAbi })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"approve"`
+ */
+export const useWriteErc8004IdentityRegistryDevApprove =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'approve',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"initialize"`
+ */
+export const useWriteErc8004IdentityRegistryDevInitialize =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'initialize',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"initializeDev"`
+ */
+export const useWriteErc8004IdentityRegistryDevInitializeDev =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'initializeDev',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"register"`
+ */
+export const useWriteErc8004IdentityRegistryDevRegister =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'register',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"renounceOwnership"`
+ */
+export const useWriteErc8004IdentityRegistryDevRenounceOwnership =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'renounceOwnership',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"safeTransferFrom"`
+ */
+export const useWriteErc8004IdentityRegistryDevSafeTransferFrom =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'safeTransferFrom',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setAgentURI"`
+ */
+export const useWriteErc8004IdentityRegistryDevSetAgentUri =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setAgentURI',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setAgentWallet"`
+ */
+export const useWriteErc8004IdentityRegistryDevSetAgentWallet =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setAgentWallet',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setApprovalForAll"`
+ */
+export const useWriteErc8004IdentityRegistryDevSetApprovalForAll =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setApprovalForAll',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setMetadata"`
+ */
+export const useWriteErc8004IdentityRegistryDevSetMetadata =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setMetadata',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"transferFrom"`
+ */
+export const useWriteErc8004IdentityRegistryDevTransferFrom =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'transferFrom',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"transferOwnership"`
+ */
+export const useWriteErc8004IdentityRegistryDevTransferOwnership =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'transferOwnership',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"unsetAgentWallet"`
+ */
+export const useWriteErc8004IdentityRegistryDevUnsetAgentWallet =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'unsetAgentWallet',
+  })
+
+/**
+ * Wraps __{@link useWriteContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"upgradeToAndCall"`
+ */
+export const useWriteErc8004IdentityRegistryDevUpgradeToAndCall =
+  /*#__PURE__*/ createUseWriteContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'upgradeToAndCall',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__
+ */
+export const useSimulateErc8004IdentityRegistryDev =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"approve"`
+ */
+export const useSimulateErc8004IdentityRegistryDevApprove =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'approve',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"initialize"`
+ */
+export const useSimulateErc8004IdentityRegistryDevInitialize =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'initialize',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"initializeDev"`
+ */
+export const useSimulateErc8004IdentityRegistryDevInitializeDev =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'initializeDev',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"register"`
+ */
+export const useSimulateErc8004IdentityRegistryDevRegister =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'register',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"renounceOwnership"`
+ */
+export const useSimulateErc8004IdentityRegistryDevRenounceOwnership =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'renounceOwnership',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"safeTransferFrom"`
+ */
+export const useSimulateErc8004IdentityRegistryDevSafeTransferFrom =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'safeTransferFrom',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setAgentURI"`
+ */
+export const useSimulateErc8004IdentityRegistryDevSetAgentUri =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setAgentURI',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setAgentWallet"`
+ */
+export const useSimulateErc8004IdentityRegistryDevSetAgentWallet =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setAgentWallet',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setApprovalForAll"`
+ */
+export const useSimulateErc8004IdentityRegistryDevSetApprovalForAll =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setApprovalForAll',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"setMetadata"`
+ */
+export const useSimulateErc8004IdentityRegistryDevSetMetadata =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'setMetadata',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"transferFrom"`
+ */
+export const useSimulateErc8004IdentityRegistryDevTransferFrom =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'transferFrom',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"transferOwnership"`
+ */
+export const useSimulateErc8004IdentityRegistryDevTransferOwnership =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'transferOwnership',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"unsetAgentWallet"`
+ */
+export const useSimulateErc8004IdentityRegistryDevUnsetAgentWallet =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'unsetAgentWallet',
+  })
+
+/**
+ * Wraps __{@link useSimulateContract}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `functionName` set to `"upgradeToAndCall"`
+ */
+export const useSimulateErc8004IdentityRegistryDevUpgradeToAndCall =
+  /*#__PURE__*/ createUseSimulateContract({
+    abi: erc8004IdentityRegistryDevAbi,
+    functionName: 'upgradeToAndCall',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__
+ */
+export const useWatchErc8004IdentityRegistryDevEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"Approval"`
+ */
+export const useWatchErc8004IdentityRegistryDevApprovalEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'Approval',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"ApprovalForAll"`
+ */
+export const useWatchErc8004IdentityRegistryDevApprovalForAllEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'ApprovalForAll',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"BatchMetadataUpdate"`
+ */
+export const useWatchErc8004IdentityRegistryDevBatchMetadataUpdateEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'BatchMetadataUpdate',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"EIP712DomainChanged"`
+ */
+export const useWatchErc8004IdentityRegistryDevEip712DomainChangedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'EIP712DomainChanged',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"Initialized"`
+ */
+export const useWatchErc8004IdentityRegistryDevInitializedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'Initialized',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"MetadataSet"`
+ */
+export const useWatchErc8004IdentityRegistryDevMetadataSetEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'MetadataSet',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"MetadataUpdate"`
+ */
+export const useWatchErc8004IdentityRegistryDevMetadataUpdateEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'MetadataUpdate',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"OwnershipTransferred"`
+ */
+export const useWatchErc8004IdentityRegistryDevOwnershipTransferredEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'OwnershipTransferred',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"Registered"`
+ */
+export const useWatchErc8004IdentityRegistryDevRegisteredEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'Registered',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"Transfer"`
+ */
+export const useWatchErc8004IdentityRegistryDevTransferEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'Transfer',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"URIUpdated"`
+ */
+export const useWatchErc8004IdentityRegistryDevUriUpdatedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'URIUpdated',
+  })
+
+/**
+ * Wraps __{@link useWatchContractEvent}__ with `abi` set to __{@link erc8004IdentityRegistryDevAbi}__ and `eventName` set to `"Upgraded"`
+ */
+export const useWatchErc8004IdentityRegistryDevUpgradedEvent =
+  /*#__PURE__*/ createUseWatchContractEvent({
+    abi: erc8004IdentityRegistryDevAbi,
+    eventName: 'Upgraded',
   })
 
 /**

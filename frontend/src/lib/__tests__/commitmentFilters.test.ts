@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   applyCommitmentFilters,
   availableTags,
-  parseSortValue,
-  toSortValue,
   type CommitmentFilterState,
 } from '../commitmentFilters'
 import { type UnifiedRow } from '../../hooks/useUnifiedRows'
@@ -101,21 +99,5 @@ describe('availableTags', () => {
 
   it('returns nothing for a corpus with no metadata', () => {
     expect(availableTags([makeRow({ metadataStatus: 'empty' })])).toEqual([])
-  })
-})
-
-describe('sort values round-trip', () => {
-  it('maps the urgency default to undefined and back', () => {
-    expect(parseSortValue('urgency')).toBeUndefined()
-    expect(toSortValue(undefined)).toBe('urgency')
-  })
-
-  it.each(['id:desc', 'id:asc', 'amount:desc', 'amount:asc'])('round-trips %s', (value) => {
-    expect(toSortValue(parseSortValue(value))).toBe(value)
-  })
-
-  it('treats a malformed value as the default rather than throwing', () => {
-    expect(parseSortValue('amount:sideways')).toBeUndefined()
-    expect(parseSortValue('')).toBeUndefined()
   })
 })

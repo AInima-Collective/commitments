@@ -3,7 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { type Abi, type Address, type Hex } from "viem";
 import { useAccount, useChainId, useReadContracts } from "wagmi";
 import { ClaimableYieldPanel } from "../components/commitment/ClaimableYieldPanel";
-import { CommitmentsTable, type CommitmentsTableResolveContext } from "../components/commitment/CommitmentsTable";
+import { CommitmentsTable } from "../components/commitment/CommitmentsTable";
+import { type CommitmentsResolveContext } from "../components/commitment/commitmentCells";
 import { CreateCommitmentForm } from "../components/commitment/CreateCommitmentForm";
 import { AgreementProposalDrawer } from "../components/agreement/AgreementProposalDrawer";
 import { BackingFlow } from "../components/backing/BackingFlow";
@@ -965,7 +966,6 @@ export default function Dashboard() {
             managerAddress={managerAddress}
             isConnected={isConnected}
             connectedAddress={connectedAddress}
-            onCancel={() => setCreateOpen(false)}
             onCommitmentCreated={() => {
               refetchDashboard();
               setCreateOpen(false);
@@ -1327,7 +1327,7 @@ function YourCommitments({
   rows: UnifiedCommitmentRowEntry[];
   onOpenRow: (r: UnifiedRow) => void;
   claimableEntries: ClaimableYieldEntry[];
-  resolveContext?: CommitmentsTableResolveContext;
+  resolveContext?: CommitmentsResolveContext;
 }) {
   // v2: each row's amount is denominated in its own backing token.
   const tokenMeta = useTokenMetaMap(rows.map((r) => r.token));

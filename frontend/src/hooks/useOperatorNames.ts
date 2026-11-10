@@ -65,8 +65,7 @@ async function flushPending(): Promise<void> {
       { addresses },
     )
     if (res.errors && res.errors.length > 0) {
-      // Cache lookup-failure as null so we don't tight-loop retries; a refetch()
-      // call from a caller can still wipe the cache via __resetOperatorNamesCache.
+      // Cache lookup-failure as null so we don't tight-loop retries.
       for (const k of keys) cache.set(k, { name: null, metadataStatus: null })
       return
     }
@@ -169,11 +168,4 @@ export function useOperatorNames(addresses: ReadonlyArray<Address | string | und
   }
 
   return { get, isLoading }
-}
-
-/** Test/dev helper — wipe the cache (e.g. when switching networks). */
-export function __resetOperatorNamesCache(): void {
-  cache.clear()
-  pending.clear()
-  inFlight = null
 }

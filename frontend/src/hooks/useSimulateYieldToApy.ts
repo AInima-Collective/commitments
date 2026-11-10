@@ -7,6 +7,7 @@ import { commitmentsVaultAbi } from '../generated'
 import { hasIndexer, indexerFetch } from '../config/indexer'
 import { useAnvilTime } from './useAnvilTime'
 import { useDevWalletClient } from './useDevWalletClient'
+import { MOCK_ERC20_MINT_ABI } from '../lib/mockErc20Abi'
 
 const ANVIL_CHAIN_ID = 31337
 
@@ -18,20 +19,6 @@ const ANVIL_CHAIN_ID = 31337
  * computes a real positive delta off the donate-raised share price.
  */
 const SIMULATE_WARP_SECONDS = 4 * 86_400
-
-/** MockERC20.mint — anvil-only faucet to top up the donor before donate(). */
-const MOCK_ERC20_MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const
 
 /** One leg of the orchestration, surfaced for progress UI. */
 export type SimulateYieldStep = 'idle' | 'baseline' | 'donating' | 'warping' | 'snapshot' | 'done'

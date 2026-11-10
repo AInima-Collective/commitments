@@ -7,7 +7,7 @@
 import { keccak256, stringToHex, type Address, type Hex } from 'viem'
 import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 
-import { commitmentsGovernorAbi } from '../abi/governance'
+import { commitmentsGovernorAbi } from '../generated'
 import type { ProposalStep } from './useCreateProposal'
 
 export interface ProposalActionsArgs {

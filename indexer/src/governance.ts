@@ -24,7 +24,7 @@ import {
 import { keccak256, toHex } from 'viem'
 
 import { decodeProposalAction, rollupProposalKind, type RawAction } from './decode/governanceActions'
-import { commitmentsGovernorAbi, commitmentsTimelockAbi } from './governance-abis'
+import { commitmentsGovernorAbi, commitmentsTimelockAbi } from './abis'
 
 // Governance contracts are configured only when a deployment is present.
 // Keep registration permissive across configs with and without governance;

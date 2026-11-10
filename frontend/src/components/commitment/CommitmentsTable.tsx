@@ -3,7 +3,6 @@ import {
   DataTable,
   TokenAmount,
   type DataTableColumn,
-  type DataTableSort,
 } from '../ui'
 import {
   AmountCell,
@@ -20,9 +19,6 @@ import { type UnifiedRow } from '../../hooks/useUnifiedRows'
 import { otherParty } from '../../lib/commitmentFilters'
 import { claimableFor, rowTone, sumClaimableById } from '../../lib/commitmentRow'
 
-/** @deprecated Use {@link CommitmentsResolveContext}; kept for existing callers. */
-export type CommitmentsTableResolveContext = CommitmentsResolveContext
-
 export interface CommitmentsTableProps {
   /** Already-filtered, already-sorted rows. Commitments + proposals are both
    *  accepted (proposals carry status PENDING). */
@@ -31,8 +27,6 @@ export interface CommitmentsTableProps {
   /** Per-(token) decimals/symbol — amounts are denominated in each row's own
    *  backing token, never the vault share. */
   tokenMeta: TokenMetaResolver
-  /** Cap the rendered rows (Dashboard preview = 5). Omit for the full list. */
-  limit?: number
   /** Render the Yield column. Default false — pass `claimableEntries` alongside. */
   showYield?: boolean
   /** Live claimable-yield entries (per commitment+strategy). Summed per
@@ -41,14 +35,6 @@ export interface CommitmentsTableProps {
   /** When set, renders a per-row Resolve action (commitment rows only) that
    *  opens the resolve modal. */
   resolveContext?: CommitmentsResolveContext
-  /** Controlled sort. Enables sortable headers when paired
-   *  with `onSortChange`. */
-  sort?: DataTableSort
-  onSortChange?: (sort: DataTableSort) => void
-  /** Applies a tag filter. When omitted, tag chips render as inert labels. */
-  onSelectTag?: (tag: string) => void
-  /** Tags currently applied as filters, so chips can render as active. */
-  activeTags?: readonly string[]
   isLoading?: boolean
   emptyState?: ReactNode
   'aria-label'?: string
@@ -68,26 +54,14 @@ export function CommitmentsTable({
   rows,
   onOpenRow,
   tokenMeta,
-  limit,
   showYield = false,
   claimableEntries,
   resolveContext,
-  sort,
-  onSortChange,
-  onSelectTag,
-  activeTags,
   isLoading,
   emptyState,
   'aria-label': ariaLabel = 'commitments',
 }: CommitmentsTableProps) {
-  const sortable = !!onSortChange
-  const visibleRows = useMemo(
-    () => (limit !== undefined ? rows.slice(0, limit) : rows),
-    [rows, limit],
-  )
-  // Resolved against the visible rows only: the Dashboard renders five of them
-  // and has no reason to pay for name resolution on the other four hundred.
-  const labelContext = useCommitmentLabelContext(visibleRows, tokenMeta)
+  const labelContext = useCommitmentLabelContext(rows, tokenMeta)
 
   // Sum claimable amounts per commitment id (a commitment can have several
   // strategy bindings). Amounts are in the commitment's own token, matching the
@@ -101,10 +75,7 @@ export function CommitmentsTable({
         header: 'commitment',
         // Wide enough for a real title to breathe; the cell clamps beyond it.
         width: '34%',
-        sortable,
-        render: (r) => (
-          <NameCell row={r} ctx={labelContext} onSelectTag={onSelectTag} activeTags={activeTags} />
-        ),
+        render: (r) => <NameCell row={r} ctx={labelContext} />,
       },
       {
         id: 'direction',
@@ -167,7 +138,6 @@ export function CommitmentsTable({
       id: 'amount',
       header: 'amount',
       align: 'right',
-      sortable,
       render: (r) => <AmountCell row={r} tokenMeta={tokenMeta} />,
     })
 
@@ -184,25 +154,14 @@ export function CommitmentsTable({
     }
 
     return cols
-  }, [
-    sortable,
-    showYield,
-    claimableById,
-    tokenMeta,
-    resolveContext,
-    labelContext,
-    onSelectTag,
-    activeTags,
-  ])
+  }, [showYield, claimableById, tokenMeta, resolveContext, labelContext])
 
   return (
     <DataTable<UnifiedRow>
       aria-label={ariaLabel}
       columns={columns}
-      rows={visibleRows}
+      rows={rows}
       getRowKey={(r) => `${r.kind === 'proposal' ? 'p' : 'c'}-${r.id.toString()}`}
-      sort={sort}
-      onSortChange={onSortChange}
       rowTone={rowTone}
       onRowClick={onOpenRow}
       isLoading={isLoading}

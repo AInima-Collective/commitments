@@ -20,6 +20,7 @@ export default defineConfig({
         'mutuals/**',
         'distributions/**',
         'governance/**',
+        'agents/**',
       ],
       include: [
         'CommitmentsVault.json',
@@ -48,6 +49,7 @@ export default defineConfig({
         'CommitmentsTimelock.json',
         'GovernorFactory.json',
         'TokenWeightingVotesShim.json',
+        'ERC8004IdentityRegistryDev.json',
       ],
     }),
     react(),

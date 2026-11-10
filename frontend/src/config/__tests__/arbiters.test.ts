@@ -12,7 +12,7 @@ import {
   getOptimisticInsuranceArbiters,
   resolveArbiterAddress,
 } from '../arbiters'
-import type { MarketArbiterKind } from '../marketOffers'
+import type { MarketArbiterKind } from '../arbiters'
 
 const CHAIN = 31337
 const CONNECTED = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Address

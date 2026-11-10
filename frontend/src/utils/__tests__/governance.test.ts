@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   proposalTitle,
-  quorumProgressRatio,
-  isPassing,
-  isTerminal,
   compareProposalsForDisplay,
 } from '../governance'
 
@@ -20,49 +17,6 @@ describe('proposalTitle', () => {
     const out = proposalTitle('x'.repeat(100))
     expect(out).toHaveLength(78) // 77 chars + ellipsis
     expect(out.endsWith('…')).toBe(true)
-  })
-})
-
-describe('quorumProgressRatio', () => {
-  it('returns 0 for a null or zero target', () => {
-    expect(quorumProgressRatio(10n, 5n, null)).toBe(0)
-    expect(quorumProgressRatio(10n, 5n, 0n)).toBe(0)
-  })
-
-  it('sums for + abstain over the target', () => {
-    expect(quorumProgressRatio(30n, 10n, 100n)).toBeCloseTo(0.4)
-  })
-})
-
-describe('isPassing', () => {
-  it('passes when quorum is met and for > against', () => {
-    expect(isPassing(70n, 10n, 30n, 100n)).toBe(true) // 100 >= 100 quorum, 70 > 10
-  })
-
-  it('fails when quorum is not met even with a majority', () => {
-    expect(isPassing(60n, 10n, 20n, 100n)).toBe(false) // 80 < 100
-  })
-
-  it('fails when against >= for even with quorum', () => {
-    expect(isPassing(40n, 40n, 60n, 100n)).toBe(false)
-  })
-
-  it('treats a null target as quorum-met', () => {
-    expect(isPassing(2n, 1n, 0n, null)).toBe(true)
-  })
-})
-
-describe('isTerminal', () => {
-  it('flags terminal states', () => {
-    for (const s of ['executed', 'canceled', 'expired', 'defeated']) {
-      expect(isTerminal(s)).toBe(true)
-    }
-  })
-
-  it('does not flag in-flight states', () => {
-    for (const s of ['active', 'pending', 'queued', 'succeeded']) {
-      expect(isTerminal(s)).toBe(false)
-    }
   })
 })
 

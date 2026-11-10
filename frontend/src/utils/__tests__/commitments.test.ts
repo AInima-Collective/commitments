@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   deriveStatus,
   formatBps,
-  STATUS_CONFIG,
-  type CommitmentStatus,
 } from '../commitments'
 
 /** Seconds since epoch, matching the bigint clock deriveStatus reads. */
@@ -72,22 +70,6 @@ describe('deriveStatus', () => {
 
   it('does not treat unbondInitiatedAt === 0n as unbonding', () => {
     expect(deriveStatus(base({ unbondInitiatedAt: 0n }), undefined)).toBe('ACTIVE')
-  })
-
-  it('every derivable status has a STATUS_CONFIG entry', () => {
-    const statuses: CommitmentStatus[] = [
-      'ACTIVE',
-      'UNBONDING',
-      'RELEASED',
-      'FORFEITED',
-      'FORFEIT_PENDING',
-      'EXPIRED',
-    ]
-    for (const s of statuses) {
-      expect(STATUS_CONFIG[s]).toBeDefined()
-      expect(STATUS_CONFIG[s].className).toBeTruthy()
-      expect(STATUS_CONFIG[s].ariaLabel).toBeTruthy()
-    }
   })
 })
 

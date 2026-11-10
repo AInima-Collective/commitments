@@ -487,12 +487,6 @@
   text-transform: uppercase;
 }
 
-/* Opt-in display/serif utilities for copy that isn't a heading — hero decks,
- * pull quotes, the italic asides that carry the voice. */
-.ds-display { font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking); line-height: var(--leading-tight); }
-.ds-serif   { font-family: var(--font-serif); }
-.ds-serif-italic { font-family: var(--font-serif); font-style: italic; }
-
 .ds-root p { margin: 0; }
 /* Default anchor styling. Wrapped in :where() so classed components
  * (.ds-sidenav-link, .ds-topnav-brand, .ds-dropdown-link, etc.) override
@@ -510,8 +504,6 @@
 .ds-text-sm    { font-size: var(--text-sm); }
 .ds-text-base  { font-size: var(--text-base); }
 .ds-text-lg    { font-size: var(--text-lg); }
-.ds-text-xl    { font-size: var(--text-xl); }
-.ds-text-2xl   { font-size: var(--text-2xl); }
 .ds-muted      { color: var(--text-muted); }
 .ds-subtle     { color: var(--text-subtle); }
 .ds-label      { font-size: var(--text-xs); color: var(--text-subtle); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
@@ -617,14 +609,6 @@ li.ds-media-row { list-style: none; }
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text-muted);
-}
-
-/* Marketplace grid — responsive 1/2/3 column auto-fit on the offer cards.
- * Card density stays "regular" so each entry has room for tags + forfeit copy. */
-.ds-marketplace-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--space-4);
 }
 
 /* ViewToggle — segmented radio group for switching equivalent views.
@@ -1824,21 +1808,6 @@ a.ds-tab[aria-selected='true']:visited { color: var(--text); }
 }
 .ds-addr-link:hover { color: var(--accent); text-decoration: none; }
 
-.ds-icon-btn {
-  background: transparent;
-  border: 0;
-  color: var(--text-subtle);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: var(--text-base);
-  padding: var(--space-1);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color var(--transition);
-}
-.ds-icon-btn:hover { color: var(--accent); }
-
 /* Stat block */
 .ds-stat {
   background: var(--surface);
@@ -2963,27 +2932,6 @@ a.ds-strategy-flow-row-inner:hover { border-color: var(--accent); background: va
   padding-top: var(--space-3);
   border-top: var(--border-width) solid var(--border);
 }
-.ds-position-panel-commitments {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: var(--border-width) solid var(--border);
-}
-.ds-position-panel-commitments-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.ds-position-panel-commitments-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.ds-position-panel-commitments-foot {
-  display: flex;
-  justify-content: flex-end;
-}
 .ds-position-panel-link {
   background: none;
   border: 0;
@@ -3002,9 +2950,6 @@ a.ds-strategy-flow-row-inner:hover { border-color: var(--accent); background: va
 }
 @media (max-width: 720px) {
   .ds-position-panel-split {
-    grid-template-columns: 1fr;
-  }
-  .ds-position-panel-commitments-stats {
     grid-template-columns: 1fr;
   }
 }
@@ -3789,93 +3734,6 @@ button.ds-tag:focus-visible {
   align-items: center;
   gap: var(--space-2);
   flex: none;
-}
-
-/* Card layout for the commitments list. A list of MediaRows rather than a
- * grid: the name needs horizontal room, and the trailing column keeps status
- * and amount aligned down the page so the layout still supports a quick scan. */
-.ds-card-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.ds-card-list-skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border: var(--border-width) solid var(--border);
-}
-.ds-card-meta {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.ds-card-blurb {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  line-height: var(--leading-normal);
-  white-space: normal;
-}
-.ds-card-parties {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-.ds-card-trailing {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.ds-card-amount {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-1);
-}
-
-@media (width <= 720px) {
-  .ds-card-trailing {
-    width: 100%;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-}
-
-/* Layout switch between the table and card views. */
-.ds-layout-toggle {
-  display: inline-flex;
-  border: var(--border-width) solid var(--border);
-}
-.ds-layout-toggle button {
-  font-family: inherit;
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  background: none;
-  border: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: var(--space-1) var(--space-3);
-}
-.ds-layout-toggle button[aria-pressed='true'] {
-  background: var(--text);
-  color: var(--bg);
-}
-.ds-layout-toggle button:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
 }
 
 /* Two-line name cell: the commitment's name, then its id and tags. */
@@ -4843,7 +4701,6 @@ button.ds-tag:focus-visible {
   background: var(--error-soft);
 }
 
-.ds-notice .notice-title,
 .ds-toast .toast-title {
   font-weight: 500;
   letter-spacing: var(--tracking-wide);
@@ -4851,11 +4708,8 @@ button.ds-tag:focus-visible {
   font-size: var(--text-sm);
   margin-bottom: var(--space-1);
 }
-.ds-notice .notice-icon,
 .ds-toast .toast-icon { flex: 0 0 auto; }
-.ds-notice .notice-body,
 .ds-toast .toast-body { flex: 1 1 auto; min-width: 0; }
-.ds-notice .notice-actions,
 .ds-toast .toast-actions { flex: 0 0 auto; }
 
 .ds-toast .toast-dismiss {
@@ -4982,67 +4836,6 @@ button.ds-tag:focus-visible {
 .ds-btn--full { width: 100%; }
 .ds-btn--max { border-left: 0; min-width: 64px; }
 
-/* === Unbonding queue ====================================================
- * Token-driven CSS-grid table used by `UnbondingQueue.tsx`. Status badges
- * convey state via tokenized `--success` / `--warn` / `--text-subtle`
- * tokens (no --green / --red legacy literals). Row left-borders tint the
- * row by status without bespoke hex literals.
- * ====================================================================== */
-.ds-unbonding-table {
-  display: grid;
-  grid-template-columns: 40px 1fr 110px 90px 100px 90px;
-  row-gap: 0;
-  column-gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-.ds-unbonding-table > [role="row"] { display: contents; }
-.ds-unbonding-header > [role="columnheader"] {
-  background: var(--surface-2);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: var(--border-width) solid var(--border);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  color: var(--text-muted);
-}
-.ds-unbonding-row > [role="cell"] {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: var(--border-width) solid var(--border);
-  display: flex;
-  align-items: center;
-}
-.ds-unbonding-row--pending > [role="cell"]:first-child {
-  border-left: 2px solid var(--warn);
-}
-.ds-unbonding-row--matured > [role="cell"]:first-child {
-  border-left: 2px solid var(--success);
-}
-.ds-unbonding-row--claimed > [role="cell"] {
-  color: var(--text-subtle);
-  opacity: 0.6;
-}
-.ds-status-badge {
-  display: inline-block;
-  padding: 0 var(--space-2);
-  border: var(--border-width) solid var(--border);
-  font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  font-family: var(--font-mono);
-}
-.ds-status-badge--pending {
-  color: var(--warn);
-  border-color: var(--warn);
-}
-.ds-status-badge--matured {
-  color: var(--success);
-  border-color: var(--success);
-}
-.ds-status-badge--claimed {
-  color: var(--text-subtle);
-  border-color: var(--border);
-}
-
 /* === Empty State ============================================
  * Empty / zero-data placeholder used by lists and panels.
  * Centered TUI-style with mono font, dotted border, low-emphasis
@@ -5088,46 +4881,6 @@ button.ds-tag:focus-visible {
  * existing `.ds-input[aria-invalid='true']` rule (line 236)
  * already paints the danger border.
  * ============================================================ */
-
-/* === Cause directory listbox ================================
- * Compound input dropdown used by `<CauseDirectory>` (donate
- * mode recipient picker). Sits absolute-positioned beneath the
- * combobox trigger; rows surface a hover state and a selected
- * border that uses the design-system accent token.
- * ============================================================ */
-.ds-cause-listbox {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--surface-2);
-  border: var(--border-width) solid var(--border);
-  max-height: 320px;
-  overflow-y: auto;
-  z-index: 100;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.ds-cause-listbox-header {
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-.ds-cause-listbox-item {
-  cursor: pointer;
-  padding: var(--space-3);
-  border-left: 2px solid transparent;
-}
-.ds-cause-listbox-item:hover {
-  background: var(--surface-3);
-}
-.ds-cause-listbox-item--selected {
-  border-left-color: var(--accent);
-  background: var(--surface-2);
-}
 
 /* === Decision Row =============================================
  * Single-row primitive used by the Proposals inbox. Each incoming
@@ -5191,93 +4944,6 @@ button.ds-tag:focus-visible {
   flex-direction: column;
   border: var(--border-width) solid var(--border);
 }
-.ds-activity-row {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-.ds-activity-row + .ds-activity-row {
-  border-top: var(--border-width) solid var(--border);
-}
-.ds-activity-row-glyph { color: var(--text-muted); }
-.ds-activity-row-timestamp { color: var(--text-muted); white-space: nowrap; }
-.ds-activity-row-text {
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ds-activity-row[data-tone="success"] .ds-activity-row-glyph { color: var(--success); }
-.ds-activity-row[data-tone="warn"] .ds-activity-row-glyph { color: var(--warn); }
-.ds-activity-row[data-tone="danger"] .ds-activity-row-glyph { color: var(--danger); }
-
-/* === Agreement Detail ======================================
- * Bilateral side-by-side legs for `<AgreementDetail>`. Two equal
- * columns on desktop (one per leg), single column on mobile. Each
- * leg is a token-bordered card with a small uppercase header.
- * ============================================================= */
-.ds-agreement-detail-legs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-}
-@media (max-width: 768px) {
-  .ds-agreement-detail-legs { grid-template-columns: 1fr; }
-}
-.ds-agreement-detail-leg {
-  padding: var(--space-4);
-  border: var(--border-width) solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.ds-agreement-detail-leg-header {
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* === Agreement Table ========================================
- * Tokenized replacement for the legacy `.agreement-row` /
- * `.agreement-col-*` flex layout. Mirrors the column shape of
- * `<AgreementList>` (id / counterparty / arbiter / my amount /
- * their amount / status / created / expand chevron) but uses only
- * design-system tokens. The table is plain block flow — each row is
- * a flex container with fixed-flex columns, matching the underlying
- * data shape.
- * ============================================================= */
-.ds-agreement-table-header,
-.ds-agreement-table-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  font-family: var(--font-mono);
-}
-.ds-agreement-table-header {
-  border-bottom: var(--border-width) solid var(--border);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-}
-.ds-agreement-table-row {
-  border-bottom: var(--border-width) solid var(--border);
-  min-height: 44px;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  flex-wrap: wrap;
-}
-.ds-agreement-table-row:hover { background: var(--surface-2); }
-.ds-agreement-table-col-id      { flex: 0 0 56px; color: var(--text-muted); }
-.ds-agreement-table-col         { flex: 1 1 0; min-width: 0; }
-.ds-agreement-table-col-amount  { flex: 0 0 120px; }
-.ds-agreement-table-col-status  { flex: 0 0 120px; }
-.ds-agreement-table-col-created { flex: 0 0 100px; color: var(--text-muted); }
-.ds-agreement-table-col-expand  { flex: 0 0 24px; color: var(--text-muted); text-align: center; }
 
 /* === Operator Row ===========================================
  * Tokenized list-row primitive used by `<OperatorRow>` and the
@@ -5448,36 +5114,6 @@ button.ds-tag:focus-visible {
   font-weight: 500;
   color: var(--text);
 }
-
-/* === Operator Compare Drawer ================================
- * Slide-in panel anchored to the right edge of the viewport,
- * mounted by `<OperatorCompareDrawer>` when at least one operator
- * is selected in compare mode. Width is 480px on wide viewports
- * and full-width on narrow ones.
- *
- * TODO(26-02): widen to ~720px when comparing 3 operators side-
- * by-side requires more horizontal real estate. The 480px default
- * fits 1–2 columns cleanly; 3 columns at 480px is cramped.
- * ============================================================ */
-.ds-compare-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: min(480px, 100vw); background: var(--bg); border-left: var(--border-width) solid var(--border); padding: var(--space-4); overflow-y: auto; box-shadow: var(--shadow-lg, none); }
-.ds-compare-drawer-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-3); border-bottom: var(--border-width) solid var(--border); margin-bottom: var(--space-4); font-family: var(--font-mono); text-transform: uppercase; }
-.ds-compare-drawer-close { background: transparent; border: 0; color: var(--text-muted); font-family: var(--font-mono); cursor: pointer; }
-.ds-compare-drawer-rows { display: flex; flex-direction: column; gap: var(--space-3); }
-
-/* === Slider =================================================
- * Native range-input theming used by `<DelegateToOperatorForm>`
- * (maxPenaltyBps slider) and any future stake-percentage slider.
- * Aligns with the rest of the design system: solid accent thumb,
- * neutral track, monospace label/value affordances. Webkit and
- * Mozilla pseudo-elements are listed separately because they
- * cannot be combined into a single selector.
- * ============================================================ */
-.ds-slider { width: 100%; -webkit-appearance: none; appearance: none; background: var(--surface-3); height: 6px; border-radius: 0; cursor: pointer; }
-.ds-slider:disabled { opacity: 0.5; cursor: not-allowed; }
-.ds-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: var(--accent); border: 0; cursor: pointer; }
-.ds-slider::-moz-range-thumb { width: 16px; height: 16px; background: var(--accent); border: 0; cursor: pointer; }
-.ds-slider-label { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-muted); }
-.ds-slider-value { color: var(--text); }
 
 /* === App shell ============================================================
  * Production layout: sticky top bar, persistent left sidebar, main content
@@ -5706,41 +5342,6 @@ button.ds-tag:focus-visible {
 .forfeit-btn-cancel:hover { background: var(--surface-2); }
 .forfeit-btn:disabled, .forfeit-btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Claim-style action button used in commitment-row trailing actions. */
-.claim-btn {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  background: transparent;
-  border: var(--border-width) solid var(--success);
-  color: var(--success);
-  padding: 0 var(--space-3);
-  height: 28px;
-  cursor: pointer;
-}
-.claim-btn:hover { background: var(--success-soft); }
-.claim-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* Create-commitment form — section under the commitments tabs. */
-.commitment-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-}
-.commitment-form-field { display: flex; flex-direction: column; gap: var(--space-2); }
-.commitment-form-label {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-.commitment-form-warning { color: var(--warn);  font-size: var(--text-xs); }
-.commitment-form-error   { color: var(--error); font-size: var(--text-xs); }
-
 /* Duration picker — chip-row of preset durations. */
 .duration-picker { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .duration-btn {
@@ -5784,234 +5385,7 @@ button.ds-tag:focus-visible {
   min-width: 64px;
   text-align: right;
 }
-
-/* Agreement detail expanded panel — same shape as forfeit-detail. */
-.agreement-detail {
-  padding: var(--space-4);
-  background: var(--surface-2);
-  border-bottom: var(--border-width) solid var(--border);
-  font-size: var(--text-sm);
-}
-.agreement-detail-row {
-  display: flex;
-  gap: var(--space-4);
-  margin-bottom: var(--space-2);
-  align-items: baseline;
-}
-.agreement-detail-label {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  min-width: 160px;
-}
-.agreement-detail-value { color: var(--text); }
-.agreement-detail-link {
-  background: transparent;
-  border: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  padding: 0;
-  text-decoration: underline;
-}
-.agreement-detail-link:hover { color: var(--text); }
-.agreement-you-tag {
-  font-size: var(--text-xs);
-  color: var(--accent);
-  border: var(--border-width) solid var(--accent);
-  padding: 0 var(--space-1);
-  margin-left: var(--space-1);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  vertical-align: middle;
-}
-
-/* Proposal card — used by ProposalCard for incoming/outgoing proposal rows. */
-.proposal-card {
-  padding: var(--space-4);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.proposal-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-3);
-}
-.proposal-card-from {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-.proposal-card-expiry { font-size: var(--text-xs); color: var(--text-subtle); }
-.proposal-card-expiry-urgent { color: var(--warn); }
-.proposal-card-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-2) var(--space-4);
-}
-.proposal-card-field-label {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-.proposal-card-field-value { font-size: var(--text-sm); color: var(--text); font-variant-numeric: tabular-nums; }
-.proposal-card-actions { display: flex; gap: var(--space-2); }
-
-/* Proposal action buttons — accept (success) / reject (error) / cancel (neutral). */
-.proposal-accept-btn,
-.proposal-reject-btn,
-.proposal-cancel-btn {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  background: transparent;
-  border: var(--border-width) solid var(--border-strong);
-  color: var(--text);
-  padding: 0 var(--space-4);
-  height: 28px;
-  cursor: pointer;
-}
-.proposal-accept-btn { color: var(--success); border-color: var(--success); }
-.proposal-accept-btn:hover { background: var(--success-soft); }
-.proposal-reject-btn { color: var(--error); border-color: var(--error); }
-.proposal-reject-btn:hover { background: var(--error-soft); }
-.proposal-cancel-btn:hover { background: var(--surface-2); }
-.proposal-accept-btn:disabled,
-.proposal-reject-btn:disabled,
-.proposal-cancel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* Agreement table — flex columns mirroring commitment-row. */
-.agreement-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: var(--border-width) solid var(--border);
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  font-family: var(--font-mono);
-}
-.agreement-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: var(--border-width) solid var(--border);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--text);
-  min-height: 44px;
-  cursor: pointer;
-}
-.agreement-row:hover { background: var(--surface-2); }
-.agreement-col          { flex: 1 1 0; min-width: 0; }
-.agreement-col-id       { flex: 0 0 64px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.agreement-col-amount   { flex: 0 0 140px; font-variant-numeric: tabular-nums; }
-.agreement-col-status   { flex: 0 0 140px; }
-.agreement-col-created  { flex: 0 0 100px; color: var(--text-subtle); }
-.agreement-col-expand   { flex: 0 0 24px;  color: var(--text-subtle); text-align: center; }
-
-/* Section heading inside the proposals tab. */
-.proposals-section { display: flex; flex-direction: column; gap: var(--space-3); }
-.proposals-section-heading {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-
-/* Mesh page — operator list + DAG visual. */
-.operator-header,
-.operator-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  align-items: center;
-  font-family: var(--font-mono);
-}
-.operator-header {
-  border-bottom: var(--border-width) solid var(--border);
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-.operator-row {
-  border-bottom: var(--border-width) solid var(--border);
-  font-size: var(--text-sm);
-  color: var(--text);
-  cursor: pointer;
-  min-height: 44px;
-}
-.operator-row:hover { background: var(--surface-2); }
-.operator-detail {
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-.node-type-fan-in     { color: var(--accent);  border-color: var(--accent); }
-.node-type-fan-out    { color: var(--error);   border-color: var(--error); }
-.node-type-weighting  { color: var(--warn);    border-color: var(--warn); }
-.node-type-unknown    { color: var(--text-subtle); border-color: var(--border); }
-.denom-list { list-style: none; padding: 0; margin: var(--space-1) 0; }
-.denom-list li { padding: 2px 0; color: var(--text-muted); font-size: var(--text-xs); }
-
-/* Operator profile card — public view rendered in mesh tab detail. */
-.operator-profile-card {
-  padding: var(--space-4);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.operator-profile-card-header { display: flex; align-items: center; gap: var(--space-4); }
-.operator-profile-logo,
-.operator-profile-logo-placeholder {
-  width: 32px; height: 32px;
-  background: var(--surface-2);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
-}
-.operator-profile-logo { object-fit: contain; }
-.operator-profile-name {
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--text);
-}
-.operator-profile-description {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  line-height: var(--leading-normal);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 .operator-profile-row { display: flex; gap: var(--space-2); margin-bottom: var(--space-1); align-items: flex-start; }
-.operator-profile-label {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  min-width: 80px;
-}
-.operator-profile-value { color: var(--text); word-break: break-all; }
-.operator-profile-link { color: var(--accent); text-decoration: none; }
-.operator-profile-link:hover { text-decoration: underline; }
-.operator-profile-services { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .operator-service-tag {
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -6020,51 +5394,6 @@ button.ds-tag:focus-visible {
   padding: 0 var(--space-2);
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
-}
-
-/* Operator profile editor — gated to the connected operator. */
-.operator-profile-editor {
-  margin-top: var(--space-4);
-  padding: var(--space-4);
-  background: var(--surface-2);
-  border: var(--border-width) solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.operator-profile-editor-heading {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-}
-.operator-profile-editor-hint { font-size: var(--text-xs); color: var(--text-subtle); }
-.operator-profile-editor-actions { display: flex; gap: var(--space-2); margin-top: var(--space-3); }
-.operator-profile-save-btn,
-.operator-profile-reset-btn {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  background: transparent;
-  border: var(--border-width) solid var(--border-strong);
-  color: var(--text);
-  padding: 0 var(--space-4);
-  height: 36px;
-  cursor: pointer;
-}
-.operator-profile-save-btn  { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
-.operator-profile-save-btn:hover { filter: brightness(1.08); }
-.operator-profile-save-btn:disabled,
-.operator-profile-reset-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.operator-profile-reset-btn:hover { background: var(--surface-3); }
-.operator-profile-preview-label {
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  margin-top: var(--space-3);
 }
 .operator-edit-gate-hint { font-size: var(--text-xs); color: var(--text-subtle); padding: var(--space-2) 0; }
 
@@ -6142,31 +5471,6 @@ details[open] > summary.metadata-section::before { content: '▼'; }
   text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
 }
-
-/* Status badges (legacy non-prefixed names). New code should use ds-badge. */
-.status-badge {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  padding: 0 var(--space-2);
-  border: var(--border-width) solid var(--border-strong);
-  height: 20px;
-  line-height: 20px;
-  color: var(--text-muted);
-}
-.status-active        { color: var(--success); border-color: var(--success); }
-.status-released      { color: var(--text-subtle); border-color: var(--border); }
-.status-forfeited       { color: var(--error); border-color: var(--error); }
-.status-forfeit-pending { color: var(--warn);  border-color: var(--warn); }
-.status-expired       { color: var(--text-subtle); border-color: var(--border); }
-.status-proposed      { color: var(--accent); border-color: var(--accent); }
-.status-resolved      { color: var(--text-subtle); border-color: var(--border); }
-.status-cancelled     { color: var(--text-subtle); border-color: var(--border); }
-.status-pending       { color: var(--text-subtle); border-color: var(--border); }
-.status-matured       { color: var(--success); border-color: var(--success); }
-.status-claimed       { color: var(--text-subtle); border-color: transparent; }
 
 .ds-page-header {
   display: flex;

@@ -36,24 +36,3 @@ export function useCountdown(maturesAtSeconds: bigint): number {
 
   return remaining
 }
-
-/**
- * Format a millisecond duration as a human-readable countdown string.
- * - <= 0: "MATURED"
- * - >= 1 day: "Xd Yh Zm"
- * - < 1 day: "Xh Ym Zs"
- */
-export function formatCountdown(ms: number): string {
-  if (ms <= 0) return 'MATURED'
-
-  const totalSecs = Math.floor(ms / 1000)
-  const days = Math.floor(totalSecs / 86400)
-  const hours = Math.floor((totalSecs % 86400) / 3600)
-  const mins = Math.floor((totalSecs % 3600) / 60)
-  const secs = totalSecs % 60
-
-  if (ms >= 86400000) {
-    return `${days}d ${hours}h ${mins}m`
-  }
-  return `${hours}h ${mins}m ${secs}s`
-}

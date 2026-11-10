@@ -117,17 +117,3 @@ export function deriveStatus(
 export function formatBps(bps: number | bigint): string {
   return formatPercent(bps)
 }
-
-// ─── Status Config ────────────────────────────────────────────────────────────
-
-/**
- * Maps commitment status to CSS class name and aria-label for StatusBadge.
- */
-export const STATUS_CONFIG: Record<CommitmentStatus, { className: string; ariaLabel: string }> = {
-  ACTIVE: { className: 'status-active', ariaLabel: 'Status: Active' },
-  UNBONDING: { className: 'status-unbonding', ariaLabel: 'Status: Unbonding' },
-  RELEASED: { className: 'status-released', ariaLabel: 'Status: Released' },
-  FORFEITED: { className: 'status-forfeited', ariaLabel: 'Status: Forfeited' },
-  FORFEIT_PENDING: { className: 'status-forfeit-pending', ariaLabel: 'Status: Forfeit Pending' },
-  EXPIRED: { className: 'status-expired', ariaLabel: 'Status: Expired' },
-}

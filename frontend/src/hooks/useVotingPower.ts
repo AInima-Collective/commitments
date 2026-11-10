@@ -7,7 +7,7 @@
 import { type Address, type Hex } from 'viem'
 import { useAccount, useReadContract } from 'wagmi'
 
-import { tokenWeightingVotesShimAbi } from '../abi/governance'
+import { tokenWeightingVotesShimAbi } from '../generated'
 
 export interface UseVotingPowerOptions {
   /** Override the connected wallet — useful for displaying another account. */

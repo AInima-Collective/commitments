@@ -13,7 +13,7 @@ import { useEffect, useRef } from 'react'
 import { decodeEventLog, type Address, type Hex } from 'viem'
 import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 
-import { commitmentsGovernorAbi } from '../abi/governance'
+import { commitmentsGovernorAbi } from '../generated'
 
 export type ProposalStep = 'idle' | 'signing' | 'confirming' | 'confirmed' | 'error'
 

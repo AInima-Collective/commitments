@@ -13,7 +13,7 @@ import {
   type DataTableColumn,
   type DataTableSort,
 } from "../components/ui";
-import { PageHeader, type RiskTierBadgeTier } from "../components/protocol";
+import { PageHeader } from "../components/protocol";
 import { getContractAddresses, getVaultRegistry, type VaultDescriptor } from "../config/contracts";
 import {
   useReadCommitmentsVaultConvertToAssets,
@@ -34,41 +34,6 @@ import { bigintToUsd, formatPercent, formatTokenAmount } from "../lib/format";
  * there is no single correct "one share" constant to ask about.
  */
 const SHARE_PROBE = 10n ** 18n;
-
-/** Map vault.v1 riskTier strings onto the existing tone-based RiskTierBadge. */
-function mapRiskTier(tier: string | undefined): RiskTierBadgeTier {
-  switch (tier) {
-    case "conservative":
-      return "success";
-    case "moderate":
-      return "warn";
-    case "aggressive":
-      return "error";
-    case "agent":
-      return "warn";
-    default:
-      return "unknown";
-  }
-}
-
-/**
- * Fallback risk tone from the curated registry descriptor (`low|mid|high`),
- * used when the indexer's off-chain vault.v1 metadata carries no riskTier.
- * The seed doesn't stamp a riskTier into vault metadata, so without this
- * fallback every row renders "—"; the descriptor is our source of truth.
- */
-function mapDescriptorRiskTier(tier: VaultDescriptor["riskTier"]): RiskTierBadgeTier {
-  switch (tier) {
-    case "low":
-      return "success";
-    case "mid":
-      return "warn";
-    case "high":
-      return "error";
-    default:
-      return "unknown";
-  }
-}
 
 interface VaultRowData {
   descriptor: VaultDescriptor;
@@ -95,7 +60,6 @@ interface VaultRowData {
   paused: boolean;
   /** Off-chain metadata fields surfaced from indexer (vault.v1). */
   metaName: string | undefined;
-  riskTierTone: RiskTierBadgeTier;
 }
 
 /** Everything the holder owns in this vault, wherever it currently sits. */
@@ -460,8 +424,7 @@ function rowDataEqual(a: VaultRowData, b: VaultRowData): boolean {
     a.shareDecimals === b.shareDecimals &&
     a.assetSymbol === b.assetSymbol &&
     a.paused === b.paused &&
-    a.metaName === b.metaName &&
-    a.riskTierTone === b.riskTierTone
+    a.metaName === b.metaName
   );
 }
 
@@ -503,7 +466,6 @@ function VaultRowFetcher({ descriptor, viewAddress, onRowData }: VaultRowFetcher
 
   const metaName =
     typeof meta.content?.name === "string" && meta.content.name.length > 0 ? meta.content.name : undefined;
-  const metaRiskTier = typeof meta.content?.riskTier === "string" ? (meta.content.riskTier as string) : undefined;
 
   const row: VaultRowData = useMemo(
     () => ({
@@ -520,7 +482,6 @@ function VaultRowFetcher({ descriptor, viewAddress, onRowData }: VaultRowFetcher
       assetSymbol: position.assetSymbol ?? descriptor.assetSymbol,
       paused: position.depositsPaused,
       metaName,
-      riskTierTone: metaRiskTier ? mapRiskTier(metaRiskTier) : mapDescriptorRiskTier(descriptor.riskTier),
     }),
     [
       descriptor,
@@ -535,7 +496,6 @@ function VaultRowFetcher({ descriptor, viewAddress, onRowData }: VaultRowFetcher
       position.assetSymbol,
       position.depositsPaused,
       metaName,
-      metaRiskTier,
     ],
   );
 

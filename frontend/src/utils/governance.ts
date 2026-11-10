@@ -21,42 +21,6 @@ export function proposalTitle(description: string): string {
 }
 
 /**
- * Quorum progress 0..1. `null` quorum target → 0 (treat as not-yet-known).
- */
-export function quorumProgressRatio(
-  forVotes: bigint,
-  abstainVotes: bigint,
-  target: bigint | null,
-): number {
-  if (target == null || target === 0n) return 0
-  const num = forVotes + abstainVotes
-  return Number(num) / Number(target)
-}
-
-/**
- * Whether the proposal currently has the votes to pass.
- * - Quorum reached: forVotes + abstainVotes >= target (treating null as met)
- * - Majority: forVotes > againstVotes
- */
-export function isPassing(
-  forVotes: bigint,
-  againstVotes: bigint,
-  abstainVotes: bigint,
-  target: bigint | null,
-): boolean {
-  const quorumMet = target == null || forVotes + abstainVotes >= target
-  return quorumMet && forVotes > againstVotes
-}
-
-/**
- * Terminal states never advance further. Used by the UI to decide whether
- * to render Queue / Execute / Cast Vote affordances.
- */
-export function isTerminal(state: string): boolean {
-  return state === 'executed' || state === 'canceled' || state === 'expired' || state === 'defeated'
-}
-
-/**
  * Order proposals for display:
  *   active first, then pending, then queued, then succeeded, then everything
  *   else, secondary sort by createdBlock DESC.
@@ -86,22 +50,3 @@ export function compareProposalsForDisplay(
   if (ba < bb) return 1
   return 0
 }
-
-export const PROPOSAL_KINDS = [
-  'weight_update',
-  'forfeit_arbitration',
-  'treasury',
-  'signaling',
-  'mixed',
-] as const satisfies readonly ProposalKind[]
-
-export const PROPOSAL_STATES = [
-  'pending',
-  'active',
-  'succeeded',
-  'queued',
-  'executed',
-  'defeated',
-  'canceled',
-  'expired',
-] as const satisfies readonly ProposalState[]

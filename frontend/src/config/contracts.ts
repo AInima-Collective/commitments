@@ -36,10 +36,6 @@ interface ContractAddresses {
   usdtStrategy: Address | undefined
   indexYieldStrategy: Address | undefined
   flatFeeStrategy: Address | undefined
-  // Marketplace pattern reference contracts (May 2026). Undefined until
-  // `just dev-up` runs Simulate.s.sol; offers anchored on these addresses
-  // surface a "preview / address pending" state when the env var is empty.
-  vaultDepositorAggregator: Address | undefined
   optimisticInsuranceArbiter: Address | undefined
   // Second OptimisticInsuranceArbiter instance, bonded in DAI for the
   // agent-managed cvaDAI market — one arbiter instance per bond denomination
@@ -61,8 +57,7 @@ interface ContractAddresses {
   agentMutualArbiter: Address | undefined
   agentVaultBeneficiary: Address | undefined
   // Mutual surface. MutualRegistry indexes the pooled shared-loss mutuals;
-  // OptimisticMutualArbiter is the bonded loss proposer; ClaimRouter is the
-  // beneficiary settlement sink. Undefined until `just dev-up` runs
+  // OptimisticMutualArbiter is the bonded loss proposer. Undefined until `just dev-up` runs
   // DeployMutual.s.sol.
   mutualRegistry: Address | undefined
   optimisticMutualArbiter: Address | undefined
@@ -71,11 +66,6 @@ interface ContractAddresses {
   // policyholder's entry point for buying cover (bindCover).
   premiumScheduler: Address | undefined
   linkedMutualPolicy: Address | undefined
-  // Per-peril ClaimRouter beneficiaries. claimRouter is the NAV mutual's; the
-  // De-Peg and Slashing mutuals each have their own.
-  claimRouter: Address | undefined
-  depegClaimRouter: Address | undefined
-  slashingClaimRouter: Address | undefined
   // ERC-8004 ("Trustless Agents") identity registry — ERC-721 where
   // agentId = tokenId (ids start at 0), owner = the agent's controlling
   // account, tokenURI = the registration JSON. Written by
@@ -109,7 +99,6 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
     usdtStrategy: import.meta.env.VITE_USDT_STRATEGY_ADDRESS as Address | undefined,
     indexYieldStrategy: import.meta.env.VITE_INDEX_YIELD_STRATEGY_ADDRESS as Address | undefined,
     flatFeeStrategy: import.meta.env.VITE_FLAT_FEE_STRATEGY_ADDRESS as Address | undefined,
-    vaultDepositorAggregator: import.meta.env.VITE_VAULT_DEPOSITOR_AGGREGATOR_ADDRESS as Address | undefined,
     optimisticInsuranceArbiter: import.meta.env.VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS as Address | undefined,
     daiOptimisticArbiter: import.meta.env.VITE_DAI_OPTIMISTIC_ARBITER_ADDRESS as Address | undefined,
     agentVault: import.meta.env.VITE_AGENT_VAULT_ADDRESS as Address | undefined,
@@ -121,9 +110,6 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
     optimisticMutualArbiter: import.meta.env.VITE_OPTIMISTIC_MUTUAL_ARBITER_ADDRESS as Address | undefined,
     premiumScheduler: import.meta.env.VITE_PREMIUM_SCHEDULER_ADDRESS as Address | undefined,
     linkedMutualPolicy: import.meta.env.VITE_LINKED_MUTUAL_POLICY_ADDRESS as Address | undefined,
-    claimRouter: import.meta.env.VITE_CLAIM_ROUTER_ADDRESS as Address | undefined,
-    depegClaimRouter: import.meta.env.VITE_DEPEG_CLAIM_ROUTER_ADDRESS as Address | undefined,
-    slashingClaimRouter: import.meta.env.VITE_SLASHING_CLAIM_ROUTER_ADDRESS as Address | undefined,
     agentIdentityRegistry: import.meta.env.VITE_AGENT_IDENTITY_REGISTRY_ADDRESS as Address | undefined,
   }
 }

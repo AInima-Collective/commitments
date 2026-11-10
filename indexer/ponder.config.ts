@@ -20,9 +20,10 @@ import {
   flatFeeAtCreateAbi,
   skimmingMockStrategyAbi,
   vaultCoverConduitAbi,
+  commitmentsGovernorAbi,
+  governorFactoryAbi,
+  agentIdentityRegistryAbi,
 } from './src/abis'
-import { agentIdentityRegistryAbi } from './src/agent-abis'
-import { commitmentsGovernorAbi, governorFactoryAbi } from './src/governance-abis'
 import { loadDeployments } from './src/loadDeployments'
 // Tri-state environment selector (LOCAL 31337 | SEPOLIA 11155111 | PROD Ethereum mainnet 1).
 import { IS_PROD, IS_SEPOLIA, CHAIN_NAME as CORE_CHAIN, CHAIN_ID as chainId } from './src/env'

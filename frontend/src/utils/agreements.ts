@@ -14,18 +14,6 @@ import { type Address } from 'viem'
  */
 export type AgreementStatus = 'PROPOSED' | 'ACTIVE' | 'RESOLVED' | 'FORFEITED' | 'CANCELLED' | 'EXPIRED'
 
-// ─── Accepted Info ────────────────────────────────────────────────────────────
-
-/**
- * Data from the AgreementAccepted event, keyed by proposalId correlation.
- * Used to populate agreementId/commitmentIds on accepted proposals.
- */
-export interface AgreementAcceptedInfo {
-  agreementId: bigint
-  commitmentIdA: bigint
-  commitmentIdB: bigint
-}
-
 // ─── Proposal Interface ───────────────────────────────────────────────────────
 
 /**
@@ -104,22 +92,4 @@ export function deriveAgreementStatus(
   const nowSecs = BigInt(Math.floor(Date.now() / 1000))
   if (proposal.expiresAt > 0n && nowSecs > proposal.expiresAt) return 'EXPIRED'
   return 'PROPOSED'
-}
-
-// ─── Status Config ────────────────────────────────────────────────────────────
-
-/**
- * Maps agreement status to CSS class name and aria-label for AgreementStatusBadge.
- * Per D-04 design decision: status-proposed uses aqua, terminal states use muted tones.
- */
-export const AGREEMENT_STATUS_CONFIG: Record<
-  AgreementStatus,
-  { className: string; ariaLabel: string }
-> = {
-  PROPOSED:  { className: 'status-proposed',  ariaLabel: 'Status: Proposed' },
-  ACTIVE:    { className: 'status-active',     ariaLabel: 'Status: Active' },
-  RESOLVED:  { className: 'status-resolved',   ariaLabel: 'Status: Resolved' },
-  FORFEITED:   { className: 'status-forfeited',    ariaLabel: 'Status: Forfeited' },
-  CANCELLED: { className: 'status-cancelled',  ariaLabel: 'Status: Cancelled' },
-  EXPIRED:   { className: 'status-expired',    ariaLabel: 'Status: Expired' },
 }

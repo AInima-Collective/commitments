@@ -8,11 +8,9 @@ import type { CommitmentStatus } from '../utils/commitments'
  * Hooks that power the Explorer's Etherscan-style entity browser tabs.
  * Each tab pulls a paginated, sortable list of one entity type. The hooks
  * are intentionally lean (no joins, no denormalization) — `EntityBrowser`
- * formats and routes from these rows.
- *
- * Operators tab reuses the existing `useOperatorsIndexed` hook (no need to
- * duplicate). Vaults tab is composed in-page from `VITE_VAULT_ADDRESS` +
- * `useVaultStats` since the indexer has no vault entity.
+ * formats and routes from these rows. The browser has no operators or
+ * vaults tab, so there are no hooks for them here (the indexer does index
+ * both).
  */
 
 const STATUS_WIRE_TO_DOMAIN: Record<string, CommitmentStatus> = {

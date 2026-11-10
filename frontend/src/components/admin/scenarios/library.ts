@@ -7,6 +7,7 @@ import {
 } from '../../../generated'
 import type { DevActorId } from '../../../contexts/devWallet'
 import type { Scenario, ScenarioContext } from './types'
+import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 
 const ZERO_BYTES32 =
   '0x0000000000000000000000000000000000000000000000000000000000000000' as const
@@ -28,23 +29,6 @@ function requireAddress(value: Address | undefined, name: string): Address {
  * actor. Resolves the asset address via vault.asset() the first time it's
  * needed and caches it in `ctx.vars.asset`.
  */
-// MockERC20 (test/helpers/MockERC20.sol) exposes a permissionless `mint`. We
-// rely on that on local anvil to top up actors who exhausted their seed
-// balance — Simulate.s.sol mints just enough USDC to deposit once, then leaves
-// the depositor at 0 token balance.
-const MOCK_ERC20_MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const
-
 /**
  * Mint MockERC20 underlying to the vault's active strategy (or to the vault
  * itself if no strategy is set). Donating to the strategy is what raises

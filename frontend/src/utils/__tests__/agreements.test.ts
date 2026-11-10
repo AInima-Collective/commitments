@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  deriveAgreementStatus,
-  AGREEMENT_STATUS_CONFIG,
-  type AgreementStatus,
-} from '../agreements'
+import { deriveAgreementStatus } from '../agreements'
 
 const nowSecs = (): bigint => BigInt(Math.floor(Date.now() / 1000))
 
@@ -42,20 +38,5 @@ describe('deriveAgreementStatus', () => {
     expect(deriveAgreementStatus({ accepted: false, cancelled: false, expiresAt: 0n })).toBe(
       'PROPOSED',
     )
-  })
-
-  it('every status has an AGREEMENT_STATUS_CONFIG entry', () => {
-    const statuses: AgreementStatus[] = [
-      'PROPOSED',
-      'ACTIVE',
-      'RESOLVED',
-      'FORFEITED',
-      'CANCELLED',
-      'EXPIRED',
-    ]
-    for (const s of statuses) {
-      expect(AGREEMENT_STATUS_CONFIG[s]?.className).toBeTruthy()
-      expect(AGREEMENT_STATUS_CONFIG[s]?.ariaLabel).toBeTruthy()
-    }
   })
 })

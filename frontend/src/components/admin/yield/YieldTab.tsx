@@ -20,6 +20,7 @@ import {
 } from '../../../hooks/useSimulateYieldToApy'
 import { AdminActionPanel } from '../AdminActionPanel'
 import { useAdminAction } from '../useAdminAction'
+import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 
 /**
  * Best-effort decimals for a vault's underlying, keyed by asset symbol. The
@@ -41,20 +42,6 @@ function decimalsForSymbol(symbol: string): number {
 const EMPTY_CLAIM_DATA = '0x' as Hex
 /** Committer abandonment-reclaim flag for IndexAppreciationYield: `abi.encode(true)`. */
 const RECLAIM_CLAIM_DATA = encodeAbiParameters([{ type: 'bool' }], [true])
-
-/** MockERC20 mint — anvil-only convenience to top up the donor before donate(). */
-const MOCK_ERC20_MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const
 
 /**
  * YieldTab — v2 strategy-aware yield admin surface (rebuilt per FUTURE_WORK §2).
