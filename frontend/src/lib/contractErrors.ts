@@ -1,4 +1,22 @@
-import { BaseError, ContractFunctionRevertedError, UserRejectedRequestError } from 'viem'
+import {
+  type Abi,
+  BaseError,
+  ContractFunctionRevertedError,
+  type Hex,
+  UserRejectedRequestError,
+  toFunctionSelector,
+} from 'viem'
+import { formatAbiItem } from 'viem/utils'
+
+import {
+  claimRouterAbi,
+  commitmentManagerAbi,
+  commitmentsVaultAbi,
+  linkedMutualPolicyAbi,
+  optimisticInsuranceArbiterAbi,
+  optimisticMutualArbiterAbi,
+  operatorRegistryAbi,
+} from '../generated'
 
 /**
  * Human copy for manager custom errors a user can plausibly hit from the app's
@@ -36,6 +54,39 @@ const FRIENDLY_REVERTS: Record<string, string> = {
   ExitNotRequested: 'Request an exit from the mutual first to start the deallocation window.',
   // ClaimRouter (mutual payout collection)
   NotClaimant: 'Only this mutual’s designated claimant can collect the payout.',
+  // Create
+  ZeroCounterparty: 'A commitment needs a counterparty address.',
+}
+
+/** Error names by 4-byte selector, over the contracts the app writes to. */
+let errorNames: Map<string, string> | undefined
+function errorNameFor(selector: string): string | undefined {
+  errorNames ??= new Map(
+    ([
+      commitmentManagerAbi,
+      commitmentsVaultAbi,
+      optimisticMutualArbiterAbi,
+      optimisticInsuranceArbiterAbi,
+      linkedMutualPolicyAbi,
+      claimRouterAbi,
+      operatorRegistryAbi,
+    ] as readonly Abi[])
+      .flat()
+      .filter((item) => item.type === 'error')
+      .map((item) => [toFunctionSelector(formatAbiItem(item)), item.name]),
+  )
+  return errorNames.get(selector.toLowerCase())
+}
+
+/**
+ * The revert selector when the error chain carries one but no decoded revert:
+ * a wallet that returns the raw data, or only a message naming the selector.
+ */
+function revertSelector(error: BaseError): string | undefined {
+  const withData = error.walk((e) => typeof (e as { data?: unknown }).data === 'string')
+  const data = (withData as { data?: Hex } | null)?.data
+  if (data && /^0x[0-9a-fA-F]{8}/.test(data)) return data.slice(0, 10)
+  return /custom error (0x[0-9a-fA-F]{8})/.exec(error.message)?.[1]
 }
 
 /**
@@ -59,9 +110,14 @@ export function legibleWriteError(error: unknown): string {
       }
       if (revert.reason) return `Transaction reverted: ${revert.reason}`
       if (revert.signature) {
+        const known = errorNameFor(revert.signature)
+        if (known) return FRIENDLY_REVERTS[known] ?? `Transaction reverted: ${known}.`
         return `Transaction reverted with unrecognized error ${revert.signature}.`
       }
     }
+    const selector = revertSelector(error)
+    const known = selector ? errorNameFor(selector) : undefined
+    if (known) return FRIENDLY_REVERTS[known] ?? `Transaction reverted: ${known}.`
     return error.shortMessage
   }
   if (error instanceof Error) return error.message

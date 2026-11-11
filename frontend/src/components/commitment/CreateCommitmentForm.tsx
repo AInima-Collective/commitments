@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { isAddress, isAddressEqual, type Address, zeroHash } from 'viem'
+import { isAddress, isAddressEqual, type Address, zeroAddress, zeroHash } from 'viem'
 import { useChainId } from 'wagmi'
 import { getBackingOptions } from '../../config/contracts'
 import { useAmountInput } from '../../hooks/useAmountInput'
@@ -216,7 +216,9 @@ export function CreateCommitmentForm({
 
   // ── Validation helpers ────────────────────────────────────────────────────────
   function validateCounterparty(value: string) {
-    if (value !== '' && !isAddress(value)) {
+    if (value === '') {
+      setCounterpartyError('COUNTERPARTY ADDRESS REQUIRED')
+    } else if (!isAddress(value) || value.toLowerCase() === zeroAddress) {
       setCounterpartyError('INVALID ETHEREUM ADDRESS')
     } else {
       setCounterpartyError(null)
@@ -273,7 +275,7 @@ export function CreateCommitmentForm({
 
   // ── Form validity ─────────────────────────────────────────────────────────────
   const arbiterAvailable = !!resolvedArbiter
-  const counterpartyValid = counterparty === '' || isAddress(counterparty)
+  const counterpartyValid = isAddress(counterparty) && counterparty.toLowerCase() !== zeroAddress
   const amountValid = parsedAmount !== undefined && parsedAmount > 0n
   const maxPenaltyValid = maxPenaltyBps >= 0 && maxPenaltyBps <= 10000
   const challengeWindowValid = challengeWindow >= 86400
@@ -427,7 +429,7 @@ export function CreateCommitmentForm({
           <FieldLabel
             htmlFor="counterparty-input"
             hintLabel="Who is the counterparty?"
-            hint="The other party this commitment is made to. Leave it blank for an open, counterparty-less pledge — for example a donation or a self-stake."
+            hint="The other party this commitment is made to."
           >
             COUNTERPARTY ADDRESS
           </FieldLabel>
@@ -438,7 +440,7 @@ export function CreateCommitmentForm({
             onChange={(e) => setCounterparty(e.target.value)}
             onBlur={() => validateCounterparty(counterparty)}
             disabled={disabled}
-            placeholder="0x... (leave blank for no counterparty)"
+            placeholder="0x…"
             tone={counterpartyError ? 'danger' : 'neutral'}
             title={disabled ? 'Connect wallet to create commitments' : undefined}
             style={{ width: '100%' /* layout only */ }}

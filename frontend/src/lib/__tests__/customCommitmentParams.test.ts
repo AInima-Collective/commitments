@@ -41,11 +41,15 @@ describe('buildCustomParams', () => {
     expect(out.params.arbiter).toBe(ARBITER)
   })
 
-  it('treats a blank counterparty as the zero address (one-sided)', () => {
-    const out = buildCustomParams({ ...goodInput, counterparty: '' })
-    expect(out.ok).toBe(true)
-    if (!out.ok) return
-    expect(out.params.counterparty).toBe(zeroAddress)
+  it('requires a counterparty: the manager rejects the zero address', () => {
+    expect(buildCustomParams({ ...goodInput, counterparty: '' })).toEqual({
+      ok: false,
+      error: 'COUNTERPARTY ADDRESS REQUIRED',
+    })
+    expect(buildCustomParams({ ...goodInput, counterparty: zeroAddress })).toEqual({
+      ok: false,
+      error: 'INVALID COUNTERPARTY ADDRESS',
+    })
   })
 
   it('rejects a malformed counterparty', () => {

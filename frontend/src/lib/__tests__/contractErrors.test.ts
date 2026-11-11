@@ -62,4 +62,12 @@ describe('legibleWriteError', () => {
     expect(legibleWriteError(new Error('boom'))).toBe('boom')
     expect(legibleWriteError(undefined)).toBe('Unknown error.')
   })
+
+  it('names a revert the wallet reported only by selector', () => {
+    const raw = new BaseError('Execution reverted with reason: custom error 0x9f1ecc3a.')
+    expect(legibleWriteError(raw)).toBe('A commitment needs a counterparty address.')
+    expect(legibleWriteError(new BaseError('execution reverted: custom error 0x4209d367'))).toBe(
+      'Transaction reverted: MutualExhausted.',
+    )
+  })
 })
