@@ -61,7 +61,7 @@ the repo root: `pnpm install`. Foundry is independent — `forge build` /
 just build              # forge build
 just test               # forge test (unit, fuzz, integration, and invariants)
 just docs-gen           # forge doc → flatten → contracts/<source-path>/<Declaration>.md
-just dev-up             # anvil + anvil-seed + sync frontend/.env.local
+just dev-up             # anvil + anvil-seed + write frontend/.env.local and the indexer manifest
 just dev-down           # stop background anvil
 just indexer-dev        # ponder dev on :65422 (pglite)
 just frontend-dev       # vite dev server
@@ -144,12 +144,16 @@ schema-v1 manifest the indexer reads via `loadDeployments(chainId)` in
 └──────────────────────────────────────────────────────┘
 ```
 
-**Key invariants** (INV-1 and INV-3 are fuzz-locked in
+**Key invariants** (INV-1, INV-3, INV-P9 and INV-P11 are fuzz-locked in
 `test/manager/conformance/PartitionInvariant.t.sol`; INV-4 in
 `test/manager/MovementValidation.t.sol`):
 - INV-1 partition: `Σ(free+encumbered) + Σescrow + Σmutual premium == balanceOf(manager)` per token
   (O(1) aggregates).
-- INV-3 magnitude allocation: `totalForfeitable ≤ totalEncumbered` per (user, token).
+- INV-3 magnitude allocation: `totalForfeitable ≤` the ledger's encumbered balance per
+  (user, token). It holds by construction; no revert checks it.
+- INV-P9 mutual cover: `activeCover == totalShares − settledTotal == Σ effCover`.
+- INV-P11 exiting cover: `exitingCover == Σ effCover` over members with an exit request
+  on record, and `≤ activeCover`.
 - INV-4 movement cap: strategy debits bounded by the bound commitment's `amount`.
 - Forfeit challenge window ≥ 1 day (prevents same-block forfeit griefing).
 - ERC-4626 inflation guard via virtual shares/assets (vault).
@@ -159,11 +163,11 @@ schema-v1 manifest the indexer reads via `loadDeployments(chainId)` in
 **Storage**: every long-lived contract uses **EIP-7201 namespaced storage**
 (`CommitmentManagerStorage.sol`, `CommitmentsVaultStorage.sol`,
 `OperatorRegistryStorage.sol`, `OperatorServiceRegistryStorage.sol`, and the
-Rewards snapshot/coordinator storage modules). Two
-EIP-7201 slot calculations were wrong historically. `test/StorageSlots.t.sol`
+Rewards snapshot/coordinator storage modules). `test/StorageSlots.t.sol`
 locks the slots and layouts of the vault, the operator registry, the Merkle
 snapshot and the rewards coordinator. `test/manager/StorageSlots.t.sol` locks
-the manager's slot and layout offsets and the coordinator's layout.
+the manager's slot and layout offsets, the packing of `Commitment`, `Membership`
+and `Mutual`, and the coordinator's layout.
 `OperatorServiceRegistryStorage` and the shared `FactoryStorage` have no slot
 test. Always run both tests after touching storage layout.
 
@@ -406,8 +410,7 @@ that was deliberately rejected.
 time. There is no `manager.vault()` in v2: the column mirrors the backing
 `token` when that token is a `CommitmentsVault` share (checked against the
 indexed `vault` table), and is NULL for plain ERC-20 backing. NULL rows belong
-to no vault's ledger. The settlement and contribution handlers also re-read
-`getCommitment` to refresh `commitment.amount`.
+to no vault's ledger.
 
 **Vault snapshots**: a Ponder block source, `VaultSnapshot` in
 `ponder.config.ts`, fires every 25 blocks on Sepolia and mainnet (~5 minutes)
@@ -426,9 +429,10 @@ the chain clock; `useVaultApy` reads `?latest=1`.
 
 **Environment**: `DEPLOY_ENV` selects `LOCAL` (anvil 31337, the default),
 `SEPOLIA` (11155111) or `PROD` (Ethereum mainnet). Sepolia reads
-`PONDER_RPC_URL_11155111` / `PONDER_WS_URL_11155111` and should set
-`PONDER_START_BLOCK_11155111` to the deploy block; PROD reads
-`PONDER_RPC_URL_1` / `PONDER_WS_URL_1`. `DEPLOYMENTS_JSON` replaces the generated
+`PONDER_RPC_URL_11155111` / `PONDER_WS_URL_11155111` and starts at
+`PONDER_START_BLOCK_11155111` when set, else at the manifest's `startBlock` (the
+lowest receipt block the env writer saw); PROD reads `PONDER_RPC_URL_1` /
+`PONDER_WS_URL_1`. LOCAL reads `ANVIL_RPC_URL` / `ANVIL_WS_URL`. `DEPLOYMENTS_JSON` replaces the generated
 manifest. `IPFS_GATEWAY` is the gateway the metadata fetcher resolves
 `ipfs://` through. `POST /metadata/pin` pins with `PINATA_JWT`, else
 `IPFS_API_URL` (a Kubo node), else returns an inline `data:` URI.

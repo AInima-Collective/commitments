@@ -8,7 +8,7 @@
  * Two surfaces feed these tables:
  *   1. The CommitmentManager mutual event surface (MutualCreated / MutualActivated /
  *      MemberJoined / MutualLoss{Initiated,Executed,Cancelled,Shortfall} /
- *      MemberSettled / GroupMember{ExitRequested,Released} / MutualTerminated).
+ *      MemberSettled / Member{ExitRequested,ExitLapsed,Released} / MutualTerminated).
  *      The manager is ALWAYS bound, so these handlers register unconditionally.
  *   2. The MutualRegistry (`MutualRegistered`), which annotates an existing
  *      mutual row with its synthetic-mutual cover terms. Its address list is
@@ -496,7 +496,7 @@ ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
   if (row) {
-    // releaseGroupMember auto-pays the member's accrued premium, so rewardBank
+    // releaseMutualMember auto-pays the member's accrued premium, so rewardBank
     // drops — re-read the membership snapshot to capture it alongside the status.
     const mem = await readMembership(context, manager, commitmentId)
     await context.db.update(membership, { id }).set({

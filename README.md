@@ -30,7 +30,7 @@ The design favors composition over a universal market contract:
 - **Distribution strategy** — pluggable contract that moves value (yield, fees, premiums) via a validated movement pipeline, bounded by the commitment it's bound to
 - **Two-phase forfeit** — initiate, then a challenge window (minimum one day) before execution; payouts are pull-payment
 - **Partition invariant** — `Σ(free + encumbered) + Σescrow + Σmutual premium == balanceOf(manager)` per token, fuzz-locked in the conformance suite
-- **Magnitude allocation** — `totalForfeitable ≤ totalEncumbered` per (user, token); prevents over-commitment
+- **Magnitude allocation** — `totalForfeitable ≤` the encumbered balance per (user, token); each lien's forfeitable share is at most its amount, so it holds by construction
 - **Mesh topology** — composable FanIn/FanOut/Weighting graph for stake aggregation and governance integration
 - **Mutual coverage** — groups share losses several-liability via a loss index Λ while premiums stream to underwriters
 
@@ -91,7 +91,7 @@ One command boots the whole stack — starts anvil in the background, deploys ev
 pnpm install       # installs the frontend + indexer workspace (run from repo root)
 just ipfs-up       # optional, see below — start it BEFORE dev-up
 just dev-up        # anvil + deploy + seed + env sync
-just indexer-dev   # Terminal 2: Ponder indexer on :65422 (powers graph views)
+just indexer-dev   # Terminal 2: Ponder indexer on :65422 (lists, activity, graphs)
 just frontend-dev  # Terminal 3: Vite dev server on :5173
 just dev-down      # stop the background anvil when done
 ```

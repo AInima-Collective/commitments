@@ -136,7 +136,7 @@ struct Mutual {
     uint64  periodFinish;          // end of the current stream; accrual stops here
     uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing
     uint128 settledTotal;          // Σ settledUnits (<= totalShares) — cross-checks activeCover == totalShares − settledTotal (INV-P9)
-    uint128 exitingCover;          // Σ effCover_i over members with an exit request on record; <= activeCover (INV-P11)
+    uint128 exitingCover;          // Σ effCover_i over members with an exit request on record; <= activeCover (INV-P11); moves at settle, not at loss execution
     uint256 premiumRemainder;      // sub-1e27 dust carried forward between pokes (no value ever lost)
     uint256 bankedTotal;           // Σ rewardBank_i — outstandingBank for the funding-time solvency guard (INV-P2)
 }
@@ -156,6 +156,13 @@ storage-slot test.
 members are still slashable and still earn premium, so they stay in `activeCover`; a consumer that
 sizes exposure against the mutual's cover reads `activeCover − exitingCover`, the cover that has
 not asked to leave, and stops counting a member's cover the moment its exit is requested.
+
+Both aggregates shrink when each member is settled (`settleMemberLoss` / `settleMembers`), not
+when a loss executes, so right after `executeMutualLoss` the difference still counts cover the loss
+has already consumed. A consumer sizing exposure from it MUST treat it as an upper bound: zero when
+the mutual is `terminal` or `exhausted`; otherwise above the deliverable cover by the losses its
+members have not yet settled (`pendingMemberLoss`), and exact only once every member is settled at
+the current `cumulativeLoss`. A loss proposal still in its challenge window is a pending reduction.
 
 ### 1.2 `Membership`
 
@@ -193,6 +200,7 @@ struct MutualLossProposal {
     bytes32 evidenceHash;  // off-chain evidence commitment
     bool    executed;
     bool    cancelled;
+    uint64  cumulativePausedAtStart; // pause snapshot at initiate; anchors the challenge-window and re-init clock-stops
 }
 ```
 
@@ -418,8 +426,10 @@ The same step marks the mutual **`exhausted`** when the declared loss meets or e
 revert `MutualExhausted`. The flag exists because `Lambda` alone cannot say "wiped out": each loss
 rounds its `Lambda` step down, so several losses that add up to the whole pool end a few units
 short of `1e18`; and on a small pool the last step's rounding is lost in whole numeraire units,
-which can leave `Lambda` far short of `1e18` with zero headroom. A consumer deciding whether a
-mutual can still pay MUST read `exhausted`, not compare `cumulativeLoss` with `1e18`.
+which can leave `Lambda` far short of `1e18` with zero headroom. A mutual cannot pay when it is
+`terminal` or `exhausted`, and a consumer deciding whether it can still pay MUST read both flags,
+not compare `cumulativeLoss` with `1e18`: the §2.3 empty-mutual path marks the mutual `terminal`
+and returns before the flag is set, so a terminal mutual reads `exhausted == false`.
 
 **`cancelMutualLoss`.** Arbiter-only cancel of a pending declaration; sets `cancelled`, emits
 `MutualLossCancelled(mutualId, false)`.
@@ -607,7 +617,8 @@ so these hold trivially.
 - **INV-P11 (exiting cover exactness).** `exitingCover == Σ effCover_i` over members with
   `unbondRequestedAt != 0`, and `exitingCover <= activeCover`. A fresh `requestMutualExit` adds
   the member's `effCover`; a settle shrinks it with the member's cover; release, or a settle that
-  clears a lapsed request, removes it. `exitingCover` never moves the premium index.
+  clears a lapsed request, removes it. `exitingCover` never moves the premium index. Like
+  `activeCover`, it shrinks at settle, not when a loss executes (§1.1).
 - **INV-P10 (bank never bricks a loss).** Premium banking inside settle/release is failure-
   isolated (saturating, skip-not-revert on the infeasible overflow path), so a premium-arithmetic
   edge can never wedge the loss legs; a deferred accrual is recovered on a later poke, never lost.

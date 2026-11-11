@@ -18,5 +18,5 @@ export const IS_SEPOLIA = DEPLOY_ENV === 'SEPOLIA'
  */
 export const CHAIN_NAME = IS_PROD ? 'mainnet' : IS_SEPOLIA ? 'sepolia' : 'local'
 
-/** Numeric EVM chain id for the active env (used to locate broadcast artifacts). */
+/** Numeric EVM chain id for the active env (used to locate the deployment manifest). */
 export const CHAIN_ID = IS_PROD ? 1 : IS_SEPOLIA ? 11155111 : 31337

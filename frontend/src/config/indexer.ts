@@ -1,9 +1,9 @@
 /**
  * Indexer config — base URL for the Ponder indexer REST + GraphQL.
  *
- * If `VITE_INDEXER_URL` is not set, the graph tabs display an informational
- * empty state prompting the user to start the indexer. All other features of
- * the app (tables, direct-RPC reads) keep working unchanged.
+ * If `VITE_INDEXER_URL` is not set, `hasIndexer` is false: indexer-backed hooks
+ * stay disabled (`useVaults` falls back to the env vault list). Direct-RPC
+ * reads keep working.
  */
 export const INDEXER_URL = import.meta.env.VITE_INDEXER_URL as string | undefined
 

@@ -136,24 +136,24 @@ function OverlaysDemo() {
         onClose={() => setDrawerOpen(false)}
         side="right"
         size="md"
-        title="Propose agreement"
-        description="Right-anchored panel. Best for multi-screen flows that need the page as reference."
+        title="Agreement proposal"
+        description="Right-anchored panel. Best for detail and decisions that need the page as reference."
       >
         <div className="ds-stack ds-stack-4">
           <p className="ds-text-sm ds-muted">
             Drawer mirrors the Modal API but slides in from the right (or bottom on narrow viewports).
-            Reserve it for multi-screen flows that reference the page behind them (the agreement
-            proposal builder) and for the mobile nav. Single-screen transactional flows — deposit,
+            Reserve it for detail that references the page behind it (an agreement proposal opened
+            from the dashboard) and for the mobile nav. Single-screen transactional flows — deposit,
             withdraw, underwrite, buy cover — use Modal: that&rsquo;s the app-wide house style.
           </p>
           <div className="ds-stack ds-stack-2">
             <div className="ds-label">Counterparty</div>
             <Input placeholder="0x…" inputMode="text" />
-            <div className="ds-text-xs ds-subtle">Step 1 of 3 · terms and legs follow</div>
+            <div className="ds-text-xs ds-subtle">Both legs and the arbiter follow below</div>
           </div>
           <div className="ds-row ds-row-2" style={{ justifyContent: 'flex-end' }}>
-            <Button onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => setDrawerOpen(false)}>Continue</Button>
+            <Button onClick={() => setDrawerOpen(false)}>Reject</Button>
+            <Button variant="primary" onClick={() => setDrawerOpen(false)}>Accept</Button>
           </div>
         </div>
       </Drawer>
@@ -187,8 +187,8 @@ const SRC_OVERLAYS =
   …confirmation body…
 </Modal>
 
-<Drawer open={open} onClose={close} side="right" size="md" title="Propose agreement">
-  …multi-step flow body…
+<Drawer open={open} onClose={close} side="right" size="md" title="Agreement proposal">
+  …proposal detail and actions…
 </Drawer>`
 
 export function DisclosureSection() {

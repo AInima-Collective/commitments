@@ -53,9 +53,10 @@ Strategies** (pricing + value routing) → **CommitmentManager** (custody) →
 1. **bps everywhere**: `maxPenaltyBps`, `penaltyBps`, `yieldShareBps` are
    0–10000. `5000` = 50%. `> 10000` reverts. `50` means **0.5%**, not 50%.
 2. **Exposure allocation (INV-3)**, per `(user, token)` across all active
-   commitments: `Σ(amount × maxPenaltyBps / 10000) ≤ Σ amount`. A single
-   commitment with `maxPenaltyBps ≤ 10000` always passes; stacking high-penalty
-   commitments against the same pool trips `ExposureAllocationExceeded`. Read it
+   commitments: `Σ(amount × maxPenaltyBps / 10000) ≤ Σ amount`. It holds by
+   construction: each commitment adds at most its own `amount` of exposure, and
+   no revert checks it. What can fail is the deposit: each commitment encumbers
+   its own `amount` out of free balance (`InsufficientFreeBalance`). Read it
    with `getUserExposure(token, user) → (totalEncumbered, totalForfeitable)`
    (token-first arg order, like all manager views).
 
@@ -120,7 +121,7 @@ const commitmentId = await write(manager, 'createCommitment', [params])
 
 Variants: `createCommitmentFor(committer, params, deadline, nonce, sig)` — gasless
 relay via an EIP-712 signature from `committer` (read `nonces(committer)` first);
-`batchCreateCommitments(params[])` — many at once, same committer, atomic.
+`createAndFund(depositAmount, params)` — deposit and create in one call.
 
 **Verify:** `freeBalance` drops by `amount`, `encumberedBalance` rises by `amount`,
 `getUserExposure(token, me)` shows `totalForfeitable = amount × maxPenaltyBps / 10000`.
@@ -144,7 +145,7 @@ serves live state at `:65422` (`/commitments/urgent`, `/account/:address`, …).
 - **bps, not percent.** `5000` = 50%. `> 10000` → `PenaltyExceedsMax`.
 - **Challenge window floor.** `< 86400` → `ChallengeWindowTooShort` (1 day min).
 - **Raw decimals.** `amount` is raw token units; vault shares and underlying may
-  differ in decimals (e.g. `CommitmentsVault` shares are `underlying decimals − 9`).
+  differ in decimals (e.g. `CommitmentsVault` shares are `underlying decimals + 9`).
 - **Zero arbiter / counterparty revert** even when self-arbitrating — set
   `arbiter = you`.
 - **Adapter must price the token.** `ERC4626Adapter` for vault shares,

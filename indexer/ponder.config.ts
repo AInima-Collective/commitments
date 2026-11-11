@@ -32,7 +32,8 @@ const deployments = loadDeployments(chainId)
 // Sepolia: never crawl from genesis — set PONDER_START_BLOCK_11155111 to the
 // block the deploy tx landed in (printed by `forge script`, also recoverable
 // from broadcast/**/11155111/run-latest.json). Falls back to the deployment
-// manifest's startBlock (0 unless the manifest sets it).
+// manifest's startBlock, which script/write-frontend-env.mjs sets to the lowest
+// receipt block of the broadcast it read.
 const sepoliaStartBlock = process.env.PONDER_START_BLOCK_11155111
   ? Number(process.env.PONDER_START_BLOCK_11155111)
   : deployments.startBlock

@@ -35,7 +35,7 @@ The legs share the `arbiter` and `challengeWindow`, but each has an independent
 token, adapter, amount, penalty ceiling, and strategy set. This permits
 cross-token and asymmetric agreements. `acceptAgreement` reverts
 `ProposalExpired` past the proposal window, `NotAcceptor`, `AlreadyAccepted`,
-`ExposureAllocationExceeded`. Read with `getAgreementPair(agreementId) →
+`InsufficientFreeBalance`. Read with `getAgreementPair(agreementId) →
 (cidA, cidB)` and `agreementOf(commitmentId) → agreementId`.
 
 ### `AgreementParams` (exact field order)
@@ -100,13 +100,11 @@ flows bounded by caps the acceptor consented to at accept time.
 
 ## Unbonding an agreement
 
-```solidity
-function requestAgreementUnbond(uint256 agreementId) external; // either committer; both legs unbond together
-```
-
-Symmetric: either side starts it, both legs mature together, then anyone calls
-`finalizeUnbond` on each leg (see `lifecycle.md`). Blocked by an active forfeit
-proposal, like the unilateral path.
+Use the core unbond calls on either leg. `requestUnbond(commitmentId)` by either
+committer starts the unbond on both legs, `cancelUnbond` by either committer
+cancels both, and after maturity anyone calls `finalizeUnbond` on each leg (see
+`lifecycle.md`). Finalizing is blocked by an active forfeit proposal, like the
+unilateral path.
 
 ---
 

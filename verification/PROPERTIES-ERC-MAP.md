@@ -18,7 +18,7 @@
   boilerplate (the "key words … are to be interpreted" sentence, §Spec-intro)
   is excluded as non-substantive.
 - **Property ID column**: an existing ID from `PROPERTIES.md`
-  (`INV-1..INV-10`, `INV-P1`, `INV-P9`, `INV-G2/G3/G6`, `INV-E1`,
+  (`INV-1..INV-10`, `INV-P1`, `INV-P9`, `INV-P11`, `INV-G2/G3/G6`, `INV-E1`,
   `P0-FREE`, `P1-WINDOW`, `P1-PULL`, `P1-LIVE`, `P1-FSM`, `INV-7`, `P2-MONO`,
   `P3-PPS`, `P3-ROUND`, `P3-PARK`) when the clause **is** that property;
   otherwise a `NEW-<letter><n>` placeholder (letters: core = none/`C`,
@@ -73,7 +73,7 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §A.4 (L250) | The manager MUST maintain `escrow[strategy][token]` buckets | INV-1 / INV-P1 | CVL; Fuzz | mapped (escrow is a partition term) |
 | §A.4 (L257) | A strategy's escrow is isolated: no movement kind can debit one strategy's escrow on behalf of another | INV-5 | CVL; Halmos | mapped |
 | §A.5 (L268) | The partition invariant MUST hold after every state-mutating call (INV-1) | INV-1 / INV-P1 | CVL ghost sums; Fuzz; Medusa | mapped |
-| §A.6 (L274) | Manager MUST support pausing forfeit execution; `executeForfeit` MUST revert while paused | NEW-C16 — executeForfeit reverts iff `forfeiturePaused()` | Halmos (per-call guard) | unmapped-new |
+| §A.6 (L274) | Manager MUST support pausing forfeit execution; `executeForfeit` MUST revert while paused | NEW-C16 — executeForfeit reverts iff paused (`pauseState()` first value) | Halmos (per-call guard) | unmapped-new |
 | §A.7 (L280) | All state-mutating manager entry points MUST be reentrancy-guarded; all strategy hooks + movement application MUST execute under the manager's reentrancy lock | NEW-C17 — no state-mutating entry reachable reentrantly (property, not mechanism) | CVL (reentrancy induction) | unmapped-new — **suspicious**: this is the transient-storage reentrancy property; verify the *property* not the guard |
 | §A.7 (L280) | External token transfers to recipients MUST occur after state updates (checks-effects-interactions) | NEW-C18 — CEI ordering: no external call before state settle on mutating paths | CVL (ordering) / Halmos | unmapped-new |
 | §A.8 (L320) | An implementation MUST NOT collapse the three encumbrance-decrement events into a single combined decrement event | NEW-C19 — three distinct decrement events emitted per decrement path | n/a | gap: event-vocabulary (indexer disambiguation), not a state property |
@@ -91,10 +91,10 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §C.1 expire (L480) | `expireCommitment` MUST be committer-only, MUST require `expiresAt!=0 && now>=expiresAt`, MUST revert if a forfeit proposal is active, MUST run the release-hook sequence | P1-FSM + NEW-C27 (expire preconditions) | CVL (FSM) + Halmos (preconditions) | partially mapped |
 | §C.1 metadata (L482) | Tooling MUST NOT assume cross-deployment metadata interoperability | NEW-C28 | n/a | gap: off-chain integrator guidance |
 | §C.2 (L486) | `totalForfeitable ≤ totalEncumbered` MUST hold for each `(user,token)` at all times | INV-3 | CVL; Fuzz | mapped |
-| §C.2 (L495–498) | The exposure invariant MUST be checked on create and on agreement acceptance | INV-3 (+ INV-E1 cross-ref) | CVL; Fuzz | mapped |
+| §C.2 erratum | The exposure invariant holds by construction; no revert need check it on create or agreement acceptance | INV-3 (+ INV-E1 cross-ref) | CVL; Fuzz | mapped |
 | §C.3 (L506) | Forfeiture MUST be a two-phase process | P1-FSM | CVL | mapped |
 | §C.3 initiate (L508) | `initiateForfeit` MUST be arbiter-only; `penaltyBps` MUST NOT exceed `maxPenaltyBps`; multiple concurrent active proposals MUST be rejected | INV-7 + NEW-C29 (penalty ≤ max, arbiter-only) | CVL (INV-7 single-proposal) + Halmos (penalty cap, auth) | partially mapped (single-proposal → INV-7); penalty-cap/auth → unmapped-new |
-| §C.3 execute (L510) | `executeForfeit` MUST be callable by anyone after `initiatedAt + challengeWindow`; MUST revert while `forfeiturePaused()` | P1-WINDOW (+ NEW-C16 pause) | CVL + Halmos | mapped (window) — the pause clause is NEW-C16 |
+| §C.3 execute (L510) | `executeForfeit` MUST be callable by anyone after `initiatedAt + challengeWindow`; MUST revert while forfeiture is paused | P1-WINDOW (+ NEW-C16 pause) | CVL + Halmos | mapped (window) — the pause clause is NEW-C16 |
 | §C.3 execute order (L513) | Forfeit transfer moves `amount×penaltyBps/10_000` from committer encumbered to **counterparty free** (ledger credit) | P1-PULL + INV-4 | CVL rule + Halmos | mapped |
 | §C.3 pull (L517) | The forfeit payout is a **ledger credit, not an external transfer** (no external transfer in execute path) | P1-PULL | CVL rule + Halmos | mapped — **suspicious**: liveness-critical; verify no `safeTransfer` on the execute path |
 | §C.3 cancel (L519) | `cancelForfeit` MUST be arbiter-only while proposal is neither executed nor cancelled | NEW-C30 — cancelForfeit auth + state guard | Halmos | unmapped-new |
@@ -113,7 +113,7 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §D.4 (L745) | The manager MUST reject any movement outside its call site's allowed-kind row | INV-4 / INV-5 (+ NEW-C40 kind-per-site) | CVL + Halmos | partially mapped — kind-per-site matrix → unmapped-new |
 | §D.5 (L757) | For every returned movement the manager MUST validate ALL universal + per-kind rules before applying, and MUST apply a strategy's batch atomically | INV-4 + INV-5 | CVL + Halmos | mapped |
 | §D.5 caps (L765–770) | Per-kind `from`/`to`/`token`/cap allow-list: `FromEncumbered*` from=committer, to∈{committer,counterparty}, token=c.token, running debit ≤ c.amount (INV-4); `FromEscrow*` from=S, escrow-bounded (INV-5) | INV-4 + INV-5 | CVL + Halmos | mapped |
-| §D.5 shrink (L772–778) | For every applied `FromEncumbered*` debit the manager itself MUST apply the exposure-preserving shrink (`c.amount-=units`, `totalEncumbered-=units`, `totalForfeitable-=exposure diff`) | INV-3 + INV-4 | CVL | mapped — **suspicious**: exposure-diff (not recompute-from-units) is the INV-3 dust-drift defense; must be verified as diff-based |
+| §D.5 shrink (L772–778) | For every applied `FromEncumbered*` debit the manager itself MUST apply the exposure-preserving shrink (`c.amount-=units`, the ledger's encumbered balance `-=units`, `totalForfeitable-=exposure diff`) | INV-3 + INV-4 | CVL | mapped — **suspicious**: exposure-diff (not recompute-from-units) is the INV-3 dust-drift defense; must be verified as diff-based |
 | §D.5 fpg (L780) | At the `distribute` call site, `FromEncumbered*` movements MUST be rejected while a forfeit proposal is active | NEW-C41 — distribute-site forfeit-pending movement guard | Halmos + CVL | unmapped-new — **suspicious**: scoped guard; a misplaced/absent guard lets value race out from under a pending forfeit |
 | §D.6 (L786) | Forfeit and release MUST NOT be vetoable by a strategy; manager MUST call the hooks under guarded semantics | P3-PARK | Medusa/Fuzz ONLY (gas-precise) | mapped — **never claim proof coverage** (gas-dependent) |
 | §D.6 atomic (L788) | The strategy call + movement validation + application MUST execute in one revertable frame (invalid-movements degrades identically to revert) | P3-PARK | Medusa/Fuzz ONLY | mapped |
@@ -133,7 +133,7 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §Sec FoT (L1139) | Rebasing tokens MUST be rejected | NEW-C14 (see §A.2) | n/a | gap: deployment screening |
 | §Sec sentinel (L1143) | Implementations MUST NOT assign id 0 to a real commitment; indexers MUST NOT treat id-0 events as commitment-bound | INV-10 | Halmos; CVL | mapped (id-0 half is INV-10; indexer half is off-chain gap) |
 | §Sec window (L1151) | `challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected; MUST NOT expose a production path lowering the enforced floor below `MIN_CHALLENGE_WINDOW` | P1-WINDOW | CVL + Halmos | mapped (see §0.3 suspicious note) |
-| §Sec exposure (L1159) | `totalForfeitable ≤ totalEncumbered` MUST be checked on every `createCommitment` (and agreement acceptance) | INV-3 | CVL; Fuzz | mapped |
+| §Sec exposure | `maxPenaltyBps ≤ 10_000` MUST be validated on every `createCommitment` and agreement leg, and every amount change MUST use the exposure-diff rule, so `totalForfeitable ≤ totalEncumbered` holds by construction | INV-3 | CVL; Fuzz | mapped |
 | §Invariants (L1169–1182) | A conformant implementation MUST maintain INV-1..INV-10 at all times (INV-6 terminal `¬(released∧forfeited)`, INV-8 single unbond additionally introduced here) | INV-1..INV-10 (incl. INV-6, INV-8) | CVL; Fuzz; Halmos | mapped — **note**: INV-6 (`¬(released∧forfeited)`) and INV-8 (single pending unbond) are not yet standalone rows in PROPERTIES.md P0/P1 tables — flag for merge |
 
 
@@ -144,14 +144,14 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | Clause ref (§) | MUST text (verbatim, normative core) | Property ID | Layer(s) | Status |
 |---|---|---|---|---|
 | §2 | `proposeAgreement` MUST encumber the proposer's free balance of `proposerLeg.token` immediately (free → encumbered) | NEW-A2 — propose moves proposer `proposerLeg.amount` free→encumbered (INV-1 preserved) | CVL | unmapped-new |
-| §2 | MUST check the exposure allocation invariant (INV-3) for the proposer before encumbering | INV-3 | CVL | mapped |
+| §2 | `proposeAgreement` MUST encumber the proposer's leg immediately and adds its exposure (INV-3 holds by construction) | INV-3 | CVL | mapped |
 | §2 | Each leg MUST independently satisfy: non-zero `token`/`adapter`, non-zero `amount`, `maxPenaltyBps ≤ 10_000`, `strategies.length ≤ MAX_STRATEGIES` | NEW-A3 — propose reverts on any leg failing the per-leg validation battery | Halmos | unmapped-new |
 | §2 | The proposal MUST expire after `proposalDuration` seconds | NEW-A4 — accept after `proposalExpiresAt` reverts `ProposalExpired` | Halmos | unmapped-new |
 | §2 | `proposalDuration` MUST NOT exceed `MAX_PROPOSAL_DURATION` | NEW-A5 — propose reverts `ProposalDurationTooLong` when duration > MAX_PROPOSAL_DURATION | Halmos | unmapped-new |
 | §2 | `acceptAgreement` MUST be callable only by the named acceptor | NEW-A6 — accept reverts `NotAcceptor` for caller ≠ stored acceptor | Halmos | unmapped-new |
 | §2 | and MUST encumber the acceptor's free balance of `acceptorLeg.token` | NEW-A7 — accept moves acceptor `acceptorLeg.amount` free→encumbered (INV-1 preserved) | CVL | unmapped-new |
 | §2 | MUST create two linked commitments sharing arbiter + `challengeWindow`, each carrying its own leg's `(token,adapter,amount,maxPenaltyBps)`, linked under a shared `agreementId` | NEW-A8 — accept produces two linked legs with shared arbiter/challengeWindow/agreementId | Halmos | unmapped-new |
-| §2 | The exposure allocation invariant (INV-3) MUST be checked for the acceptor before encumbrance | INV-3 | CVL | mapped |
+| §2 | `acceptAgreement` MUST encumber the acceptor's leg and adds its exposure (INV-3 holds by construction) | INV-3 | CVL | mapped |
 | §2 | For each leg the manager MUST invoke every bound strategy's `onCommitmentCreated` once with that leg's `CreatedContext` | NEW-A9 — accept invokes each `onCommitmentCreated` exactly once per (leg,strategy) | Halmos/Fuzz | unmapped-new |
 | §2 | MUST emit `CommitmentBoundToStrategy` once per (leg, strategy) | NEW-A10 | n/a | gap: event-emission shape |
 | §2 | `cancelAgreementProposal` MUST be callable by the proposer at any time pre-acceptance | NEW-A11 — pre-accept cancel by proposer succeeds; non-proposer pre-expiry reverts `NotProposer` | Halmos | unmapped-new |
@@ -199,7 +199,6 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §1.1 | `cumulativeLoss` monotonic non-decreasing, ≤ 1e18 | INV-G2 / P2-MONO | CVL (monotone) + Halmos (bounded bump) | mapped |
 | §1.1 | `totalShares` mutated on join/release ONLY — never on loss | NEW-M5 — totalShares never mutated on loss-execute | CVL | unmapped-new |
 | §1.1 | `premiumPerShareStored` (Π) monotone non-decreasing | P2-MONO | Halmos (nonlinear — CVL likely timeout) | mapped |
-| §1.2 | Both `forfeitableUnits` (Eᵢ) and `creditedValue` MUST be stored (frozen at join) | NEW-M6 — Eᵢ and creditedValue persisted at join | n/a (storage presence) | unmapped-new |
 | §1.2 | `settledUnits` MUST be stored explicitly (not re-derived from live `commitment.amount`) | NEW-M7 — settledUnits stored explicitly | n/a (storage presence) | unmapped-new |
 | §1.5 | `MUTUAL_MIN_CHALLENGE_WINDOW` MUST be strictly longer than the per-commitment 1-day floor | NEW-M9 — constant relation `MUTUAL_MIN_CHALLENGE_WINDOW > 86_400` | Halmos (constant assertion) | unmapped-new |
 | §2.1 | When `applied < L`, the manager MUST emit `MutualLossShortfall(mutualId, L - applied)` | NEW-M10 — clamp shortfall always emits `MutualLossShortfall` | Fuzz/Medusa | unmapped-new |
@@ -207,7 +206,7 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §3.1 | `createMutual` MUST revert `ZeroAddress` if arbiter/numeraire/beneficiary is zero | NEW-M3 — createMutual rejects zero arbiter/numeraire/beneficiary | Halmos | unmapped-new |
 | §3.1 | MUST revert `MutualChallengeWindowTooShort` if `challengeWindow < MUTUAL_MIN_CHALLENGE_WINDOW` | NEW-M12 — challengeWindow ≥ MUTUAL_MIN_CHALLENGE_WINDOW at create | Halmos | unmapped-new |
 | §3.1 | MUST revert `DeallocationWindowTooShort` if `deallocationWindow < challengeWindow` | NEW-M13 — deallocationWindow ≥ challengeWindow at create | Halmos | unmapped-new |
-| §3.3 | `joinMutual` MUST enforce, in order: mutual exists/active/non-terminal; no loss pending; `params.arbiter == mutual.arbiter`; `params.counterparty == mutual.beneficiary`; `params.strategies.length == 0`; `params.token == mutual.numeraire`; Eᵢ non-zero | NEW-M14 — joinMutual seven ordered preconditions | Halmos | unmapped-new |
+| §3.3 | `joinMutual` MUST enforce, in order: mutual exists/active/non-terminal and not `exhausted`; no loss pending; `params.arbiter == mutual.arbiter`; `params.counterparty == mutual.beneficiary`; `params.strategies.length == 0`; `params.token == mutual.numeraire`; Eᵢ non-zero | NEW-M14 — joinMutual seven ordered preconditions | Halmos | unmapped-new |
 | §3.3 | `params.token` MUST equal `mutual.numeraire` (`NumeraireMismatch`) | NEW-M15 — join requires token == numeraire | Halmos | unmapped-new |
 | §3.3 | Eᵢ MUST NOT exceed `MAX_TOTAL_SHARES` (`TotalSharesOverflow`) | NEW-M16 — Eᵢ and totalShares add ≤ MAX_TOTAL_SHARES | Halmos | unmapped-new |
 | §3.3 | Join adds `creditedValue` to `totalShares` (checked ≤ MAX_TOTAL_SHARES) | INV-G2/G6 (totalShares == Σ creditedValue) | CVL (sum) + Halmos (cap) | mapped |
@@ -228,6 +227,7 @@ Line refs in the "§" column point at the spec section; the parenthetical
 | §4 INV-P5 | A member joining at Π=p₀ earns only Π growth after join (`premiumSnapshot = Π` at join) | NEW-M25 (INV-P5) — premiumSnapshot == Π at join | CVL | unmapped-new |
 | §4 INV-P8 | `_pokePremium` runs immediately before every mutation of `activeCover` or Π | NEW-M27 (INV-P8) — poke-before-change of activeCover/Π | CVL (state machine) | unmapped-new |
 | §4 INV-P9 | `activeCover == totalShares − settledTotal == Σ effCoverᵢ` | INV-P9 | Fuzz; CVL | mapped |
+| §4 INV-P11 | `exitingCover == Σ effCoverᵢ` over members with `unbondRequestedAt != 0`, and `exitingCover ≤ activeCover` | INV-P11 | Fuzz | mapped |
 | §4 INV-P10 | Premium banking inside settle/release is failure-isolated (saturating, skip-not-revert on infeasible overflow) | NEW-M (INV-P10) — premium bank never bricks a loss | Medusa/Fuzz (gas/overflow-edge) | unmapped-new |
 | §5 | The manager MUST revert `CommitmentInMutual` on: `initiateForfeitCore`; agreements accept/settle; `requestUnbondCore`; `contributeEncumbered`; and (convergence gate) `_closeWithHooks` when `membership.mutualId != 0` | NEW-M30 — each named entry path reverts `CommitmentInMutual` for a member | Halmos (per-path revert) | unmapped-new |
 | §6.2 | `fundMutualPremium` reverts `StreamDurationOutOfBounds` on out-of-range duration / `periodFinish` uint64 overflow | NEW-M31 — fund rejects out-of-bounds duration / periodFinish overflow | Halmos | unmapped-new |
@@ -441,12 +441,12 @@ clauses).
 |---|---|---|---|---|
 | ERC-COMMITMENTS.md (core) | 62 | 24 | 20 | 18 |
 | ERC-COMMITMENTS-AGREEMENTS.md | 33 | 11 | 19 | 3 |
-| ERC-COMMITMENTS-MUTUALS.md | 45 | 17 | 28 | 0 |
+| ERC-COMMITMENTS-MUTUALS.md | 45 | 18 | 27 | 0 |
 | ERC-COMMITMENTS-REWARDS.md | 47 | 0 | 33 | 14 |
 | ERC-COMMITMENTS-SELECTORS.md | 0 | 0 | 0 | 0 (see note) |
 | ERC-COMMITMENTS-SERVICES.md | 63 | 12 | 39 | 12 |
 | ERC-COMMITMENTS-MESH.md | 17 | 10 | 5 | 2 |
-| **TOTAL** | **267** | **74** | **144** | **49** |
+| **TOTAL** | **267** | **75** | **143** | **49** |
 
 Caveats on the counts:
 - Core-file totals are counted from the 62 distinct MUST-bearing rows in File 1

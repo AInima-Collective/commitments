@@ -97,12 +97,13 @@ vm.prank(member);
 uint256 commitmentId = manager.joinMutual(mutualId, p);
 ```
 
-At join the member freezes two quantities: `forfeitableUnits` (`E_i =
-amount × maxPenaltyBps / 10000`, the most they can ever lose) and `creditedValue`
-(their share of `totalShares`). Both equal `E_i`.
+At join the member freezes `forfeitableUnits` (`E_i = amount × maxPenaltyBps /
+10000`, the most they can ever lose). It is also their share of `totalShares`,
+emitted as `creditedValue` in `MemberJoined`.
 
-A mutual whose Λ has reached `1e18` is wiped out. `joinMutual` reverts
-`MutualExhausted`.
+A loss that takes all the cover left, or leaves no more than `EXHAUSTION_DUST`
+(1e9) of the loss fraction, marks the mutual `exhausted` when it executes.
+`joinMutual` on an exhausted mutual reverts `MutualExhausted`.
 
 ## 3. Premium: fund the stream, members claim
 
@@ -129,15 +130,13 @@ withdraws their accrued premium to their free balance at any time:
 
 ```solidity
 manager.claimMemberPremium(commitmentId);
-// or, in one call across many members:
-manager.claimMembersPremium(commitmentIds);
 ```
 
 Premium funding is solvency-guarded: a stream can never promise more than the
 reserve holds, and its rate can only be increased, never griefed downward.
 While a stream is live its end never moves earlier: the new end is
-`max(periodFinish, now + duration)`. Funding reverts `MutualExhausted` once Λ is
-at `1e18`.
+`max(periodFinish, now + duration)`. Funding an exhausted mutual reverts
+`MutualExhausted`, and funding a terminal one reverts `MutualIsTerminal`.
 
 ## 4. A claim: propose → challenge → execute → settle → collect
 
@@ -179,7 +178,10 @@ exceeds `1e18`. Each member then owes `forfeitableUnits × (Λ − lossSnapshot)
 capped by both their remaining frozen units and their live commitment amount — so
 a member's total loss can never exceed the units they posted. If members exited
 before the loss shrank the pool, any un-applicable excess is emitted as a
-`MutualLossShortfall` rather than over-charging survivors.
+`MutualLossShortfall` rather than over-charging survivors. A loss executed on a
+mutual with no members left marks it `terminal` and sweeps its premium reserve to
+the beneficiary; such a mutual is not marked `exhausted`, so a consumer checks
+both flags to know whether a mutual can still pay.
 
 ## 5. Exit
 
@@ -197,12 +199,13 @@ manager.releaseMutualMember(commitmentId);        // frees remaining backing, au
 Release is open from one `deallocationWindow` after the request until two
 (pause-adjusted). At or after the end, `releaseMutualMember` reverts
 `ExitRequestLapsed`. The member then calls `requestMutualExit` again, which
-starts a fresh window.
+starts a fresh window. Anyone can clear a lapsed request: `settleMemberLoss`
+(or `settleMembers`) drops it and emits `MemberExitLapsed`.
 
-`releaseMutualMember` removes exactly the `creditedValue` the member added,
+`releaseMutualMember` removes exactly the `E_i` the member added to `totalShares`,
 returns their remaining backing to their free balance, and pays out any accrued
 premium. When the last member leaves, the mutual sweeps its premium reserve to
-the beneficiary and terminates. Exit requests and release are blocked while a loss
+the beneficiary and stops its stream; it is not marked `terminal`. Exit requests and release are blocked while a loss
 is pending, so a request can lapse while a loss is pending.
 
 ## Accounting notes
@@ -213,8 +216,15 @@ is pending, so a request can lapse while a loss is pending.
 - **`activeCover`** tracks live deliverable cover and shrinks as members settle or
   exit; it's the Π denominator, and `activeCover == totalShares − settledTotal`
   holds as an invariant.
-- **One token.** Members back in the numeraire and `creditedValue = E_i`, so no
-  oracle is read anywhere.
+- **`exitingCover`** is the part of `activeCover` whose members have an exit
+  request on record (counted from the request until release or the lapse is
+  cleared), so `activeCover − exitingCover` is the cover that has not asked to
+  leave. Both shrink when members settle, not when a loss executes: right after
+  `executeMutualLoss` the difference is an upper bound, to be read as zero on a
+  `terminal` or `exhausted` mutual and otherwise above the deliverable cover by
+  the members' unsettled losses (`pendingMemberLoss`).
+- **One token.** Members back in the numeraire and each member's weight is its
+  own `E_i`, so no oracle is read anywhere.
 - **Windows.** `MUTUAL_MIN_CHALLENGE_WINDOW` is 2 days (stricter than the 1-day
   per-commitment floor); `deallocationWindow ≥ challengeWindow`.
 

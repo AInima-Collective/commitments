@@ -34,21 +34,22 @@ reverse):
 ```
 src/components/
   ui/        primitives with NO protocol knowledge (Button, Modal, TokenAmount, …)
-  protocol/  knows protocol vocabulary, not a specific page (StatusBadge, EncumbranceBar, …)
+  protocol/  knows protocol vocabulary, not a specific page (CommitmentStatusBadge, EncumbranceBar, …)
   <feature>/ page-shaped feature compositions (vault/, commitment/, agreement/, mesh/, …)
-  shell/     RootLayout, Sidebar, TopBar, WalletWidget
+  shell/     RootLayout (with the side nav), TopBar, WalletWidget, banners, redirects
 ```
 
-- **`/design` is the source of truth for the UI vocabulary** — every `ui/`
+- **`/app/design` is the source of truth for the UI vocabulary** — every `ui/`
   primitive must appear there. See `src/pages/Design.tsx` and
   `components/ui/CONTRIBUTING.md` for the six composition rules.
 - **Design tokens** live once in `src/styles/tokens.css` (warm-mono, single
   accent, `--radius: 0`). Hex literals outside that file are an ESLint error;
   component CSS may only reference `var(--…)`.
-- **Hooks** (`src/hooks/*`) wrap wagmi reads/writes for protocol concepts
-  (`useCommitments`, `useAgreements`, `useVaultPosition`, …). Reach for these
+- **Hooks** (`src/hooks/*`) wrap wagmi and indexer reads and the write flows for
+  protocol concepts (`useIndexedCommitments`, `useAgreements`, `useVaults`,
+  `useWriteAction`, …). Reach for these
   before adding a new fetch.
-- **`src/generated.ts`** is wagmi codegen output — never hand-edit it; rerun
+- **`src/generated.ts`** is wagmi codegen output (ABIs only, no hooks) — never hand-edit it; rerun
   `forge build` then `pnpm generate` after changing contract ABIs.
 - **Docs viewer** at `/app/docs/*` renders current standards, protocol guides,
   and the `forge doc` contract reference via react-markdown + Shiki + Mermaid.

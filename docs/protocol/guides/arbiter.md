@@ -253,4 +253,5 @@ yield field — payouts flow through the strategy, not the commitment struct.
    URI) so the record is auditable.
 
 4. **Check the pause state.** `executeForfeit` reverts when forfeiture is paused
-   at the manager level. Query `manager.forfeiturePaused()` before attempting it.
+   at the manager level. Query `manager.pauseState()` (its first value is the paused
+   flag) before attempting it.

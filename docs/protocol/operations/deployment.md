@@ -19,7 +19,7 @@ A typical broadcast uses:
 forge script script/DeploySepolia.s.sol:DeploySepolia --rpc-url <RPC_URL> --broadcast
 ~~~
 
-Read the environment-variable block in that script before use. PRIVATE_KEY, ADMIN_ADDRESS, token mode, service thresholds, optional feature flags, and network-specific settings are deployment inputs, not protocol defaults.
+Read the environment-variable block in that script before use. PRIVATE_KEY, ADMIN_ADDRESS, the faucet token's name, symbol and decimals, service thresholds, optional feature flags, and network-specific settings are deployment inputs, not protocol defaults.
 
 ## Dependency order
 

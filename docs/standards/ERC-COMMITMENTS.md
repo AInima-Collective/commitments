@@ -438,6 +438,7 @@ interface ICommitmentManager /* Part C surface */ {
         uint64 initiatedAt;
         bool executed;
         bool cancelled;
+        uint64 cumulativePausedAtStart; // pause snapshot at initiate; anchors the challenge-window clock-stop (§A.6)
     }
 
     /// `totalEncumbered` is the ledger's `encumberedBalance(token, user)`; only
@@ -511,7 +512,7 @@ where, over all active commitments of that user backed by that token:
   totalForfeitable  = Σ commitment.amount × maxPenaltyBps / 10_000
 ```
 
-**Erratum: implied, not enforced by a revert.** Earlier drafts required the invariant to be checked, with a revert, when creating a commitment and when accepting an agreement ([agreements extension](./ERC-COMMITMENTS-AGREEMENTS.md)). That check cannot fail and is no longer required: each lien adds `amount × maxPenaltyBps / 10_000 ≤ amount` of exposure (`maxPenaltyBps ≤ 10_000` is validated first), and every later writer keeps a lien's forfeitable share at most its live amount. The invariant holds by construction. `totalEncumbered` is the ledger's `encumberedBalance` (INV-2), so implementations SHOULD NOT keep a second counter for it; the reference implementation stores only `totalForfeitable` and `getUserExposure` returns it beside the ledger balance, so INV-3 stays observable.
+**Erratum: implied, not enforced by a revert.** Implementations need not check the invariant with a revert when creating a commitment or accepting an agreement ([agreements extension](./ERC-COMMITMENTS-AGREEMENTS.md)); such a check cannot fail. Each lien adds `amount × maxPenaltyBps / 10_000 ≤ amount` of exposure (`maxPenaltyBps ≤ 10_000` is validated first), and every later writer keeps a lien's forfeitable share at most its live amount. The invariant holds by construction. `totalEncumbered` is the ledger's `encumberedBalance` (INV-2), so implementations SHOULD NOT keep a second counter for it; the reference implementation stores only `totalForfeitable` and `getUserExposure` returns it beside the ledger balance, so INV-3 stays observable.
 
 The invariant is automatically maintained when a commitment terminates, and is preserved by validated movements (§D.5) and contributions (§C.6) through the exposure-diff rule (see Rationale).
 
@@ -1033,7 +1034,7 @@ This is a new standard; no backwards compatibility issues arise. It requires no 
 
 ## Test Cases
 
-The reference implementation ships a conformance harness exercising INV-1 through INV-10 across deposit, encumber, forfeit, unbond, expire, fund, distribute, claim, contribute, and hook-failure scenarios. In the reference repository the suites live at `test/manager/conformance/` (the partition/exposure invariant fuzz, INV-1..INV-10) and `test/conformance/` (cross-cutting suites, including the rewards-coordinator invariants), with per-subsystem conformance directories under `test/mesh/`, `test/registry/`, and `test/services/`.
+The reference implementation ships a conformance harness exercising INV-1 through INV-10 across deposit, encumber, forfeit, unbond, expire, fund, distribute, claim, contribute, and hook-failure scenarios. In the reference repository the suites live at `test/manager/conformance/` (the partition/exposure invariant fuzz, INV-1..INV-10), with per-subsystem conformance directories under `test/registry/`, `test/rewards/`, and `test/services/`.
 
 The minimal worked example below illustrates the exposure allocation invariant (INV-3) and the ledger-consistency invariant (INV-2). The two-strategy lifecycle walkthrough is §D.9; the hook-failure walkthrough is in Security Considerations.
 

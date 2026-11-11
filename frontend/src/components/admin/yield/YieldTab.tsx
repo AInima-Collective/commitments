@@ -40,7 +40,7 @@ const EMPTY_CLAIM_DATA = '0x' as Hex
 const RECLAIM_CLAIM_DATA = encodeAbiParameters([{ type: 'bool' }], [true])
 
 /**
- * YieldTab — v2 strategy-aware yield admin surface (rebuilt per FUTURE_WORK §2).
+ * YieldTab — v2 strategy-aware yield admin surface.
  *
  * v1's per-commitment accumulator (`pendingYieldIncentive`/`distribute`/
  * `claimYieldIncentive`) is gone. v2 routes every value flow through pluggable

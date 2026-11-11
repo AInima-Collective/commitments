@@ -30,7 +30,7 @@ function fundStrategy(address strategy, address token, uint256 amount) external;
   instead. See `strategies.md`.
 
 Reads: `freeBalance(token,user)`, `encumberedBalance(token,user)`,
-`escrowOf(token,strategy)`, `ledgerTotals(token) → (free, encumbered, escrow)`.
+`escrowOf(token,strategy)`, `ledgerTotals(token) → (free, encumbered, escrow, mutualPremium)`.
 (All manager views are token-first.)
 
 ---
@@ -51,7 +51,6 @@ is *parked*, not fatal — emits `StrategyHookFailed`, recover later via
 ```solidity
 function releaseCommitment(uint256 commitmentId) external;  // arbiter only; reverts UseAgreementPath if agreed
 function expireCommitment(uint256 commitmentId) external;   // committer only; needs expiresAt set & elapsed, no pending forfeit
-function batchReleaseCommitments(uint256[] calldata ids) external; // arbiter for all; atomic
 ```
 
 `releaseCommitment` reverts: `NotArbiter`, `CommitmentInactive`, `UseAgreementPath`
@@ -88,9 +87,10 @@ function cancelStaleForfeitProposal(uint256 commitmentId) external;         // A
    the 14-day TTL **on top of** the challenge window, so the committer can unbond
    again. Reverts `ChallengeWindowActive` if not yet stale.
 
-Read state with `getForfeitProposal(id) → {commitmentId, penaltyBps, initiatedAt,
-executed, cancelled}`. An admin with `PAUSER_ROLE` can `pauseForfeiture()`
-(execution circuit-breaker); check `forfeiturePaused()`.
+Read state with `getForfeitProposal(id) → {penaltyBps, initiatedAt, executed,
+cancelled, cumulativePausedAtStart}`. An admin with `PAUSER_ROLE` can
+`pauseForfeiture()` (execution circuit-breaker); check the first value of
+`pauseState()`.
 
 ---
 
@@ -111,7 +111,7 @@ function unbondInitiatedAt(uint256 commitmentId) external view returns (uint64);
 `requestUnbond` reverts `UnbondAlreadyRequested`. `finalizeUnbond` reverts
 `UnbondNotElapsed(maturesAt)` before maturity and `UnbondBlockedByForfeit` if a
 proposal is live — cancel/execute the forfeit (or wait out the stale TTL) first.
-For agreements both legs unbond together — use `requestAgreementUnbond` (see
+On an agreement leg, `requestUnbond` and `cancelUnbond` act on both legs (see
 `agreements.md`).
 
 ---
@@ -130,7 +130,8 @@ function contributeEncumbered(uint256 commitmentId, uint256 units) external;
 - Debits the caller's free balance, credits the **committer's** encumbered balance,
   grows `commitment.amount`, and ratchets `totalForfeitable` by the exposure diff.
 - Reverts: `ContributionsDisabled` (non-committer before opt-in), `ZeroAmount`,
-  `ForfeitPending`, `UnbondPending`, `CommitmentInactive`, `InsufficientFreeBalance`.
+  `ForfeitPending`, `UnbondPending`, `CommitmentInactive`, `CommitmentInMutual`,
+  `InsufficientFreeBalance`.
 
 ---
 
@@ -158,19 +159,23 @@ is always recoverable. See `strategies.md` for what each strategy moves.
 ## Reads & admin
 
 Reads: `getCommitment(id) → Commitment`, `getUserExposure(token,user) →
-{totalEncumbered, totalForfeitable}` (token-first arg order), `getUserCommitmentIds(user)` (append-only;
-filter by `released`/`forfeited` yourself), `agreementOf(id)` (0 = not agreed),
+{totalEncumbered, totalForfeitable}` (token-first arg order), `agreementOf(id)` (0 = not agreed),
 `nonces(committer)` (for `createCommitmentFor`), `MIN_CHALLENGE_WINDOW()`,
-`hookGasCap()`, `operatorRegistry()`.
+`hookGasCap()`, `operatorRegistry()`. The manager keeps no per-user list of
+commitments: list a user's commitments from the indexer (`/account/:address`) or
+from `CommitmentCreated` logs.
 
-The `Commitment` struct: `{committer, arbiter, counterparty, token, adapter,
-amount, maxPenaltyBps, challengeWindow, createdAt, expiresAt, released, forfeited,
-metadataURI, metadataHash}`. After a forfeit, `amount` reflects the post-forfeit
+The `Commitment` struct: `{committer, maxPenaltyBps, released, forfeited, closedAt,
+arbiter, challengeWindow, counterparty, createdAt, token, expiresAt, adapter,
+unbondInitiatedAt, amount, metadataHash, cumulativePausedAtStart,
+unbondCumulativePausedAtStart}`. The `metadataURI` is not stored; it is emitted
+in `CommitmentCreated`. After a forfeit, `amount` reflects the post-forfeit
 residual; the pre-forfeit amount lives in the event stream.
 
 Admin (`DEFAULT_ADMIN_ROLE`, mostly irrelevant to agents):
-`setUnbondingPeriod`, `setMinChallengeWindow` (0 restores 1-day default),
-`setHookGasCap` (raise-only, floor 500k), `setOperatorRegistry`.
+`setUnbondingPeriod`, `setMinChallengeWindow` (reverts
+`MinChallengeWindowBelowFloor` under 1 day), `setHookGasCap` (reverts `ZeroAmount`
+under the 500k floor), `setOperatorRegistry`.
 
 Constants: `MAX_STRATEGIES = 8`, `MAX_PROPOSAL_DURATION = 30 days`,
 `FORFEIT_PROPOSAL_TTL = 14 days`, `MAX_METADATA_URI_LENGTH = 512`,

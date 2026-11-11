@@ -1,6 +1,6 @@
 # commitments-indexer
 
-[Ponder](https://ponder.sh) indexer that streams `CommitmentManager`, `CommitmentsVault`, `OperatorRegistry`, `OperatorServiceRegistry`, and mesh node events into a queryable database. Serves a Hono REST API and Ponder's built-in GraphQL for the `commitments/frontend/` graph visualization.
+[Ponder](https://ponder.sh) indexer that streams `CommitmentManager`, `CommitmentsVault`, `OperatorRegistry`, `OperatorServiceRegistry`, and mesh node events into a queryable database. Serves a Hono REST API and Ponder's built-in GraphQL to the `frontend/` app.
 
 ## Local dev
 
@@ -90,7 +90,7 @@ Response:
   "cid": "bafkrei…",                 // null when using the dev data: fallback
   "metadataURI": "ipfs://bafkrei…",   // or "data:application/json;base64,…"
   "metadataHash": "0x…",              // keccak256 of the EXACT pinned bytes
-  "service": "pinata"                 // or "data-uri" (informational)
+  "service": "pinata"                 // or "kubo" or "data-uri" (informational)
 }
 ```
 
@@ -115,9 +115,10 @@ and posting.
 | Env | Backend | Behaviour |
 |-----|---------|-----------|
 | `PINATA_JWT` set | Pinata `pinFileToIPFS` | Raw bytes uploaded as a single file; returned `IpfsHash` is the CID of those bytes, so `ipfs://<cid>` resolves back to them. `cid` is the CIDv1. |
-| _(none)_ | dev `data:` fallback | Returns a self-contained `data:application/json;base64,<base64>` URI. The fetcher already resolves `data:` URIs, so the full pin→hash→verify round-trip works **offline** against `just dev-up` / `just indexer-dev` with no external credentials. `cid` is `null`. |
+| `IPFS_API_URL` set (no `PINATA_JWT`) | Kubo `/api/v0/add` | Raw bytes added with `cid-version=1&pin=true`; an unreachable node answers `502` rather than falling back. `cid` is the CIDv1. |
+| _(neither)_ | dev `data:` fallback | Returns a self-contained `data:application/json;base64,<base64>` URI. The fetcher already resolves `data:` URIs, so the full pin→hash→verify round-trip works **offline** against `just dev-up` / `just indexer-dev` with no external credentials. `cid` is `null`. |
 
-The `PINATA_JWT` is a Pinata "scoped" JWT with `pinFileToIPFS` permission, read
+`just ipfs-up` starts a local Kubo node. The `PINATA_JWT` is a Pinata "scoped" JWT with `pinFileToIPFS` permission, read
 **server-side only** from the environment. To use a different pinning service
 (web3.storage / Storacha), add a branch in `src/api/metadata.ts` alongside
 `pinToPinata`.

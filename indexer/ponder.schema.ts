@@ -775,8 +775,8 @@ export const meshDenomWeight = onchainTable(
  * Tracks ONLY `encumbered` because it is the one side the manager's event
  * stream pins down exactly: EncumbranceIncreased (+units), the three attributable
  * decrement events (EncumbranceReleased / EncumbranceMovedToEscrow /
- * EncumbrancePaidExternal, each -units against the committer), EncumbranceTransferred
- * (move between users), EncumbranceContributed (+= the commitment's committer), and
+ * EncumbrancePaidExternal, each -units against the committer), EncumbranceContributed
+ * (+= the commitment's committer), and
  * ForfeitExecuted (-= the forfeited committer). The `free` side is intentionally not
  * indexed: although the decrement events are now attributable by path, only the
  * EncumbranceReleased path conserves the holder's total (free goes up) — the escrow
@@ -850,9 +850,8 @@ export const ledgerFlow = onchainTable(
     /**
      * Movement path, for annotating the chart and reading the history back:
      * 'deposit' | 'withdraw' | 'encumber' | 'release' | 'escrow' | 'external'
-     * | 'transferIn' | 'transferOut' | 'contributeOut' | 'contributeIn'
-     * | 'forfeitOut' | 'forfeitIn' | 'settleOut' | 'settleIn' | 'distribution'
-     * | 'premiumOut' | 'premiumIn'
+     * | 'contributeOut' | 'contributeIn' | 'forfeitOut' | 'forfeitIn'
+     * | 'settleOut' | 'settleIn' | 'distribution' | 'premiumIn'
      */
     kind: t.text().notNull(),
     /** Attributed commitment, when the path names one. Null otherwise. */
@@ -1341,8 +1340,7 @@ export const premiumFunding = onchainTable(
 
 /**
  * One row per `MemberPremiumClaimed` — a member's accrued premium paid to its
- * committer (via `claimMemberPremium`, `settleAndClaim`, or the auto-pay on
- * `releaseGroupMember`). `mutualId` is resolved from the membership row (the event
+ * committer (via `claimMemberPremium` or the auto-pay on `releaseMutualMember`). `mutualId` is resolved from the membership row (the event
  * itself only carries `commitmentId`).
  */
 export const premiumClaim = onchainTable(

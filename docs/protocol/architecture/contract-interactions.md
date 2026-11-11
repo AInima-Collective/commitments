@@ -27,7 +27,7 @@ Forfeiture can be paused at the manager. cancelForfeit is arbiter-authorized, wh
 
 ## Distribution strategies
 
-Each commitment binds zero or more StrategyBinding entries. distribute(commitmentId, strategy) asks the strategy to calculate token movements and lets the manager validate and execute those movements. claim and distributeAndClaim support strategy-specific pull claims. Strategy escrow is accounted per token and strategy inside the manager.
+Each commitment binds zero or more StrategyBinding entries. distribute(commitmentId, strategy) asks the strategy to calculate token movements and lets the manager validate and execute those movements. claim supports strategy-specific pull claims. Strategy escrow is accounted per token and strategy inside the manager.
 
 The manager is the only token mover. A strategy describes allowed movements through IDistributionStrategy; it does not receive arbitrary custody authority.
 

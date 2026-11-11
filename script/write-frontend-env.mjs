@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Reads the latest Simulate broadcast and writes frontend/.env.local so the UI
+// Reads the latest seed (or DeploySepolia) broadcast and writes frontend/.env.local so the UI
 // points at the live deployment, plus indexer/deployments.<chainId>.json, the
 // schema-v1 deployment manifest the indexer reads (see indexer/src/loadDeployments.ts).
 // Run by `just dev-up` after seeding. This is the one broadcast parser: the

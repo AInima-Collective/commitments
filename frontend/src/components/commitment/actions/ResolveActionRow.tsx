@@ -458,7 +458,7 @@ function DistributeYieldAction({
 }: ResolveActionRowProps) {
   // v2 has no aggregate pending-yield read — distributeAll is permissionless and
   // idempotent, so we offer it whenever a strategy is bound (caller-gated). The
-  // per-strategy pending estimate is deferred (FUTURE_WORK §2).
+  // row shows no per-strategy pending estimate.
   const { write, isPending, isConfirming, isSuccess } = useWriteAction({ onSuccess: onActed })
   const isPendingAny = isPending || isConfirming
 
