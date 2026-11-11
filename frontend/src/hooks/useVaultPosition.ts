@@ -14,7 +14,10 @@ export interface VaultPosition {
   /** Vault shares currently encumbered by active commitments in the manager
    *  ledger (`manager.encumberedBalance(vaultShare, user)`). */
   encumbered: bigint | undefined
-  /** convertToAssets(shares) — underlying value of the wallet shares. */
+  /** Every share the viewer holds in this vault: the wallet's, plus the manager's free and
+   *  encumbered balances when `managerAddress` is given. Undefined until those reads land. */
+  held: bigint | undefined
+  /** convertToAssets(held) — the underlying value of everything the viewer holds here. */
   underlyingValue: bigint | undefined
   assetAddress: Address | undefined
   assetSymbol: string | undefined
@@ -92,16 +95,21 @@ export function useVaultPosition({
   })
   const free = ledger?.[0]?.result
   const encumbered = ledger?.[1]?.result
+  const held = managerAddress
+    ? shares !== undefined && free !== undefined && encumbered !== undefined
+      ? shares + free + encumbered
+      : undefined
+    : shares
 
-  // convertToAssets depends on balanceOf result — second render pass
+  // convertToAssets depends on the balance reads — second render pass
   const { data: underlyingValue, isLoading: underlyingLoading, refetch: refetchUnderlying } =
     useReadContract({
       abi: commitmentsVaultAbi,
       functionName: 'convertToAssets',
       address: vaultAddress,
-      args: shares !== undefined ? [shares] : undefined,
+      args: held !== undefined ? [held] : undefined,
       query: {
-        enabled: enabled && shares !== undefined,
+        enabled: enabled && held !== undefined,
         refetchInterval: POLL.fast,
       },
     })
@@ -116,6 +124,7 @@ export function useVaultPosition({
     shares,
     free,
     encumbered,
+    held,
     underlyingValue: underlyingValue as bigint | undefined,
     assetAddress,
     assetSymbol: assetMeta?.[1]?.result,

@@ -357,7 +357,7 @@ export default function Vault() {
       {/* Only surface the position panel for users who already hold shares
        *  in this vault. A cold-start depositor sees the hero + tabs first;
        *  the position recap reveals once they have something to recap. */}
-      {(position.shares ?? 0n) > 0n && (
+      {(position.held ?? 0n) > 0n && (
         <PositionPanel
           position={position}
           isConnected={isConnected}
