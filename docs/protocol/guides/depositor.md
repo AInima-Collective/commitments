@@ -138,12 +138,13 @@ strategies[0] = StrategyBinding({
 ```
 
 Accrual is advanced permissionlessly with `manager.distribute(id, strategy)` and
-paid out with `manager.claim(id, strategy, claimData)`. To avoid the ordering
-footgun where `pending()` shows live accrual that `claim()` hasn't banked yet,
-use the atomic helper:
+paid out with `manager.claim(id, strategy, claimData)`. `pending()` shows live
+accrual that `claim()` pays only once `distribute()` has banked it, so call them in
+that order (a contract can make both calls in one transaction):
 
 ```solidity
-manager.distributeAndClaim(commitmentId, strategy, claimData);
+manager.distribute(commitmentId, strategy);
+manager.claim(commitmentId, strategy, claimData);
 ```
 
 ## 5. After resolution

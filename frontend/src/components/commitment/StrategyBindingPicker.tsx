@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { type Address, parseUnits } from 'viem'
 import { useChainId } from 'wagmi'
 
-import { Input, Notice } from '../ui'
-import { formatBps } from '../../utils/commitments'
+import { Button, Input, Notice } from '../ui'
+import { formatBps } from '../../lib/commitments'
+import { legibleWriteError } from '../../lib/contractErrors'
 import { getContractAddresses } from '../../config/contracts'
 import { useFundStrategy } from '../../hooks/useFundStrategy'
 import {
@@ -97,7 +98,7 @@ export function StrategyBindingPicker({
       { indexYieldStrategy, flatFeeStrategy },
     )
     onChange({ bindings, ready: feeFunded })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onChange is left out: an inline callback would re-emit on every render
   }, [yieldBps, flatFee, feeFunded, indexYieldStrategy, flatFeeStrategy])
 
   function handleFeeChange(value: string) {
@@ -208,9 +209,8 @@ export function StrategyBindingPicker({
                   : 'Fund the fee escrow before creating, or the commitment will revert.'}
               </Notice>
               {!feeFunded && (
-                <button
-                  type="button"
-                  className="ds-btn ds-btn--sm"
+                <Button
+                  size="sm"
                   onClick={handleFund}
                   disabled={
                     !isConnected ||
@@ -220,11 +220,11 @@ export function StrategyBindingPicker({
                   }
                 >
                   {fundLabel}
-                </button>
+                </Button>
               )}
               {funding.step === 'error' && funding.error && (
                 <Notice tone="danger" size="sm">
-                  {funding.error.message.split('\n')[0]}
+                  {legibleWriteError(funding.error)}
                 </Notice>
               )}
             </div>

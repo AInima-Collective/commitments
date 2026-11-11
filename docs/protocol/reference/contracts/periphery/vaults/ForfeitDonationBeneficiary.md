@@ -28,7 +28,7 @@ shares and donates the assets back into V, making V's depositors whole.
 the proceeds donated to insured Vault A (both over the same asset).
 
 
-## Constants
+## State Variables
 ### manager
 The commitment manager holding forfeited shares in this contract's
 free balance.
@@ -53,7 +53,16 @@ The vault the redeemed assets are donated into (may equal source).
 
 
 ```solidity
-CommitmentsVault public immutable targetVault
+ICommitmentsVault public immutable targetVault
+```
+
+
+### asset
+The shared underlying of both vaults (checked equal at construction).
+
+
+```solidity
+IERC20 public immutable asset
 ```
 
 

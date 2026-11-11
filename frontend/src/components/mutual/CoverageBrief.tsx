@@ -15,8 +15,6 @@ interface CoverageBriefProps {
   challengeWindow: bigint
   /** Numeraire symbol the mutual is backed by / settled in. */
   symbol: string
-  /** True when underwriters post mixed collateral (band-valued premium). */
-  heterogeneous?: boolean
 }
 
 /**
@@ -36,7 +34,6 @@ export function CoverageBrief({
   arbiter,
   challengeWindow,
   symbol,
-  heterogeneous = false,
 }: CoverageBriefProps) {
   return (
     <Card className="ds-stack ds-stack-3" aria-label="What this covers">
@@ -65,9 +62,7 @@ export function CoverageBrief({
       </div>
 
       <p className="ds-text-xs ds-subtle" style={{ margin: 0 }}>
-        {heterogeneous
-          ? 'Underwriters post mixed collateral; premium is weighted by a manipulation-resistant band valuation. Settled in the mutual’s numeraire.'
-          : `Backed and settled in ${symbol}. Underwriters earn premium; cover buyers are paid out if the trigger fires.`}
+        {`Backed and settled in ${symbol}. Underwriters earn premium; cover buyers are paid out if the trigger fires.`}
       </p>
     </Card>
   )

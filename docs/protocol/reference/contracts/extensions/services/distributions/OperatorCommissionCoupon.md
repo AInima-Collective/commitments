@@ -6,7 +6,7 @@ generated: true
 ---
 # OperatorCommissionCoupon
 **Inherits:**
-[IDistributionStrategy](/docs/protocol/reference/contracts/core/interfaces/IDistributionStrategy), ReentrancyGuardTransient
+[StrategyBase](/docs/protocol/reference/contracts/distributions/StrategyBase), ReentrancyGuardTransient
 
 **Title:**
 OperatorCommissionCoupon
@@ -35,14 +35,7 @@ reclaimable by the delegator via `refundCommission` — so an operator should `c
 `latchOperator` while the delegation is live.
 
 
-## Constants
-### manager
-
-```solidity
-address public immutable manager
-```
-
-
+## State Variables
 ### registry
 
 ```solidity
@@ -50,7 +43,6 @@ address public immutable registry
 ```
 
 
-## State Variables
 ### couponOf
 
 ```solidity
@@ -63,14 +55,7 @@ mapping(uint256 commitmentId => Coupon) public couponOf
 
 
 ```solidity
-constructor(address manager_, address registry_) ;
-```
-
-### onlyManager
-
-
-```solidity
-modifier onlyManager() ;
+constructor(address manager_, address registry_) StrategyBase(manager_);
 ```
 
 ### fundCommission
@@ -181,50 +166,6 @@ Pending amount claimable by the implied recipient.
 function pending(ClaimContext calldata ctx, bytes calldata) external view returns (uint256);
 ```
 
-### distribute
-
-Permissionlessly advance accrual state. Called by the manager from
-`manager.distribute(id, strategy)`; reverts bubble to the caller.
-Allowed kinds: FromEncumberedToEscrow, FromEncumberedToExternal.
-
-No-op: commission is held self-custody, so there is nothing to accrue into escrow and
-no movement to emit. Keeping it empty guarantees the strategy never drains `c.amount`.
-
-
-```solidity
-function distribute(DistributeContext calldata) external view onlyManager returns (TokenMovement[] memory);
-```
-
-### onCommitmentReleased
-
-Manager-only; called under guarded semantics (ERC §D.6) BEFORE the committer's
-remaining encumbrance is freed, so the strategy can take its final accrual sweep.
-Allowed kinds: FromEncumberedToEscrow, FromEscrowToExternal, FromEscrowToFree.
-
-No-op — the commission obligation is independent of the delegation close (mirrors
-`FlatFeeAtCreate`). Never drains encumbrance.
-
-
-```solidity
-function onCommitmentReleased(LifecycleContext calldata)
-    external
-    view
-    onlyManager
-    returns (TokenMovement[] memory);
-```
-
-### onCommitmentForfeited
-
-Manager-only; called under guarded semantics (ERC §D.6), strictly AFTER the
-manager-internal forfeit transfer. Disposes of strategy-side in-flight accrual only;
-cannot affect the forfeit itself. `FromEncumbered*` caps run against the post-forfeit
-residual. Allowed kinds: FromEncumberedToEscrow, FromEscrowToExternal, FromEscrowToFree.
-
-
-```solidity
-function onCommitmentForfeited(ForfeitContext calldata) external view onlyManager returns (TokenMovement[] memory);
-```
-
 ### _tryLatch
 
 Latch the operator from the registry if not yet set and a delegation is live.
@@ -260,58 +201,24 @@ event CommissionRefunded(uint256 indexed commitmentId, address indexed committer
 ```
 
 ## Errors
-### OnlyManager
-
-```solidity
-error OnlyManager();
-```
-
-### AlreadyBound
-
-```solidity
-error AlreadyBound();
-```
-
-### NotBound
-
-```solidity
-error NotBound();
-```
-
-### NotAuthorized
-
-```solidity
-error NotAuthorized();
-```
-
-### NothingToClaim
-
-```solidity
-error NothingToClaim();
-```
-
 ### NotDelegated
 
 ```solidity
 error NotDelegated();
 ```
 
-### StreamEnded
+### CommitmentClosed
+Commission cannot be funded once the delegation commitment has closed.
+
 
 ```solidity
-error StreamEnded();
+error CommitmentClosed();
 ```
 
 ### Delegated
 
 ```solidity
 error Delegated();
-```
-
-### ZeroAmount
-
-```solidity
-error ZeroAmount();
 ```
 
 ## Structs

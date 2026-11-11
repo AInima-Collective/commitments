@@ -3,76 +3,14 @@ import type { Address } from 'viem'
 import { useChainId, useReadContracts } from 'wagmi'
 
 import { findConfiguredArbiterProfile } from '../config/arbiters'
+import {
+  attestationArbiterAbi,
+  manualArbiterAbi,
+  optimisticInsuranceArbiterAbi,
+  optimisticMutualArbiterAbi,
+  twoTierArbiterAbi,
+} from '../generated'
 import { mechanismAdapter, type MechanismTerm } from '../lib/arbitrationMechanisms'
-
-const READ_ABI = [
-  { type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'activeClaimOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'answerTimeout', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
-  { type: 'function', name: 'minBond', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'bondToken', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'bondBps', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'winnerShareBps', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint16' }] },
-  { type: 'function', name: 'treasury', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'coverPolicy', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  {
-    type: 'function',
-    name: 'getClaim',
-    stateMutability: 'view',
-    inputs: [{ type: 'uint256' }],
-    outputs: [{
-      type: 'tuple',
-      components: [
-        { name: 'commitmentId', type: 'uint256' },
-        { name: 'winningAmtBps', type: 'uint16' },
-        { name: 'lastBondAt', type: 'uint64' },
-        { name: 'state', type: 'uint8' },
-        { name: 'templateId', type: 'bytes32' },
-        {
-          name: 'stack',
-          type: 'tuple[]',
-          components: [
-            { name: 'asserter', type: 'address' },
-            { name: 'amountBps', type: 'uint16' },
-            { name: 'bond', type: 'uint128' },
-          ],
-        },
-      ],
-    }],
-  },
-  { type: 'function', name: 'activeCaseOf', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'uint256' }] },
-  { type: 'function', name: 'primaryController', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'appealController', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-  { type: 'function', name: 'appealWindow', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
-  { type: 'function', name: 'humanResponseWindow', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
-  { type: 'function', name: 'executionBuffer', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
-  { type: 'function', name: 'requiredChallengeWindow', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint64' }] },
-  { type: 'function', name: 'courtPolicyHash', stateMutability: 'view', inputs: [], outputs: [{ type: 'bytes32' }] },
-  {
-    type: 'function',
-    name: 'getCase',
-    stateMutability: 'view',
-    inputs: [{ type: 'uint256' }],
-    outputs: [{
-      type: 'tuple',
-      components: [
-        { name: 'commitmentId', type: 'uint256' },
-        { name: 'primaryPenaltyBps', type: 'uint16' },
-        { name: 'finalPenaltyBps', type: 'uint16' },
-        { name: 'openedAt', type: 'uint64' },
-        { name: 'appealDeadline', type: 'uint64' },
-        { name: 'appealedAt', type: 'uint64' },
-        { name: 'humanDeadline', type: 'uint64' },
-        { name: 'state', type: 'uint8' },
-        { name: 'primaryDecisionHash', type: 'bytes32' },
-        { name: 'appealHash', type: 'bytes32' },
-        { name: 'humanDecisionHash', type: 'bytes32' },
-      ],
-    }],
-  },
-  { type: 'function', name: 'commitmentOrdering', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [{ type: 'uint96' }] },
-  { type: 'function', name: 'serviceManager', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
-] as const
 
 export interface NormalizedMechanismCase {
   id: bigint
@@ -230,16 +168,20 @@ export function useMechanismArbitration(input: {
   const configured = findConfiguredArbiterProfile(chainId, arbiter)
   const adapter = mechanismAdapter(configured?.mechanismId)
   const kind = adapter?.id
-  const contract = { address: arbiter, abi: READ_ABI } as const
+  const manual = { address: arbiter, abi: manualArbiterAbi } as const
+  const insurance = { address: arbiter, abi: optimisticInsuranceArbiterAbi } as const
+  const twoTier = { address: arbiter, abi: twoTierArbiterAbi } as const
+  const mutual = { address: arbiter, abi: optimisticMutualArbiterAbi } as const
+  const attestation = { address: arbiter, abi: attestationArbiterAbi } as const
 
   const activeRead = useReadContracts({
     contracts:
       kind === 'optimistic-insurance'
-        ? [{ ...contract, functionName: 'activeClaimOf' as const, args: [lookupCommitmentId] }]
+        ? [{ ...insurance, functionName: 'activeClaimOf' as const, args: [lookupCommitmentId] }]
         : kind === 'two-tier'
-          ? [{ ...contract, functionName: 'activeCaseOf' as const, args: [lookupCommitmentId] }]
+          ? [{ ...twoTier, functionName: 'activeCaseOf' as const, args: [lookupCommitmentId] }]
           : kind === 'attestation'
-            ? [{ ...contract, functionName: 'commitmentOrdering' as const, args: [lookupCommitmentId] }]
+            ? [{ ...attestation, functionName: 'commitmentOrdering' as const, args: [lookupCommitmentId] }]
             : [],
     query: {
       enabled: Boolean(
@@ -254,9 +196,9 @@ export function useMechanismArbitration(input: {
   const detailRead = useReadContracts({
     contracts:
       kind === 'optimistic-insurance' && activeId > 0n
-        ? [{ ...contract, functionName: 'getClaim' as const, args: [activeId] }]
+        ? [{ ...insurance, functionName: 'getClaim' as const, args: [activeId] }]
         : kind === 'two-tier' && activeId > 0n
-          ? [{ ...contract, functionName: 'getCase' as const, args: [activeId] }]
+          ? [{ ...twoTier, functionName: 'getCase' as const, args: [activeId] }]
           : [],
     query: { enabled: activeId > 0n },
   })
@@ -264,35 +206,35 @@ export function useMechanismArbitration(input: {
   const staticRead = useReadContracts({
     contracts:
       kind === 'manual'
-        ? [{ ...contract, functionName: 'owner' as const }]
+        ? [{ ...manual, functionName: 'owner' as const }]
         : kind === 'optimistic-insurance'
           ? [
-              { ...contract, functionName: 'answerTimeout' as const },
-              { ...contract, functionName: 'minBond' as const },
-              { ...contract, functionName: 'bondToken' as const },
-              { ...contract, functionName: 'bondBps' as const },
-              { ...contract, functionName: 'winnerShareBps' as const },
+              { ...insurance, functionName: 'answerTimeout' as const },
+              { ...insurance, functionName: 'minBond' as const },
+              { ...insurance, functionName: 'bondToken' as const },
+              { ...insurance, functionName: 'bondBps' as const },
+              { ...insurance, functionName: 'winnerShareBps' as const },
             ]
           : kind === 'two-tier'
             ? [
-                { ...contract, functionName: 'primaryController' as const },
-                { ...contract, functionName: 'appealController' as const },
-                { ...contract, functionName: 'appealWindow' as const },
-                { ...contract, functionName: 'humanResponseWindow' as const },
-                { ...contract, functionName: 'executionBuffer' as const },
-                { ...contract, functionName: 'requiredChallengeWindow' as const },
-                { ...contract, functionName: 'courtPolicyHash' as const },
+                { ...twoTier, functionName: 'primaryController' as const },
+                { ...twoTier, functionName: 'appealController' as const },
+                { ...twoTier, functionName: 'appealWindow' as const },
+                { ...twoTier, functionName: 'humanResponseWindow' as const },
+                { ...twoTier, functionName: 'executionBuffer' as const },
+                { ...twoTier, functionName: 'requiredChallengeWindow' as const },
+                { ...twoTier, functionName: 'courtPolicyHash' as const },
               ]
             : kind === 'optimistic-mutual'
               ? [
-                  { ...contract, functionName: 'owner' as const },
-                  { ...contract, functionName: 'minBond' as const },
-                  { ...contract, functionName: 'bondToken' as const },
-                  { ...contract, functionName: 'treasury' as const },
-                  { ...contract, functionName: 'coverPolicy' as const },
+                  { ...mutual, functionName: 'owner' as const },
+                  { ...mutual, functionName: 'minBond' as const },
+                  { ...mutual, functionName: 'bondToken' as const },
+                  { ...mutual, functionName: 'treasury' as const },
+                  { ...mutual, functionName: 'coverPolicy' as const },
                 ]
             : kind === 'attestation'
-              ? [{ ...contract, functionName: 'serviceManager' as const }]
+              ? [{ ...attestation, functionName: 'serviceManager' as const }]
               : [],
     query: { enabled: Boolean(adapter && kind !== 'direct') },
   })

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Address, Hex } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 
 export type MeshDenomWeight = {
   denom: Hex
@@ -55,9 +55,7 @@ export function useMeshNodeSecurity(address: Address | null | undefined): {
     enabled: hasIndexer && !!address,
     queryKey: ['mesh-security', address ?? null],
     queryFn: async (): Promise<MeshNodeSecurity> => {
-      const res = await indexerFetch(`/graph/mesh-security?address=${address}`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const raw = (await res.json()) as RawResponse
+      const raw = await indexerJson<RawResponse>(`/graph/mesh-security?address=${address}`)
       return {
         address: raw.address as Address,
         weights: raw.weights.map((w) => ({

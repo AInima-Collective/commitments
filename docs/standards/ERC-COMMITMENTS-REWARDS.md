@@ -131,13 +131,10 @@ interface ICommitmentsRewardsCoordinator {
     error ZeroAmount();
     error ZeroAddress();
     error NotService();
-    error RootDisabled();       // reserved: a disabled root reverts RootNotActive, never RootDisabled
     error RootNotActive();
     error InvalidProof();
     error CumulativeRegression();
     error NoOp();
-    error InsufficientBalance();
-    error AlreadyInitialized();
     error ClaimsFrozen();
     error NotFrozen();
     error AlreadyFrozen();
@@ -163,7 +160,7 @@ The updater role and its staged swap (`stageUpdater` / `activateUpdater` / `canc
 
 `depositRewards(token, amount)` MUST be callable by any address. It MUST `safeTransferFrom` the funder, MUST emit `RewardsDeposited`, and MUST revert `ZeroAmount` if `amount == 0` or `ZeroAddress` if `token == address(0)`.
 
-The coordinator does NOT track per-root or per-funder obligations. A claim succeeds only if the contract holds enough of the token; otherwise it reverts `InsufficientBalance`. The updater is responsible for not over-promising (see §8).
+The coordinator does NOT track per-root or per-funder obligations. A claim succeeds only if the contract holds enough of the token; otherwise the token transfer reverts. The updater is responsible for not over-promising (see §8).
 
 #### 3.2 `processClaim`
 
@@ -175,7 +172,8 @@ The coordinator does NOT track per-root or per-funder obligations. A claim succe
 3. `MerkleProof.verifyCalldata(proof, rootId, keccak256(abi.encode(msg.sender, token, cumulativeAmount)))` returns `true` (else revert `InvalidProof`).
 4. `cumulativeAmount >= claimed[msg.sender][token]` (else revert `CumulativeRegression`). This is **INV-R1's on-chain enforcement** — the standard's load-bearing safety property.
 5. `amountPaidOut := cumulativeAmount - claimed[msg.sender][token]` is non-zero (else revert `NoOp`). Zero-delta re-claims fail fast; the coordinator does not silently no-op.
-6. The coordinator's balance of `token` is at least `amountPaidOut` (else revert `InsufficientBalance`).
+
+The coordinator does not check its own balance first: if it holds less than `amountPaidOut`, the `safeTransfer` reverts.
 
 If all checks pass, the coordinator MUST update `claimed[msg.sender][token] = cumulativeAmount` **before** the external transfer (CEI), then `safeTransfer` the payout, then emit `RewardsClaimed` and the standardized `DistributionPaid(address(this), msg.sender, token, amountPaidOut, 0, rootId)` (§D.7 of `ERC-COMMITMENTS`; `commitmentId = 0`, `context = rootId`). The function MUST be reentrancy-guarded.
 
@@ -203,8 +201,7 @@ A conformant snapshot MUST expose:
 
 ```solidity
 interface IMerkleSnapshot {
-    struct RewardsRoot {
-        bytes32 merkleRoot;
+    struct RewardsRoot {   // keyed by the root itself: rootId == merkleRoot
         uint64 submittedAt;
         uint64 activeAt;
         bool disabled;
@@ -227,7 +224,6 @@ interface IMerkleSnapshot {
     error ZeroRoot();
     error ZeroAddress();
     error ActivationDelayBelowFloor();
-    error AlreadyInitialized();
     error NoStagedUpdater();
     error StagedUpdaterNotReady();
     error StagedUpdaterAlreadyExists();
@@ -242,8 +238,6 @@ interface IMerkleSnapshot {
     function cancelStagedUpdater() external;
 
     function rootById(bytes32 rootId) external view returns (RewardsRoot memory);
-    function rootCount() external view returns (uint256);
-    function rootAt(uint256 index) external view returns (bytes32);
     function isActive(bytes32 rootId) external view returns (bool);
 
     function service() external view returns (address);
@@ -252,13 +246,12 @@ interface IMerkleSnapshot {
 
     function activeUpdater() external view returns (address);
     function pendingUpdater() external view returns (address newUpdater, uint64 effectiveAt);
-    function updater() external view returns (address);   // alias of activeUpdater()
 }
 ```
 
 #### 4.1 `submitRoot`
 
-`submitRoot(merkleRoot)` MUST verify `msg.sender == activeUpdater()` (the snapshot's own updater state, §4.5 — else revert `NotUpdater`). MUST revert `ZeroRoot` if `merkleRoot == 0`, `RootAlreadySubmitted` if `roots[merkleRoot].submittedAt != 0`. Sets `submittedAt = block.timestamp`, `activeAt = submittedAt + activationDelay`, `disabled = false`. Appends `merkleRoot` to `rootHistory`. Emits `RootSubmitted`. Returns `rootId == merkleRoot` (content-hash identity).
+`submitRoot(merkleRoot)` MUST verify `msg.sender == activeUpdater()` (the snapshot's own updater state, §4.5 — else revert `NotUpdater`). MUST revert `ZeroRoot` if `merkleRoot == 0`, `RootAlreadySubmitted` if `roots[merkleRoot].submittedAt != 0`. Sets `submittedAt = block.timestamp`, `activeAt = submittedAt + activationDelay`, `disabled = false`. Emits `RootSubmitted`; the event log is the submission-order record. Returns `rootId == merkleRoot` (content-hash identity).
 
 #### 4.2 `disableRoot`
 
@@ -275,8 +268,6 @@ The §0.6 activation-delay pattern protects parameters that affect *existing* po
 #### 4.4 Bindings
 
 `service()` MUST be set at initialization and MUST NOT be mutable. `minActivationDelay()` MUST be set at initialization and MUST NOT be mutable. The **coordinator → snapshot** binding (`coordinator.snapshot()`, §3) MUST be set at the coordinator's initialization and MUST NOT be mutable; the snapshot itself carries **no** coordinator pointer — the updater state lives on the snapshot precisely so the snapshot never needs to read the coordinator, which breaks the deploy-time circular dependency between the pair.
-
-`updater()` is an alias of `activeUpdater()`, retained for source compatibility.
 
 #### 4.5 Staged updater swap (on the snapshot)
 
@@ -322,7 +313,7 @@ A conformance test suite MUST include at least one invariant run that drives ran
 - **No optimistic challenge layer.** The activation delay IS the dispute window. Bond-and-challenge mechanisms are out of scope for this standard; integrators that need stronger dispute semantics MAY wrap the coordinator in such a layer.
 - **No cross-chain rewards.** Each (snapshot, coordinator) pair is single-chain.
 - **No auto-compounding.** Earners who want to redeposit claimed tokens into a commitment MUST do so client-side.
-- **Funding semantics are off-chain.** The coordinator does NOT verify that submitted roots are funded. The updater is responsible for not promising more cumulative tokens than the coordinator holds. An under-funded coordinator reverts `InsufficientBalance` at claim time rather than fail-closed at submit. This is the standard's load-bearing trust assumption — integrators MUST audit their updater accordingly.
+- **Funding semantics are off-chain.** The coordinator does NOT verify that submitted roots are funded. The updater is responsible for not promising more cumulative tokens than the coordinator holds. An under-funded coordinator's claim reverts in the token transfer rather than fail-closed at submit. This is the standard's load-bearing trust assumption — integrators MUST audit their updater accordingly.
 
 ### 9. Cross-reference: the `ERC-COMMITMENTS` payout-event vocabulary
 
@@ -389,7 +380,7 @@ This is a new standard. It depends on the existing ERC-1822 (UUPS) and ERC-1967 
 ## Test Cases
 
 The reference implementation ships an invariant suite at
-`test/conformance/RewardsCoordinatorInvariants.t.sol` (in the reference
+`test/rewards/conformance/RewardsCoordinatorInvariants.t.sol` (in the reference
 repository this document lives in) exercising INV-R1 (cumulative-claim
 monotonicity) across randomized sequences of deposit, submit, time-warp,
 and claim operations.
@@ -444,13 +435,12 @@ A reference implementation lives in the `commitments` repository:
 - `src/extensions/rewards/MerkleSnapshot.sol`
 - `src/extensions/rewards/CommitmentsRewardsCoordinator.sol`
 - `src/extensions/rewards/RewardsCoordinatorFactory.sol`
-- `src/extensions/rewards/MerkleSnapshotAdapter.sol` (optional Services integration; not required for Rewards conformance)
 - `src/extensions/rewards/storage/MerkleSnapshotStorage.sol`
 - `src/extensions/rewards/storage/CommitmentsRewardsCoordinatorStorage.sol`
 - `src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol`
 - `src/extensions/rewards/interfaces/IMerkleSnapshot.sol`
 
-Tests under `test/rewards/` (including `MerkleSnapshotAdapter.t.sol`) and conformance suite at `test/conformance/RewardsCoordinatorInvariants.t.sol`.
+Tests under `test/rewards/` and conformance suite at `test/rewards/conformance/RewardsCoordinatorInvariants.t.sol`.
 
 A reference quorum-validated updater built on an off-chain `merkler` component is specified separately and is **non-normative** with respect to this standard — the coordinator works with any address as updater (D4 of the design scope).
 
@@ -458,7 +448,7 @@ A reference quorum-validated updater built on an off-chain `merkler` component i
 
 ### Funding integrity
 
-The coordinator does NOT verify that submitted roots are funded. A malicious or buggy updater can publish a root attesting earner cumulatives that exceed the coordinator's token balance. Such claims revert `InsufficientBalance` at claim time. This is by design — alternatives (per-root funding tracking, atomic fund-and-submit) trade simplicity for narrower functionality. Integrators MUST audit their updater's accounting and MAY require the updater to publish reconciliation reports.
+The coordinator does NOT verify that submitted roots are funded. A malicious or buggy updater can publish a root attesting earner cumulatives that exceed the coordinator's token balance. Such claims revert in the token transfer at claim time. This is by design — alternatives (per-root funding tracking, atomic fund-and-submit) trade simplicity for narrower functionality. Integrators MUST audit their updater's accounting and MAY require the updater to publish reconciliation reports.
 
 ### Updater capture
 
@@ -497,7 +487,7 @@ A conformant implementation MUST include at minimum:
 - **Invariant test.** A handler-driven fuzz suite over deposit / submit / time-warp / claim sequences, asserting INV-R1 monotonicity, INV-R1 upper-bound, total solvency, and balance-matches-ledger invariants for at least 256 runs / 128k handler calls.
 - **Adversarial coordinator tests.** Each error path in §3.2 and §3.3 MUST have a dedicated unit test.
 
-The reference implementation's test suite (`test/rewards/`, `test/conformance/`) demonstrates a complete harness.
+The reference implementation's test suite (`test/rewards/`, `test/rewards/conformance/`) demonstrates a complete harness.
 
 ---
 

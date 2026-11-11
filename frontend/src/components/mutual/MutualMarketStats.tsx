@@ -4,7 +4,6 @@ import {
   LAMBDA_SCALE,
   formatLambdaPercent,
   formatPercent,
-  formatTokenAmount,
 } from '../../lib/format'
 
 interface MutualMarketStatsProps {
@@ -57,7 +56,7 @@ export function MutualMarketStats({
       <div className="ds-stat-grid">
         <StatBlock
           label="earn · premium APR"
-          tone={isStreaming ? 'positive' : 'neutral'}
+          tone={isStreaming ? 'success' : 'neutral'}
           value={premiumAprBps !== undefined ? formatPercent(premiumAprBps) : '—'}
           meta={isStreaming ? 'paid to underwriters' : 'no active cover demand'}
         />
@@ -66,13 +65,9 @@ export function MutualMarketStats({
           tone={showLiveCover ? 'accent' : 'neutral'}
           value={
             showLiveCover ? (
-              <span title={formatTokenAmount(liveCapacity, decimals).full}>
-                <TokenAmount amount={liveCapacity} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={liveCapacity} decimals={decimals} symbol={symbol} compact />
             ) : (
-              <span title={formatTokenAmount(subscribed, decimals).full}>
-                <TokenAmount amount={subscribed} decimals={decimals} symbol={symbol} compact />
-              </span>
+              <TokenAmount amount={subscribed} decimals={decimals} symbol={symbol} compact />
             )
           }
           meta={showLiveCover ? 'after accrued loss share' : 'nominal — loss not yet applied'}
@@ -80,7 +75,7 @@ export function MutualMarketStats({
         <StatBlock label="underwriters" value={memberCount > 0 ? String(memberCount) : '—'} meta="backing this risk" />
         <StatBlock
           label="shared loss"
-          tone={lossActive ? 'negative' : 'neutral'}
+          tone={lossActive ? 'danger' : 'neutral'}
           value={formatLambdaPercent(cumulativeLoss)}
           meta={lossActive ? 'of posted capital marked down' : 'no loss to date'}
         />

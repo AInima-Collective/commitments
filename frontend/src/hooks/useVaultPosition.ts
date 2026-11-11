@@ -1,12 +1,7 @@
 import { type Address, erc20Abi } from 'viem'
 import { useReadContract, useReadContracts } from 'wagmi'
-import {
-  commitmentManagerAbi,
-  useReadCommitmentsVaultAsset,
-  useReadCommitmentsVaultConvertToAssets,
-  useReadCommitmentsVaultDecimals,
-  useReadCommitmentsVaultDepositsPaused,
-} from '../generated'
+import { commitmentManagerAbi, commitmentsVaultAbi } from '../generated'
+import { IMMUTABLE, POLL } from './polling'
 
 export interface VaultPosition {
   /** Vault shares held in the user's WALLET (ERC-4626 balanceOf). These are
@@ -19,7 +14,10 @@ export interface VaultPosition {
   /** Vault shares currently encumbered by active commitments in the manager
    *  ledger (`manager.encumberedBalance(vaultShare, user)`). */
   encumbered: bigint | undefined
-  /** convertToAssets(shares) — underlying value of the wallet shares. */
+  /** Every share the viewer holds in this vault: the wallet's, plus the manager's free and
+   *  encumbered balances when `managerAddress` is given. Undefined until those reads land. */
+  held: bigint | undefined
+  /** convertToAssets(held) — the underlying value of everything the viewer holds here. */
   underlyingValue: bigint | undefined
   assetAddress: Address | undefined
   assetSymbol: string | undefined
@@ -49,111 +47,92 @@ export function useVaultPosition({
   managerAddress,
 }: UseVaultPositionParams): VaultPosition {
   const enabled = !!vaultAddress && !!viewAddress
-  const queryOpts = { enabled, refetchInterval: 15_000 }
 
-  // Read vault asset address
-  const { data: assetAddress } = useReadCommitmentsVaultAsset({
-    address: vaultAddress,
-    query: queryOpts,
+  // Immutable: the vault's asset and share decimals, then the asset's metadata.
+  // These do not depend on the viewer, so they load with no wallet connected:
+  // a page that falls back to 18 decimals would show a 6-decimal vault's TVL as ~0.
+  const { data: vaultMeta } = useReadContracts({
+    contracts: [
+      { abi: commitmentsVaultAbi, address: vaultAddress, functionName: 'asset' },
+      { abi: commitmentsVaultAbi, address: vaultAddress, functionName: 'decimals' },
+    ],
+    query: { enabled: !!vaultAddress, ...IMMUTABLE },
+  })
+  const assetAddress = vaultMeta?.[0]?.result
+  const shareDecimals = vaultMeta?.[1]?.result
+  const { data: assetMeta } = useReadContracts({
+    contracts: [
+      { abi: erc20Abi, address: assetAddress, functionName: 'decimals' },
+      { abi: erc20Abi, address: assetAddress, functionName: 'symbol' },
+      { abi: erc20Abi, address: assetAddress, functionName: 'name' },
+    ],
+    query: { enabled: !!assetAddress, ...IMMUTABLE },
   })
 
-  // Read vault share decimals
-  const { data: shareDecimals } = useReadCommitmentsVaultDecimals({
-    address: vaultAddress,
-    query: queryOpts,
-  })
-
-  // Read asset token decimals and symbol
-  const assetEnabled = !!assetAddress && enabled
-  const { data: assetDecimals } = useReadContract({
-    abi: erc20Abi,
-    address: assetAddress,
-    functionName: 'decimals',
-    query: { enabled: assetEnabled, refetchInterval: 15_000 },
-  })
-
-  const { data: assetSymbol } = useReadContract({
-    abi: erc20Abi,
-    address: assetAddress,
-    functionName: 'symbol',
-    query: { enabled: assetEnabled, refetchInterval: 15_000 },
-  })
-
-  const { data: assetName } = useReadContract({
-    abi: erc20Abi,
-    address: assetAddress,
-    functionName: 'name',
-    query: { enabled: assetEnabled, refetchInterval: 15_000 },
-  })
-
-  // Wallet share balance (ERC-4626 balanceOf).
-  const { data: sharesRaw, isLoading: sharesLoading, refetch: refetchShares } = useReadContract({
-    abi: erc20Abi,
-    address: vaultAddress,
-    functionName: 'balanceOf',
-    args: viewAddress ? [viewAddress] : undefined,
-    query: queryOpts,
-  })
-  const shares = sharesRaw as bigint | undefined
-
-  // Manager-ledger free/encumbered for this vault's shares (token = vault share).
-  const ledgerEnabled = enabled && !!managerAddress
-  const { data: ledgerData, isLoading: ledgerLoading, refetch: refetchLedger } = useReadContracts({
+  // Live: wallet shares and the deposit pause flag.
+  const { data: live, isLoading: liveLoading, refetch: refetchLive } = useReadContracts({
     contracts: [
       {
-        abi: commitmentManagerAbi,
-        address: managerAddress,
-        functionName: 'freeBalance',
-        args: vaultAddress && viewAddress ? [vaultAddress, viewAddress] : undefined,
+        abi: erc20Abi,
+        address: vaultAddress,
+        functionName: 'balanceOf',
+        args: viewAddress ? [viewAddress] : undefined,
       },
-      {
-        abi: commitmentManagerAbi,
-        address: managerAddress,
-        functionName: 'encumberedBalance',
-        args: vaultAddress && viewAddress ? [vaultAddress, viewAddress] : undefined,
-      },
+      { abi: commitmentsVaultAbi, address: vaultAddress, functionName: 'depositsPaused' },
     ],
-    query: { enabled: ledgerEnabled, refetchInterval: 15_000 },
+    query: { enabled, refetchInterval: POLL.fast },
   })
-  const free = ledgerData?.[0]?.result as bigint | undefined
-  const encumbered = ledgerData?.[1]?.result as bigint | undefined
+  const shares = live?.[0]?.result
 
-  // convertToAssets depends on balanceOf result — second render pass
+  // Manager-ledger free/encumbered for this vault's shares (token = vault share).
+  const ledgerArgs = vaultAddress && viewAddress ? ([vaultAddress, viewAddress] as const) : undefined
+  const { data: ledger, isLoading: ledgerLoading, refetch: refetchLedger } = useReadContracts({
+    contracts: [
+      { abi: commitmentManagerAbi, address: managerAddress, functionName: 'freeBalance', args: ledgerArgs },
+      { abi: commitmentManagerAbi, address: managerAddress, functionName: 'encumberedBalance', args: ledgerArgs },
+    ],
+    query: { enabled: enabled && !!managerAddress, refetchInterval: POLL.fast },
+  })
+  const free = ledger?.[0]?.result
+  const encumbered = ledger?.[1]?.result
+  const held = managerAddress
+    ? shares !== undefined && free !== undefined && encumbered !== undefined
+      ? shares + free + encumbered
+      : undefined
+    : shares
+
+  // convertToAssets depends on the balance reads — second render pass
   const { data: underlyingValue, isLoading: underlyingLoading, refetch: refetchUnderlying } =
-    useReadCommitmentsVaultConvertToAssets({
+    useReadContract({
+      abi: commitmentsVaultAbi,
+      functionName: 'convertToAssets',
       address: vaultAddress,
-      args: shares !== undefined ? [shares] : undefined,
+      args: held !== undefined ? [held] : undefined,
       query: {
-        enabled: enabled && shares !== undefined,
-        refetchInterval: 15_000,
+        enabled: enabled && held !== undefined,
+        refetchInterval: POLL.fast,
       },
     })
 
-  // Deposit pause flag (v2 vault has no withdrawal pause — exits are instant).
-  const { data: depositsPausedRaw, refetch: refetchDepositsPaused } = useReadCommitmentsVaultDepositsPaused({
-    address: vaultAddress,
-    query: queryOpts,
-  })
-
   function refetch() {
-    void refetchShares()
+    void refetchLive()
     void refetchLedger()
     void refetchUnderlying()
-    void refetchDepositsPaused()
   }
 
   return {
     shares,
     free,
     encumbered,
+    held,
     underlyingValue: underlyingValue as bigint | undefined,
-    assetAddress: assetAddress as Address | undefined,
-    assetSymbol: assetSymbol as string | undefined,
-    assetName: assetName as string | undefined,
-    assetDecimals: assetDecimals as number | undefined,
-    shareDecimals: shareDecimals as number | undefined,
-    depositsPaused: depositsPausedRaw === true,
-    isLoading: sharesLoading || ledgerLoading || underlyingLoading,
+    assetAddress,
+    assetSymbol: assetMeta?.[1]?.result,
+    assetName: assetMeta?.[2]?.result,
+    assetDecimals: assetMeta?.[0]?.result,
+    shareDecimals,
+    depositsPaused: live?.[1]?.result === true,
+    isLoading: liveLoading || ledgerLoading || underlyingLoading,
     refetch,
   }
 }

@@ -1,18 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useReadContract } from 'wagmi'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerForfeitProposalTtl,
-  useReadCommitmentManagerPauseState,
-} from '../../generated'
+import { commitmentManagerAbi } from '../../generated'
 
 import { useArbiterCommitments, type ArbiterCommitment } from '../../hooks/useArbiterCommitments'
-import { useDisplayNow } from '../../hooks/useDisplayNow'
+import { useDisplayNow, useDisplayNowSelect } from '../../hooks/useDisplayNow'
+import { POLL } from '../../hooks/polling'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { compareCommitmentUrgency } from '../../lib/commitmentSort'
 import {
+  Button,
   Disclosure,
   EmptyState,
   Notice,
+  Pagination,
   Skeleton,
   StatBlock,
   TokenAmount,
@@ -83,27 +84,24 @@ const BUCKET_ORDER: ArbiterQueueBucket[] = ['executable', 'pending', 'active', '
  */
 export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: ArbiterQueueProps) {
   const paginationScope = `${connectedAddress?.toLowerCase() ?? ''}-${managerAddress?.toLowerCase() ?? ''}`
-  const [pagination, setPagination] = useState({ scope: paginationScope, page: 0 })
-  const page = pagination.scope === paginationScope ? pagination.page : 0
-  const setPage = (update: (value: number) => number) => {
-    setPagination((current) => ({
-      scope: paginationScope,
-      page: update(current.scope === paginationScope ? current.page : 0),
-    }))
-  }
+  const [pagination, setPagination] = useState({ scope: paginationScope, offset: 0 })
+  const offset = pagination.scope === paginationScope ? pagination.offset : 0
   const pageSize = 50
-  const { commitments, counts, page: pageInfo, isLoading, error, indexerOnline, refetch } = useArbiterCommitments({
+  const { commitments, counts, isLoading, error, indexerOnline, refetch } = useArbiterCommitments({
     managerAddress,
     viewAddress: connectedAddress,
     limit: pageSize,
-    offset: page * pageSize,
+    offset,
   })
-  const nowSec = BigInt(useDisplayNow())
-  const { data: pauseRaw } = useReadCommitmentManagerPauseState({
+  const { data: pauseRaw } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'pauseState',
     address: managerAddress,
-    query: { enabled: Boolean(managerAddress), refetchInterval: 15_000 },
+    query: { enabled: Boolean(managerAddress), refetchInterval: POLL.fast },
   })
-  const { data: ttl } = useReadCommitmentManagerForfeitProposalTtl({
+  const { data: ttl } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'FORFEIT_PROPOSAL_TTL',
     address: managerAddress,
     query: { enabled: Boolean(managerAddress) },
   })
@@ -121,17 +119,21 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     [pauseRaw],
   )
 
-  const buckets = useMemo(() => {
-    const grouped: Record<ArbiterQueueBucket, ArbiterCommitment[]> = {
-      executable: [],
-      pending: [],
-      active: [],
-      other: [],
-    }
-    for (const c of commitments) grouped[bucketForArbiterInbox(c, nowSec, pauseState, ttl)].push(c)
-    for (const key of BUCKET_ORDER) grouped[key].sort(compareCommitmentUrgency)
-    return grouped
-  }, [commitments, nowSec, pauseState, ttl])
+  // Buckets move with time (a pending forfeit becomes executable), but the
+  // queue re-renders only when one does: the selector's string changes then,
+  // not every second. Row countdowns tick in their own leaf.
+  const bucketKey = useDisplayNowSelect((now) =>
+    commitments.map((c) => bucketForArbiterInbox(c, BigInt(now), pauseState, ttl)).join(','),
+  )
+  const buckets: Record<ArbiterQueueBucket, ArbiterCommitment[]> = {
+    executable: [],
+    pending: [],
+    active: [],
+    other: [],
+  }
+  const bucketOf = bucketKey.split(',') as ArbiterQueueBucket[]
+  commitments.forEach((c, i) => buckets[bucketOf[i]].push(c))
+  for (const key of BUCKET_ORDER) buckets[key].sort(compareCommitmentUrgency)
 
   const needsAttention = counts.needsAction
 
@@ -143,37 +145,35 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
     />
   )
 
+  const placeholder = (body: ReactNode) => (
+    <div className="ds-page">
+      {header}
+      {body}
+    </div>
+  )
+
   if (!isConnected || !connectedAddress) {
-    return (
-      <div className="ds-page">
-        {header}
-        <Notice tone="info" title="Connect a wallet">
-          Connect the wallet that arbitrates commitments to see your queue. This view is
-          arbiter-scoped — it lists only commitments whose arbiter matches the connected address.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="info" title="Connect a wallet">
+        Connect the wallet that arbitrates commitments to see your queue. This view is
+        arbiter-scoped — it lists only commitments whose arbiter matches the connected address.
+      </Notice>,
     )
   }
 
   if (!managerAddress) {
-    return (
-      <div className="ds-page">
-        {header}
-        <Notice tone="danger" title="Commitment manager not configured">
-          Set <code>VITE_COMMITMENT_MANAGER_ADDRESS</code> to enable arbitration.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="danger" title="Commitment manager not configured">
+        Set <code>VITE_COMMITMENT_MANAGER_ADDRESS</code> to enable arbitration.
+      </Notice>,
     )
   }
 
   if (!indexerOnline) {
-    return (
-      <div className="ds-page">
-        {header}
-        <Notice tone="warn" title="Arbiter queue unavailable">
-          The arbiter queue is temporarily unavailable — please check back shortly.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="warn" title="Arbiter queue unavailable">
+        The arbiter queue is temporarily unavailable — please check back shortly.
+      </Notice>,
     )
   }
 
@@ -193,9 +193,9 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
           tone="danger"
           title="Failed to load arbiter queue"
           actions={
-            <button type="button" className="ds-btn ds-btn--sm" onClick={refetch}>
+            <Button size="sm" onClick={refetch}>
               retry
-            </button>
+            </Button>
           }
         >
           {error.message}
@@ -233,7 +233,6 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
                       managerAddress={managerAddress}
                       connectedAddress={connectedAddress}
                       isConnected={isConnected}
-                      nowSec={nowSec}
                       pauseState={pauseState}
                       ttl={ttl}
                       onActed={refetch}
@@ -243,29 +242,15 @@ export function ArbiterQueue({ managerAddress, connectedAddress, isConnected }: 
               </section>
             )
           })}
-          <nav className="ds-row ds-row-2" aria-label="Arbiter commitment pages" style={{ justifyContent: 'space-between' }}>
-            <button
-              type="button"
-              className="ds-btn ds-btn--sm"
-              disabled={page === 0 || isLoading}
-              onClick={() => setPage((value) => Math.max(0, value - 1))}
-            >
-              Previous
-            </button>
-            <span className="ds-text-xs ds-subtle">
-              {counts.total === 0
-                ? 'No commitments'
-                : `${pageInfo.offset + 1}–${pageInfo.offset + commitments.length} of ${counts.total}`}
-            </span>
-            <button
-              type="button"
-              className="ds-btn ds-btn--sm"
-              disabled={pageInfo.nextOffset === null || isLoading}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Next
-            </button>
-          </nav>
+          <Pagination
+            aria-label="Arbiter commitment pages"
+            offset={offset}
+            limit={pageSize}
+            count={commitments.length}
+            total={counts.total}
+            loading={isLoading}
+            onOffsetChange={(next) => setPagination({ scope: paginationScope, offset: next })}
+          />
         </div>
       )}
     </div>
@@ -278,19 +263,18 @@ interface ArbiterQueueRowProps {
   managerAddress: Address
   connectedAddress: Address
   isConnected: boolean
-  nowSec: bigint
   pauseState: ManagerPauseSnapshot | undefined
   ttl: bigint | undefined
   onActed: () => void
 }
 
-function ArbiterQueueRow({
+// Memoised so a poll that changes nothing re-renders no row.
+const ArbiterQueueRow = memo(function ArbiterQueueRow({
   commitment,
   bucket,
   managerAddress,
   connectedAddress,
   isConnected,
-  nowSec,
   pauseState,
   ttl,
   onActed,
@@ -304,23 +288,6 @@ function ArbiterQueueRow({
     metaFor: () => ({ decimals, symbol }),
   })
   const label = commitmentLabel(unified, labelContext)
-
-  const enforcement = calculateForfeitEnforcement({
-    proposal: commitment.forfeitProposal,
-    challengeWindow: commitment.challengeWindow,
-    pauseState,
-    proposalTtl: ttl,
-    now: nowSec,
-  })
-  const showCountdown = bucket === 'pending' && enforcement.state === 'PENDING'
-  const totalSecs =
-    commitment.forfeitProposal && enforcement.effectiveExecutionAt
-      ? Number(enforcement.effectiveExecutionAt - commitment.forfeitProposal.initiatedAt)
-      : Number(commitment.challengeWindow)
-  const remainingSecs = showCountdown && enforcement.effectiveExecutionAt
-    ? Math.max(0, Number(enforcement.effectiveExecutionAt - nowSec))
-    : 0
-  const elapsedSecs = Math.max(0, totalSecs - remainingSecs)
 
   return (
     <div className="ds-card ds-stack ds-stack-3" data-bucket={bucket}>
@@ -345,7 +312,6 @@ function ArbiterQueueRow({
           <ResolveCommitmentButton
             commitment={commitment}
             managerAddress={managerAddress}
-            vaultAddress={commitment.vault}
             connectedAddress={connectedAddress}
             isConnected={isConnected}
             onActed={onActed}
@@ -353,8 +319,8 @@ function ArbiterQueueRow({
         </div>
       </div>
 
-      {showCountdown && (
-        <Countdown label="forfeit execution delay" elapsed={elapsedSecs} total={totalSecs} tone="warn" />
+      {bucket === 'pending' && (
+        <ForfeitCountdown commitment={commitment} pauseState={pauseState} ttl={ttl} />
       )}
 
       <Disclosure label="Forfeiture detail & timeline">
@@ -365,6 +331,36 @@ function ArbiterQueueRow({
       </Disclosure>
     </div>
   )
+})
+
+/** The row's ticking part: the pause-adjusted forfeit execution delay. */
+function ForfeitCountdown({
+  commitment,
+  pauseState,
+  ttl,
+}: {
+  commitment: ArbiterCommitment
+  pauseState: ManagerPauseSnapshot | undefined
+  ttl: bigint | undefined
+}) {
+  const nowSec = BigInt(useDisplayNow())
+  const enforcement = calculateForfeitEnforcement({
+    proposal: commitment.forfeitProposal,
+    challengeWindow: commitment.challengeWindow,
+    pauseState,
+    proposalTtl: ttl,
+    now: nowSec,
+  })
+  if (enforcement.state !== 'PENDING') return null
+  const totalSecs =
+    commitment.forfeitProposal && enforcement.effectiveExecutionAt
+      ? Number(enforcement.effectiveExecutionAt - commitment.forfeitProposal.initiatedAt)
+      : Number(commitment.challengeWindow)
+  const remainingSecs = enforcement.effectiveExecutionAt
+    ? Math.max(0, Number(enforcement.effectiveExecutionAt - nowSec))
+    : 0
+  const elapsedSecs = Math.max(0, totalSecs - remainingSecs)
+  return <Countdown label="forfeit execution delay" elapsed={elapsedSecs} total={totalSecs} tone="warn" />
 }
 
 /**

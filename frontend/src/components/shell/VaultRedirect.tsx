@@ -1,19 +1,18 @@
 import { Navigate } from 'react-router-dom'
-import { useChainId } from 'wagmi'
-import { Notice } from '../ui'
+import { Notice, Skeleton } from '../ui'
 import { PageHeader } from '../protocol'
-import { getVaultRegistry } from '../../config/contracts'
+import { useVaults } from '../../hooks/useVaults'
 
 /**
- * /vault → /vaults/:address redirect for the canonical vault. When the
- * registry is empty (no env-configured vault), renders an inline error
+ * /vault → /vaults/:address redirect for the first vault (the oldest indexed,
+ * or the env canonical one). When there is none, renders an inline error
  * instead of redirecting to a broken URL.
  */
 export function VaultRedirect() {
-  const chainId = useChainId()
-  const registry = getVaultRegistry(chainId)
+  const { vaults, isLoading } = useVaults()
 
-  if (registry.length === 0) {
+  if (isLoading) return <Skeleton height={120} />
+  if (vaults.length === 0) {
     return (
       <div className="ds-page">
         <PageHeader eyebrow="capital" title="Vault" />
@@ -25,5 +24,5 @@ export function VaultRedirect() {
     )
   }
 
-  return <Navigate to={`/app/vaults/${registry[0].address}`} replace />
+  return <Navigate to={`/app/vaults/${vaults[0].address}`} replace />
 }

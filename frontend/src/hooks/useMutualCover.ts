@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useChainId } from 'wagmi'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /**
  * A single cover policy sold against a mutual, as returned in the `bindings`
@@ -81,11 +82,9 @@ export function useMutualCover(mutualId: bigint | undefined): UseMutualCoverRetu
     enabled,
     queryKey: ['mutual-cover', chainId, mutualId?.toString()],
     queryFn: async () => {
-      const res = await indexerFetch(`/mutuals/${mutualId!.toString()}/premium`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as PremiumFeedWire
+      return indexerJson<PremiumFeedWire>(`/mutuals/${mutualId!.toString()}/premium`)
     },
-    refetchInterval: 20_000,
+    refetchInterval: POLL.fast,
     retry: false,
   })
 

@@ -6,8 +6,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   DEPLOYMENT_MANIFEST_SCHEMA_VERSION,
-  baseName,
-  creationInputMatchesArtifact,
   loadDeployments,
   parseDeploymentManifest,
 } from './loadDeployments.ts'
@@ -30,47 +28,6 @@ function withDeploymentsJson<T>(path: string, fn: () => T): T {
     else process.env.DEPLOYMENTS_JSON = previous
   }
 }
-
-// Foundry qualifies a CREATE's `contractName` with the active compiler profile
-// whenever a contract has artifacts under more than one profile. `baseName`
-// strips that trailing `.<profile>` segment so the name matches the resolution
-// maps. Regression coverage: the `manager-size` profile (which keeps
-// CommitmentManager under EIP-170) contains a HYPHEN, and an earlier strip
-// regex only allowed `[A-Za-z0-9_]` — so `OperatorRegistry.manager-size` and
-// `ERC1967Proxy.manager-size` failed to strip, dropping the registry out of
-// resolution and resolving every proxied singleton to its impl address.
-
-test('baseName leaves an unqualified contract name untouched', () => {
-  assert.equal(baseName('OperatorRegistry'), 'OperatorRegistry')
-  assert.equal(baseName('ERC1967Proxy'), 'ERC1967Proxy')
-})
-
-test('baseName strips a simple profile qualifier', () => {
-  assert.equal(baseName('ERC1967Proxy.default'), 'ERC1967Proxy')
-  assert.equal(baseName('MockERC20.size'), 'MockERC20')
-})
-
-test('baseName strips a hyphenated profile qualifier (manager-size)', () => {
-  assert.equal(baseName('OperatorRegistry.manager-size'), 'OperatorRegistry')
-  assert.equal(baseName('ERC1967Proxy.manager-size'), 'ERC1967Proxy')
-  assert.equal(baseName('CommitmentManager.manager-size'), 'CommitmentManager')
-})
-
-test('creation bytecode matching permits constructor arguments', () => {
-  assert.equal(creationInputMatchesArtifact('0x60016002deadbeef', '0x60016002'), true)
-  assert.equal(creationInputMatchesArtifact('0x60016003deadbeef', '0x60016002'), false)
-})
-
-test('creation bytecode matching ignores linked-library address slots', () => {
-  const placeholder = `0x6001${'__$1234567890123456789012345678901234$__'}6002`
-  const linked = `0x6001${'ab'.repeat(20)}6002c0ffee`
-  assert.equal(
-    creationInputMatchesArtifact(linked, placeholder, {
-      'src/Library.sol': { Library: [{ start: 2, length: 20 }] },
-    }),
-    true,
-  )
-})
 
 test('the checked-in v1 fixture is accepted by the runtime loader', () => {
   const deployments = withDeploymentsJson(fixturePath, () => loadDeployments(31337))
@@ -98,7 +55,6 @@ test('optional address arrays default to empty', () => {
 test('optional addresses and address arrays pass through', () => {
   const manifest = fixtureCopy()
   Object.assign(manifest, {
-    tokenWeighting: '0x0000000000000000000000000000000000000010',
     governorFactory: '0x0000000000000000000000000000000000000011',
     mutualRegistry: '0x0000000000000000000000000000000000000012',
     optimisticMutualArbiter: '0x0000000000000000000000000000000000000013',
@@ -259,7 +215,7 @@ test('the v1 parser rejects malformed structure, identities, blocks, and address
   })
 })
 
-test('a configured missing or unreadable manifest path fails without broadcast fallback', (t) => {
+test('a configured missing or unreadable manifest path fails', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'deployments-path-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -268,7 +224,6 @@ test('a configured missing or unreadable manifest path fails without broadcast f
     () => withDeploymentsJson(missing, () => loadDeployments(31337)),
     (error: unknown) => {
       assert.match(String(error), new RegExp(`Failed to read DEPLOYMENTS_JSON at ${missing}`))
-      assert.doesNotMatch(String(error), /Broadcast dir not found/)
       return true
     },
   )
@@ -305,4 +260,14 @@ test('an explicitly empty DEPLOYMENTS_JSON value is rejected', () => {
     () => withDeploymentsJson('', () => loadDeployments(31337)),
     /DEPLOYMENTS_JSON is set but empty/,
   )
+})
+
+test('without DEPLOYMENTS_JSON, a missing generated manifest says to run just dev-up', () => {
+  const previous = process.env.DEPLOYMENTS_JSON
+  delete process.env.DEPLOYMENTS_JSON
+  try {
+    assert.throws(() => loadDeployments(424242), /deployments\.424242\.json\. Run `just dev-up`/)
+  } finally {
+    if (previous !== undefined) process.env.DEPLOYMENTS_JSON = previous
+  }
 })

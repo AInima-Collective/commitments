@@ -1,17 +1,9 @@
 import { useMemo } from 'react'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerGetCommitment,
-  useReadCommitmentManagerGetForfeitProposal,
-  useReadCommitmentManagerStrategiesOf,
-  useReadCommitmentManagerUnbondInitiatedAt,
-} from '../generated'
-import { type CommitmentWithStatus } from '../utils/commitments'
-import {
-  buildCommitmentWithStatus,
-  type CommitmentStruct,
-  type ForfeitProposalStruct,
-} from './commitmentReads'
+import { useReadContracts } from 'wagmi'
+import { type CommitmentWithStatus } from '../lib/commitments'
+import { commitmentReadContracts, mapCommitmentWindow } from '../lib/commitmentReads'
+import { POLL } from './polling'
 
 interface UseFullCommitmentParams {
   managerAddress: Address | undefined
@@ -49,49 +41,16 @@ export function useFullCommitment({
 }: UseFullCommitmentParams): UseFullCommitmentReturn {
   const queryEnabled = enabled && !!managerAddress && id !== undefined
 
-  const { data: commitmentRaw, refetch: refetchCommitment, isLoading: isLoadingCommitment } =
-    useReadCommitmentManagerGetCommitment({
-      address: managerAddress,
-      args: id !== undefined ? [id] : undefined,
-      query: { enabled: queryEnabled, refetchInterval: 15_000 },
-    })
-  const { data: forfeitRaw, refetch: refetchForfeit } = useReadCommitmentManagerGetForfeitProposal({
-    address: managerAddress,
-    args: id !== undefined ? [id] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
-  })
-  const { data: unbondRaw, refetch: refetchUnbond } = useReadCommitmentManagerUnbondInitiatedAt({
-    address: managerAddress,
-    args: id !== undefined ? [id] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
-  })
-  const { data: strategiesRaw, refetch: refetchStrategies } = useReadCommitmentManagerStrategiesOf({
-    address: managerAddress,
-    args: id !== undefined ? [id] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
+  const { data, isLoading, refetch } = useReadContracts({
+    contracts: managerAddress && id !== undefined ? commitmentReadContracts(managerAddress, id) : [],
+    query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
 
-  const full = useMemo<CommitmentWithStatus | null>(() => {
-    if (!commitmentRaw || id === undefined) return null
-    return buildCommitmentWithStatus({
-      id,
-      commitment: commitmentRaw as CommitmentStruct,
-      forfeit: forfeitRaw as ForfeitProposalStruct | undefined,
-      unbondInitiatedAt: unbondRaw as bigint | undefined,
-      strategies: strategiesRaw ? (strategiesRaw as readonly Address[]).slice() : undefined,
-      hints,
-    })
-    // hints destructured to primitive deps so a fresh `hints` object literal
-    // from the caller does not bust this memo every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, commitmentRaw, forfeitRaw, unbondRaw, strategiesRaw, hints?.committer, hints?.arbiter, hints?.counterparty, hints?.amount])
+  const full = useMemo<CommitmentWithStatus | null>(
+    () => (data && id !== undefined ? mapCommitmentWindow(id, data, 0, hints) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hints by field, so a fresh `hints` literal does not bust the memo
+    [id, data, hints?.committer, hints?.arbiter, hints?.counterparty, hints?.amount],
+  )
 
-  const refetch = () => {
-    void refetchCommitment()
-    void refetchForfeit()
-    void refetchUnbond()
-    void refetchStrategies()
-  }
-
-  return { full, isLoading: isLoadingCommitment, refetch }
+  return { full, isLoading, refetch: () => void refetch() }
 }

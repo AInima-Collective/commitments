@@ -23,8 +23,9 @@ delegate by creating their own commitment and calling `delegate`.
 function register(uint256 commitmentId) external;                 // self-stake = operator's first commitment
 function deregister() external;
 function delegate(address operator, uint256 commitmentId) external; // allocate your commitment's stake to an operator
-// IServiceManager views:
-function getOperatorStake(address operator) external view returns (uint256);
+function reconcile(uint256 commitmentId) external;               // anyone: close a delegation whose manager callback failed
+// Views:
+function getOperator(address operator) external view returns (Operator memory); // stake = .totalDelegatedStake
 function isOperator(address operator) external view returns (bool);
 function getOperatorSet() external view returns (address[] memory);
 function getAcceptancePolicy() external view returns (address arbiter, uint16 floor, address token);
@@ -75,7 +76,7 @@ in one node. `TokenWeighting` is the `IVotingPowerSource` governance binds to.
 ## Services — OperatorServiceRegistry (signature validation)
 
 The glue an operator AVS uses to validate quorum-signed attestations (this is the
-`serviceManager` that `AttestationArbiter` and `MerkleSnapshotAdapter` call).
+`serviceManager` that `AttestationArbiter` calls through `ServiceEnvelopeVerifier`).
 
 ```solidity
 function enrollServiceOperator() external;

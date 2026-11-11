@@ -29,7 +29,7 @@ The premium is the integral of `notional * rate / year` over `duration` seconds 
 rate; it funds the Synthetix stream the core runs for exactly that `duration`.
 
 
-## Constants
+## State Variables
 ### SECONDS_PER_YEAR
 Seconds in a 365-day year — annualization base for the rate.
 
@@ -48,7 +48,6 @@ ICommitmentManager public immutable manager
 ```
 
 
-## State Variables
 ### policy
 The cover-binding ledger (utilization numerator). Set once by the owner after deploy
 to break the policy<->scheduler construction cycle.
@@ -119,26 +118,6 @@ function setMutualCurve(
     uint256 kink,
     uint256 maxLeverageBps
 ) external onlyOwner;
-```
-
-### assertNotCaptured
-
-Revert if the pricing authority (owner) is the mutual's arbiter or beneficiary. Called
-by LinkedMutualPolicy at bind time so the funding party can never underprice its
-own cover (capture defense, plan OBJ-2 line 2).
-
-
-```solidity
-function assertNotCaptured(uint256 mutualId) public view;
-```
-
-### isPricingAuthorityIndependent
-
-True iff the pricing authority is independent of the mutual's arbiter and beneficiary.
-
-
-```solidity
-function isPricingAuthorityIndependent(uint256 mutualId) external view returns (bool);
 ```
 
 ### curveFor
@@ -225,7 +204,7 @@ function _premium(CurveParams memory c, uint256 u, uint256 notional, uint64 dura
 
 ### _activeNotionalSold
 
-Read the utilization numerator, treating an unset policy as zero notional sold.
+Read the utilization numerator. Reverts `PolicyUnset` until `setPolicy` has run.
 
 
 ```solidity
@@ -286,15 +265,6 @@ error InvalidCurve();
 
 ```solidity
 error LeverageCapExceeded(uint256 wouldBeSold, uint256 cap);
-```
-
-### PricingAuthorityCaptured
-The pricing authority (owner) coincides with the mutual's arbiter or beneficiary — it
-is the funding party and could underprice itself, so binding through it is refused.
-
-
-```solidity
-error PricingAuthorityCaptured();
 ```
 
 ## Structs

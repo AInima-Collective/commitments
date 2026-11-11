@@ -36,13 +36,13 @@ always in the depositors' favor.
 Production pattern: inherit, route `_managedAssets()` at the live venue's valuation,
 unwind liquidity in `_beforeWithdraw`, deploy it in `_afterDeposit`, and realize the
 skim (make `fee` liquid in this contract) in `_realizeSkim`. The dev/demo concrete is
-`test/helpers/SkimmingMockStrategy.sol`.
+`SkimmingMockStrategy.sol` beside it.
 Custody model matches `CommitmentsVault._deposit`/`_withdraw` (push; vault-only moves)
-— see `IdleStrategy` for the canonical handshake description. No admin, no upgrade:
+— see `IYieldStrategy` for the handshake. No admin, no upgrade:
 the immutable parameter set is the whole trust surface.
 
 
-## Constants
+## State Variables
 ### asset
 The underlying asset. MUST equal the vault's asset.
 
@@ -100,7 +100,6 @@ uint16 public immutable operatorFeeBps
 ```
 
 
-## State Variables
 ### principal
 The vault's cost basis in this strategy: Σ deposits − Σ withdrawals (clamped ≥ 0).
 

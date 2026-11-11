@@ -3,6 +3,8 @@ import { and, desc, eq } from 'ponder'
 import { db } from 'ponder:api'
 import schema from 'ponder:schema'
 
+import { jsonBig, parseId, parseLimit } from './http'
+
 const app = new Hono()
 
 /**
@@ -21,9 +23,10 @@ const app = new Hono()
  * fine because settlements are sparse).
  */
 app.get('/:id/settlements', async (c) => {
-  const id = BigInt(c.req.param('id'))
+  const id = parseId(c.req.param('id'))
+  if (id === null) return c.json({ error: 'invalid id' }, 400)
   const managerParam = c.req.query('manager')?.toLowerCase() as `0x${string}` | undefined
-  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100), 1), 500)
+  const limit = parseLimit(c, 100, 500)
 
   const where = managerParam
     ? and(
@@ -39,7 +42,7 @@ app.get('/:id/settlements', async (c) => {
     .orderBy(desc(schema.agreementSettlement.blockNumber))
     .limit(limit)
 
-  return c.json(rows)
+  return jsonBig(c, rows)
 })
 
 export default app

@@ -5,22 +5,10 @@ import { Input, Notice } from '../../ui'
 import { commitmentsVaultAbi } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
 import { AdminActionPanel } from '../AdminActionPanel'
-import { useAdminAction } from '../useAdminAction'
+import { useAdminAction } from '../../../hooks/useAdminAction'
+import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 
 const DEFAULT_ASSET_DECIMALS = 6
-
-const MOCK_ERC20_MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const
 
 export function VaultTab() {
   const chainId = useChainId()

@@ -73,17 +73,17 @@ contract RewardsCoordinatorFactoryTest is Test {
     }
 
     function test_deployCoordinator_zeroService_reverts() public {
-        vm.expectRevert(RewardsCoordinatorFactory.ZeroAddress.selector);
+        vm.expectRevert(IMerkleSnapshot.ZeroAddress.selector);
         factory.deployCoordinator(address(0), updater, DELAY);
     }
 
     function test_deployCoordinator_zeroUpdater_reverts() public {
-        vm.expectRevert(RewardsCoordinatorFactory.ZeroAddress.selector);
+        vm.expectRevert(IMerkleSnapshot.ZeroAddress.selector);
         factory.deployCoordinator(serviceA, address(0), DELAY);
     }
 
     function test_deployCoordinator_belowFloor_reverts() public {
-        vm.expectRevert(RewardsCoordinatorFactory.ActivationDelayBelowFloor.selector);
+        vm.expectRevert(IMerkleSnapshot.ActivationDelayBelowFloor.selector);
         factory.deployCoordinator(serviceA, updater, MIN_DELAY - 1);
     }
 

@@ -1,23 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { type CommitmentRowWire } from '../lib/indexerRows'
+import { POLL } from './polling'
 import {
   parseManagerForfeitEvent,
   parseMechanismArbitrationEvent,
   type ManagerForfeitEvent,
   type MechanismArbitrationEvent,
 } from './useCommitmentArbitration'
-
-interface CommitmentWire {
-  id: string
-  manager: string
-  token: string
-  amount: string
-  status: string
-  committer: string
-  counterparty: string
-}
 
 type ActivityWire = Parameters<typeof parseManagerForfeitEvent>[0] & {
   manager: string
@@ -65,29 +57,17 @@ export function useArbiterOverview(address: Address | undefined, options: {
         offset: String(offset),
       })
       if (status) commitmentParams.set('status', status)
-      const [commitmentsResponse, activityResponse, mechanismActivityResponse] = await Promise.all([
-        indexerFetch(`/commitments/urgent?${commitmentParams.toString()}`),
-        indexerFetch(`/commitments/arbitration/activity?arbiter=${arbiter}&limit=50`),
-        indexerFetch(`/protocol/mechanism-activity?arbiter=${arbiter}&limit=50`),
+      const [commitmentPayload, activityPayload, mechanismPayload] = await Promise.all([
+        indexerJson<{
+          rows: CommitmentRowWire[]
+          counts: { needsAction: number; openProposals: number; active: number; other: number; total: number }
+          page: { limit: number; offset: number; nextOffset: number | null }
+        }>(`/commitments/urgent?${commitmentParams.toString()}`),
+        indexerJson<{ events: ActivityWire[] }>(`/commitments/arbitration/activity?arbiter=${arbiter}&limit=50`),
+        indexerJson<{ events: Parameters<typeof parseMechanismArbitrationEvent>[0][] }>(
+          `/protocol/mechanism-activity?arbiter=${arbiter}&limit=50`,
+        ),
       ])
-      if (!commitmentsResponse.ok) {
-        throw new Error(`Commitments indexer error: ${commitmentsResponse.status}`)
-      }
-      if (!activityResponse.ok) {
-        throw new Error(`Arbitration activity error: ${activityResponse.status}`)
-      }
-      if (!mechanismActivityResponse.ok) {
-        throw new Error(`Mechanism activity error: ${mechanismActivityResponse.status}`)
-      }
-      const commitmentPayload = (await commitmentsResponse.json()) as {
-        rows: CommitmentWire[]
-        counts: { needsAction: number; openProposals: number; active: number; other: number; total: number }
-        page: { limit: number; offset: number; nextOffset: number | null }
-      }
-      const activityPayload = (await activityResponse.json()) as { events: ActivityWire[] }
-      const mechanismPayload = (await mechanismActivityResponse.json()) as {
-        events: Parameters<typeof parseMechanismArbitrationEvent>[0][]
-      }
       return {
         commitments: commitmentPayload.rows.map((row) => ({
           id: BigInt(row.id),
@@ -108,7 +88,7 @@ export function useArbiterOverview(address: Address | undefined, options: {
         page: commitmentPayload.page,
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     commitments: query.data?.commitments ?? [],

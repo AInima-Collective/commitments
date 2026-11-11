@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { type Address, type Hex } from 'viem'
-import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import { type Address, type Hex, zeroHash } from 'viem'
 import { operatorRegistryAbi } from '../../generated'
 import {
-  ZERO_HASH,
   computeHashFromJsonText,
   resolveMetadataArgs,
   validateMetadataHash,
   validateMetadataURI,
-} from '../../utils/metadataForm'
+} from '../../lib/metadataForm'
 import { type MetadataResult } from '../../hooks/useIndexerMetadata'
-import { Input, Notice, useToasts } from '../ui'
+import { useWriteAction } from '../../hooks/useWriteAction'
+import { Button, Input, Notice } from '../ui'
 import { OperatorProfileCard } from './OperatorProfileCard'
 
 interface Props {
@@ -23,7 +22,7 @@ interface Props {
  * `OperatorProfileEditor` — Phase 26-02 v2.4 design-system editor for the
  * `OperatorRegistry.setOperatorMetadata(uri, hash)` write path.
  *
- * - URI input: `<textarea className="ds-input">` (per 24-03 DelegateMode pattern
+ * - URI input: `<textarea className="ds-input">` (per 24-03 CreateCommitmentForm pattern
  *   for textareas — the `<Input>` primitive wraps `<input>` only).
  * - Content hash: `<Input>` primitive.
  * - Validation errors / warnings surface via `<Notice tone="danger|warn">`.
@@ -47,7 +46,7 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
 
   // Re-populate when the metadata hook delivers fresh values (e.g. first load, refetch).
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription reset on metadata load; see frontend/docs/eslint-disable-rationale.md §Pattern-3
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reseed the form when the loaded metadata changes
     setUri(metadata.uri ?? '')
     setHash(metadata.hash ?? '')
   }, [metadata.uri, metadata.hash])
@@ -62,42 +61,12 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
     }
   }, [scratch])
 
-  const { writeContract, data: txHash, isPending, reset: resetWrite, error: writeError } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
-    useWaitForTransactionReceipt({ hash: txHash })
-
-  const { push } = useToasts()
-
-  // Effect 1 — panel-owns-success per 24-03 split: PROFILE UPDATED toast on
-  // receipt success; refresh the indexer-driven metadata; reset write state
-  // after a moment so the SAVE button re-enables cleanly.
-  useEffect(() => {
-    if (isSuccess) {
-      push({ tone: 'success', title: 'PROFILE UPDATED' })
-      metadata.refetch()
-      const t = setTimeout(() => resetWrite(), 3000)
-      return () => clearTimeout(t)
-    }
-    return undefined
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  // Effect 2 — button-owns-error per 24-03 split: TRANSACTION FAILED toast on
-  // either writeError or receipt error. shortMessage extraction mirrors the
-  // pattern in DelegateMode.
-  useEffect(() => {
-    if (writeError || isReceiptError) {
-      const shortMessage =
-        ((writeError ?? receiptError) as { shortMessage?: string } | undefined)
-          ?.shortMessage ?? 'Unknown error'
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body: shortMessage,
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [writeError, isReceiptError])
+  // PROFILE UPDATED toast on receipt success, then refresh the indexer-driven
+  // metadata; the write resets after a moment so SAVE re-enables cleanly.
+  const { write: writeContract, isPending, isConfirming } = useWriteAction({
+    successTitle: 'PROFILE UPDATED',
+    onSuccess: () => metadata.refetch(),
+  })
 
   function handleUri(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setUri(e.target.value)
@@ -190,7 +159,7 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
           type="text"
           value={hash}
           onChange={handleHash}
-          placeholder={ZERO_HASH}
+          placeholder={zeroHash}
           aria-label="CONTENT HASH"
           style={{ width: '100%' }}
         />
@@ -218,15 +187,14 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
           placeholder='{"schemaVersion":"operator.v1","name":"..."}'
           style={{ width: '100%' }}
         />
-        <button
-          type="button"
-          className="ds-btn ds-btn--sm"
+        <Button
+          size="sm"
           onClick={handleCompute}
           disabled={scratch.length === 0}
           style={{ marginTop: 'var(--space-2)' }}
         >
           COMPUTE HASH
-        </button>
+        </Button>
       </div>
 
       {parsedPreview && (
@@ -243,22 +211,19 @@ export function OperatorProfileEditor({ operatorAddress, registryAddress, metada
           marginTop: 'var(--space-3)',
         }}
       >
-        <button
-          type="button"
-          className="ds-btn ds-btn--primary"
+        <Button
+          variant="primary"
           onClick={handleSave}
           disabled={disabledSave}
         >
           SAVE PROFILE
-        </button>
-        <button
-          type="button"
-          className="ds-btn"
+        </Button>
+        <Button
           onClick={handleReset}
           disabled={isPending || isConfirming}
         >
           RESET PROFILE
-        </button>
+        </Button>
       </div>
     </section>
   )

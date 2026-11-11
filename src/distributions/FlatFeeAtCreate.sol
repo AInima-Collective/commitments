@@ -10,11 +10,9 @@ import {
     IDistributionStrategy,
     TokenMovement,
     CreatedContext,
-    DistributeContext,
-    ClaimContext,
-    LifecycleContext,
-    ForfeitContext
+    ClaimContext
 } from "src/core/interfaces/IDistributionStrategy.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 /// @title FlatFeeAtCreate
 /// @notice A fixed fee paid to the commitment's counterparty as a condition of creation
@@ -35,20 +33,17 @@ import {
 ///      possible. The fee payout is served directly from this contract's balance — `claim`
 ///      returns no movements and emits `DistributionPaid` itself, as §D.7 requires of
 ///      self-custody strategies.
-contract FlatFeeAtCreate is IDistributionStrategy, ReentrancyGuardTransient {
+contract FlatFeeAtCreate is StrategyBase, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     struct FeeState {
         uint256 fee;
         address token;
         bool collected;
+        bool bound;
     }
 
-    address public immutable manager;
     mapping(uint256 commitmentId => FeeState) public feeOf;
-    /// @dev Per-token total of uncollected fee obligations; consuming a binding moves value
-    ///      from `credit` into `allocated`, so balanceOf(this) ≥ Σcredit + allocated per token.
-    mapping(address token => uint256) public allocated;
     /// @notice Unconsumed prefund attributed to a committer, per token. Only the commitment's
     ///         own committer's credit can be consumed by `onCommitmentCreated`; unconsumed
     ///         credit is recoverable via `refundUnallocated`.
@@ -59,23 +54,11 @@ contract FlatFeeAtCreate is IDistributionStrategy, ReentrancyGuardTransient {
     /// @notice Unconsumed credit was refunded to its owner.
     event CreditRefunded(address indexed committer, address indexed token, uint256 amount);
 
-    error OnlyManager();
     error FeeNotFunded(uint256 required, uint256 available);
-    error AlreadyBound();
-    error NothingToClaim();
-    error NotAuthorized();
     error InsufficientCredit(uint256 requested, uint256 available);
-    error ZeroAmount();
     error ZeroAddress();
 
-    constructor(address manager_) {
-        manager = manager_;
-    }
-
-    modifier onlyManager() {
-        if (msg.sender != manager) revert OnlyManager();
-        _;
-    }
+    constructor(address manager_) StrategyBase(manager_) {}
 
     // =========================================================================
     // Prefund / refund surface (committer-attributed credit)
@@ -91,10 +74,7 @@ contract FlatFeeAtCreate is IDistributionStrategy, ReentrancyGuardTransient {
     function prefund(address committer, address token, uint256 amount) external nonReentrant {
         if (committer == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
-        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
-        if (received == 0) revert ZeroAmount();
+        uint256 received = _pullMeasured(IERC20(token), amount);
         creditOf[committer][token] += received;
         emit Prefunded(msg.sender, committer, token, received);
     }
@@ -123,15 +103,14 @@ contract FlatFeeAtCreate is IDistributionStrategy, ReentrancyGuardTransient {
     function onCommitmentCreated(CreatedContext calldata ctx) external onlyManager {
         uint256 fee = abi.decode(ctx.strategyParams, (uint256));
         FeeState storage state = feeOf[ctx.base.commitmentId];
-        if (state.fee != 0) revert AlreadyBound();
-        if (fee == 0) return; // zero-fee binding is a no-op
+        state.bound = true;
+        if (fee == 0) return; // a zero-fee binding owes nothing
 
         address token = ctx.base.token;
         uint256 available = creditOf[ctx.base.committer][token];
         if (available < fee) revert FeeNotFunded(fee, available);
 
         creditOf[ctx.base.committer][token] = available - fee;
-        allocated[token] += fee;
         state.fee = fee;
         state.token = token;
     }
@@ -148,10 +127,10 @@ contract FlatFeeAtCreate is IDistributionStrategy, ReentrancyGuardTransient {
     {
         if (ctx.caller != ctx.base.counterparty) revert NotAuthorized();
         FeeState storage state = feeOf[ctx.base.commitmentId];
+        if (!state.bound) revert NotBound();
         if (state.fee == 0 || state.collected) revert NothingToClaim();
 
         state.collected = true;
-        allocated[state.token] -= state.fee;
 
         IERC20(state.token).safeTransfer(ctx.base.counterparty, state.fee);
         emit ICM.DistributionPaid(
@@ -164,25 +143,5 @@ contract FlatFeeAtCreate is IDistributionStrategy, ReentrancyGuardTransient {
     function pending(ClaimContext calldata ctx, bytes calldata) external view returns (uint256) {
         FeeState storage state = feeOf[ctx.base.commitmentId];
         return state.collected ? 0 : state.fee;
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    function distribute(DistributeContext calldata) external view onlyManager returns (TokenMovement[] memory) {
-        return new TokenMovement[](0); // nothing accrues over time
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    function onCommitmentReleased(LifecycleContext calldata)
-        external
-        view
-        onlyManager
-        returns (TokenMovement[] memory)
-    {
-        return new TokenMovement[](0); // the fee obligation is independent of the close
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    function onCommitmentForfeited(ForfeitContext calldata) external view onlyManager returns (TokenMovement[] memory) {
-        return new TokenMovement[](0);
     }
 }

@@ -28,17 +28,11 @@
  *     'mismatch'). The dev seed uses inline data:application/json;base64 URIs,
  *     which fetchMetadata resolves without a gateway.
  */
-import { ponder as typedPonder } from 'ponder:registry'
+import { ponder } from 'ponder:registry'
 import { agent } from 'ponder:schema'
 import { getAddress, size } from 'viem'
 
 import { fetchMetadata } from './metadataFetcher'
-
-// These handlers target an unconditionally configured contract whose address
-// list may be empty. Keep the registration surface permissive across those
-// deployment shapes; Ponder validates event names against the live config.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ponder = typedPonder as unknown as { on: (name: string, fn: (ctx: any) => Promise<void> | void) => void }
 
 type Hex = `0x${string}`
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Hex
@@ -65,8 +59,8 @@ function decodeAgentWallet(value: Hex): Hex | null {
 }
 
 ponder.on('AgentIdentityRegistry:Registered', async ({ event, context }) => {
-  const { agentId, agentURI, owner } = event.args as { agentId: bigint; agentURI: string; owner: Hex }
-  const registry = event.log.address as Hex
+  const { agentId, agentURI, owner } = event.args
+  const registry = event.log.address
   const md = await agentMetadataPatch(agentURI)
   await context.db
     .insert(agent)
@@ -93,8 +87,8 @@ ponder.on('AgentIdentityRegistry:Registered', async ({ event, context }) => {
 })
 
 ponder.on('AgentIdentityRegistry:URIUpdated', async ({ event, context }) => {
-  const { agentId, newURI } = event.args as { agentId: bigint; newURI: string }
-  const registry = event.log.address as Hex
+  const { agentId, newURI } = event.args
+  const registry = event.log.address
   const existing = await context.db.find(agent, { registry, agentId })
   // URIUpdated cannot precede Registered for an existing token — an unknown id
   // means a registry outside our watch set replayed; ignore rather than stub
@@ -112,15 +106,11 @@ ponder.on('AgentIdentityRegistry:MetadataSet', async ({ event, context }) => {
   // NOTE: event.args also carries `indexedMetadataKey`, but as an indexed
   // string viem only surfaces its keccak256 topic — the readable key is the
   // un-indexed `metadataKey` param.
-  const { agentId, metadataKey, metadataValue } = event.args as {
-    agentId: bigint
-    metadataKey: string
-    metadataValue: Hex
-  }
+  const { agentId, metadataKey, metadataValue } = event.args
   // Only the reserved wallet key is mirrored for now; arbitrary user keys are
   // recoverable from the event log if a future surface needs them.
   if (metadataKey !== 'agentWallet') return
-  const registry = event.log.address as Hex
+  const registry = event.log.address
   const existing = await context.db.find(agent, { registry, agentId })
   // Registered always inserts before the same-tx agentWallet MetadataSet (log
   // ordering) — an unknown id here is out-of-scope; ignore defensively.
@@ -132,11 +122,11 @@ ponder.on('AgentIdentityRegistry:MetadataSet', async ({ event, context }) => {
 })
 
 ponder.on('AgentIdentityRegistry:Transfer', async ({ event, context }) => {
-  const { from, to, tokenId } = event.args as { from: Hex; to: Hex; tokenId: bigint }
+  const { from, to, tokenId } = event.args
   // Mint (registration) is handled by Registered — it carries the agentURI and
   // fires in the same tx right after this Transfer(0 → owner).
   if (from.toLowerCase() === ZERO_ADDRESS) return
-  const registry = event.log.address as Hex
+  const registry = event.log.address
   const existing = await context.db.find(agent, { registry, agentId: tokenId })
   // Transfer of an unknown id → ignore (a real transfer always postdates the
   // Registered insert; mirrors the operator handlers' out-of-order stance).

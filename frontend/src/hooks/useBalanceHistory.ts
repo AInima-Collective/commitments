@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /** One folded balance point. Both balances are cumulative raw token units. */
 export interface BalancePoint {
@@ -90,11 +91,9 @@ export function useBalanceHistory({ address, days = 30 }: UseBalanceHistoryParam
     queryKey: ['balance-history', address, days],
     queryFn: async () => {
       if (!address) throw new Error('address required')
-      const res = await indexerFetch(
+      const wire = await indexerJson<HistoryWire>(
         `/account/${address.toLowerCase()}/balance-history?days=${days}`,
       )
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as HistoryWire
       return {
         address: wire.address as Address,
         days: wire.days,
@@ -113,7 +112,7 @@ export function useBalanceHistory({ address, days = 30 }: UseBalanceHistoryParam
         })),
       }
     },
-    refetchInterval: 60_000,
+    refetchInterval: POLL.idle,
   })
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

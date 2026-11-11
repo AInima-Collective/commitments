@@ -2,16 +2,13 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding, TokenMovement, MovementKind} from "src/core/interfaces/IDistributionStrategy.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
-import {MockBandValuationAdapter} from "../mocks/MockBandValuationAdapter.sol";
 import {RecordingStrategy, MOCK_DISTRIBUTE, MOCK_CLAIM} from "../mocks/StrategyMocks.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /// @title ManagerHandler
 /// @notice Invariant-fuzz handler for the manager. Grown wave by wave:
@@ -36,15 +33,6 @@ contract ManagerHandler is Test {
     uint256[] public allMutualCommitmentIds;
     address public beneficiary; // a non-member actor that receives settled units (in the ledger walk)
 
-    // Heterogeneous-mode mutuals. A manipulation-resistant band adapter (par-priced per
-    // token, lowered transiently by `remarkMember`) drives `premiumWeight` off the loss denominator, so
-    // these mutuals satisfy only the INV-P9' running-delta identity (gated in the invariant below). They
-    // share `allMutualIds` / `allMutualCommitmentIds` with the homogeneous mutuals; heterogeneity is read
-    // back from `bandAdapter != 0` at assertion time.
-    MockBandValuationAdapter public heteroAdapter;
-    address public valuationAuthority;
-    uint256 internal valuationKey;
-
     uint64 internal constant WINDOW = 1 days;
     uint64 internal constant MUTUAL_WINDOW = 2 days;
 
@@ -68,14 +56,6 @@ contract ManagerHandler is Test {
         actors.push(beneficiary);
         for (uint256 i = 0; i < 3; i++) {
             strategies.push(address(new RecordingStrategy()));
-        }
-
-        // Heterogeneous-mode plumbing: a par-priced band adapter and a valuationAuthority key distinct
-        // from the arbiter (the createMutual non-arbiter constraint).
-        (valuationAuthority, valuationKey) = makeAddrAndKey("mutualValuationAuthority");
-        heteroAdapter = new MockBandValuationAdapter();
-        for (uint256 t = 0; t < tokens_.length; t++) {
-            heteroAdapter.setPrice(address(tokens_[t]), 1e18); // par
         }
     }
 
@@ -388,7 +368,6 @@ contract ManagerHandler is Test {
             arbiter: arbiter,
             numeraire: address(token),
             beneficiary: beneficiary,
-            valuationAuthority: address(0), // homogeneous (oracle-free) mode
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -422,89 +401,9 @@ contract ManagerHandler is Test {
         p.challengeWindow = WINDOW;
         p.strategies = new StrategyBinding[](0);
 
-        uint256 cid;
-        if (g.valuationAuthority == address(0)) {
-            // Homogeneous: oracle-free, no attestation, premiumWeight == creditedValue == E_i.
-            vm.prank(actor);
-            cid = manager.joinMutual(gid, p, 0, "");
-        } else {
-            // Heterogeneous: attest creditedValue == E_i. The band+haircut premiumWeight must be > 0
-            // (haircut <= 90% in createHeteroMutual, so require E_i >= 10 at the par adapter price).
-            uint256 ei = (amount * bps) / 10_000;
-            if (ei < 10) return;
-            uint128 credited = uint128(ei);
-            uint256 deadline = type(uint256).max;
-            bytes memory att = _attestation(gid, actor, g.numeraire, ei, credited, deadline);
-            vm.prank(actor);
-            cid = manager.joinMutual(gid, p, credited, att);
-        }
+        vm.prank(actor);
+        uint256 cid = manager.joinMutual(gid, p);
         allMutualCommitmentIds.push(cid);
-    }
-
-    /// @dev Create + configure + activate a heterogeneous mutual (band adapter, junior split, single
-    ///      same-numeraire collateral haircut). Joins flow through the shared `joinMutual` handler.
-    function createHeteroMutual(uint256 tokenSeed, uint16 juniorBps, uint16 haircutBps) external {
-        MockERC20 token = _token(tokenSeed);
-        ICM.MutualParams memory p = ICM.MutualParams({
-            arbiter: arbiter,
-            numeraire: address(token),
-            beneficiary: beneficiary,
-            valuationAuthority: valuationAuthority,
-            challengeWindow: MUTUAL_WINDOW,
-            deallocationWindow: MUTUAL_WINDOW
-        });
-        uint256 gid = manager.createMutual(p);
-
-        address[] memory cols = new address[](1);
-        cols[0] = address(token);
-        uint64[] memory hc = new uint64[](1);
-        hc[0] = uint64(bound(uint256(haircutBps), 0, 9_000)); // <= 90% keeps premiumWeight > 0 for E_i >= 10
-        ICM.HeteroConfig memory cfg = ICM.HeteroConfig({
-            bandAdapter: address(heteroAdapter),
-            valuationFloorBps: 0,
-            valuationCeilBps: 10_000,
-            juniorBps: uint64(bound(uint256(juniorBps), 0, 10_000)),
-            collaterals: cols,
-            haircutBps: hc
-        });
-        vm.prank(valuationAuthority);
-        manager.configureHeterogeneous(gid, cfg);
-        vm.prank(arbiter);
-        manager.activateMutual(gid);
-        allMutualIds.push(gid);
-    }
-
-    /// @dev Permissionless DOWN-ONLY remark of a heterogeneous member. Transiently depresses the band
-    ///      price (then restores par so later joins are unaffected); the contract floors the new weight
-    ///      at the current one, so the move is monotone non-increasing and `activeCover == Σ effCover`
-    ///      stays exact.
-    function remarkMember(uint256 cidSeed, uint16 dropBps) external {
-        if (allMutualCommitmentIds.length == 0) return;
-        uint256 cid = allMutualCommitmentIds[cidSeed % allMutualCommitmentIds.length];
-        ICM.Membership memory m = manager.getMembership(cid);
-        if (m.mutualId == 0) return;
-        ICM.Mutual memory g = manager.getMutual(m.mutualId);
-        if (g.bandAdapter == address(0)) return; // homogeneous: remark forbidden
-        if (_mutualLossPending(m.mutualId)) return; // marks frozen during a declaration
-
-        address tok = manager.getCommitment(cid).token;
-        uint256 drop = bound(uint256(dropBps), 0, 10_000);
-        heteroAdapter.setPrice(tok, (1e18 * (10_000 - drop)) / 10_000);
-        manager.remark(m.mutualId, cid);
-        heteroAdapter.setPrice(tok, 1e18); // restore par for subsequent joins
-    }
-
-    /// @dev Sign a valuation attestation as the mutual's valuationAuthority (mirrors MutualLib).
-    function _attestation(uint256 gid, address committer, address tok, uint256 ei, uint128 credited, uint256 deadline)
-        internal
-        view
-        returns (bytes memory)
-    {
-        bytes32 inner = keccak256(
-            abi.encode("MutualValuation", block.chainid, address(manager), gid, committer, tok, ei, credited, deadline)
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(valuationKey, MessageHashUtils.toEthSignedMessageHash(inner));
-        return abi.encode(deadline, abi.encodePacked(r, s, v));
     }
 
     function initiateMutualLoss(uint256 mutualSeed, uint256 lossSeed) external {
@@ -512,7 +411,8 @@ contract ManagerHandler is Test {
         uint256 gid = allMutualIds[mutualSeed % allMutualIds.length];
         ICM.Mutual memory g = manager.getMutual(gid);
         if (!g.active || g.terminal || g.totalShares == 0 || _mutualLossPending(gid)) return;
-        if (g.lastInitiatedAt != 0 && block.timestamp < uint256(g.lastInitiatedAt) + 1 hours) return;
+        uint64 lastAt = manager.getMutualLossProposal(gid).initiatedAt;
+        if (lastAt != 0 && block.timestamp < uint256(lastAt) + 1 hours) return;
         uint256 loss = bound(lossSeed, 1, uint256(g.totalShares) * 2); // may exceed shares -> exercises the clamp
         vm.prank(arbiter);
         manager.initiateMutualLoss(gid, loss, bytes32(0));
@@ -564,12 +464,30 @@ contract ManagerHandler is Test {
         manager.releaseMutualMember(cid);
     }
 
+    /// @dev Let an exit request lapse (no pauses run here, so wall time is effective time), then
+    ///      either a stranger clears it through a settle or the member requests again over it.
+    function lapseMutualExit(uint256 cidSeed, bool clear) external {
+        if (allMutualCommitmentIds.length == 0) return;
+        uint256 cid = allMutualCommitmentIds[cidSeed % allMutualCommitmentIds.length];
+        ICM.Membership memory m = manager.getMembership(cid);
+        if (m.mutualId == 0 || m.unbondRequestedAt == 0) return;
+        uint256 lapseAt = uint256(m.unbondRequestedAt) + 2 * uint256(manager.getMutual(m.mutualId).deallocationWindow);
+        if (block.timestamp < lapseAt) vm.warp(lapseAt);
+        if (clear) {
+            manager.settleMemberLoss(cid);
+        } else {
+            if (_mutualLossPending(m.mutualId)) return;
+            vm.prank(manager.getCommitment(cid).committer);
+            manager.requestMutualExit(cid);
+        }
+    }
+
     // ---- Wave 5b — premium index (reward side) ----
 
     /// @dev A policyholder funds a mutual's premium stream from its WALLET (measured-receipt pull).
     ///      Guarded on `activeCover != 0` so it never trips NoActiveCover; the funding-time solvency
     ///      guard is exercised on every successful call. Live-stream top-ups are grown to the S6
-    ///      rate-non-decrease floor (grossed up for the junior split) so the guard never rejects them.
+    ///      rate-non-decrease floor so the guard never rejects them.
     function fundPremium(uint256 mutualSeed, uint256 funderSeed, uint256 amount, uint64 dur) external {
         if (allMutualIds.length == 0) return;
         uint256 gid = allMutualIds[mutualSeed % allMutualIds.length];
@@ -587,15 +505,12 @@ contract ManagerHandler is Test {
         dur = uint64(bound(uint256(dur), 1 minutes, 30 days));
         if (block.timestamp < finish) {
             // S6 guard: while a stream is live the rate may only be maintained or raised. Fund at
-            // least the premiumPortion that keeps `newRate >= rate`, or skip if unaffordable.
+            // least the amount that keeps `newRate >= rate`, or skip if unaffordable.
             uint256 leftover = (uint256(finish) - block.timestamp) * uint256(rate);
             uint256 target = uint256(rate) * uint256(dur);
             if (target > leftover) {
-                uint256 needed = target - leftover; // premiumPortion floor that keeps the rate
-                if (g.juniorBps >= 10_000) return; // all-junior split can never raise the rate
-                uint256 keepBps = 10_000 - g.juniorBps;
-                uint256 gross = (needed * 10_000 + keepBps - 1) / keepBps; // ceil gross-up for the split
-                if (gross > amount) amount = gross;
+                uint256 needed = target - leftover; // funding floor that keeps the rate
+                if (needed > amount) amount = needed;
                 if (amount > wallet) return; // funder can't afford a guard-compliant top-up
             }
         }
@@ -608,14 +523,6 @@ contract ManagerHandler is Test {
         uint256 cid = allMutualCommitmentIds[cidSeed % allMutualCommitmentIds.length];
         if (manager.getMembership(cid).mutualId == 0) return;
         manager.claimMemberPremium(cid);
-    }
-
-    /// @dev settle-then-claim under one guard; degrades to the two permissionless calls.
-    function settleAndClaimMember(uint256 cidSeed) external {
-        if (allMutualCommitmentIds.length == 0) return;
-        uint256 cid = allMutualCommitmentIds[cidSeed % allMutualCommitmentIds.length];
-        if (manager.getMembership(cid).mutualId == 0) return;
-        manager.settleAndClaim(cid);
     }
 
     function reclaimPremium(uint256 mutualSeed) external {
@@ -681,14 +588,7 @@ contract PartitionInvariantTest is Test {
     MockERC20[] internal tokens;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (makeAddr("admin"), 7 days, 14 days))
-                )
-            )
-        );
+        manager = deployManager(makeAddr("admin"), 7 days, 14 days);
 
         tokens.push(new MockERC20("Backing A", "BCKA", 18));
         tokens.push(new MockERC20("Backing B", "BCKB", 6));
@@ -697,22 +597,16 @@ contract PartitionInvariantTest is Test {
         targetContract(address(handler));
     }
 
-    /// @dev INV-1 / INV-P1 / INV-P13 (extended partition): the five compartments — free + encumbered +
-    ///      escrow + mutualPremiumPool + mutualJuniorPool — sum to the manager's real token balance. The
-    ///      premium reserve (`funded − claimed`) is the fourth compartment and the junior absorber
-    ///      (`funded − drawn`) the fifth; the manager custodies funded numeraire that belongs to no
-    ///      actor's free/encumbered balance, so the partition only closes once both pools are added in.
+    /// @dev INV-1 / INV-P1 (extended partition): the four compartments — free + encumbered + escrow +
+    ///      mutualPremiumPool — sum to the manager's real token balance. The premium reserve
+    ///      (`funded − claimed`) is the fourth compartment; the manager custodies funded numeraire that
+    ///      belongs to no actor's free/encumbered balance, so the partition only closes once it is added in.
     function invariant_partition_aggregatesMatchBalance() public view {
         for (uint256 t = 0; t < tokens.length; t++) {
             address token = address(tokens[t]);
-            (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(token);
-            uint256 pool = _mutualPremiumForToken(token);
-            uint256 junior = _mutualJuniorForToken(token);
-            assertEq(
-                free + enc + esc + pool + junior,
-                tokens[t].balanceOf(address(manager)),
-                "INV-P1/P13: 5-compartment partition"
-            );
+            (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(token);
+            assertEq(mp, _mutualPremiumForToken(token), "totalMutualPremium == sum of pools");
+            assertEq(free + enc + esc + mp, tokens[t].balanceOf(address(manager)), "INV-P1: 4-compartment partition");
         }
     }
 
@@ -727,21 +621,9 @@ contract PartitionInvariantTest is Test {
         }
     }
 
-    /// @dev Σ mutualJuniorPool over mutuals whose numeraire == `token` (== totalMutualJunior[token]). Zero
-    ///      throughout the homogeneous fuzz (junior is never funded without `juniorBps`), but added so the
-    ///      partition stays closed the moment heterogeneous funding is exercised.
-    function _mutualJuniorForToken(address token) internal view returns (uint256 sum) {
-        uint256 n = handler.mutualCount();
-        for (uint256 i = 0; i < n; i++) {
-            uint256 gid = handler.allMutualIds(i);
-            if (manager.getMutual(gid).numeraire != token) continue;
-            sum += manager.getMutualJuniorPool(gid);
-        }
-    }
-
     /// @dev INV-P9 (exact, dual-tracked) + Belt-2 inert, as a live conformance property: for every
     ///      shared-loss mutual, `activeCover == totalShares − settledTotal == Σ_i effCover_i`, and the
-    ///      Belt-2 `min(E_i − settled, c.amount)` clamp never bites in homogeneous v1 (the remaining
+    ///      Belt-2 `min(E_i − settled, c.amount)` clamp never bites (the remaining
     ///      liability is always fully deliverable). This leans on the per-(token,user) identity
     ///      `encumbered == Σ c.amount` locked in invariant_exposureAndLedgerConsistency.
     function invariant_premiumActiveCoverExact() public view {
@@ -751,19 +633,15 @@ contract PartitionInvariantTest is Test {
             uint256 gid = handler.allMutualIds(gi);
             (, uint128 activeCover, uint256 settledTotal,,,,,,) = manager.getMutualPremiumState(gid);
             ICM.Mutual memory g = manager.getMutual(gid);
-            // INV-P9 (HOMOGENEOUS ONLY): activeCover == totalShares − settledTotal. Heterogeneous mutuals
-            // (`bandAdapter != 0`) decouple `premiumWeight` from `creditedValue`, so this exact identity
-            // is intentionally NOT asserted for them — only the running-delta INV-P9' below.
-            if (g.bandAdapter == address(0)) {
-                assertEq(
-                    uint256(activeCover),
-                    uint256(g.totalShares) - settledTotal,
-                    "INV-P9: activeCover == totalShares - settledTotal (homogeneous)"
-                );
-            }
+            // INV-P9: activeCover == totalShares − settledTotal.
+            assertEq(
+                uint256(activeCover),
+                uint256(g.totalShares) - settledTotal,
+                "INV-P9: activeCover == totalShares - settledTotal"
+            );
 
-            // INV-P9' (BOTH modes): the running-delta identity activeCover == Σ effCover stays exact, and
-            // the Belt-2 deliverable clamp is inert (the remaining liability is always fully deliverable).
+            // ...and == Σ effCover, with the Belt-2 deliverable clamp inert (the remaining liability is
+            // always fully deliverable, so effCover_i == E_i − settled_i).
             uint256 sumEff;
             for (uint256 ci = 0; ci < nMutualCommitments; ci++) {
                 uint256 cid = handler.allMutualCommitmentIds(ci);
@@ -771,10 +649,30 @@ contract PartitionInvariantTest is Test {
                 if (m.mutualId != gid || m.forfeitableUnits == 0) continue;
                 uint256 deliverable = m.forfeitableUnits - m.settledUnits;
                 uint256 amt = manager.getCommitment(cid).amount;
-                assertLe(deliverable, amt, "INV-P9': Belt-2 clamp inert (deliverable <= c.amount)");
-                sumEff += Math.mulDiv(m.premiumWeight, deliverable, m.forfeitableUnits);
+                assertLe(deliverable, amt, "INV-P9: Belt-2 clamp inert (deliverable <= c.amount)");
+                sumEff += deliverable;
             }
-            assertEq(uint256(activeCover), sumEff, "INV-P9': activeCover == sum effCover");
+            assertEq(uint256(activeCover), sumEff, "INV-P9: activeCover == sum effCover");
+        }
+    }
+
+    /// @dev INV-P11 (exiting cover exactness), beside INV-P9: for every mutual, `exitingCover` is
+    ///      Σ effCover_i over members with an exit request on record, and never exceeds `activeCover`.
+    function invariant_exitingCoverExact() public view {
+        uint256 nMutuals = handler.mutualCount();
+        uint256 nMutualCommitments = handler.mutualCommitmentCount();
+        for (uint256 gi = 0; gi < nMutuals; gi++) {
+            uint256 gid = handler.allMutualIds(gi);
+            ICM.Mutual memory g = manager.getMutual(gid);
+            uint256 sumExiting;
+            for (uint256 ci = 0; ci < nMutualCommitments; ci++) {
+                uint256 cid = handler.allMutualCommitmentIds(ci);
+                ICM.Membership memory m = manager.getMembership(cid);
+                if (m.mutualId != gid || m.unbondRequestedAt == 0) continue;
+                sumExiting += m.forfeitableUnits - m.settledUnits; // effCover (Belt-2 inert, INV-P9)
+            }
+            assertEq(uint256(g.exitingCover), sumExiting, "INV-P11: exitingCover == sum effCover of exiting members");
+            assertLe(g.exitingCover, g.activeCover, "INV-P11: exitingCover <= activeCover");
         }
     }
 
@@ -793,7 +691,7 @@ contract PartitionInvariantTest is Test {
             for (uint256 sIdx = 0; sIdx < handler.strategyCount(); sIdx++) {
                 sumEsc += manager.escrowOf(token, handler.strategies(sIdx));
             }
-            (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(token);
+            (uint256 free, uint256 enc, uint256 esc,) = manager.ledgerTotals(token);
             assertEq(sumFree, free, "totalFree consistent with ledger walk");
             assertEq(sumEnc, enc, "totalEncumbered consistent with ledger walk");
             assertEq(sumEsc, esc, "totalEscrow consistent with ledger walk");
@@ -846,7 +744,7 @@ contract PartitionInvariantTest is Test {
     }
 
     /// @dev INV-G2/G3/G6/totalShares: for every shared-loss mutual, Lambda is in [0, 1e18];
-    ///      `totalShares` equals the sum of active members' frozen `creditedValue`; and per member
+    ///      `totalShares` equals the sum of active members' frozen `forfeitableUnits` (E_i); and per member
     ///      cumulative `settledUnits <= forfeitableUnits` (E_i).
     function invariant_mutualAccounting() public view {
         uint256 nMutuals = handler.mutualCount();
@@ -862,9 +760,9 @@ contract PartitionInvariantTest is Test {
                 ICM.Membership memory m = manager.getMembership(cid);
                 if (m.mutualId != gid) continue;
                 assertLe(m.settledUnits, m.forfeitableUnits, "INV-G3: settled <= E_i");
-                sumCredited += m.creditedValue;
+                sumCredited += m.forfeitableUnits;
             }
-            assertEq(uint256(g.totalShares), sumCredited, "totalShares == sum of active creditedValue");
+            assertEq(uint256(g.totalShares), sumCredited, "totalShares == sum of active E_i");
         }
     }
 

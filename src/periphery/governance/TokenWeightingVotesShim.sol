@@ -21,11 +21,12 @@ import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 ///         delegates() so Tally and other tooling render correctly).
 ///
 ///         Block-based clock — TokenWeighting checkpoints are keyed by block.number
-///         (OZ Checkpoints.Trace256), so clock() returns block.number (cast to
+///         (OZ Checkpoints.Trace208), so clock() returns block.number (cast to
 ///         uint48 per ERC-6372) and CLOCK_MODE returns "mode=blocknumber".
 ///
-///         The source is immutable. To re-bind a Governor to a different source,
-///         deploy a new shim and upgrade the Governor implementation to point at it.
+///         The source is immutable. A Governor stores its token in initializer
+///         storage, so upgrading the Governor implementation does not re-bind it;
+///         using a different source means deploying a new DAO.
 contract TokenWeightingVotesShim is IERC5805 {
     /// @notice The voting-power source this shim wraps. Immutable by design.
     IVotingPowerSource public immutable source;

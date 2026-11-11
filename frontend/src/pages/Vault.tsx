@@ -21,6 +21,7 @@ import {
   type VaultCurator,
   type VaultStrategy,
 } from '../components/protocol'
+import { commitmentDetailPath } from '../lib/arbitrationRoutes'
 import { getBlockExplorer } from '../lib/blockExplorer'
 import { CommitmentsTable } from '../components/commitment/CommitmentsTable'
 import { DepositWizard } from '../components/vault/DepositWizard'
@@ -32,7 +33,7 @@ import { VaultCoverageCard } from '../components/vault/VaultCoverageCard'
 import { VaultApyChart } from '../components/vault/VaultApyChart'
 import { VaultStrategyRisk } from '../components/vault/VaultStrategyRisk'
 import { VaultTvlChart } from '../components/vault/VaultTvlChart'
-import { getContractAddresses, getVaultDescriptor } from '../config/contracts'
+import { getContractAddresses, getVaultDescription } from '../config/contracts'
 import { useAssetPrices } from '../hooks/useAssetPrices'
 import { useForfeitLedger } from '../hooks/useForfeitLedger'
 import { useVaultActivity } from '../hooks/useVaultActivity'
@@ -43,6 +44,7 @@ import { useUnifiedRows, type UnifiedRow } from '../hooks/useUnifiedRows'
 import { useVaultPeriodicHistory } from '../hooks/useVaultPeriodicHistory'
 import { useVaultPosition } from '../hooks/useVaultPosition'
 import { useVaultRiskMetrics } from '../hooks/useVaultRiskMetrics'
+import { useVaults } from '../hooks/useVaults'
 import { useVaultStats } from '../hooks/useVaultStats'
 import { useViewAddress } from '../hooks/useViewAddress'
 import { bigintToUsd, formatPercent } from '../lib/format'
@@ -89,7 +91,7 @@ export default function Vault() {
   const urlAddress = params.address && isAddress(params.address) ? (params.address as Address) : undefined
   const env = getContractAddresses(chainId)
   const vaultAddress = urlAddress ?? env.commitmentsVault
-  const descriptor = getVaultDescriptor(chainId, vaultAddress)
+  const descriptor = useVaults().vaultFor(vaultAddress)
   const { commitmentManager: managerAddress } = env
 
   const position = useVaultPosition({ vaultAddress, viewAddress, managerAddress })
@@ -98,7 +100,6 @@ export default function Vault() {
   const { getPrice } = useAssetPrices({ symbols: priceSymbols })
   const activity = useVaultActivity({ vaultAddress, userAddress: viewAddress })
   const apy = useVaultApy(vaultAddress)
-  const risk = useVaultRiskMetrics({ managerAddress, viewAddress })
   // The commitments tab shares the same table component as the Dashboard and
   // Commitment surfaces use indexer-backed unified rows. This view is scoped to THIS vault:
   // a commitment's backing `token` is the vault-share address (cvUSDC/cvWETH),
@@ -116,11 +117,12 @@ export default function Vault() {
       ),
     [unifiedRows, vaultAddress],
   )
+  const riskMetrics = useVaultRiskMetrics(vaultCommitmentRows)
   const vaultCommitmentTokenMeta = useTokenMetaMap(vaultCommitmentRows.map((r) => r.token))
   const navigate = useNavigate()
   // Every row here is a commitment (proposals are filtered out above), so the
   // click handler always deep-links to the shareable per-commitment detail page.
-  const openCommitmentRow = (row: UnifiedRow) => navigate(`/app/commitments/${row.id.toString()}`)
+  const openCommitmentRow = (row: UnifiedRow) => navigate(commitmentDetailPath(row.id))
   const ledger = useForfeitLedger({ vaultAddress })
   const vaultMetadata = useVaultMetadata(vaultAddress)
   const curator = readCurator(vaultMetadata.content)
@@ -166,7 +168,7 @@ export default function Vault() {
   }
 
   const symbol = position.assetSymbol ?? descriptor?.assetSymbol ?? 'TOKEN'
-  const aDecimals = position.assetDecimals ?? 18
+  const aDecimals = position.assetDecimals ?? descriptor?.assetDecimals ?? 18
   const isPaused = position.depositsPaused
 
   const metaName = asString(vaultMetadata.content?.name)
@@ -174,7 +176,7 @@ export default function Vault() {
   const heroName = metaName ?? descriptor?.name ?? `${symbol} Vault`
   const description =
     metaDescription ??
-    descriptor?.description ??
+    getVaultDescription(vaultAddress) ??
     'Yield-bearing ERC-4626 vault. Shares stay liquid in your wallet; deposit them into the manager to back commitments. Vault exits are instant.'
 
   // Pause state is signaled by the deposit/withdraw badges + the Notice
@@ -355,11 +357,11 @@ export default function Vault() {
       {/* Only surface the position panel for users who already hold shares
        *  in this vault. A cold-start depositor sees the hero + tabs first;
        *  the position recap reveals once they have something to recap. */}
-      {(position.shares ?? 0n) > 0n && (
+      {(position.held ?? 0n) > 0n && (
         <PositionPanel
           position={position}
           isConnected={isConnected}
-          riskMetrics={risk.metrics}
+          riskMetrics={riskMetrics}
           underlyingUsd={(() => {
             const price = getPrice(position.assetSymbol)
             if (!price) return undefined
@@ -393,7 +395,7 @@ export default function Vault() {
               <div className="ds-stack ds-stack-2">
                 <header className="ds-section-header">
                   <h3 className="ds-section-title">TVL</h3>
-                  <span className="ds-section-eyebrow">snapshots every 5m</span>
+                  <span className="ds-section-eyebrow">last 30 days</span>
                 </header>
                 <VaultTvlChart
                   vaultAddress={vaultAddress}
@@ -458,8 +460,8 @@ export default function Vault() {
           <VaultActivity
             entries={activity.data}
             isLoading={activity.isLoading}
-            assetDecimals={position.assetDecimals}
-            assetSymbol={position.assetSymbol}
+            assetDecimals={position.assetDecimals ?? descriptor?.assetDecimals}
+            assetSymbol={position.assetSymbol ?? descriptor?.assetSymbol}
           />
         </Tabs.Panel>
 
@@ -474,8 +476,8 @@ export default function Vault() {
             ledger={ledger.data}
             isLoading={ledger.isLoading}
             error={ledger.error}
-            assetDecimals={position.assetDecimals}
-            assetSymbol={position.assetSymbol}
+            assetDecimals={position.assetDecimals ?? descriptor?.assetDecimals}
+            assetSymbol={position.assetSymbol ?? descriptor?.assetSymbol}
             shareDecimals={position.shareDecimals}
           />
         </Tabs.Panel>

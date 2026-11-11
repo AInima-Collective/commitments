@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { POLL } from './polling'
 
 /**
  * Wire shape returned by GET /protocol/stats. BigInts come down as strings.
  */
-interface ProtocolStatsWire {
+export interface ProtocolStatsWire {
   commitments: {
     active: number
     unbonding: number
@@ -34,11 +35,9 @@ interface ProtocolStatsWire {
     tokenWeighting: number
     total: number
   }
-  vaultPositions: {
-    totalEncumberedShares: string
-    totalQueuedShares: string
-    totalQueuedAssets: string
-    depositorCount: number
+  ledger: {
+    totalEncumbered: string
+    positionCount: number
   }
   updatedAt: number
 }
@@ -54,13 +53,45 @@ export interface ProtocolStats {
     totalDelegatedStake: bigint
   }
   meshNodes: ProtocolStatsWire['meshNodes']
-  vaultPositions: {
-    totalEncumberedShares: bigint
-    totalQueuedShares: bigint
-    totalQueuedAssets: bigint
-    depositorCount: number
+  ledger: {
+    totalEncumbered: bigint
+    positionCount: number
   }
   updatedAt: number
+}
+
+/** Map the GET /protocol/stats wire payload to native types. */
+export function toProtocolStats(wire: ProtocolStatsWire): ProtocolStats {
+  const commitmentsTotal =
+    wire.commitments.active +
+    wire.commitments.unbonding +
+    wire.commitments.forfeitPending +
+    wire.commitments.forfeited +
+    wire.commitments.released +
+    wire.commitments.expired
+  const agreementsTotal =
+    wire.agreements.active +
+    wire.agreements.forfeited +
+    wire.agreements.released +
+    wire.agreements.partialForfeitA +
+    wire.agreements.partialForfeitB
+  return {
+    commitments: { ...wire.commitments, total: commitmentsTotal },
+    totalForfeitable: BigInt(wire.totalForfeitable),
+    arbiterCount: wire.arbiterCount,
+    agreements: { ...wire.agreements, total: agreementsTotal },
+    operators: {
+      registered: wire.operators.registered,
+      deregistered: wire.operators.deregistered,
+      totalDelegatedStake: BigInt(wire.operators.totalDelegatedStake),
+    },
+    meshNodes: wire.meshNodes,
+    ledger: {
+      totalEncumbered: BigInt(wire.ledger.totalEncumbered),
+      positionCount: wire.ledger.positionCount,
+    },
+    updatedAt: wire.updatedAt,
+  }
 }
 
 /**
@@ -81,43 +112,9 @@ export function useProtocolStats(): {
     enabled: hasIndexer,
     queryKey: ['protocol-stats'],
     queryFn: async (): Promise<ProtocolStats> => {
-      const res = await indexerFetch('/protocol/stats')
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as ProtocolStatsWire
-      const commitmentsTotal =
-        wire.commitments.active +
-        wire.commitments.unbonding +
-        wire.commitments.forfeitPending +
-        wire.commitments.forfeited +
-        wire.commitments.released +
-        wire.commitments.expired
-      const agreementsTotal =
-        wire.agreements.active +
-        wire.agreements.forfeited +
-        wire.agreements.released +
-        wire.agreements.partialForfeitA +
-        wire.agreements.partialForfeitB
-      return {
-        commitments: { ...wire.commitments, total: commitmentsTotal },
-        totalForfeitable: BigInt(wire.totalForfeitable),
-        arbiterCount: wire.arbiterCount,
-        agreements: { ...wire.agreements, total: agreementsTotal },
-        operators: {
-          registered: wire.operators.registered,
-          deregistered: wire.operators.deregistered,
-          totalDelegatedStake: BigInt(wire.operators.totalDelegatedStake),
-        },
-        meshNodes: wire.meshNodes,
-        vaultPositions: {
-          totalEncumberedShares: BigInt(wire.vaultPositions.totalEncumberedShares),
-          totalQueuedShares: BigInt(wire.vaultPositions.totalQueuedShares),
-          totalQueuedAssets: BigInt(wire.vaultPositions.totalQueuedAssets),
-          depositorCount: wire.vaultPositions.depositorCount,
-        },
-        updatedAt: wire.updatedAt,
-      }
+      return toProtocolStats(await indexerJson<ProtocolStatsWire>('/protocol/stats'))
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return { data: query.data, isLoading: query.isLoading, error: query.error }
 }

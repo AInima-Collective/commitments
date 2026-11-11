@@ -6,7 +6,7 @@ generated: true
 ---
 # TwoTierArbiter
 **Inherits:**
-[IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter), ReentrancyGuardTransient
+[ArbiterBase](/docs/protocol/reference/contracts/shared/arbitration/ArbiterBase), ReentrancyGuardTransient
 
 **Title:**
 TwoTierArbiter
@@ -22,16 +22,7 @@ there are no controller, timing, manager, or policy setters and the
 contract is deliberately non-upgradeable.
 
 
-## Constants
-### manager
-CommitmentManager this court dispatches to.
-
-
-```solidity
-ICommitmentManager public immutable manager
-```
-
-
+## State Variables
 ### primaryController
 Address authorized to open and withdraw first-pass rulings.
 
@@ -95,7 +86,6 @@ bytes32 public immutable courtPolicyHash
 ```
 
 
-## State Variables
 ### _courtPolicyURI
 
 ```solidity
@@ -144,7 +134,7 @@ constructor(
     uint64 executionBuffer_,
     string memory courtPolicyURI_,
     bytes32 courtPolicyHash_
-) ;
+) ArbiterBase(manager_);
 ```
 **Parameters**
 
@@ -159,18 +149,6 @@ constructor(
 |`courtPolicyURI_`|`string`|Content-addressed URI for the immutable court policy.|
 |`courtPolicyHash_`|`bytes32`|Content hash of the court policy document.|
 
-
-### commitmentManager
-
-Returns the CommitmentManager this arbiter dispatches to.
-
-Implementations should make this immutable to preserve the trust
-model commitments opt into when naming this contract as arbiter.
-
-
-```solidity
-function commitmentManager() external view returns (address);
-```
 
 ### arbiterCapabilities
 
@@ -197,19 +175,6 @@ on-chain; surfaced for the human/service trust decision.
 
 ```solidity
 function arbiterMetadataURI() external view returns (string memory);
-```
-
-### supportsInterface
-
-Returns true if this contract implements the interface defined by
-`interfaceId`. See the corresponding
-https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section]
-to learn more about how these ids are created.
-This function call must use less than 30 000 gas.
-
-
-```solidity
-function supportsInterface(bytes4 interfaceId) external pure returns (bool);
 ```
 
 ### getCase
@@ -392,9 +357,11 @@ function _requireActiveManagerProposal(uint256 commitmentId, uint16 expectedPena
 
 ### _closeCase
 
+Every caller has already run `_requireCurrent`.
+
 
 ```solidity
-function _closeCase(uint256 caseId, Case storage courtCase, CaseState terminalState) internal;
+function _closeCase(Case storage courtCase, CaseState terminalState) internal;
 ```
 
 ### _operativePenalty
@@ -416,13 +383,6 @@ function _operativeDecisionHash(Case storage courtCase) internal view returns (b
 
 ```solidity
 function _isLive(CaseState state) internal pure returns (bool);
-```
-
-### _now64
-
-
-```solidity
-function _now64() internal view returns (uint64 nowTs);
 ```
 
 ### _deadline
@@ -559,12 +519,6 @@ event CaseSynchronized(
 ```
 
 ## Errors
-### ZeroAddress
-
-```solidity
-error ZeroAddress();
-```
-
 ### ControllersMustDiffer
 
 ```solidity
@@ -611,18 +565,6 @@ error UnauthorizedAppellant(address caller);
 
 ```solidity
 error CommitmentNotFound(uint256 commitmentId);
-```
-
-### CommitmentNotActive
-
-```solidity
-error CommitmentNotActive(uint256 commitmentId);
-```
-
-### WrongArbiter
-
-```solidity
-error WrongArbiter(address expected, address actual);
 ```
 
 ### CaseAlreadyActive
@@ -677,12 +619,6 @@ error PenaltyAboveCommitmentMax(uint16 commitmentMax, uint16 penaltyBps);
 
 ```solidity
 error ZeroHash();
-```
-
-### ChallengeWindowTooShort
-
-```solidity
-error ChallengeWindowTooShort(uint64 required, uint64 actual);
 ```
 
 ### AppealWindowElapsed

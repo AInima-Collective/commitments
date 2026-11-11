@@ -9,7 +9,6 @@ import {MeshFactory} from "src/extensions/mesh/MeshFactory.sol";
 import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
-import {ITokenWeighting} from "src/extensions/mesh/interfaces/ITokenWeighting.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
@@ -19,7 +18,7 @@ import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 ///         OperatorRegistry ↔ mesh boundary. Across arbitrary register / delegate /
 ///         release / forfeit / deregister sequences against the REAL CommitmentManager:
 ///
-///           INV-A  per operator: tw.currentStake(op, denom) == registry.getOperatorStake(op)
+///           INV-A  per operator: tw.currentStake(op, denom) == registry.getOperator(op).totalDelegatedStake
 ///           INV-B  Σ tw.currentStake(op, denom) == tw.totalStake(denom)
 ///           INV-C  tw.totalStake(denom) ≤ Σ encumberedBalance(token, staker)
 ///                  (mesh voting power for the token can never exceed real, registry-
@@ -215,7 +214,7 @@ contract MeshBackingInvariantTest is ManagerTestBase {
             //        only flips `active` and zeroes the mesh power; it deliberately
             //        leaves `totalDelegatedStake` (getOperatorStake) untouched, so the
             //        lockstep is conditioned on the operator still being active.
-            uint256 expected = registry.getOperator(op).active ? registry.getOperatorStake(op) : 0;
+            uint256 expected = registry.getOperator(op).active ? registry.getOperator(op).totalDelegatedStake : 0;
             assertEq(tw.currentStake(op, denom), expected, "INV-A: tw.currentStake != expected mesh power");
             sumCurrent += tw.currentStake(op, denom);
         }
@@ -292,7 +291,7 @@ contract MeshBackingInvariantTest is ManagerTestBase {
         p.arbiter = arbiter;
         p.counterparty = address(reg2);
         p.token = token2;
-        p.adapter = address(staticAdapter);
+        p.adapter = address(adapter);
         p.amount = amount;
         p.maxPenaltyBps = PENALTY;
         p.challengeWindow = WINDOW;

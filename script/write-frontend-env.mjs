@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// Reads the latest Simulate broadcast and writes frontend/.env.local so the UI
-// points at the live deployment. Run by `just dev-up` after seeding.
+// Reads the latest seed (or DeploySepolia) broadcast and writes frontend/.env.local so the UI
+// points at the live deployment, plus indexer/deployments.<chainId>.json, the
+// schema-v1 deployment manifest the indexer reads (see indexer/src/loadDeployments.ts).
+// Run by `just dev-up` after seeding. This is the one broadcast parser: the
+// frontend and the indexer get their addresses from the same pass.
 //
 // Strategy:
 //   - CREATE transactions give us named contracts (impl) and ERC1967Proxy pairings.
@@ -61,12 +64,6 @@ const NODE_DEPLOYED_TOPIC =
 // to recover the real vault proxy.
 const VAULT_DEPLOYED_TOPIC =
   '0x09d75e12e349f79020715b0ea7b2c707e8acf1889b6d6f1337fce7f4e1b9e5c7'
-// GovernorFactory.deploy() spawns Governor (ERC1967Proxy), Timelock (clone),
-// and Shim (raw CREATE) inside a single factory call — none appear as
-// top-level CREATE rows. Scan for `GovernorDeployed(governor, timelock, shim,
-// source, name)` to recover them.
-const GOVERNOR_DEPLOYED_TOPIC =
-  '0x42a98c52985ca870834a056082d1a495c2db380015567ca376d6d2eb8668d626'
 
 const runPath = join(repoRoot, 'broadcast', broadcastScript, chainId, 'run-latest.json')
 if (!existsSync(runPath)) {
@@ -78,7 +75,7 @@ const doc = JSON.parse(readFileSync(runPath, 'utf-8'))
 
 // Pass 1: named CREATEs + proxy pairings.
 const implForName = {}
-const allImplsForName = {} // multi-instance tracking for CommitmentManager / OperatorRegistry / ManualArbiter
+const allImplsForName = {} // every instance, for contracts the seed deploys more than once
 const proxyForImpl = new Map()
 // Track ALL CREATE rows for AgentVaultBeneficiary so we can recover its
 // constructor arguments. AgentVaultBeneficiary takes (vaultA, vaultB) — the
@@ -88,12 +85,13 @@ const proxyForImpl = new Map()
 const ctorArgsByName = {}
 // Foundry can emit `contractName: null` when additional compiler profiles
 // produce several artifacts for one source. Recover only the contracts this
-// env writer consumes, and only when exactly one distinct artifact name matches
-// the raw CREATE input. This is the same conservative rule as the indexer
-// deployment loader; it avoids turning artifact ambiguity into a wrong address.
-const FRONTEND_CONTRACT_NAMES = new Set([
+// writer consumes, and only when exactly one distinct artifact name matches
+// the raw CREATE input; that avoids turning artifact ambiguity into a wrong address.
+const CONTRACT_NAMES = new Set([
   'ERC1967Proxy',
   'CommitmentManager',
+  'VaultFactory',
+  'GovernorFactory',
   'CommitmentsVault',
   'OperatorRegistry',
   'ManualArbiter',
@@ -108,14 +106,14 @@ const FRONTEND_CONTRACT_NAMES = new Set([
   'OptimisticMutualArbiter',
   'PremiumScheduler',
   'LinkedMutualPolicy',
-  'ClaimRouter',
   'ForfeitDonationBeneficiary',
-  'GovernorFactory',
   'ERC8004IdentityRegistryDev',
   'SkimmingMockStrategy',
   'VaultCoverConduit',
+  'IndexAppreciationYield',
+  'FlatFeeAtCreate',
 ])
-const creationMatchers = loadCreationMatchers(join(repoRoot, 'out'), FRONTEND_CONTRACT_NAMES)
+const creationMatchers = loadCreationMatchers(join(repoRoot, 'out'), CONTRACT_NAMES)
 for (const tx of doc.transactions ?? []) {
   if (tx.transactionType !== 'CREATE' || !tx.contractAddress) continue
   const name = tx.contractName
@@ -131,22 +129,11 @@ for (const tx of doc.transactions ?? []) {
     implForName[name] = tx.contractAddress
     ctorArgsByName[name] = tx.arguments ?? []
   }
-  // Always append to the multi-instance list — Simulate seeds two stacks.
   ;(allImplsForName[name] ??= []).push(tx.contractAddress)
 }
 
 const proxyFor = (name) => {
   const impl = implForName[name]
-  if (!impl) return undefined
-  return proxyForImpl.get(impl.toLowerCase()) ?? impl
-}
-
-// Resolve the Nth deployment of a multi-instance contract (CommitmentManager
-// or OperatorRegistry, deployed twice — USDC then WETH). For impls paired with
-// an ERC1967Proxy we prefer the proxy; otherwise the impl IS the address.
-const proxyForNth = (name, idx) => {
-  const impls = allImplsForName[name] ?? []
-  const impl = impls[idx]
   if (!impl) return undefined
   return proxyForImpl.get(impl.toLowerCase()) ?? impl
 }
@@ -162,8 +149,6 @@ const vaultsFromEvent = []
 // that the ERC20StaticAdapter prices — surfaced as create-form backing choices
 // alongside the vault share.
 const assetsFromEvent = []
-// First GovernorDeployed event is the canonical reference DAO seeded by Simulate.
-let governanceFromEvent = null
 for (const r of doc.receipts ?? []) {
   for (const log of r.logs ?? []) {
     const topics = log.topics ?? []
@@ -187,19 +172,6 @@ for (const r of doc.receipts ?? []) {
     if (t0 === VAULT_DEPLOYED_TOPIC && topics.length >= 3) {
       assetsFromEvent.push('0x' + topics[1].slice(-40))
       vaultsFromEvent.push('0x' + topics[2].slice(-40))
-      continue
-    }
-
-    // GovernorDeployed(address indexed governor, address indexed timelock,
-    //                  address indexed shim, address source, string name).
-    // Three indexed addresses live in topics[1..3]; the data tail carries
-    // (source, name).
-    if (t0 === GOVERNOR_DEPLOYED_TOPIC && topics.length >= 4 && !governanceFromEvent) {
-      governanceFromEvent = {
-        governor: '0x' + topics[1].slice(-40),
-        timelock: '0x' + topics[2].slice(-40),
-        shim: '0x' + topics[3].slice(-40),
-      }
       continue
     }
   }
@@ -294,21 +266,11 @@ const lines = [
   // strategy addresses to export anymore; the admin "Simulate yield → APY" flow
   // drives NAV via donate() directly. (The agent vault's SkimmingMockStrategy is
   // still exported below as VITE_AGENT_STRATEGY_ADDRESS.)
-  `VITE_COMMITMENT_MANAGER_ADDRESS=${proxyForNth('CommitmentManager', 0) ?? proxyFor('CommitmentManager') ?? ''}`,
-  proxyForNth('CommitmentManager', 1)
-    ? `VITE_WETH_COMMITMENT_MANAGER_ADDRESS=${proxyForNth('CommitmentManager', 1)}`
-    : undefined,
-  `VITE_OPERATOR_REGISTRY_ADDRESS=${proxyForNth('OperatorRegistry', 0) ?? proxyFor('OperatorRegistry') ?? ''}`,
-  proxyForNth('OperatorRegistry', 1)
-    ? `VITE_WETH_OPERATOR_REGISTRY_ADDRESS=${proxyForNth('OperatorRegistry', 1)}`
-    : undefined,
-  // ManualArbiter is a regular CREATE (not a proxy); the seed deploys two —
-  // first paired with the USDC manager, second with the WETH manager.
-  allImplsForName.ManualArbiter?.[0]
-    ? `VITE_MANUAL_ARBITER_ADDRESS=${allImplsForName.ManualArbiter[0]}`
-    : undefined,
-  allImplsForName.ManualArbiter?.[1]
-    ? `VITE_WETH_MANUAL_ARBITER_ADDRESS=${allImplsForName.ManualArbiter[1]}`
+  `VITE_COMMITMENT_MANAGER_ADDRESS=${proxyFor('CommitmentManager') ?? ''}`,
+  `VITE_OPERATOR_REGISTRY_ADDRESS=${proxyFor('OperatorRegistry') ?? ''}`,
+  // ManualArbiter is a regular CREATE (not a proxy).
+  implForName.ManualArbiter
+    ? `VITE_MANUAL_ARBITER_ADDRESS=${implForName.ManualArbiter}`
     : undefined,
   implForName.TwoTierArbiter
     ? `VITE_TWO_TIER_ARBITER_ADDRESS=${implForName.TwoTierArbiter}`
@@ -352,15 +314,12 @@ const lines = [
   implForName.LinkedMutualPolicy
     ? `VITE_LINKED_MUTUAL_POLICY_ADDRESS=${implForName.LinkedMutualPolicy}`
     : undefined,
-  // Per-peril ClaimRouter beneficiaries, in seed order: NAV, De-Peg, Slashing.
-  allImplsForName.ClaimRouter?.[0]
-    ? `VITE_CLAIM_ROUTER_ADDRESS=${allImplsForName.ClaimRouter[0]}`
+  // Strategy-binding modules the create form offers (regular CREATE rows).
+  implForName.IndexAppreciationYield
+    ? `VITE_INDEX_YIELD_STRATEGY_ADDRESS=${implForName.IndexAppreciationYield}`
     : undefined,
-  allImplsForName.ClaimRouter?.[1]
-    ? `VITE_DEPEG_CLAIM_ROUTER_ADDRESS=${allImplsForName.ClaimRouter[1]}`
-    : undefined,
-  allImplsForName.ClaimRouter?.[2]
-    ? `VITE_SLASHING_CLAIM_ROUTER_ADDRESS=${allImplsForName.ClaimRouter[2]}`
+  implForName.FlatFeeAtCreate
+    ? `VITE_FLAT_FEE_STRATEGY_ADDRESS=${implForName.FlatFeeAtCreate}`
     : undefined,
   // Underwritten agent vault (agent-bonds use case): cvaDAI is the 4th
   // VaultDeployed (usdc, weth, usdt, dai); SkimmingMockStrategy is the agent's
@@ -392,11 +351,6 @@ const lines = [
   process.env.AGENT_IDENTITY_REGISTRY_ADDRESS || agentIdentityRegistry
     ? `VITE_AGENT_IDENTITY_REGISTRY_ADDRESS=${process.env.AGENT_IDENTITY_REGISTRY_ADDRESS ?? agentIdentityRegistry}`
     : undefined,
-  // Governance (canonical DAO).
-  implForName.GovernorFactory ? `VITE_GOVERNOR_FACTORY_ADDRESS=${implForName.GovernorFactory}` : undefined,
-  governanceFromEvent ? `VITE_GOVERNOR_ADDRESS=${governanceFromEvent.governor}` : undefined,
-  governanceFromEvent ? `VITE_TIMELOCK_ADDRESS=${governanceFromEvent.timelock}` : undefined,
-  governanceFromEvent ? `VITE_VOTES_SHIM_ADDRESS=${governanceFromEvent.shim}` : undefined,
   defaultArbiter ? `VITE_DEFAULT_ARBITER_ADDRESS=${defaultArbiter}` : undefined,
   // Anvil writes VITE_RPC_URL_ANVIL; live nets (e.g. Sepolia) get their RPC from
   // the frontend's own VITE_RPC_URL_<NET> (see .env.example) so don't clobber it.
@@ -409,3 +363,36 @@ const envPath = join(repoRoot, 'frontend', '.env.local')
 writeFileSync(envPath, lines.join('\n') + '\n')
 console.log(`[write-frontend-env] wrote ${envPath}`)
 for (const line of lines) console.log(`  ${line}`)
+
+// The indexer's deployment manifest (schema v1). Proxied contracts resolve to
+// their proxy, where events are emitted. Absent optional fields are omitted;
+// the indexer's strict parser rejects a manifest missing a required one.
+const allFor = (name) =>
+  (allImplsForName[name] ?? []).map((impl) => proxyForImpl.get(impl.toLowerCase()) ?? impl)
+// The lowest block one of the run's transactions landed in, so an indexer on a
+// public chain starts at the deployment and does not crawl from genesis.
+const receiptBlocks = (doc.receipts ?? []).map((r) => Number(r.blockNumber)).filter(Number.isFinite)
+const manifest = {
+  schemaVersion: 1,
+  chainId: Number(chainId),
+  startBlock: receiptBlocks.length ? Math.min(...receiptBlocks) : 0,
+  commitmentManagers: allFor('CommitmentManager'),
+  operatorRegistries: allFor('OperatorRegistry'),
+  vaultFactory: implForName.VaultFactory,
+  stakeRegistry: proxyFor('OperatorServiceRegistry'),
+  meshFactory: implForName.MeshFactory,
+  governorFactory: implForName.GovernorFactory,
+  mutualRegistry: implForName.MutualRegistry,
+  optimisticMutualArbiter: implForName.OptimisticMutualArbiter,
+  linkedMutualPolicy: implForName.LinkedMutualPolicy,
+  skimmingStrategy: agentSkimStrategy || undefined,
+  vaultCoverConduit: vaultCoverConduit || undefined,
+  flatFeeStrategies: allFor('FlatFeeAtCreate'),
+  agentIdentityRegistries: agentIdentityRegistry ? [agentIdentityRegistry] : [],
+  optimisticInsuranceArbiters: allFor('OptimisticInsuranceArbiter'),
+  twoTierArbiters: allFor('TwoTierArbiter'),
+  attestationArbiters: allFor('AttestationArbiter'),
+}
+const manifestPath = join(repoRoot, 'indexer', `deployments.${chainId}.json`)
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
+console.log(`[write-frontend-env] wrote ${manifestPath}`)

@@ -15,19 +15,20 @@ operator directory backed by committed stake.
 
 Operators register by presenting a pre-created commitment with this registry as counterparty.
 Stakers delegate by creating commitments with this registry as counterparty and calling delegate().
-Exposes IServiceManager-compatible views: getOperatorStake, isOperator, getOperatorSet.
-CommitmentManager calls back onDelegationReleased onDelegationForfeited when relevant
+Exposes IServiceManager-compatible views: isOperator, getOperatorSet, getOperator.
+CommitmentManager calls back onDelegationReleased and onDelegationForfeited when relevant
 commitments are closed.
-Security properties (threat model, 03-04-PLAN.md):
-T-03-22: register() verifies commitment.committer == msg.sender
-T-03-23: onDelegation* requires msg.sender == s.commitmentManager
-T-03-24: register/delegate verify counterparty == address(this) from on-chain commitment data
-T-03-26: deregistered operators marked inactive; re-register requires fresh commitment
-T-03-27: onDelegationForfeited updates totalDelegatedStake atomically
-T-03-28: maxDelegationsPerOperator cap (default 1024)
+Security properties:
+- register() verifies commitment.committer == msg.sender
+- onDelegation* requires msg.sender == s.commitmentManager
+- register/delegate verify counterparty == address(this) from on-chain commitment data
+- deregister marks the operator inactive and clears the self-stake's routing; the same
+live commitment may register again in a later block
+- onDelegationForfeited updates totalDelegatedStake atomically
+- maxDelegationsPerOperator cap (default 1024)
 
 
-## Constants
+## State Variables
 ### MAX_METADATA_URI_LENGTH
 Maximum length of a metadata URI in bytes. Bounds gas cost of setOperatorMetadata.
 
@@ -335,11 +336,12 @@ function onDelegationReleased(uint256 commitmentId, uint256 amount) external;
 Called by CommitmentManager when a delegation commitment is forfeited.
 
 Called by CommitmentManager when a commitment with this registry as counterparty is forfeited.
-Silently ignores commitments not tracked by this registry.
+Silently ignores commitments not tracked by this registry. The entire commitment is
+terminated on forfeit, so the full credited amount is removed, not just the penalty.
 
 
 ```solidity
-function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, uint256 fullAmount) external;
+function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, uint256) external;
 ```
 **Parameters**
 
@@ -347,51 +349,55 @@ function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, ui
 |----|----|-----------|
 |`commitmentId`|`uint256`|The forfeited commitment.|
 |`forfeitedAmount`|`uint256`|Backing-token units forfeited (penalty portion).|
-|`fullAmount`|`uint256`|Full commitment amount (for proper totalDelegatedStake accounting).|
+|`<none>`|`uint256`||
 
 
-### getOperatorStake
+### reconcile
 
-Returns the total stake (self + delegated) for an operator in required-token units.
+Close a routed commitment whose release or forfeit hook failed in the manager.
 
-
-```solidity
-function getOperatorStake(address operator) external view returns (uint256);
-```
-
-### stakeAt
-
-Returns an operator's aggregate `totalDelegatedStake` as of a past `timestamp`,
-read from the timestamped checkpoint trace. Lets an arbiter adjudicating
-an offense at time T, epoch/snapshot rewards, or a dispute read stake-at-offense
-on-chain rather than only the live value.
-
-A checkpoint is pushed on every stake mutation (register/delegate/release/forfeit).
-This is a SEPARATE, `block.timestamp`-keyed path from TokenWeighting's block-number
-OZ Checkpoints (governance votes) and from the per-commitment `registeredAmount` freeze
-(which snapshots one commitment's credited amount for exact hook decrements). Semantics:
-returns 0 for a `timestamp` before the first checkpoint (or an operator that never
-staked); the checkpoint value exactly on a boundary; and the latest value for a
-`timestamp` at/after the last checkpoint.
+The manager's hook call is gas-capped and swallows failures (`RegistryHookFailed`).
+A swallowed hook leaves the commitment routed here with its stake, count and mesh
+power still credited, which blocks the operator's `deregister`. This runs the same
+close path the hook would have. The released event carries the credited amount, since
+the manager zeroes `c.amount` on close.
 
 
 ```solidity
-function stakeAt(address operator, uint64 timestamp, uint256 hint) external view returns (uint256);
+function reconcile(uint256 commitmentId) external nonReentrant;
 ```
 **Parameters**
 
 |Name|Type|Description|
 |----|----|-----------|
-|`operator`|`address`|The operator to query.|
-|`timestamp`|`uint64`|The historical Unix timestamp to read stake as-of.|
-|`hint`|`uint256`|A checkpoint index guess for an O(1) answer. If it covers `timestamp` the read is O(1); otherwise the call falls back to a bounded binary search. TRUSTLESS — a wrong/empty/out-of-range hint only costs gas, never correctness: both paths return the identical historically-correct value.|
+|`commitmentId`|`uint256`|The commitment to reconcile.|
 
-**Returns**
 
-|Name|Type|Description|
-|----|----|-----------|
-|`<none>`|`uint256`|The operator's `totalDelegatedStake` in required-token units as of `timestamp`.|
+### _closeDelegation
 
+Close a routed commitment: decrement the operator's stake and count by the amount
+credited at register/delegate (not the runtime amount, which can drift via
+distribute()), report an operator left below the minimum, release the same amount of
+mesh power, and clear routing. Shared by both manager hooks and `reconcile`. Returns
+`operatorAddr == address(0)` and changes nothing when the commitment is not routed here.
+
+
+```solidity
+function _closeDelegation(OperatorRegistryStorage.Layout storage s, uint256 commitmentId)
+    internal
+    returns (address operatorAddr, address staker);
+```
+
+### _emitForfeited
+
+Forfeit events. Forfeit proceeds sit in this registry's free balance inside the
+manager until `sweepForfeitProceeds`; `ForfeitRecipientPending` surfaces them.
+
+
+```solidity
+function _emitForfeited(address staker, address operatorAddr, uint256 commitmentId, uint256 forfeitedAmount)
+    internal;
+```
 
 ### isOperator
 
@@ -415,7 +421,7 @@ function getOperatorSet() external view returns (address[] memory);
 
 ### getOperator
 
-Returns full operator struct with all performance metrics.
+Returns the full operator record, including its current `totalDelegatedStake`.
 
 
 ```solidity
@@ -664,7 +670,7 @@ Set or update the caller's operator metadata.
 Only active registered operators may call. Overwrites any prior sidecar
 record with (uri, contentHash, uint64(block.timestamp)) and emits the update event.
 Metadata is stored in a sidecar map isolated from the hot-path Operator record so
-isOperator getOperatorStake getOperatorSet reads are unaffected.
+isOperator, getOperatorSet and getOperator reads are unaffected.
 
 
 ```solidity
@@ -831,23 +837,6 @@ never underflow the FanIn/TokenWeighting accounting. No-op when unwired.
 
 ```solidity
 function _meshOnDecrease(OperatorRegistryStorage.Layout storage s, address operator, uint256 amount) internal;
-```
-
-### _pushStakeCheckpoint
-
-Append (or same-block rewrite) a timestamped checkpoint of `operator`'s aggregate
-`totalDelegatedStake`. Called on every stake mutation (register/delegate/release/
-forfeit) with the operator's POST-mutation stake. Checkpoints are kept strictly
-increasing in timestamp: if the tail checkpoint shares this block's timestamp it is
-overwritten in place (multiple same-block mutations collapse to the final value),
-otherwise a new checkpoint is appended. This keeps `stakeAt`'s binary search and hint
-validation well-defined. Reverts on the (practically-unreachable) `uint192` overflow
-rather than silently truncating a checkpoint value.
-
-
-```solidity
-function _pushStakeCheckpoint(OperatorRegistryStorage.Layout storage s, address operator, uint256 newStake)
-    internal;
 ```
 
 ### _authorizeUpgrade

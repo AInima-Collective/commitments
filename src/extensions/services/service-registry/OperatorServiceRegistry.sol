@@ -121,11 +121,8 @@ contract OperatorServiceRegistry is
         }
 
         s.operatorRegistered[msg.sender] = true;
-        s.operatorListIndex[msg.sender] = s.operatorList.length;
-        s.operatorList.push(msg.sender);
-        ++s.totalOperators;
 
-        emit OperatorRegistered(msg.sender, IVotingPowerSource(s.votingPowerSource).getVotingPower(msg.sender));
+        emit OperatorRegistered(msg.sender);
     }
 
     /// @inheritdoc IOperatorServiceRegistry
@@ -138,18 +135,6 @@ contract OperatorServiceRegistry is
         }
 
         s.operatorRegistered[operator] = false;
-        --s.totalOperators;
-
-        // Remove from operator list (swap-and-pop)
-        uint256 idx = s.operatorListIndex[operator];
-        uint256 lastIdx = s.operatorList.length - 1;
-        if (idx != lastIdx) {
-            address lastOp = s.operatorList[lastIdx];
-            s.operatorList[idx] = lastOp;
-            s.operatorListIndex[lastOp] = idx;
-        }
-        s.operatorList.pop();
-        delete s.operatorListIndex[operator];
 
         // Clear signing key so historical resolution at post-deregistration blocks
         // returns 0 → SignerNotRegistered in validate().
@@ -325,11 +310,6 @@ contract OperatorServiceRegistry is
         return OperatorServiceRegistryStorage.layout().operatorRegistry;
     }
 
-    /// @inheritdoc IOperatorServiceRegistry
-    function totalOperators() external view returns (uint256) {
-        return OperatorServiceRegistryStorage.layout().totalOperators;
-    }
-
     // =========================================================================
     // Admin — Quorum Threshold
     // =========================================================================
@@ -346,7 +326,8 @@ contract OperatorServiceRegistry is
 
     /// @notice Update the max age (in blocks) accepted for `referenceBlock`
     ///         in `validate()` and `isValidSignature()`.
-    /// @dev Setting to 0 restores the protocol default (256 blocks ≈ 1h at 12s/block).
+    /// @dev Reverts `ZeroAmount` on 0. Until first set, the default of 256 blocks (≈ 1h at
+    ///      12s/block) applies.
     function setMaxReferenceBlockAge(uint96 newValue) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newValue == 0) revert ZeroAmount();
         OperatorServiceRegistryStorage.Layout storage s = OperatorServiceRegistryStorage.layout();
@@ -377,10 +358,8 @@ contract OperatorServiceRegistry is
         if (signersLength != signatures.length) revert LengthMismatch();
         if (signersLength == 0) revert InvalidLength();
 
-        // Reject the `type(uint32).max` magic-value "live"
-        // path and unbounded historical snapshots. Force `referenceBlock` to be
-        // a real, recent past block.
-        if (referenceBlock == type(uint32).max) revert InvalidReferenceBlock();
+        // `referenceBlock` must be a real, recent past block. This also rejects the
+        // `type(uint32).max` "live" sentinel, so the helpers below only read history.
         if (referenceBlock >= block.number) revert InvalidReferenceBlock();
         uint96 maxAge = s.maxReferenceBlockAge == 0 ? DEFAULT_MAX_REFERENCE_BLOCK_AGE : s.maxReferenceBlockAge;
         if (block.number - uint256(referenceBlock) > uint256(maxAge)) {
@@ -417,16 +396,9 @@ contract OperatorServiceRegistry is
         OperatorServiceRegistryStorage.Layout storage s,
         address signingKey,
         uint32 referenceBlock
-    ) internal view returns (address) {
-        address operator;
-        if (referenceBlock == type(uint32).max) {
-            operator = address(s.signingKeyOperatorHistory[signingKey].latest());
-        } else {
-            if (referenceBlock >= block.number) revert InvalidReferenceBlock();
-            operator = address(s.signingKeyOperatorHistory[signingKey].upperLookup(uint96(referenceBlock)));
-        }
+    ) internal view returns (address operator) {
+        operator = address(s.signingKeyOperatorHistory[signingKey].upperLookup(uint96(referenceBlock)));
         if (operator == address(0)) revert SignerNotRegistered();
-        return operator;
     }
 
     function _getOperatorPower(OperatorServiceRegistryStorage.Layout storage s, address operator, uint32 referenceBlock)
@@ -434,9 +406,7 @@ contract OperatorServiceRegistry is
         view
         returns (uint256)
     {
-        IVotingPowerSource src = IVotingPowerSource(s.votingPowerSource);
-        if (referenceBlock == type(uint32).max) return src.getVotingPower(operator);
-        return src.getVotingPowerAt(operator, referenceBlock);
+        return IVotingPowerSource(s.votingPowerSource).getVotingPowerAt(operator, referenceBlock);
     }
 
     function _validateThresholdStake(
@@ -444,51 +414,18 @@ contract OperatorServiceRegistry is
         uint256 signedWeight,
         uint32 referenceBlock
     ) internal view {
-        uint256 totalWeight = _getTotalPower(s, referenceBlock);
-        uint256 thresholdStake = _getThresholdStake(s, referenceBlock);
+        uint256 totalWeight = IVotingPowerSource(s.votingPowerSource).getTotalPowerAt(referenceBlock);
+        uint256 thresholdStake = s.thresholdWeightHistory.upperLookup(uint96(referenceBlock));
         if (thresholdStake > signedWeight) revert InsufficientSignedStake();
 
         if (totalWeight == 0) revert InsufficientQuorumZero();
-        (uint256 quorumNum, uint256 quorumDen) = _getQuorum(s, referenceBlock);
+        uint256 packed = s.quorumHistory.upperLookup(uint96(referenceBlock));
+        uint256 quorumNum = packed >> 80;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint256 quorumDen = uint80(packed); // low 80 bits by construction
         if (signedWeight * quorumDen < quorumNum * totalWeight) {
             revert InsufficientQuorum(signedWeight, thresholdStake, totalWeight);
         }
-    }
-
-    function _getTotalPower(OperatorServiceRegistryStorage.Layout storage s, uint32 referenceBlock)
-        internal
-        view
-        returns (uint256)
-    {
-        IVotingPowerSource src = IVotingPowerSource(s.votingPowerSource);
-        if (referenceBlock == type(uint32).max) return src.getTotalPower();
-        if (referenceBlock >= block.number) revert InvalidReferenceBlock();
-        return src.getTotalPowerAt(referenceBlock);
-    }
-
-    function _getThresholdStake(OperatorServiceRegistryStorage.Layout storage s, uint32 referenceBlock)
-        internal
-        view
-        returns (uint256)
-    {
-        if (referenceBlock == type(uint32).max) return s.thresholdWeightHistory.latest();
-        if (referenceBlock >= block.number) revert InvalidReferenceBlock();
-        return s.thresholdWeightHistory.upperLookup(uint96(referenceBlock));
-    }
-
-    function _getQuorum(OperatorServiceRegistryStorage.Layout storage s, uint32 referenceBlock)
-        internal
-        view
-        returns (uint256, uint256)
-    {
-        if (referenceBlock == type(uint32).max) {
-            return (s.quorumNumeratorHistory.latest(), s.quorumDenominatorHistory.latest());
-        }
-        if (referenceBlock >= block.number) revert InvalidReferenceBlock();
-        return (
-            s.quorumNumeratorHistory.upperLookup(uint96(referenceBlock)),
-            s.quorumDenominatorHistory.upperLookup(uint96(referenceBlock))
-        );
     }
 
     // =========================================================================
@@ -503,14 +440,15 @@ contract OperatorServiceRegistry is
     }
 
     function _updateQuorum(uint256 quorumNumerator, uint256 quorumDenominator) internal {
-        if (
-            quorumNumerator > type(uint160).max || quorumDenominator > type(uint160).max || quorumDenominator == 0
-                || quorumNumerator > quorumDenominator
-        ) revert InvalidQuorumParameters();
+        if (quorumDenominator > type(uint80).max || quorumDenominator == 0 || quorumNumerator > quorumDenominator) {
+            revert InvalidQuorumParameters();
+        }
 
-        OperatorServiceRegistryStorage.Layout storage s = OperatorServiceRegistryStorage.layout();
-        s.quorumNumeratorHistory.push(uint96(block.number), uint160(quorumNumerator));
-        s.quorumDenominatorHistory.push(uint96(block.number), uint160(quorumDenominator));
+        // One checkpoint per update: numerator in the high 80 bits, denominator in the low 80.
+        // Both are at most 80 bits (numerator <= denominator), so the pack fits uint160.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint160 packed = uint160((quorumNumerator << 80) | quorumDenominator);
+        OperatorServiceRegistryStorage.layout().quorumHistory.push(uint96(block.number), packed);
         emit QuorumThresholdUpdated(quorumNumerator, quorumDenominator);
     }
 

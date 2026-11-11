@@ -1,4 +1,4 @@
-import { Input, Select } from '../ui'
+import { Button, Input, Select } from '../ui'
 import { type OperatorFilterState, isFilterActive } from '../../lib/operatorFilter'
 
 const ALL_SERVICES_VALUE = '__all__'
@@ -75,39 +75,37 @@ export function OperatorFilterBar({
           className="ds-row"
           style={{ gap: 0 }}
         >
-          <button
-            type="button"
+          <Button
             role="radio"
             aria-checked={!state.serviceOnly}
             aria-pressed={!state.serviceOnly}
-            className="ds-btn ds-btn--sm"
+            size="sm"
             onClick={() => onChange({ ...state, serviceOnly: false })}
           >
             All
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             role="radio"
             aria-checked={state.serviceOnly}
             aria-pressed={state.serviceOnly}
-            className="ds-btn ds-btn--sm"
+            size="sm"
             onClick={() => onChange({ ...state, serviceOnly: true })}
           >
             Service only
-          </button>
+          </Button>
         </div>
       )}
 
       <span aria-hidden />
 
       {filterActive && (
-        <button
-          type="button"
-          className="ds-btn ds-btn--sm ds-btn--ghost"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={clearFilters}
         >
           Clear filters
-        </button>
+        </Button>
       )}
     </div>
   )

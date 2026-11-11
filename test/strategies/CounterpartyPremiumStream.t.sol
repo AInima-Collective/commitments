@@ -2,14 +2,15 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding, DistributeContext} from "src/core/interfaces/IDistributionStrategy.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
 import {CounterpartyPremiumStream} from "src/distributions/CounterpartyPremiumStream.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 /// @dev Minimal 1:1 index adapter — the premium stream is independent of backing appreciation.
 contract MockStaticAdapter is IBackingAdapter {
@@ -44,12 +45,7 @@ contract CounterpartyPremiumStreamTest is Test {
         // Start well past t=0 so accrual math has room below `startTime`.
         vm.warp(1_000_000);
 
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         token = new MockERC20("mUSDC", "mUSDC", 18);
         adapter = new MockStaticAdapter();
         strategy = new CounterpartyPremiumStream(address(manager));
@@ -89,18 +85,20 @@ contract CounterpartyPremiumStreamTest is Test {
     // ---------------------------------------------------------------------
 
     function test_onCreated_storesStream() public view {
-        (uint256 rate, uint256 funded, uint256 claimed, address tok, uint64 start, bool bound) = strategy.streamOf(id);
+        (uint256 rate, uint256 funded, uint256 claimed, address tok, address cp, uint64 start, bool bound) =
+            strategy.streamOf(id);
         assertEq(rate, RATE);
         assertEq(funded, 0);
         assertEq(claimed, 0);
         assertEq(tok, address(token));
+        assertEq(cp, bob);
         assertEq(start, uint64(block.timestamp));
         assertTrue(bound);
     }
 
     function test_hooks_managerOnly() public {
         DistributeContext memory ctx;
-        vm.expectRevert(CounterpartyPremiumStream.OnlyManager.selector);
+        vm.expectRevert(StrategyBase.OnlyManager.selector);
         strategy.distribute(ctx);
     }
 
@@ -110,25 +108,25 @@ contract CounterpartyPremiumStreamTest is Test {
 
     function test_fundPremium_onlyCounterparty() public {
         vm.prank(alice);
-        vm.expectRevert(CounterpartyPremiumStream.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         strategy.fundPremium(id, 10e18);
 
         vm.prank(bob);
         strategy.fundPremium(id, 100e18);
-        (, uint256 funded,,,,) = strategy.streamOf(id);
+        (, uint256 funded,,,,,) = strategy.streamOf(id);
         assertEq(funded, 100e18);
         assertEq(token.balanceOf(address(strategy)), 100e18, "self-custody: premium held by the strategy");
     }
 
     function test_fundPremium_unboundReverts() public {
         vm.prank(bob);
-        vm.expectRevert(CounterpartyPremiumStream.NotBound.selector);
+        vm.expectRevert(StrategyBase.NotBound.selector);
         strategy.fundPremium(999, 1e18);
     }
 
     function test_fundPremium_zeroReverts() public {
         vm.prank(bob);
-        vm.expectRevert(CounterpartyPremiumStream.ZeroAmount.selector);
+        vm.expectRevert(StrategyBase.ZeroAmount.selector);
         strategy.fundPremium(id, 0);
     }
 
@@ -155,6 +153,30 @@ contract CounterpartyPremiumStreamTest is Test {
         assertEq(strategy.earnedOf(id), 1e18, "accrual capped by the counterparty's deposit");
     }
 
+    /// @dev A committer-chosen rate near uint256 max must saturate at `funded`, not overflow and
+    ///      lock `claim`, `pending` and `reclaimUnstreamed`.
+    function test_hugeRate_saturatesInsteadOfOverflowing() public {
+        uint256 hugeId = _create(type(uint256).max - 1);
+        vm.prank(bob);
+        strategy.fundPremium(hugeId, 100e18);
+        vm.warp(block.timestamp + 1000);
+
+        assertEq(strategy.earnedOf(hugeId), 100e18);
+        assertEq(strategy.reclaimableOf(hugeId), 0);
+        assertEq(manager.pending(hugeId, address(strategy), ""), 100e18);
+
+        vm.prank(alice);
+        manager.claim(hugeId, address(strategy), "");
+        assertEq(token.balanceOf(alice), 100e18);
+        assertEq(manager.pending(hugeId, address(strategy), ""), 0);
+
+        vm.prank(arbiter);
+        manager.releaseCommitment(hugeId);
+        vm.prank(bob);
+        vm.expectRevert(StrategyBase.NothingToClaim.selector);
+        strategy.reclaimUnstreamed(hugeId);
+    }
+
     function test_zeroRate_dormant() public {
         uint256 dormant = _create(0);
         vm.prank(bob);
@@ -179,12 +201,12 @@ contract CounterpartyPremiumStreamTest is Test {
         manager.claim(id, address(strategy), "");
 
         assertEq(token.balanceOf(alice), expected, "underwriter paid in raw token");
-        (,, uint256 claimed,,,) = strategy.streamOf(id);
+        (,, uint256 claimed,,,,) = strategy.streamOf(id);
         assertEq(claimed, expected);
 
         // Immediate re-claim: nothing new accrued in the same block.
         vm.prank(alice);
-        vm.expectRevert(CounterpartyPremiumStream.NothingToClaim.selector);
+        vm.expectRevert(StrategyBase.NothingToClaim.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -210,7 +232,7 @@ contract CounterpartyPremiumStreamTest is Test {
 
         // Even the counterparty (who funded) cannot claim — only the underwriter earns.
         vm.prank(bob);
-        vm.expectRevert(CounterpartyPremiumStream.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -256,7 +278,7 @@ contract CounterpartyPremiumStreamTest is Test {
         manager.releaseCommitment(id);
 
         vm.prank(alice);
-        vm.expectRevert(CounterpartyPremiumStream.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         strategy.reclaimUnstreamed(id);
     }
 
@@ -290,7 +312,7 @@ contract CounterpartyPremiumStreamTest is Test {
 
         // A second reclaim finds nothing.
         vm.prank(bob);
-        vm.expectRevert(CounterpartyPremiumStream.NothingToClaim.selector);
+        vm.expectRevert(StrategyBase.NothingToClaim.selector);
         strategy.reclaimUnstreamed(id);
     }
 

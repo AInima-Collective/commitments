@@ -40,6 +40,7 @@ export function PositionPanel({
     shares,
     encumbered,
     free,
+    held,
     underlyingValue,
     assetSymbol,
     assetDecimals,
@@ -50,10 +51,11 @@ export function PositionPanel({
   const symbol = assetSymbol ?? 'TOKEN'
   const aDecimals = assetDecimals ?? 18
   const sDecimals = shareDecimals ?? 18
-  const totalShares = shares ?? 0n
-  const freeShares = free ?? 0n
-  const encumberedShares =
-    encumbered ?? (totalShares > freeShares ? totalShares - freeShares : 0n)
+  // Wallet shares count as free: they can be redeemed, or committed with
+  // `createAndFund`, which deposits them in the same transaction.
+  const totalShares = held ?? 0n
+  const freeShares = (shares ?? 0n) + (free ?? 0n)
+  const encumberedShares = encumbered ?? 0n
   const hasPosition = totalShares > 0n
   const showUsd = underlyingUsd !== undefined
 

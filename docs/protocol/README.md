@@ -27,7 +27,7 @@ These pages explain the shipped contracts and how to operate them. Solidity is t
 - [Bilateral settlement](architecture/bilateral-settlement.md)
 - [Why Mesh](architecture/why-mesh.md)
 - [Rewards coordinator](architecture/rewards-coordinator.md)
-- [Rewards updater adapter](architecture/rewards-merkler.md)
+- [Rewards updater](architecture/rewards-merkler.md)
 
 ## Guides
 

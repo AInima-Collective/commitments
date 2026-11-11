@@ -10,7 +10,7 @@ import { CommitmentStatusBadge } from '../protocol'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { type UnifiedProposalRowEntry } from '../../hooks/useUnifiedRows'
-import { formatBps } from '../../utils/commitments'
+import { formatBps } from '../../lib/commitments'
 import { formatDuration } from '../../lib/format'
 import { ProposalCard } from './ProposalCard'
 

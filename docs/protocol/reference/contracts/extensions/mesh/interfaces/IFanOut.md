@@ -5,9 +5,6 @@ source: src/extensions/mesh/interfaces/IFanOut.sol
 generated: true
 ---
 # IFanOut
-**Inherits:**
-[IFlowQuery](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFlowQuery)
-
 **Title:**
 IFanOut
 
@@ -30,7 +27,7 @@ function initialize(address provider_, address manager_) external;
 |Name|Type|Description|
 |----|----|-----------|
 |`provider_`|`address`|The single provider address whose stake is distributed|
-|`manager_`|`address`|The manager/owner address that can configure outflows|
+|`manager_`|`address`|Recorded in the `Initialized` event only; it has no powers on the node. Only the provider configures outflows.|
 
 
 ### setOutflows
@@ -147,7 +144,7 @@ function getUserInfo(address staker, bytes32 denom) external view returns (UserI
 
 |Name|Type|Description|
 |----|----|-----------|
-|`info`|`UserInfo`|UserInfo struct with locked, maxLien, totalForfeitable|
+|`info`|`UserInfo`|UserInfo struct with locked, totalForfeitable|
 
 
 ### getOutflows

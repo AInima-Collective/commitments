@@ -92,7 +92,7 @@ The SHOULD-level values above are baselines, not arbitrary numbers. The threat e
 
 Implementations choosing to deviate from a SHOULD baseline are conformant but assume responsibility for re-validating these threat trade-offs in their deployment context.
 
-**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `setMinChallengeWindow(0)` restores the one-day floor, values greater than or equal to one day are accepted, and shorter non-zero values revert with `MinChallengeWindowBelowFloor()`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
+**`MIN_CHALLENGE_WINDOW` is a floor, not merely a default.** The enforced minimum on production deployments MUST NOT be configurable below `86_400`; implementers MAY raise it. The reference manager enforces this on-chain: `initialize` sets the minimum to one day, values greater than or equal to one day are accepted, and shorter values (zero included) revert with `MinChallengeWindowBelowFloor()`. An implementation that exposes a weaker production setter deviates from this MUST. Administrators SHOULD route floor increases through the §0.6 staged-activation pattern rather than applying them immediately. Existing commitments retain their creation-time `challengeWindow`; a floor increase affects only future creations.
 
 #### 0.4 Conformance levels
 
@@ -214,7 +214,7 @@ interface ICommitmentManager /* Part A surface */ {
     // --- Circuit breaker ---
     function pauseForfeiture() external;
     function unpauseForfeiture() external;
-    function forfeiturePaused() external view returns (bool);
+    // Pause state is read through `pauseState()` (§A.6): its first return value is the paused flag.
 }
 ```
 
@@ -267,7 +267,7 @@ For every token `T` the manager custodies:
 
 This MUST hold after every state-mutating call (INV-1). The invariant's scope is manager-custodied tokens only: reward tokens held in self-custody strategy contracts or pulled from external sources at claim time (§D.8) are a separate accounting space those strategies own; the manager makes no claims about them.
 
-Implementations SHOULD maintain per-token aggregate counters (`totalFree`, `totalEncumbered`, `totalEscrow`) so the invariant is checkable in O(1) by monitoring and fuzz harnesses.
+Implementations SHOULD maintain per-token aggregate counters (`totalFree`, `totalEncumbered`, `totalEscrow`) so the invariant is checkable in O(1) by monitoring and fuzz harnesses. The reference implementation returns them from `ledgerTotals(token)`, together with the mutual premium reserve aggregate `totalMutualPremium` that closes the extended partition ([mutuals extension](./ERC-COMMITMENTS-MUTUALS.md) INV-P1).
 
 #### A.6 Circuit breaker
 
@@ -319,7 +319,6 @@ event EncumbranceMovedToEscrow(uint256 indexed commitmentId, address indexed str
 /// which carries the recipient.
 event EncumbrancePaidExternal(uint256 indexed commitmentId, address indexed strategy, address indexed token, uint256 units);
 
-event EncumbranceTransferred(address indexed from, address indexed to, address token, uint256 units);
 event EncumbranceContributed(uint256 indexed commitmentId, address indexed contributor, address indexed receiver, uint256 units);
 
 event ForfeiturePauseToggled(bool paused);
@@ -333,7 +332,7 @@ error ForfeitureIsPaused();
 error Unauthorized();
 ```
 
-**Why three decrement events instead of one.** A single combined `EncumbranceDecreased(user, token, units)` covering every encumbered-side debit would be **path-ambiguous**: a ledger-mirroring indexer could not tell from the event alone whether the holder's free balance grew (release), the value moved to a strategy's escrow, or the value left custody entirely — three cases with different conservation effects. The three events above partition the decrement paths so each can be mirrored without a state read; an implementation MUST NOT collapse them into a single combined decrement event. The forfeit-transfer path (encumbered → counterparty free) is carried by `ForfeitExecuted` (§C.7), and the bilateral-settlement path by `EncumbranceTransferred`.
+**Why three decrement events instead of one.** A single combined `EncumbranceDecreased(user, token, units)` covering every encumbered-side debit would be **path-ambiguous**: a ledger-mirroring indexer could not tell from the event alone whether the holder's free balance grew (release), the value moved to a strategy's escrow, or the value left custody entirely — three cases with different conservation effects. The three events above partition the decrement paths so each can be mirrored without a state read; an implementation MUST NOT collapse them into a single combined decrement event. The forfeit-transfer path (encumbered → counterparty free) is carried by `ForfeitExecuted` (§C.7), and the bilateral-settlement path (encumbered → receiver free) by the agreements extension's `AgreementSettled`.
 
 **Token screening.** The rebasing-token prohibition and fee-on-transfer screening of §A.2 are deployment policy; this standard does not mandate an on-chain screen or reserve an error for it (the reference implementation performs no on-chain token screening). Deployments that do screen SHOULD document the error they revert with.
 
@@ -398,20 +397,24 @@ struct StrategyBinding {
 interface ICommitmentManager /* Part C surface */ {
     struct Commitment {
         address committer;
-        address arbiter;
-        address counterparty;
-        address token;                 // backing token
-        address adapter;               // backing adapter
-        uint256 amount;                // raw backing-token units currently encumbered under this commitment
         uint16 maxPenaltyBps;          // 0..10_000
-        uint64 challengeWindow;        // seconds
-        uint64 createdAt;
-        uint64 expiresAt;              // 0 = no expiry
         bool released;
         bool forfeited;
-        // Optional metadata
-        string metadataURI;
+        uint64 closedAt;               // close timestamp; 0 = active (also `closedAt(id)`)
+        address arbiter;
+        uint64 challengeWindow;        // seconds
+        address counterparty;
+        uint64 createdAt;
+        address token;                 // backing token
+        uint64 expiresAt;              // 0 = no expiry
+        address adapter;               // backing adapter
+        uint64 unbondInitiatedAt;      // committer-unbond start; 0 = none pending (also `unbondInitiatedAt(id)`)
+        uint256 amount;                // raw backing-token units currently encumbered under this commitment
+        // Optional metadata: only the hash is stored, as the on-chain anchor. The URI is
+        // carried by `CommitmentCreated` and is not part of the stored record.
         bytes32 metadataHash;
+        uint64 cumulativePausedAtStart;       // pause snapshot at create; anchors the expiry clock-stop (§A.6)
+        uint64 unbondCumulativePausedAtStart; // pause snapshot at requestUnbond; anchors the unbonding clock-stop (§A.6)
     }
 
     struct CommitmentParams {
@@ -435,8 +438,11 @@ interface ICommitmentManager /* Part C surface */ {
         uint64 initiatedAt;
         bool executed;
         bool cancelled;
+        uint64 cumulativePausedAtStart; // pause snapshot at initiate; anchors the challenge-window clock-stop (§A.6)
     }
 
+    /// `totalEncumbered` is the ledger's `encumberedBalance(token, user)`; only
+    /// `totalForfeitable` needs its own storage.
     struct UserExposure {
         uint256 totalEncumbered;
         uint256 totalForfeitable;
@@ -465,10 +471,8 @@ interface ICommitmentManager /* Part C surface */ {
     function getUserExposure(address token, address user) external view returns (UserExposure memory);  // token-first, §0.1
     function strategiesOf(uint256 commitmentId) external view returns (address[] memory);
     function unbondInitiatedAt(uint256 commitmentId) external view returns (uint64);
-    function getUserCommitmentIds(address user) external view returns (uint256[] memory);
     function closedAt(uint256 commitmentId) external view returns (uint64);           // 0 while active
     function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256);  // units forfeited at execute
-    function acceptsContributions(uint256 commitmentId) external view returns (bool); // §C.6 opt-in state
 }
 ```
 
@@ -508,10 +512,7 @@ where, over all active commitments of that user backed by that token:
   totalForfeitable  = Σ commitment.amount × maxPenaltyBps / 10_000
 ```
 
-The invariant MUST be checked when:
-
-- Creating a commitment.
-- Accepting an agreement ([agreements extension](./ERC-COMMITMENTS-AGREEMENTS.md)).
+**Erratum: implied, not enforced by a revert.** Implementations need not check the invariant with a revert when creating a commitment or accepting an agreement ([agreements extension](./ERC-COMMITMENTS-AGREEMENTS.md)); such a check cannot fail. Each lien adds `amount × maxPenaltyBps / 10_000 ≤ amount` of exposure (`maxPenaltyBps ≤ 10_000` is validated first), and every later writer keeps a lien's forfeitable share at most its live amount. The invariant holds by construction. `totalEncumbered` is the ledger's `encumberedBalance` (INV-2), so implementations SHOULD NOT keep a second counter for it; the reference implementation stores only `totalForfeitable` and `getUserExposure` returns it beside the ledger balance, so INV-3 stays observable.
 
 The invariant is automatically maintained when a commitment terminates, and is preserved by validated movements (§D.5) and contributions (§C.6) through the exposure-diff rule (see Rationale).
 
@@ -523,7 +524,7 @@ Forfeiture MUST be a two-phase process:
 
 **Phase 1 — Initiate.** `initiateForfeit(id, penaltyBps)` MUST be callable only by the arbiter. `penaltyBps` MUST NOT exceed the commitment's `maxPenaltyBps`. Multiple concurrent active proposals on the same commitment MUST be rejected (INV-7).
 
-**Phase 2 — Execute.** `executeForfeit(id)` MUST be callable by anyone after `initiatedAt + challengeWindow`. It MUST revert while `forfeiturePaused()` (§A.6). On execution, in this order:
+**Phase 2 — Execute.** `executeForfeit(id)` MUST be callable by anyone after `initiatedAt + challengeWindow`. It MUST revert while forfeiture is paused (§A.6). On execution, in this order:
 
 1. Mark the proposal executed and the commitment forfeited; decrement the committer's exposure by the commitment's full contribution.
 2. **Forfeit transfer (manager-internal, unconditional):** compute `unitsToForfeit = amount × penaltyBps / 10_000`; move `unitsToForfeit` from the committer's encumbered balance to the **counterparty's free balance** on the ledger. The residual (`amount − unitsToForfeit`) stays encumbered through step 3.
@@ -598,10 +599,6 @@ event CommitmentCreated(
     string metadataURI,
     bytes32 metadataHash
 );
-// Companion to CommitmentCreated, emitted only when counterparty != address(0). CommitmentCreated's three
-// indexed slots (commitmentId, committer, arbiter) are full; this carries the counterparty as a fourth
-// filterable discovery axis so an indexer can find "commitments where I am the counterparty" without a scan.
-event CommitmentCounterparty(uint256 indexed commitmentId, address indexed counterparty);
 event CommitmentReleased(uint256 indexed commitmentId, address indexed arbiter);
 event CommitmentExpired(uint256 indexed commitmentId, address indexed committer);
 
@@ -617,7 +614,6 @@ event CommitmentUnbondCancelled(uint256 indexed commitmentId);
 error ZeroArbiter();
 error ZeroCounterparty();
 error PenaltyExceedsMax();
-error ExposureAllocationExceeded();
 error TooManyStrategies();
 error NotArbiter();
 error NotCommitter();
@@ -746,13 +742,11 @@ Manager-internal lifecycle moves (§A.3) do not go through `TokenMovement` and a
 ```solidity
 function distribute(uint256 commitmentId, address strategy) external;
 function claim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
-function distributeAndClaim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
 function pending(uint256 commitmentId, address strategy, bytes calldata claimData) external view returns (uint256);
 ```
 
 - `distribute(id, strategy)` MUST be permissionless, MUST revert `UnknownStrategy` if `strategy` is not bound to `id`, MUST revert `ForfeitPending` while a forfeit proposal is active on `id`, and MUST revert `CommitmentInactive` once the commitment is closed. It calls `strategy.distribute(ctx)` and applies the returned movements per §D.5. Reverts (from the strategy or from validation) bubble to the caller — the caller chose the strategy; failure is actionable feedback, not a liveness concern.
 - `claim(id, strategy, claimData)` is shaped the same; caller authorization is the strategy's job (the context carries `caller`). Claims MUST remain available after the commitment closes (released or forfeited) so parked accrual is recoverable; `ClaimContext.closedAt` carries the close timestamp (0 while active) so strategies can implement post-close policies.
-- `distributeAndClaim(id, strategy, claimData)` is `distribute(id, strategy)` immediately followed by `claim(id, strategy, claimData)` under a single guard. It exists to remove the pending-vs-banked ordering footgun: a caller who reads `pending()`, then `distribute()`s (moving newly-accrued value into escrow), then `claim()`s in separate transactions can otherwise observe a stale figure. Same authorization and revert rules as its two halves.
 - Implementations MAY add a `distributeAll(commitmentId)` convenience defined as the fold of `distribute(id, s)` over `strategiesOf(id)` in array order.
 
 **Iteration order.** Wherever multiple bound strategies are processed in one call (lifecycle hooks, `distributeAll`, the agreements extension's pre-settle distribute), the manager MUST iterate in `strategies[]` array order, validating and applying each strategy's movements before calling the next. Deterministic ordering is load-bearing for keepers and indexers.
@@ -788,13 +782,12 @@ The manager is the **sole executor** of movements. For every movement a strategy
 
 **Exposure-preserving shrink (manager-applied, never strategy-supplied).** For every applied `FromEncumbered*` debit of `units`, the manager itself MUST:
 
-1. `c.amount -= units`
-2. `totalEncumbered[committer][token] -= units`
-3. `totalForfeitable[committer][token] -= (exposure_pre − exposure_post)` where `exposure = (c.amount × c.maxPenaltyBps) / 10_000` computed before and after step 1 (the exposure-diff rule — see Rationale), clamped to the current `totalForfeitable` as defense-in-depth.
+1. `c.amount -= units` (the ledger debit lowers the committer's `encumberedBalance`, the `totalEncumbered` of INV-3, by the same `units`)
+2. `totalForfeitable[committer][token] -= (exposure_pre − exposure_post)` where `exposure = (c.amount × c.maxPenaltyBps) / 10_000` computed before and after step 1 (the exposure-diff rule — see Rationale), clamped to the current `totalForfeitable` as defense-in-depth.
 
 Strategies return only `(kind, from, to, token, units)`; they cannot specify, skip, or scale exposure effects. The proportional shrink leaves `maxPenaltyBps / 10_000` constant per commitment, so INV-3 holds across any movement sequence.
 
-**Forfeit-pending guard.** At the **`distribute` call site**, `FromEncumbered*` movements MUST be rejected (`MovementBlockedByForfeit`) while a forfeit proposal is active on the bound commitment — the encumbered position is spoken for until the proposal resolves, and `distribute` is permissionless, so without the guard anyone could race value out from under a pending forfeit. The guard is deliberately scoped to the distribute site — it does NOT apply to lifecycle-hook batches. The committer-driven close paths (`expireCommitment`, `finalizeUnbond`) already revert `ForfeitPending` at the entry point before any hook runs; the forfeit-site batch runs strictly after the forfeit transfer against the post-forfeit residual (§D.4); and the arbiter-immediate `releaseCommitment` may run release hooks while the arbiter's own proposal is still pending — that is the arbiter abandoning their own forfeit, which only the arbiter could have executed. The guard is therefore scoped to the distribute site specifically, rather than applied unconditionally over all `FromEncumbered*` movements.
+**Forfeit-pending guard.** At the **`distribute` call site**, `FromEncumbered*` movements MUST NOT be applied while a forfeit proposal is active on the bound commitment — the encumbered position is spoken for until the proposal resolves, and `distribute` is permissionless, so without the guard anyone could race value out from under a pending forfeit. The reference implementation enforces this at entry: `distribute` reverts `ForfeitPending` (§D.3), the agreements extension's pre-settle distribute skips a leg with a live proposal, and the reentrancy guard stops a proposal appearing mid-call, so no distribute-site batch ever runs against a pending forfeit. The guard is deliberately scoped to the distribute site — it does NOT apply to lifecycle-hook batches. The committer-driven close paths (`expireCommitment`, `finalizeUnbond`) already revert `ForfeitPending` at the entry point before any hook runs; the forfeit-site batch runs strictly after the forfeit transfer against the post-forfeit residual (§D.4); and the arbiter-immediate `releaseCommitment` may run release hooks while the arbiter's own proposal is still pending — that is the arbiter abandoning their own forfeit, which only the arbiter could have executed. The guard is therefore scoped to the distribute site specifically, rather than applied unconditionally over all `FromEncumbered*` movements.
 
 A validation failure in `distribute`/`claim` entry points reverts the transaction with the specific movement-validation error (see the Part D error vocabulary below). A validation failure inside a guarded lifecycle hook fails that strategy's batch per §D.6.
 
@@ -864,7 +857,6 @@ error MovementWrongToken(address token, address expected);
 error MovementEscrowRecipientNotStrategy(address to, address strategy);
 error MovementRecipientNotParty(address to);
 error MovementExceedsCommitment(uint256 units, uint256 amount);  // INV-4
-error MovementBlockedByForfeit();
 error MovementFromNotStrategy(address from, address strategy);   // INV-5
 ```
 
@@ -926,11 +918,11 @@ Routes a configured share of the backing's index appreciation to the counterpart
 
 #### FlatFeeAtCreate (informative; self-custody)
 
-A fixed fee paid to the commitment's **counterparty** as a condition of commitment creation. (The §D.5 recipient allow-list restricts manager-mediated payouts to the commitment's parties; a fee to an unrelated third party uses a self-custody strategy shape instead.) Per-commitment state: `{ fee, paid }`. Because `onCommitmentCreated` returns no movements (§D.4), the fee is prefunded — but NOT via `fundStrategy`: the manager's escrow is a single per-`(strategy, token)` pot with no funder attribution, so escrow-prefunding a create-time obligation is a first-come pot (a front-runner can bind a fee sized to someone else's prefund and have their counterparty drain it), and escrow debits exist only inside the commitment-scoped, party-only movement pipeline (§D.5), leaving overfunding stranded. Instead the strategy self-custodies and keys credit by committer: the committer (or a sponsor) calls `prefund(committer, token, fee)` beforehand; `onCommitmentCreated` consumes the **committer's own** credit and **reverts the creation otherwise** — a deliberate exercise of the compatibility-refusal path. Unconsumed credit is recoverable via `refundUnallocated(token, amount)`. The counterparty collects via `manager.claim`; the strategy returns an empty movement array, pays from its own balance, and emits `DistributionPaid` itself (§D.7).
+A fixed fee paid to the commitment's **counterparty** as a condition of commitment creation. (The §D.5 recipient allow-list restricts manager-mediated payouts to the commitment's parties; a fee to an unrelated third party uses a self-custody strategy shape instead.) Per-commitment state: `{ fee, token, collected, bound }`. Because `onCommitmentCreated` returns no movements (§D.4), the fee is prefunded — but NOT via `fundStrategy`: the manager's escrow is a single per-`(strategy, token)` pot with no funder attribution, so escrow-prefunding a create-time obligation is a first-come pot (a front-runner can bind a fee sized to someone else's prefund and have their counterparty drain it), and escrow debits exist only inside the commitment-scoped, party-only movement pipeline (§D.5), leaving overfunding stranded. Instead the strategy self-custodies and keys credit by committer: the committer (or a sponsor) calls `prefund(committer, token, fee)` beforehand; `onCommitmentCreated` consumes the **committer's own** credit and **reverts the creation otherwise** — a deliberate exercise of the compatibility-refusal path. Unconsumed credit is recoverable via `refundUnallocated(token, amount)`. The counterparty collects via `manager.claim`; the strategy returns an empty movement array, pays from its own balance, and emits `DistributionPaid` itself (§D.7).
 
 #### CounterpartyPremiumStream (informative; self-custody)
 
-A pay-as-you-go premium stream from the commitment's counterparty to its committer. Per-commitment state is `{ ratePerSecond, funded, claimed, token, startTime, bound }`. The counterparty funds the strategy's own balance through `fundPremium`; accrual begins when the strategy is bound, is capped by cumulative funding, and freezes at the manager's recorded `closedAt`. The committer collects through `manager.claim`, while the strategy transfers from its own balance, returns an empty movement array, and emits `DistributionPaid`. After close, the counterparty may recover any unstreamed remainder through `reclaimUnstreamed`. This direction cannot use a manager-sourced `TokenMovement` because the movement vocabulary never debits the counterparty.
+A pay-as-you-go premium stream from the commitment's counterparty to its committer. Per-commitment state is `{ ratePerSecond, funded, claimed, token, counterparty, startTime, bound }`, with the counterparty recorded at binding. The counterparty funds the strategy's own balance through `fundPremium`; accrual begins when the strategy is bound, is capped by cumulative funding, and freezes at the manager's recorded `closedAt`. The committer collects through `manager.claim`, while the strategy transfers from its own balance, returns an empty movement array, and emits `DistributionPaid`. After close, the counterparty may recover any unstreamed remainder through `reclaimUnstreamed`. This direction cannot use a manager-sourced `TokenMovement` because the movement vocabulary never debits the counterparty.
 
 #### Node-local mesh reward accumulators (informative; not distribution strategies)
 
@@ -1042,7 +1034,7 @@ This is a new standard; no backwards compatibility issues arise. It requires no 
 
 ## Test Cases
 
-The reference implementation ships a conformance harness exercising INV-1 through INV-10 across deposit, encumber, forfeit, unbond, expire, fund, distribute, claim, contribute, and hook-failure scenarios. In the reference repository the suites live at `test/manager/conformance/` (the partition/exposure invariant fuzz, INV-1..INV-10) and `test/conformance/` (cross-cutting suites, including the rewards-coordinator invariants), with per-subsystem conformance directories under `test/mesh/`, `test/registry/`, and `test/services/`.
+The reference implementation ships a conformance harness exercising INV-1 through INV-10 across deposit, encumber, forfeit, unbond, expire, fund, distribute, claim, contribute, and hook-failure scenarios. In the reference repository the suites live at `test/manager/conformance/` (the partition/exposure invariant fuzz, INV-1..INV-10), with per-subsystem conformance directories under `test/registry/`, `test/rewards/`, and `test/services/`.
 
 The minimal worked example below illustrates the exposure allocation invariant (INV-3) and the ledger-consistency invariant (INV-2). The two-strategy lifecycle walkthrough is §D.9; the hook-failure walkthrough is in Security Considerations.
 
@@ -1087,6 +1079,7 @@ src/
 │   ├── ERC20StaticAdapter.sol          (Part B)
 │   └── ERC4626Adapter.sol              (Part B)
 ├── distributions/
+│   ├── StrategyBase.sol                (shared manager gate, errors, no-op hooks)
 │   ├── IndexAppreciationYield.sol      (taxonomy: premium / commission)
 │   ├── FlatFeeAtCreate.sol             (taxonomy: create-time fee)
 │   └── CounterpartyPremiumStream.sol   (taxonomy: time-based premium stream)
@@ -1104,8 +1097,6 @@ src/
 |---|---|
 | `createCommitmentFor(committer, params, deadline, nonce, sig)` | EIP-712 relayer pattern; canonical typehash per §C.8. |
 | `nonces(committer)` | View companion to `createCommitmentFor`. |
-| `batchCreateCommitments(params[])` | Atomic creation of multiple commitments. |
-| `batchReleaseCommitments(ids[])` | Atomic release; reverts whole batch on any item failure. |
 | `distributeAll(commitmentId)` | Array-order fold of `distribute` over the bound strategies (§D.3). |
 | `sweepFailedHook(commitmentId, strategy)` | Permissionless re-drive of a failed lifecycle hook (§D.6). |
 | `setOperatorRegistry(address)` | Admin wiring of registry callbacks ([services extension](./ERC-COMMITMENTS-SERVICES.md) §2.4). |
@@ -1148,7 +1139,7 @@ Rebasing tokens break INV-1 structurally and MUST be rejected (§A.2). Fee-on-tr
 
 ### Challenge window timing
 
-`challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected. Implementers MAY raise the floor for higher-stakes deployments; they MUST NOT expose a production path that lowers the enforced floor below `MIN_CHALLENGE_WINDOW`. The reference implementation's `setMinChallengeWindow` accepts zero only as a sentinel restoring the one-day floor and rejects shorter non-zero values.
+`challengeWindow < MIN_CHALLENGE_WINDOW` MUST be rejected. Implementers MAY raise the floor for higher-stakes deployments; they MUST NOT expose a production path that lowers the enforced floor below `MIN_CHALLENGE_WINDOW`. The reference implementation's `setMinChallengeWindow` rejects every value below one day, zero included.
 
 ### Stale forfeit proposals
 
@@ -1156,7 +1147,7 @@ A stuck forfeit proposal blocks `finalizeUnbond` until either side acts. The `FO
 
 ### Exposure allocation violation
 
-The invariant `totalForfeitable ≤ totalEncumbered` MUST be checked on every `createCommitment` (and agreement acceptance, per the extension). Violation would allow over-promising.
+A violation of `totalForfeitable ≤ totalEncumbered` would allow over-promising. It holds by construction rather than by a revert (§C.2 erratum): `maxPenaltyBps ≤ 10_000` MUST be validated on every `createCommitment` and agreement leg, and every amount change MUST use the exposure-diff rule.
 
 ### Circuit breaker role separation
 

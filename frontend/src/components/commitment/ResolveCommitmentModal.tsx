@@ -6,19 +6,19 @@ import {
   commitmentLifecycle,
 } from '../protocol'
 import { useCommitmentYield } from '../../hooks/useCommitmentYield'
-import { useNowSeconds } from '../../hooks/useNow'
+import { useDisplayNow } from '../../hooks/useDisplayNow'
 import { useForfeitProposal } from '../../hooks/useForfeitProposal'
 import { useMutualMembership } from '../../hooks/useMutualMembership'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { useUnbondStatus } from '../../hooks/useUnbondStatus'
 import {
   type CommitmentWithStatus,
-} from '../../utils/commitments'
+} from '../../lib/commitments'
 import {
   deriveViewerRole,
   getAvailableActions,
   type ViewerRole,
-} from '../../utils/resolveActions'
+} from '../../lib/resolveActions'
 import { EmptyState, Modal, Notice, StatBlock, TokenAmount, Tooltip } from '../ui'
 import { ResolveActionRow } from './actions/ResolveActionRow'
 
@@ -27,7 +27,6 @@ interface ResolveCommitmentModalProps {
   onClose: () => void
   commitment: CommitmentWithStatus
   managerAddress: Address
-  vaultAddress: Address | undefined
   connectedAddress: Address | undefined
   isConnected: boolean
   /** Refetch parent data on success. Receives the confirming tx receipt when
@@ -78,7 +77,8 @@ export function ResolveCommitmentModal({
   const pendingYield = yieldInfo.totalPending
 
   const viewerRole: ViewerRole = deriveViewerRole(commitment, connectedAddress)
-  const nowSec = useNowSeconds()
+  // Chain time on anvil, as the Mutual page uses, so a warp moves both alike.
+  const nowSec = BigInt(useDisplayNow())
 
   const actions = getAvailableActions({
     commitment,
@@ -129,8 +129,11 @@ export function ResolveCommitmentModal({
     ? Math.max(0, Math.min(executionDelayTotalSecs, Number(nowSec - forfeit.proposal.initiatedAt)))
     : 0
 
-  // Deallocation-window countdown state (mutual member exit).
-  const exitRequested = membership.exitRequestedAt > 0n
+  // Deallocation-window countdown state (mutual member exit). A request lapses
+  // at twice the window and then reads as no request, as in `getAvailableActions`.
+  const exitRequested =
+    membership.exitRequestedAt > 0n &&
+    nowSec < membership.exitRequestedAt + 2n * membership.deallocationWindow
   const exitTotalSecs = Number(membership.deallocationWindow)
   const exitElapsed = exitRequested
     ? Math.max(0, Math.min(exitTotalSecs, Number(nowSec - membership.exitRequestedAt)))

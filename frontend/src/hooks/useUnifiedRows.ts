@@ -5,8 +5,8 @@ import {
   type UnifiedCommitmentRow,
 } from './useIndexedCommitments'
 import { useAgreements } from './useAgreements'
-import { type AgreementProposalWithStatus } from '../utils/agreements'
-import { type CommitmentStatus } from '../utils/commitments'
+import { type AgreementProposalWithStatus } from '../lib/agreements'
+import { type CommitmentStatus } from '../lib/commitments'
 
 /** Status superset used by the unified table — adds `PENDING` for unaccepted proposals. */
 export type UnifiedRowStatus = CommitmentStatus | 'PENDING'

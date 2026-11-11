@@ -2,63 +2,36 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding, TokenMovement, MovementKind} from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {RecordingStrategy, MOCK_DISTRIBUTE, MOCK_CLAIM, MOCK_RELEASED, MOCK_FORFEITED} from "./mocks/StrategyMocks.sol";
 
 /// @title MovementValidationTest
 /// @notice The per-kind allow-list matrix of ERC §D.4/§D.5: who can move what, where, capped by
 ///         what — and the manager-applied exposure shrink (INV-4) and escrow isolation (INV-5).
-contract MovementValidationTest is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
+contract MovementValidationTest is ManagerTestBase {
     RecordingStrategy internal strategy;
 
-    address internal admin = makeAddr("admin");
     address internal alice = makeAddr("alice"); // committer
     address internal arbiter = makeAddr("arbiter");
     address internal bob = makeAddr("bob"); // counterparty
     address internal mallory = makeAddr("mallory"); // outside the commitment's parties
 
     uint256 internal id;
-    uint64 internal constant WINDOW = 2 days;
 
-    function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
+    function setUp() public override {
+        super.setUp();
         strategy = new RecordingStrategy();
-
-        token.mint(alice, 1_000e18);
-        vm.startPrank(alice);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
+        _fund(alice, 1_000e18);
 
         // Commitment: 100 units @ 50% max penalty, one bound strategy.
-        ICM.CommitmentParams memory p;
-        p.arbiter = arbiter;
-        p.counterparty = bob;
-        p.token = address(token);
-        p.adapter = address(adapter);
-        p.amount = 100e18;
-        p.maxPenaltyBps = 5000;
-        p.challengeWindow = WINDOW;
+        ICM.CommitmentParams memory p = _baseParams(arbiter, bob, 100e18, 5000);
         p.strategies = new StrategyBinding[](1);
         p.strategies[0] = StrategyBinding(address(strategy), "");
-        vm.prank(alice);
-        id = manager.createCommitment(p);
+        id = _createAs(alice, p);
     }
 
     function _move(MovementKind kind, address from, address to, address tkn, uint256 units)
@@ -71,8 +44,8 @@ contract MovementValidationTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 
     // =========================================================================
@@ -347,6 +320,11 @@ contract MovementValidationTest is Test {
         manager.pending(id, mallory, "");
     }
 
+    function test_claim_unknownStrategy() public {
+        vm.expectRevert(ICM.UnknownStrategy.selector);
+        manager.claim(id, mallory, "");
+    }
+
     function test_distributeAll_iteratesInArrayOrder() public {
         strategy.setMoves(
             MOCK_DISTRIBUTE, _move(MovementKind.FromEncumberedToEscrow, alice, address(strategy), address(token), 1e18)
@@ -355,49 +333,5 @@ contract MovementValidationTest is Test {
         assertEq(strategy.distributeCalls(), 1);
         assertEq(manager.escrowOf(address(token), address(strategy)), 1e18);
     }
-
-    // =========================================================================
-    // distributeAndClaim (#60) — atomic distribute-then-claim
-    // =========================================================================
-
-    /// @dev The footgun this fixes: distribute banks live accrual into escrow, and claim pays only
-    ///      banked accrual. Bundled, the claim pays exactly what the distribute just banked.
-    function test_distributeAndClaim_banksThenPays_oneCall() public {
-        strategy.setMoves(
-            MOCK_DISTRIBUTE, _move(MovementKind.FromEncumberedToEscrow, alice, address(strategy), address(token), 20e18)
-        );
-        strategy.setMoves(
-            MOCK_CLAIM, _move(MovementKind.FromEscrowToFree, address(strategy), bob, address(token), 20e18)
-        );
-
-        uint256 bobFreeBefore = manager.freeBalance(address(token), bob);
-        manager.distributeAndClaim(id, address(strategy), "");
-
-        assertEq(strategy.distributeCalls(), 1, "distribute leg ran");
-        assertEq(strategy.claimCalls(), 1, "claim leg ran");
-        // The freshly-banked 20 flowed straight through to bob; escrow nets to zero.
-        assertEq(manager.escrowOf(address(token), address(strategy)), 0, "escrow drained");
-        assertEq(manager.freeBalance(address(token), bob) - bobFreeBefore, 20e18, "bob paid the banked accrual");
-        assertEq(manager.getCommitment(id).amount, 80e18, "encumbrance shrank by the distributed amount");
-        _partitionHolds();
-    }
-
-    function test_distributeAndClaim_unknownStrategyReverts() public {
-        vm.expectRevert(ICM.UnknownStrategy.selector);
-        manager.distributeAndClaim(id, mallory, "");
-    }
-
-    function test_distributeAndClaim_inactiveReverts() public {
-        vm.prank(arbiter);
-        manager.releaseCommitment(id);
-        vm.expectRevert(ICM.CommitmentInactive.selector);
-        manager.distributeAndClaim(id, address(strategy), "");
-    }
-
-    function test_distributeAndClaim_forfeitPendingReverts() public {
-        vm.prank(arbiter);
-        manager.initiateForfeit(id, 1000);
-        vm.expectRevert(ICM.ForfeitPending.selector);
-        manager.distributeAndClaim(id, address(strategy), "");
-    }
 }
+

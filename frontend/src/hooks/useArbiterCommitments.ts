@@ -1,11 +1,13 @@
+import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
-import { asMetadataObject } from '../lib/commitmentMetadata'
-import { type CommitmentWithStatus } from '../utils/commitments'
-import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from './commitmentReads'
+import { hasIndexer, indexerJson } from '../config/indexer'
+import { parseCommitmentRow, type CommitmentRowWire } from '../lib/indexerRows'
+import { type CommitmentWithStatus } from '../lib/commitments'
+import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from '../lib/commitmentReads'
+import { POLL } from './polling'
 
 /**
  * Commitment enriched with its backing vault address for existing vault views.
@@ -26,16 +28,6 @@ export interface ArbiterCommitment extends CommitmentWithStatus {
   metadataContent: Record<string, unknown> | undefined
 }
 
-/** Minimal wire shape we consume from `/commitments/urgent`. */
-interface UrgentRowWire {
-  id: string
-  vault?: string | null
-  metadataURI?: string | null
-  metadataHash?: string | null
-  metadataStatus?: 'empty' | 'ok' | 'mismatch' | 'unreachable' | null
-  metadataContent?: Record<string, unknown> | null
-}
-
 /** The id-row shape carried between the indexer fetch and the multicall. */
 interface ArbiterIdRow {
   id: bigint
@@ -45,6 +37,9 @@ interface ArbiterIdRow {
   metadataStatus: 'empty' | 'ok' | 'mismatch' | 'unreachable' | undefined
   metadataContent: Record<string, unknown> | undefined
 }
+
+const NO_ROWS: ArbiterIdRow[] = []
+const NO_COUNTS = { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 }
 
 interface UseArbiterCommitmentsParams {
   managerAddress: Address | undefined
@@ -67,7 +62,6 @@ interface UseArbiterCommitmentsReturn {
     other: number
     total: number
   }
-  page: { limit: number; offset: number; nextOffset: number | null }
   refetch: () => void
 }
 
@@ -104,40 +98,36 @@ export function useArbiterCommitments({
   } = useQuery<{
     rows: ArbiterIdRow[]
     counts: UseArbiterCommitmentsReturn['counts']
-    page: UseArbiterCommitmentsReturn['page']
   }>({
     enabled,
     queryKey: ['arbiter-commitments', viewAddress?.toLowerCase(), managerAddress?.toLowerCase(), limit, offset],
     queryFn: async () => {
       const lower = viewAddress!.toLowerCase()
-      const res = await indexerFetch(
+      const payload = await indexerJson<{
+        rows?: CommitmentRowWire[]
+        counts?: UseArbiterCommitmentsReturn['counts']
+      }>(
         `/commitments/urgent?arbiter=${lower}&manager=${managerAddress!.toLowerCase()}&limit=${limit}&offset=${offset}`,
       )
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const payload = (await res.json()) as {
-        rows?: UrgentRowWire[]
-        counts?: UseArbiterCommitmentsReturn['counts']
-        page?: UseArbiterCommitmentsReturn['page']
-      }
       return {
-        rows: (payload.rows ?? []).map((r) => ({
-          id: BigInt(r.id),
-          vault: (r.vault ?? undefined) as Address | undefined,
-          metadataURI: r.metadataURI ?? undefined,
-          metadataHash: r.metadataHash ?? undefined,
-          metadataStatus: r.metadataStatus ?? undefined,
-          metadataContent: asMetadataObject(r.metadataContent),
-        })),
+        rows: (payload.rows ?? []).map((w) => {
+          const r = parseCommitmentRow(w)
+          return {
+            id: r.id,
+            vault: r.vault,
+            metadataURI: r.metadataURI,
+            metadataHash: r.metadataHash,
+            metadataStatus: r.metadataStatus,
+            metadataContent: r.metadataContent,
+          }
+        }),
         counts: payload.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
-        page: payload.page ?? { limit, offset, nextOffset: null },
       }
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
 
-  const ids = idRows?.rows ?? []
-  const indexedById = new Map(ids.map((r) => [r.id.toString(), r]))
-
+  const ids = idRows?.rows ?? NO_ROWS
   const {
     data: multicallData,
     isLoading: isLoadingData,
@@ -146,41 +136,36 @@ export function useArbiterCommitments({
     contracts: ids.flatMap((r) => commitmentReadContracts(managerAddress!, r.id)),
     query: {
       enabled: ids.length > 0 && !!managerAddress,
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
 
-  const commitments: ArbiterCommitment[] = (() => {
+  // Memoised on the two query results (both structurally shared), so a poll
+  // that changes nothing hands back the same rows and the queue's memoised
+  // rows skip their render.
+  const commitments = useMemo<ArbiterCommitment[]>(() => {
     if (!multicallData || ids.length === 0) return []
     const result: ArbiterCommitment[] = []
     for (let i = 0; i < ids.length; i++) {
       const mapped = mapCommitmentWindow(ids[i].id, multicallData, i * COMMITMENT_STRIDE)
       if (!mapped) continue
-      const indexed = indexedById.get(ids[i].id.toString())
-      result.push({
-        ...mapped,
-        vault: indexed?.vault,
-        metadataURI: indexed?.metadataURI,
-        metadataHash: indexed?.metadataHash,
-        metadataStatus: indexed?.metadataStatus,
-        metadataContent: indexed?.metadataContent,
-      })
+      const { id: _id, ...indexed } = ids[i]
+      result.push({ ...mapped, ...indexed })
     }
     return result
-  })()
+  }, [ids, multicallData])
 
-  function refetch() {
+  const refetch = useCallback(() => {
     void refetchIds()
     void refetchMulticall()
-  }
+  }, [refetchIds, refetchMulticall])
 
   return {
     commitments,
     isLoading: isLoadingIds || (ids.length > 0 && isLoadingData),
     error: (idsError as Error | null) ?? null,
     indexerOnline: hasIndexer,
-    counts: idRows?.counts ?? { needsAction: 0, openProposals: 0, active: 0, other: 0, total: 0 },
-    page: idRows?.page ?? { limit, offset, nextOffset: null },
+    counts: idRows?.counts ?? NO_COUNTS,
     refetch,
   }
 }

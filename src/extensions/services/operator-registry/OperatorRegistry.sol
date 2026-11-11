@@ -24,16 +24,17 @@ import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 /// @notice operator directory backed by committed stake.
 /// @dev Operators register by presenting a pre-created commitment with this registry as counterparty.
 ///      Stakers delegate by creating commitments with this registry as counterparty and calling delegate().
-///      Exposes IServiceManager-compatible views: getOperatorStake, isOperator, getOperatorSet.
-///      CommitmentManager calls back onDelegationReleased onDelegationForfeited when relevant
+///      Exposes IServiceManager-compatible views: isOperator, getOperatorSet, getOperator.
+///      CommitmentManager calls back onDelegationReleased and onDelegationForfeited when relevant
 ///      commitments are closed.
-///      Security properties (threat model, 03-04-PLAN.md):
-///        T-03-22: register() verifies commitment.committer == msg.sender
-///        T-03-23: onDelegation* requires msg.sender == s.commitmentManager
-///        T-03-24: register/delegate verify counterparty == address(this) from on-chain commitment data
-///        T-03-26: deregistered operators marked inactive; re-register requires fresh commitment
-///        T-03-27: onDelegationForfeited updates totalDelegatedStake atomically
-///        T-03-28: maxDelegationsPerOperator cap (default 1024)
+///      Security properties:
+///        - register() verifies commitment.committer == msg.sender
+///        - onDelegation* requires msg.sender == s.commitmentManager
+///        - register/delegate verify counterparty == address(this) from on-chain commitment data
+///        - deregister marks the operator inactive and clears the self-stake's routing; the same
+///          live commitment may register again in a later block
+///        - onDelegationForfeited updates totalDelegatedStake atomically
+///        - maxDelegationsPerOperator cap (default 1024)
 contract OperatorRegistry is
     UUPSUpgradeable,
     AccessControlUpgradeable,
@@ -163,7 +164,7 @@ contract OperatorRegistry is
 
         if (c.committer != account) revert NotCommitmentOwner();
         if (c.counterparty != address(this)) revert WrongCounterparty();
-        if (c.released || c.forfeited) revert NotRegistered(); // commitment must be active
+        if (c.released || c.forfeited) revert CommitmentClosed();
         if (c.amount < s.minOperatorStake) revert InsufficientStake(c.amount, s.minOperatorStake);
         _verifyAcceptance(s, c, commitmentId);
 
@@ -178,12 +179,8 @@ contract OperatorRegistry is
             totalDelegatedStake: c.amount,
             activeDelegationCount: 1, // self-stake counts as 1
             active: true,
-            belowMinStake: false,
             selfStakeActive: true // cleared by the hook when the self-stake commitment closes
         });
-
-        // stakeAt (#42): checkpoint the operator's fresh aggregate stake at this timestamp.
-        _pushStakeCheckpoint(s, account, c.amount);
 
         // Add to enumerable list (shared swap-and-pop membership logic — AddressSetSwapLib,
         // raw-index convention preserved verbatim over the slot-locked fields).
@@ -251,12 +248,15 @@ contract OperatorRegistry is
             delete s.commitmentToOperator[op.selfStakeCommitmentId];
             delete s.commitmentToStaker[op.selfStakeCommitmentId];
             delete s.registeredAmount[op.selfStakeCommitmentId];
-            if (s.trackedCommitmentCount > 0) s.trackedCommitmentCount -= 1;
+            s.trackedCommitmentCount -= 1;
             op.selfStakeActive = false;
         }
 
-        // Mark inactive
+        // Mark inactive and zero the registry's own figures, so the stake views agree with the
+        // drained mesh power.
         op.active = false;
+        op.totalDelegatedStake = 0;
+        op.activeDelegationCount = 0;
 
         // Swap-and-pop removal from operatorList for O(1) removal (shared AddressSetSwapLib;
         // identical raw-index mechanics as before, just factored out).
@@ -316,7 +316,7 @@ contract OperatorRegistry is
 
         if (c.committer != staker) revert NotCommitmentOwner();
         if (c.counterparty != address(this)) revert WrongCounterparty();
-        if (c.released || c.forfeited) revert NotRegistered(); // commitment must be active
+        if (c.released || c.forfeited) revert CommitmentClosed();
         _verifyAcceptance(s, c, commitmentId);
 
         // Reject if this commitment is already registered
@@ -325,14 +325,6 @@ contract OperatorRegistry is
         // Update operator metrics
         op.totalDelegatedStake += c.amount;
         op.activeDelegationCount += 1;
-
-        // stakeAt (#42): checkpoint the operator's increased aggregate stake at this timestamp.
-        _pushStakeCheckpoint(s, operator, op.totalDelegatedStake);
-
-        // Clear belowMinStake flag if stake now sufficient
-        if (op.belowMinStake && op.totalDelegatedStake >= s.minOperatorStake) {
-            op.belowMinStake = false;
-        }
 
         // Route hooks
         s.commitmentToOperator[commitmentId] = operator;
@@ -409,15 +401,66 @@ contract OperatorRegistry is
     ///      Silently ignores commitments not tracked by this registry.
     function onDelegationReleased(uint256 commitmentId, uint256 amount) external {
         OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
-
-        // Only authorized CommitmentManager can call
         if (msg.sender != s.commitmentManager) revert UnauthorizedCaller();
 
-        address operatorAddr = s.commitmentToOperator[commitmentId];
+        (address operatorAddr, address staker) = _closeDelegation(s, commitmentId);
         if (operatorAddr == address(0)) return; // not a tracked delegation — ignore
 
+        emit DelegationReleased(staker, operatorAddr, commitmentId, amount);
+    }
+
+    /// @inheritdoc IOperatorRegistry
+    /// @dev Called by CommitmentManager when a commitment with this registry as counterparty is forfeited.
+    ///      Silently ignores commitments not tracked by this registry. The entire commitment is
+    ///      terminated on forfeit, so the full credited amount is removed, not just the penalty.
+    function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, uint256) external {
+        OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
+        if (msg.sender != s.commitmentManager) revert UnauthorizedCaller();
+
+        (address operatorAddr, address staker) = _closeDelegation(s, commitmentId);
+        if (operatorAddr == address(0)) return; // not a tracked delegation — ignore
+
+        _emitForfeited(staker, operatorAddr, commitmentId, forfeitedAmount);
+    }
+
+    /// @inheritdoc IOperatorRegistry
+    /// @dev The manager's hook call is gas-capped and swallows failures (`RegistryHookFailed`).
+    ///      A swallowed hook leaves the commitment routed here with its stake, count and mesh
+    ///      power still credited, which blocks the operator's `deregister`. This runs the same
+    ///      close path the hook would have. The released event carries the credited amount, since
+    ///      the manager zeroes `c.amount` on close.
+    function reconcile(uint256 commitmentId) external nonReentrant {
+        OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
+        if (s.commitmentToOperator[commitmentId] == address(0)) revert CommitmentNotTracked();
+
+        ICommitmentManager cm = ICommitmentManager(s.commitmentManager);
+        ICommitmentManager.Commitment memory c = cm.getCommitment(commitmentId);
+        if (!c.released && !c.forfeited) revert CommitmentStillOpen();
+
+        uint256 credited = s.registeredAmount[commitmentId];
+        (address operatorAddr, address staker) = _closeDelegation(s, commitmentId);
+
+        if (c.forfeited) {
+            _emitForfeited(staker, operatorAddr, commitmentId, cm.forfeitedUnitsOf(commitmentId));
+        } else {
+            emit DelegationReleased(staker, operatorAddr, commitmentId, credited);
+        }
+    }
+
+    /// @dev Close a routed commitment: decrement the operator's stake and count by the amount
+    ///      credited at register/delegate (not the runtime amount, which can drift via
+    ///      distribute()), report an operator left below the minimum, release the same amount of
+    ///      mesh power, and clear routing. Shared by both manager hooks and `reconcile`. Returns
+    ///      `operatorAddr == address(0)` and changes nothing when the commitment is not routed here.
+    function _closeDelegation(OperatorRegistryStorage.Layout storage s, uint256 commitmentId)
+        internal
+        returns (address operatorAddr, address staker)
+    {
+        operatorAddr = s.commitmentToOperator[commitmentId];
+        if (operatorAddr == address(0)) return (address(0), address(0));
+
         Operator storage op = s.operators[operatorAddr];
-        address staker = s.commitmentToStaker[commitmentId];
+        staker = s.commitmentToStaker[commitmentId];
 
         // The operator's self-stake closed independently of deregister —
         // record it so deregister can tell "count == 1 is my live self-stake"
@@ -425,158 +468,38 @@ contract OperatorRegistry is
         // Documented choice: the operator is NOT auto-deactivated here. Draining
         // mesh power + list removal inside a manager lifecycle hook would add
         // side effects (and gas) to every release/forfeit; instead the operator
-        // stays active-but-flagged (belowMinStake) until it deregisters, and the
-        // deregister gate below prevents the zombie state from stranding routing.
+        // stays active (and below the minimum, if so) until it deregisters, and the
+        // deregister gate prevents the zombie state from stranding routing.
         if (commitmentId == op.selfStakeCommitmentId) op.selfStakeActive = false;
 
-        // decrement by the amount we originally credited at register/
-        // delegate time, not the runtime `amount` which can drift via distribute().
-        // For pre-fix delegations with no recorded snapshot, fall back to `amount`.
         uint256 credited = s.registeredAmount[commitmentId];
-        if (credited == 0) credited = amount;
+        op.totalDelegatedStake -= credited;
+        op.activeDelegationCount -= 1;
 
-        // Update stake metrics
-        if (op.totalDelegatedStake >= credited) {
-            op.totalDelegatedStake -= credited;
-        } else {
-            op.totalDelegatedStake = 0;
-        }
-
-        // stakeAt (#42): checkpoint the operator's decreased aggregate stake at this timestamp.
-        _pushStakeCheckpoint(s, operatorAddr, op.totalDelegatedStake);
-
-        if (op.activeDelegationCount > 0) {
-            op.activeDelegationCount -= 1;
-        }
-
-        // Check if now below min stake
         if (op.active && op.totalDelegatedStake < s.minOperatorStake) {
-            op.belowMinStake = true;
             emit OperatorBelowMinStake(operatorAddr, op.totalDelegatedStake, s.minOperatorStake);
         }
 
-        // Mesh: decrement the operator's voting power by the credited amount.
         _meshOnDecrease(s, operatorAddr, credited);
 
-        // Clean up routing
         delete s.commitmentToOperator[commitmentId];
         delete s.commitmentToStaker[commitmentId];
         delete s.registeredAmount[commitmentId];
-        // clamped for pre-counter legacy routing entries (see storage note).
-        if (s.trackedCommitmentCount > 0) s.trackedCommitmentCount -= 1;
-
-        emit DelegationReleased(staker, operatorAddr, commitmentId, amount);
+        s.trackedCommitmentCount -= 1;
     }
 
-    /// @inheritdoc IOperatorRegistry
-    /// @dev Called by CommitmentManager when a commitment with this registry as counterparty is forfeited.
-    ///      Silently ignores commitments not tracked by this registry.
-    function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, uint256 fullAmount) external {
-        OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
-
-        // Only authorized CommitmentManager can call
-        if (msg.sender != s.commitmentManager) revert UnauthorizedCaller();
-
-        address operatorAddr = s.commitmentToOperator[commitmentId];
-        if (operatorAddr == address(0)) return; // not a tracked delegation — ignore
-
-        Operator storage op = s.operators[operatorAddr];
-        address staker = s.commitmentToStaker[commitmentId];
-
-        // Self-stake closed independently — see onDelegationReleased.
-        if (commitmentId == op.selfStakeCommitmentId) op.selfStakeActive = false;
-
-        // decrement by what we credited at register/delegate. The
-        // runtime `fullAmount` may have drifted via `distribute()`, leaving
-        // phantom stake on the operator. Fall back to `fullAmount` for legacy
-        // delegations with no snapshot.
-        uint256 credited = s.registeredAmount[commitmentId];
-        if (credited == 0) credited = fullAmount;
-
-        // Update totalDelegatedStake by full commitment amount (not just penalty portion)
-        // The entire commitment is terminated on forfeit, so the full amount must be removed.
-        if (op.totalDelegatedStake >= credited) {
-            op.totalDelegatedStake -= credited;
-        } else {
-            op.totalDelegatedStake = 0;
-        }
-
-        // stakeAt (#42): checkpoint the operator's decreased aggregate stake at this timestamp.
-        _pushStakeCheckpoint(s, operatorAddr, op.totalDelegatedStake);
-
-        // decrement delegation count and clean routing maps (mirroring onDelegationReleased)
-        if (op.activeDelegationCount > 0) {
-            op.activeDelegationCount -= 1;
-        }
-
-        // Mesh: decrement the operator's voting power by the credited amount (the
-        // entire commitment is terminated on forfeit).
-        _meshOnDecrease(s, operatorAddr, credited);
-
-        delete s.commitmentToOperator[commitmentId];
-        delete s.commitmentToStaker[commitmentId];
-        delete s.registeredAmount[commitmentId];
-        // clamped for pre-counter legacy routing entries (see storage note).
-        if (s.trackedCommitmentCount > 0) s.trackedCommitmentCount -= 1;
-
-        // Flag if total stake drops below minimum after forfeit
-        if (op.active && op.totalDelegatedStake < s.minOperatorStake) {
-            op.belowMinStake = true;
-            emit OperatorBelowMinStake(operatorAddr, op.totalDelegatedStake, s.minOperatorStake);
-        }
-
+    /// @dev Forfeit events. Forfeit proceeds sit in this registry's free balance inside the
+    ///      manager until `sweepForfeitProceeds`; `ForfeitRecipientPending` surfaces them.
+    function _emitForfeited(address staker, address operatorAddr, uint256 commitmentId, uint256 forfeitedAmount)
+        internal
+    {
         emit DelegationForfeited(staker, operatorAddr, commitmentId, forfeitedAmount);
-        // surface that forfeit proceeds are now sitting in this registry's
-        // free balance inside the manager. Without a sweep path the assets
-        // would be stranded indefinitely.
-        if (forfeitedAmount > 0) {
-            emit ForfeitRecipientPending(operatorAddr, commitmentId, forfeitedAmount);
-        }
+        if (forfeitedAmount > 0) emit ForfeitRecipientPending(operatorAddr, commitmentId, forfeitedAmount);
     }
 
     // =========================================================================
     // IServiceManager-compatible views
     // =========================================================================
-
-    /// @inheritdoc IOperatorRegistry
-    function getOperatorStake(address operator) external view returns (uint256) {
-        return OperatorRegistryStorage.layout().operators[operator].totalDelegatedStake;
-    }
-
-    /// @inheritdoc IOperatorRegistry
-    function stakeAt(address operator, uint64 timestamp, uint256 hint) external view returns (uint256) {
-        OperatorRegistryStorage.StakeTrace storage trace = OperatorRegistryStorage.layout().operatorStakeTrace[operator];
-        uint256 len = trace.length;
-        if (len == 0) return 0; // operator never had a checkpoint → zero stake at any time
-
-        // Hint fast path (O(1)): the checkpoint at `hint` covers `timestamp` iff its own
-        // timestamp is at-or-before `timestamp` AND the next checkpoint (if any) starts strictly
-        // after it. A wrong/out-of-range hint just skips this block and falls through to the
-        // trustless binary search — a bad hint costs gas, never correctness.
-        if (hint < len) {
-            OperatorRegistryStorage.StakeCheckpoint storage cp = trace.points[hint];
-            if (cp.timestamp <= timestamp && (hint + 1 == len || trace.points[hint + 1].timestamp > timestamp)) {
-                return cp.stake;
-            }
-        }
-
-        // Fallback: bounded binary search for the last checkpoint with timestamp <= `timestamp`.
-        // Before the first checkpoint the operator had no stake → 0.
-        if (trace.points[0].timestamp > timestamp) return 0;
-        uint256 lo = 0;
-        uint256 hi = len; // invariant: answer lives in [lo, hi); points[lo-1] always covers so far
-        while (lo < hi) {
-            uint256 mid = (lo + hi) >> 1;
-            if (trace.points[mid].timestamp <= timestamp) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        // `lo` is the first index strictly after `timestamp`; `lo-1` is the covering checkpoint
-        // (lo >= 1 is guaranteed by the pre-search guard above).
-        return trace.points[lo - 1].stake;
-    }
 
     /// @inheritdoc IOperatorRegistry
     function isOperator(address operator) external view returns (bool) {
@@ -660,12 +583,16 @@ contract OperatorRegistry is
 
     /// @notice Update the minimum operator stake threshold.
     function setMinOperatorStake(uint256 minStake_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        OperatorRegistryStorage.layout().minOperatorStake = minStake_;
+        OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
+        emit MinOperatorStakeUpdated(s.minOperatorStake, minStake_);
+        s.minOperatorStake = minStake_;
     }
 
     /// @notice Update the maximum delegations per operator cap.
     function setMaxDelegationsPerOperator(uint256 max_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        OperatorRegistryStorage.layout().maxDelegationsPerOperator = max_;
+        OperatorRegistryStorage.Layout storage s = OperatorRegistryStorage.layout();
+        emit MaxDelegationsPerOperatorUpdated(s.maxDelegationsPerOperator, max_);
+        s.maxDelegationsPerOperator = max_;
     }
 
     // =========================================================================
@@ -755,7 +682,7 @@ contract OperatorRegistry is
     /// @dev Only active registered operators may call. Overwrites any prior sidecar
     ///      record with (uri, contentHash, uint64(block.timestamp)) and emits the update event.
     ///      Metadata is stored in a sidecar map isolated from the hot-path Operator record so
-    ///      isOperator getOperatorStake getOperatorSet reads are unaffected.
+    ///      isOperator, getOperatorSet and getOperator reads are unaffected.
     function setOperatorMetadata(string calldata uri, bytes32 contentHash) external nonReentrant {
         //  MDO: enforce URI length cap before any SSTORE
         if (bytes(uri).length > MAX_METADATA_URI_LENGTH) revert URITooLong();
@@ -904,43 +831,6 @@ contract OperatorRegistry is
         uint256 twStake = ITokenWeighting(tw).currentStake(operator, denom);
         uint256 relTw = amount > twStake ? twStake : amount;
         if (relTw > 0) ITokenWeighting(tw).releaseStake(operator, denom, relTw);
-    }
-
-    // =========================================================================
-    // Historical stake checkpoints (stakeAt)
-    // =========================================================================
-
-    /// @dev Append (or same-block rewrite) a timestamped checkpoint of `operator`'s aggregate
-    ///      `totalDelegatedStake`. Called on every stake mutation (register/delegate/release/
-    ///      forfeit) with the operator's POST-mutation stake. Checkpoints are kept strictly
-    ///      increasing in timestamp: if the tail checkpoint shares this block's timestamp it is
-    ///      overwritten in place (multiple same-block mutations collapse to the final value),
-    ///      otherwise a new checkpoint is appended. This keeps `stakeAt`'s binary search and hint
-    ///      validation well-defined. Reverts on the (practically-unreachable) `uint192` overflow
-    ///      rather than silently truncating a checkpoint value.
-    function _pushStakeCheckpoint(OperatorRegistryStorage.Layout storage s, address operator, uint256 newStake)
-        internal
-    {
-        if (newStake > type(uint192).max) revert StakeCheckpointOverflow();
-
-        OperatorRegistryStorage.StakeTrace storage trace = s.operatorStakeTrace[operator];
-        uint64 nowTs = uint64(block.timestamp);
-        uint192 val = uint192(newStake);
-        uint256 len = trace.length;
-
-        if (len > 0) {
-            OperatorRegistryStorage.StakeCheckpoint storage last = trace.points[len - 1];
-            if (last.timestamp == nowTs) {
-                // Same-block mutation: rewrite the tail in place (mapping-backed → clean overwrite).
-                last.stake = val;
-                emit StakeCheckpointed(operator, nowTs, newStake);
-                return;
-            }
-        }
-
-        trace.points[len] = OperatorRegistryStorage.StakeCheckpoint({timestamp: nowTs, stake: val});
-        trace.length = len + 1;
-        emit StakeCheckpointed(operator, nowTs, newStake);
     }
 
     // =========================================================================

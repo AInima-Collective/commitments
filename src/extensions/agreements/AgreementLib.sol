@@ -2,13 +2,18 @@
 pragma solidity ^0.8.27;
 
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {IDistributionStrategy, StrategyBinding, CreatedContext} from "src/core/interfaces/IDistributionStrategy.sol";
+import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManagerStorage.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {CommitmentLifecycleLib} from "src/core/manager/libraries/CommitmentLifecycleLib.sol";
 import {MovementLib, HOOK_DISTRIBUTE} from "src/core/manager/libraries/MovementLib.sol";
 import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
-import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
+import {
+    BPS_DENOMINATOR,
+    MAX_STRATEGIES,
+    MAX_METADATA_URI_LENGTH,
+    MAX_PROPOSAL_DURATION
+} from "src/shared/Constants.sol";
 
 /// @title AgreementLib
 /// @notice External delegatecall library hosting the agreements extension
@@ -17,34 +22,22 @@ import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 ///         §C.6). Lives outside the manager for bytecode budget; `msg.sender`, `address(this)`,
 ///         and event sourcing are preserved under delegatecall.
 library AgreementLib {
-    uint64 internal constant MAX_PROPOSAL_DURATION = 30 days;
-    uint256 internal constant MAX_STRATEGIES = 8;
-    uint256 internal constant MAX_METADATA_URI_LENGTH = 512;
-
     // =========================================================================
     // Propose
     // =========================================================================
 
     /// @notice Proposal core: validate, encumber the proposer immediately (lock early to
-    ///         prevent griefing), store the proposal + symmetric strategy bindings + settlement
-    ///         caps.
-    function proposeCore(
-        CommitmentManagerStorage.Layout storage s,
-        ICM.AgreementParams calldata params,
-        uint64 minChallengeWindow
-    ) external returns (uint256 proposalId) {
-        _validateProposal(params, minChallengeWindow);
+    ///         prevent griefing), store the proposal, each leg's own strategy set, and the
+    ///         settlement caps.
+    function proposeCore(CommitmentManagerStorage.Layout storage s, ICM.AgreementParams calldata params)
+        external
+        returns (uint256 proposalId)
+    {
+        _validateProposal(params, s.minChallengeWindow);
 
-        // Exposure check + encumber for the proposer, per (proposer, proposerLeg.token).
+        // Encumber the proposer and add its exposure, per (proposer, proposerLeg.token).
         ICM.LegTerms calldata pl = params.proposerLeg;
-        uint256 exposure = ExposureLib.exposureOf(pl.amount, pl.maxPenaltyBps);
-        ICM.UserExposure storage mag = s.userExposures[msg.sender][pl.token];
-        if (mag.totalForfeitable + exposure > mag.totalEncumbered + pl.amount) {
-            revert ICM.ExposureAllocationExceeded();
-        }
-        LedgerLib.encumber(s, pl.token, msg.sender, pl.amount);
-        mag.totalEncumbered += pl.amount;
-        mag.totalForfeitable += exposure;
+        CommitmentLifecycleLib.encumberLien(s, msg.sender, pl.token, pl.amount, pl.maxPenaltyBps);
 
         proposalId = s.nextAgreementProposalId++;
         _storeProposal(s, proposalId, params);
@@ -155,33 +148,27 @@ library AgreementLib {
     // Accept
     // =========================================================================
 
-    /// @notice Accept core: encumber the acceptor, write the two paired commitments sharing the
-    ///         same (token, adapter), bind the proposal's strategies symmetrically to both legs
-    ///         (running each onCommitmentCreated — a revert aborts acceptance atomically), link
-    ///         the pair, copy settlement caps.
+    /// @notice Accept core: encumber the acceptor, write the two paired commitments (each leg
+    ///         with its own token, adapter, amount and penalty), bind each leg's own strategy set
+    ///         to that leg (running each onCommitmentCreated — a revert aborts acceptance
+    ///         atomically), link the pair, copy settlement caps.
     function acceptCore(CommitmentManagerStorage.Layout storage s, uint256 proposalId)
         external
         returns (uint256 agreementId, uint256 commitmentIdA, uint256 commitmentIdB)
     {
-        ICM.AgreementProposal storage prop = s.agreementProposals[proposalId];
+        // One read of every proposal field (the URI included); the helpers below work on the copy.
+        ICM.AgreementProposal memory prop = s.agreementProposals[proposalId];
 
         if (msg.sender != prop.acceptor) revert ICM.NotAcceptor();
         if (prop.accepted) revert ICM.AlreadyAccepted();
         if (prop.cancelled) revert ICM.ProposalNotFound();
         if (block.timestamp > prop.expiresAt) revert ICM.ProposalExpired();
-        prop.accepted = true;
+        s.agreementProposals[proposalId].accepted = true;
 
-        // Exposure check + encumber for the acceptor, in the ACCEPTOR leg's token.
-        {
-            uint256 exposure = ExposureLib.exposureOf(prop.acceptorAmount, prop.acceptorMaxPenaltyBps);
-            ICM.UserExposure storage mag = s.userExposures[msg.sender][prop.acceptorToken];
-            if (mag.totalForfeitable + exposure > mag.totalEncumbered + prop.acceptorAmount) {
-                revert ICM.ExposureAllocationExceeded();
-            }
-            LedgerLib.encumber(s, prop.acceptorToken, msg.sender, prop.acceptorAmount);
-            mag.totalEncumbered += prop.acceptorAmount;
-            mag.totalForfeitable += exposure;
-        }
+        // Encumber the acceptor and add its exposure, in the ACCEPTOR leg's token.
+        CommitmentLifecycleLib.encumberLien(
+            s, msg.sender, prop.acceptorToken, prop.acceptorAmount, prop.acceptorMaxPenaltyBps
+        );
 
         // Two legs: the proposer leg carries the proposer terms, the acceptor leg the
         // acceptor terms (independent token/adapter/amount/penalty).
@@ -209,95 +196,73 @@ library AgreementLib {
         // Bind each leg's OWN strategy set to that leg (extension §4). Creation hooks are
         // unguarded — a revert aborts acceptance atomically.
         _bindLegStrategies(
-            s, s.proposalStrategies[proposalId], prop, cidA, prop.proposerAmount, prop.proposerMaxPenaltyBps
+            s,
+            s.proposalStrategies[proposalId],
+            prop.challengeWindow,
+            cidA,
+            prop.proposerAmount,
+            prop.proposerMaxPenaltyBps
         );
         _bindLegStrategies(
-            s, s.proposalAcceptorStrategies[proposalId], prop, cidB, prop.acceptorAmount, prop.acceptorMaxPenaltyBps
+            s,
+            s.proposalAcceptorStrategies[proposalId],
+            prop.challengeWindow,
+            cidB,
+            prop.acceptorAmount,
+            prop.acceptorMaxPenaltyBps
         );
 
         emit ICM.AgreementAccepted(agreementId, proposalId, cidA, cidB, prop.metadataURI, prop.metadataHash);
         (commitmentIdA, commitmentIdB) = (cidA, cidB);
     }
 
+    /// @dev Store one leg through the create path's store (agreement legs carry no expiry).
     function _storeLeg(
         CommitmentManagerStorage.Layout storage s,
-        ICM.AgreementProposal storage prop,
+        ICM.AgreementProposal memory prop,
         bool proposerSide,
         address committer,
         address counterparty
-    ) private returns (uint256 commitmentId) {
-        commitmentId = s.nextCommitmentId++;
-        ICM.Commitment storage c = s.commitments[commitmentId];
-        c.committer = committer;
-        c.arbiter = prop.arbiter;
-        c.counterparty = counterparty;
-        c.token = proposerSide ? prop.proposerToken : prop.acceptorToken;
-        c.adapter = proposerSide ? prop.proposerAdapter : prop.acceptorAdapter;
-        c.amount = proposerSide ? prop.proposerAmount : prop.acceptorAmount;
-        c.maxPenaltyBps = proposerSide ? prop.proposerMaxPenaltyBps : prop.acceptorMaxPenaltyBps;
-        c.challengeWindow = prop.challengeWindow;
-        c.createdAt = uint64(block.timestamp);
-        c.metadataURI = prop.metadataURI;
-        c.metadataHash = prop.metadataHash;
-        s.userCommitmentIds[committer].push(commitmentId);
-
-        _emitLegCreated(commitmentId, prop, proposerSide, committer, counterparty);
-    }
-
-    /// @dev Separate frame for the 11-argument creation event (stack headroom).
-    function _emitLegCreated(
-        uint256 commitmentId,
-        ICM.AgreementProposal storage prop,
-        bool proposerSide,
-        address committer,
-        address counterparty
-    ) private {
-        emit ICM.CommitmentCreated(
-            commitmentId,
-            committer,
-            prop.arbiter,
-            counterparty,
-            proposerSide ? prop.proposerToken : prop.acceptorToken,
-            proposerSide ? prop.proposerAdapter : prop.acceptorAdapter,
-            proposerSide ? prop.proposerAmount : prop.acceptorAmount,
-            proposerSide ? prop.proposerMaxPenaltyBps : prop.acceptorMaxPenaltyBps,
-            prop.challengeWindow,
-            uint64(0), // agreement legs carry no expiry
-            prop.metadataURI,
-            prop.metadataHash
+    ) private returns (uint256) {
+        return CommitmentLifecycleLib.storeCommitment(
+            s,
+            ICM.Commitment({
+                committer: committer,
+                maxPenaltyBps: proposerSide ? prop.proposerMaxPenaltyBps : prop.acceptorMaxPenaltyBps,
+                released: false,
+                forfeited: false,
+                closedAt: 0,
+                arbiter: prop.arbiter,
+                challengeWindow: prop.challengeWindow,
+                counterparty: counterparty,
+                createdAt: 0,
+                token: proposerSide ? prop.proposerToken : prop.acceptorToken,
+                expiresAt: 0,
+                adapter: proposerSide ? prop.proposerAdapter : prop.acceptorAdapter,
+                unbondInitiatedAt: 0,
+                amount: proposerSide ? prop.proposerAmount : prop.acceptorAmount,
+                metadataHash: prop.metadataHash,
+                cumulativePausedAtStart: 0,
+                unbondCumulativePausedAtStart: 0
+            }),
+            prop.metadataURI
         );
-        // Companion discovery-axis event (indexed counterparty). Guarded on non-zero to mirror the
-        // direct create path; an agreement leg's counterparty is the opposing committer.
-        if (counterparty != address(0)) {
-            emit ICM.CommitmentCounterparty(commitmentId, counterparty);
-        }
     }
 
+    /// @dev Bind a leg's stored strategy set through the create path's binder.
     function _bindLegStrategies(
         CommitmentManagerStorage.Layout storage s,
         StrategyBinding[] storage binds,
-        ICM.AgreementProposal storage prop,
+        uint64 challengeWindow,
         uint256 commitmentId,
         uint256 legAmount,
         uint16 legMaxPenaltyBps
     ) private {
         uint256 n = binds.length;
         for (uint256 i; i < n; i++) {
-            address strategy = binds[i].strategy;
-            s.isBoundStrategy[commitmentId][strategy] = true;
-            s.commitmentStrategies[commitmentId].push(strategy);
-            emit ICM.CommitmentBoundToStrategy(commitmentId, strategy, binds[i].params);
-
-            IDistributionStrategy(strategy)
-                .onCommitmentCreated(
-                    CreatedContext({
-                    base: MovementLib.baseContext(s, commitmentId),
-                    originalAmount: legAmount,
-                    maxPenaltyBps: legMaxPenaltyBps,
-                    challengeWindow: prop.challengeWindow,
-                    strategyParams: binds[i].params
-                })
-                );
+            CommitmentLifecycleLib.bindStrategy(
+                s, commitmentId, binds[i].strategy, binds[i].params, legAmount, legMaxPenaltyBps, challengeWindow
+            );
         }
     }
 
@@ -317,10 +282,12 @@ library AgreementLib {
 
         prop.cancelled = true;
 
-        uint256 exposure = ExposureLib.exposureOf(prop.proposerAmount, prop.proposerMaxPenaltyBps);
-        ICM.UserExposure storage mag = s.userExposures[prop.proposer][prop.proposerToken];
-        mag.totalEncumbered -= prop.proposerAmount;
-        mag.totalForfeitable -= exposure;
+        ExposureLib.decrement(
+            s,
+            prop.proposer,
+            prop.proposerToken,
+            ExposureLib.exposureOf(prop.proposerAmount, prop.proposerMaxPenaltyBps)
+        );
         // commitmentId 0: no commitment exists for a cancelled proposal.
         LedgerLib.releaseEncumbrance(s, 0, prop.proposerToken, prop.proposer, prop.proposerAmount);
 
@@ -339,6 +306,8 @@ library AgreementLib {
     ///         `penaltyBps`. Already-resolved legs emit `AgreementPartialForfeit` instead. `penaltyBps`
     ///         must be ≤ each unresolved leg's `maxPenaltyBps` (the legs MAY differ, so the tighter one
     ///         binds), letting the arbiter forfeit proportionally rather than always at the maximum.
+    ///         Reverts `ForfeitPending` when every unresolved leg already has a live proposal, so
+    ///         `AgreementForfeited` is emitted only when at least one proposal was written.
     function forfeitCore(CommitmentManagerStorage.Layout storage s, uint256 agreementId, uint16 penaltyBps) external {
         uint256[2] storage pair = s.agreementPairs[agreementId];
         uint256 cidA = pair[0];
@@ -358,31 +327,35 @@ library AgreementLib {
         if (!aResolved && penaltyBps > cA.maxPenaltyBps) revert ICM.PenaltyExceedsMax();
         if (!bResolved && penaltyBps > cB.maxPenaltyBps) revert ICM.PenaltyExceedsMax();
 
-        if (!aResolved) _initiateForfeitIdempotent(s, cidA, penaltyBps);
+        bool written;
+        if (!aResolved) written = _initiateForfeitIdempotent(s, cidA, penaltyBps);
         else emit ICM.AgreementPartialForfeit(agreementId, cidA);
 
-        if (!bResolved) _initiateForfeitIdempotent(s, cidB, penaltyBps);
+        if (!bResolved) written = _initiateForfeitIdempotent(s, cidB, penaltyBps) || written;
         else emit ICM.AgreementPartialForfeit(agreementId, cidB);
 
+        if (!written) revert ICM.ForfeitPending();
         emit ICM.AgreementForfeited(agreementId);
     }
 
-    /// @dev Idempotent proposal write: silent no-op if resolved or a proposal is already live.
+    /// @dev Idempotent proposal write on an unresolved leg: no-op if a proposal is already live.
+    ///      Returns whether a proposal was written.
     function _initiateForfeitIdempotent(
         CommitmentManagerStorage.Layout storage s,
         uint256 commitmentId,
         uint16 penaltyBps
-    ) private {
-        ICM.Commitment storage c = s.commitments[commitmentId];
-        ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-        if (c.released || c.forfeited) return;
-        if (p.initiatedAt != 0 && !p.cancelled && !p.executed) return;
+    ) private returns (bool) {
+        // The caller only passes an unresolved leg, so a live proposal is the only skip.
+        if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) return false;
 
-        CommitmentLifecycleLib.writeForfeitProposal(s, commitmentId, penaltyBps, c.challengeWindow);
+        CommitmentLifecycleLib.writeForfeitProposal(
+            s, commitmentId, penaltyBps, s.commitments[commitmentId].challengeWindow
+        );
+        return true;
     }
 
     // =========================================================================
-    // Atomic bilateral release / symmetric unbond
+    // Atomic bilateral release
     // =========================================================================
 
     /// @notice Release both legs atomically (shared-arbiter-only). Each unresolved leg runs its
@@ -408,20 +381,6 @@ library AgreementLib {
         emit ICM.AgreementReleased(agreementId);
     }
 
-    /// @notice Symmetric unbond start for both legs; either committer may call.
-    function requestAgreementUnbondCore(CommitmentManagerStorage.Layout storage s, uint256 agreementId) external {
-        uint256[2] storage pair = s.agreementPairs[agreementId];
-        (uint256 cidA, uint256 cidB) = (pair[0], pair[1]);
-        if (cidA == 0 && cidB == 0) revert ICM.AgreementNotFound();
-
-        if (msg.sender != s.commitments[cidA].committer && msg.sender != s.commitments[cidB].committer) {
-            revert ICM.NotCommitter();
-        }
-        CommitmentLifecycleLib.initiateUnbondIdempotent(s, cidA);
-        CommitmentLifecycleLib.initiateUnbondIdempotent(s, cidB);
-        emit ICM.AgreementUnbondRequested(agreementId);
-    }
-
     // =========================================================================
     // Bilateral settlement
     // =========================================================================
@@ -437,11 +396,13 @@ library AgreementLib {
         bytes32 evidenceHash
     ) external {
         uint256[2] storage pair = s.agreementPairs[agreementId];
-        if (pair[0] == 0 && pair[1] == 0) revert ICM.AgreementNotFound();
+        (uint256 cidA, uint256 cidB) = (pair[0], pair[1]);
+        if (cidA == 0 && cidB == 0) revert ICM.AgreementNotFound();
 
-        _presettleDistribute(s, pair[0]);
-        _presettleDistribute(s, pair[1]);
-        _settleCore(s, agreementId, fromProposer, units, evidenceHash);
+        _presettleDistribute(s, cidA);
+        _presettleDistribute(s, cidB);
+        (uint256 payerCid, uint256 receiverCid) = fromProposer ? (cidA, cidB) : (cidB, cidA);
+        _settleCore(s, agreementId, fromProposer, payerCid, receiverCid, units, evidenceHash);
     }
 
     /// @dev Guarded distribute over a leg's bound strategies. Skips legs where distribute is
@@ -450,8 +411,7 @@ library AgreementLib {
     function _presettleDistribute(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) private {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (c.released || c.forfeited) return;
-        ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-        if (p.initiatedAt != 0 && !p.cancelled && !p.executed) return;
+        if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) return;
 
         address[] storage strategies = s.commitmentStrategies[commitmentId];
         uint256 n = strategies.length;
@@ -468,20 +428,19 @@ library AgreementLib {
         CommitmentManagerStorage.Layout storage s,
         uint256 agreementId,
         bool fromProposer,
+        uint256 payerCid,
+        uint256 receiverCid,
         uint256 units,
         bytes32 evidenceHash
     ) private {
         if (units == 0) revert ICM.ZeroAmount();
-        if (units > type(uint128).max) revert ICM.SettlementCapExceeded(type(uint128).max, 0);
-
-        uint256 payerCid;
-        uint256 receiverCid;
-        {
-            uint256[2] storage pair = s.agreementPairs[agreementId];
-            uint256 cidA = pair[0];
-            uint256 cidB = pair[1];
-            if (cidA == 0 && cidB == 0) revert ICM.AgreementNotFound();
-            (payerCid, receiverCid) = fromProposer ? (cidA, cidB) : (cidB, cidA);
+        if (units > type(uint128).max) {
+            // Caps are uint128, so any larger request exceeds the direction's cap; report it
+            // saturated at uint128 max against the real cap.
+            ICM.AgreementSettlement storage caps = s.agreementSettlement[agreementId];
+            revert ICM.SettlementCapExceeded(
+                type(uint128).max, fromProposer ? caps.maxFlowProposerToAcceptor : caps.maxFlowAcceptorToProposer
+            );
         }
 
         _settleValidateState(s, payerCid, receiverCid);
@@ -510,12 +469,10 @@ library AgreementLib {
         ICM.Commitment storage receiver = s.commitments[receiverCid];
         if (receiver.released || receiver.forfeited) revert ICM.CommitmentInactive();
 
-        ICM.ForfeitProposal storage pp = s.forfeitProposals[payerCid];
-        if (pp.initiatedAt != 0 && !pp.cancelled && !pp.executed) revert ICM.ForfeitPending();
-        ICM.ForfeitProposal storage rp = s.forfeitProposals[receiverCid];
-        if (rp.initiatedAt != 0 && !rp.cancelled && !rp.executed) revert ICM.ForfeitPending();
+        if (MovementLib.forfeitLive(s.forfeitProposals[payerCid])) revert ICM.ForfeitPending();
+        if (MovementLib.forfeitLive(s.forfeitProposals[receiverCid])) revert ICM.ForfeitPending();
 
-        if (s.unbondInitiatedAt[payerCid] != 0 || s.unbondInitiatedAt[receiverCid] != 0) revert ICM.UnbondPending();
+        if (payer.unbondInitiatedAt != 0 || receiver.unbondInitiatedAt != 0) revert ICM.UnbondPending();
     }
 
     /// @dev Per-direction lifetime cap (INV-E1). Cumulatives only ratchet up.
@@ -551,15 +508,7 @@ library AgreementLib {
         ICM.Commitment storage payer = s.commitments[payerCid];
         if (units > payer.amount) revert ICM.InsufficientCommitmentAmount(units, payer.amount);
 
-        uint256 expPre = ExposureLib.exposureOf(payer.amount, payer.maxPenaltyBps);
-        payer.amount -= units;
-        uint256 expPost = ExposureLib.exposureOf(payer.amount, payer.maxPenaltyBps);
-
-        ICM.UserExposure storage payerMag = s.userExposures[payer.committer][payer.token];
-        payerMag.totalEncumbered -= units;
-        uint256 forfeitDec = expPre - expPost;
-        if (forfeitDec > payerMag.totalForfeitable) forfeitDec = payerMag.totalForfeitable;
-        payerMag.totalForfeitable -= forfeitDec;
+        ExposureLib.resize(s, payer, payer.amount - units);
 
         // Payer's encumbered leg -> receiver's free balance, in the payer leg's token.
         LedgerLib.forfeitTransfer(s, payer.token, payer.committer, s.commitments[receiverCid].committer, units);
@@ -573,6 +522,9 @@ library AgreementLib {
     ///         caller's free balance. Opt-in: the committer's own first contribution enables
     ///         external ones.
     function contributeCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint256 units) external {
+        // A member commitment's `E_i` is frozen at join; contributions would
+        // drift them and desync the shared-loss accounting (ERC-COMMITMENTS-MUTUALS).
+        if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
         if (units == 0) revert ICM.ZeroAmount();
         ICM.Commitment storage c = s.commitments[commitmentId];
 
@@ -583,18 +535,11 @@ library AgreementLib {
         }
 
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
-        ICM.ForfeitProposal storage sp = s.forfeitProposals[commitmentId];
-        if (sp.initiatedAt != 0 && !sp.cancelled && !sp.executed) revert ICM.ForfeitPending();
-        if (s.unbondInitiatedAt[commitmentId] != 0) revert ICM.UnbondPending();
+        if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.ForfeitPending();
+        if (c.unbondInitiatedAt != 0) revert ICM.UnbondPending();
 
         // Exposure-diff growth keeps the per-commitment forfeitable contribution exact.
-        uint256 expBefore = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-        c.amount += units;
-        uint256 expAfter = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-
-        ICM.UserExposure storage mag = s.userExposures[c.committer][c.token];
-        mag.totalEncumbered += units;
-        mag.totalForfeitable += (expAfter - expBefore);
+        ExposureLib.resize(s, c, c.amount + units);
 
         LedgerLib.attributeEncumbrance(s, c.token, msg.sender, c.committer, units);
         emit ICM.EncumbranceContributed(commitmentId, msg.sender, c.committer, units);

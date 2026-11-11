@@ -6,7 +6,7 @@ generated: true
 ---
 # VaultFactory
 **Inherits:**
-`Factory`, `Registry`, `Multicallable`
+`Factory`, `Multicallable`
 
 **Title:**
 VaultFactory
@@ -18,16 +18,14 @@ Minimal clones perform a raw delegatecall that bypasses the UUPS upgrade check �
 them leads to broken upgrade paths. ERC1967Proxy is the correct pattern for UUPS vaults.
 Per-asset constraint: exactly one vault per asset address.
 Only the factory owner can deploy new vaults.
-Shares three extracted bases:
+Shares two extracted bases:
 - `Factory` — whitelist/blacklist ladder for the vault implementation (the
 implementation is self-verified against `CommitmentsVault.FACTORY_TYPE_ID` at
 construction; the owner can `blacklist` it to freeze new deployments).
-- `Registry` — `EnumerableSet.AddressSet` membership backing the deployed-vault
-enumeration (`allVaults`/`vaultCount` are thin wrappers over `entity`/`totalEntities`).
 - `Multicallable` — batch several `deployVault` calls in one owner transaction.
 
 
-## Constants
+## State Variables
 ### VAULT_TYPE_ID
 The type id a whitelisted implementation must self-report to be a valid vault.
 
@@ -50,7 +48,6 @@ address public immutable vaultImplementation
 ```
 
 
-## State Variables
 ### vaultByAsset
 Maps an asset address to its deployed vault proxy address.
 
@@ -59,6 +56,15 @@ Returns address(0) if no vault has been deployed for the asset.
 
 ```solidity
 mapping(address => address) public vaultByAsset
+```
+
+
+### allVaults
+Every deployed vault proxy, in deployment order (append-only).
+
+
+```solidity
+address[] public allVaults
 ```
 
 
@@ -108,22 +114,9 @@ function deployVault(address asset, address admin, address strategy) external on
 |`vault`|`address`|Address of the newly deployed vault proxy.|
 
 
-### allVaults
-
-Returns the vault address at the given index in the enumeration array.
-
-Thin wrapper over the shared `Registry` membership set.
-
-
-```solidity
-function allVaults(uint256 index) external view returns (address);
-```
-
 ### vaultCount
 
 Returns the total number of deployed vaults.
-
-Thin wrapper over the shared `Registry` membership set.
 
 
 ```solidity

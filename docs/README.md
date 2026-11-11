@@ -56,4 +56,4 @@ These aren't separate products. They're the same contract surface, parameterized
 
 - **[Standards family](standards/README.md)** maps the core standard and each sibling extension to its interfaces, implementations, dependencies, and conformance tests.
 - **[Full protocol docs](protocol/README.md)** cover architecture, generated contract reference, role-based guides, security, deployment, and configuration.
-- **[Design RFCs](design/rfcs/marketplace.md)** describe proposals that are not current protocol behavior.
+- **Design RFCs** ([marketplace](design/rfcs/marketplace.md), [value display](design/rfcs/value-display.md)) describe proposals that are not current protocol behavior.

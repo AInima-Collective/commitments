@@ -5,13 +5,13 @@ status: current
 
 # Deployment Guide
 
-Use the repository Foundry scripts. They deploy implementations and initialize proxies in the same transaction; do not deploy an uninitialized proxy and configure it later.
+Deploy implementations and initialize proxies in the same transaction; do not deploy an uninitialized proxy and configure it later. Use the proxy address, not the implementation address, in downstream configuration.
 
 No address in this page is a canonical production deployment. Verify the selected network, deployer, admin, and broadcast output independently.
 
 ## Integrated deployment
 
-script/DeploySepolia.s.sol is the current composed reference deployment for a development network. It deploys the selected stack in dependency order, wires the manager to OperatorRegistry, and optionally includes governance and Rewards.
+script/DeploySepolia.s.sol is the current composed reference deployment for a development network. It deploys a faucet token and one vault, then the protocol core through script/DeployCore.sol, the same core the local seed (script/Simulate.s.sol) uses, and optionally includes governance and Rewards. ADMIN_ADDRESS must be the broadcasting account, because the core's mesh weight and wiring calls are admin-only; transfer roles afterwards if the admin should be another account.
 
 A typical broadcast uses:
 
@@ -19,25 +19,7 @@ A typical broadcast uses:
 forge script script/DeploySepolia.s.sol:DeploySepolia --rpc-url <RPC_URL> --broadcast
 ~~~
 
-Read the environment-variable block in that script before use. PRIVATE_KEY, ADMIN_ADDRESS, token mode, service thresholds, optional feature flags, and network-specific settings are deployment inputs, not protocol defaults.
-
-## Component scripts
-
-Use the smaller scripts when deployments are managed separately:
-
-| Component | Script |
-|---|---|
-| CommitmentManager implementation and proxy | script/DeployCommitmentManager.s.sol |
-| Backing adapters and distribution strategies | script/DeployAdaptersAndStrategies.s.sol |
-| CommitmentsVault implementation and factory | script/DeployVaultFactory.s.sol |
-| OperatorRegistry implementation and proxy | script/DeployOperatorRegistry.s.sol |
-| Mesh implementations, factory, and example nodes | script/DeployMesh.s.sol |
-| OperatorServiceRegistry implementation and proxy | script/DeployOperatorServiceRegistry.s.sol |
-| Mutual periphery | script/DeployMutual.s.sol |
-| Rewards implementations and factory | script/DeployRewardsCoordinator.s.sol |
-| Governance implementations and factory | script/DeployGovernance.s.sol |
-
-Each script documents its required and optional environment variables. Use the proxy address, not the implementation address, in downstream configuration.
+Read the environment-variable block in that script before use. PRIVATE_KEY, ADMIN_ADDRESS, the faucet token's name, symbol and decimals, service thresholds, optional feature flags, and network-specific settings are deployment inputs, not protocol defaults.
 
 ## Dependency order
 
@@ -47,9 +29,11 @@ Each script documents its required and optional environment variables. Use the p
 4. Deploy adapters, distribution strategies, and chosen arbiters.
 5. Deploy OperatorRegistry with the manager, required arbiter, required token, and stake policy.
 6. Call manager.setOperatorRegistry(registryProxy).
-7. Deploy Mesh and choose an IVotingPowerSource.
-8. Deploy OperatorServiceRegistry with OperatorRegistry and that voting-power source.
-9. Optionally deploy governance and Rewards. Rewards services create their snapshot/coordinator pairs through RewardsCoordinatorFactory.
+7. Deploy the Mesh implementations and MeshFactory, then a TokenWeighting node whose provider is the OperatorRegistry proxy. Its provider is fixed at deployment.
+8. As the node's governance, set a non-zero weight for operatorRegistry.stakeDenom().
+9. Call operatorRegistry.setMeshWiring(tokenWeighting, meshFactory). Registered and delegated stake reaches the node from then on.
+10. Deploy OperatorServiceRegistry with OperatorRegistry and that TokenWeighting node as its voting-power source.
+11. Optionally deploy governance and Rewards. Only the GovernorFactory's deployer may call setCanonicalGovernor, once. Rewards services create their snapshot/coordinator pairs through RewardsCoordinatorFactory.
 
 ## Verification checklist
 
@@ -64,3 +48,5 @@ Each script documents its required and optional environment variables. Use the p
 ## Local rehearsal
 
 Run the deployment without broadcast against Anvil first, then execute the relevant integration tests. script/Simulate.s.sol provides a larger local composition used by the frontend and integration workflow; it is not a production deployment manifest. Its `CHALLENGE_WINDOW` override must still satisfy the shipping manager's one-day minimum.
+
+After a broadcast, `node script/write-frontend-env.mjs` (with `CHAIN_ID` set for a network other than Anvil) reads the run and writes both frontend/.env.local and indexer/deployments.<chainId>.json, the schema-v1 manifest the indexer reads when `DEPLOYMENTS_JSON` is unset.

@@ -1,24 +1,21 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
 
-import {
-  useReadCommitmentManagerGetMutualPremiumState,
-  useReadCommitmentManagerGetMutualJuniorPool,
-} from '../generated'
-import { useNowSeconds } from './useNow'
-
-/** Seconds in a 365-day year — the basis for annualizing the premium stream. */
-const SECONDS_PER_YEAR = 31_536_000n
+import { commitmentManagerAbi } from '../generated'
+import { premiumAprBps } from './useMutuals'
+import { useDisplayNowSelect } from './useDisplayNow'
+import { POLL } from './polling'
 
 /**
  * Live §G premium-stream state for a Mutual — the typed
- * `getMutualPremiumState` 9-tuple plus the junior reserve.
+ * `getMutualPremiumState` 9-tuple.
  *
  * This is the underwriters' *yield* surface: a mutual sells cover, the premium
  * paid funds a reward stream (`rewardRate` numeraire/sec) shared pro-rata by
  * member shares until `periodFinish`. `premiumPool` is the unstreamed reserve.
  */
 export interface MutualPremiumStream {
-  /** Pi — accumulated premium-per-share, 1e18-scaled. */
+  /** Pi — accumulated premium-per-share, 1e27-scaled. */
   premiumPerShareStored: bigint
   /** Numeraire capacity the stream yields against (the APR denominator). */
   activeCover: bigint
@@ -36,8 +33,6 @@ export interface MutualPremiumStream {
   bankedTotal: bigint
   /** Unstreamed premium reserve (funded − streamed). */
   premiumPool: bigint
-  /** Junior absorber reserve (funded − drawn); 0 for homogeneous mutuals. */
-  juniorPool: bigint
 }
 
 export interface UseMutualPremiumReturn {
@@ -64,11 +59,11 @@ interface UseMutualPremiumParams {
 
 /**
  * useMutualPremium — reads a Mutual's live premium-stream state directly
- * on-chain (`getMutualPremiumState` + `getMutualJuniorPool`) and derives the
+ * on-chain (`getMutualPremiumState`) and derives the
  * annualized premium APR underwriters earn on deployed capacity.
  *
  * Self-contained: no indexer dependency, so the mutual page surfaces premium
- * yield even on a fresh chain. Both reads refetch every 15s to keep the rate and
+ * yield even on a fresh chain. The read refetches every 15s to keep the rate and
  * countdown fresh.
  */
 export function useMutualPremium({
@@ -77,27 +72,16 @@ export function useMutualPremium({
   enabled,
 }: UseMutualPremiumParams): UseMutualPremiumReturn {
   const queryEnabled = !!managerAddress && mutualId !== undefined && enabled !== false
-  // useNowSeconds returns a bigint; the countdown math below is in plain
-  // numbers, so coerce once here to avoid mixing BigInt and Number.
-  const now = Number(useNowSeconds())
-
   const {
     data: stateRaw,
     isLoading: stateLoading,
     refetch: refetchState,
-  } = useReadCommitmentManagerGetMutualPremiumState({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMutualPremiumState',
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
-  })
-
-  const {
-    data: juniorPoolRaw,
-    refetch: refetchJunior,
-  } = useReadCommitmentManagerGetMutualJuniorPool({
-    address: managerAddress,
-    args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: queryEnabled, refetchInterval: 15_000 },
+    query: { enabled: queryEnabled, refetchInterval: POLL.fast },
   })
 
   // getMutualPremiumState returns a positional 9-tuple (named uint256 outputs,
@@ -113,32 +97,29 @@ export function useMutualPremium({
         premiumRemainder: stateRaw[6],
         bankedTotal: stateRaw[7],
         premiumPool: stateRaw[8],
-        juniorPool: juniorPoolRaw ?? 0n,
       }
     : undefined
 
-  let premiumAprBps: number | undefined
-  if (stream && stream.activeCover > 0n) {
-    // bps = rewardRate × secondsPerYear × 1e4 / activeCover. Multiply before
-    // dividing to preserve precision on small per-second rates.
-    premiumAprBps = Number(
-      (stream.rewardRate * SECONDS_PER_YEAR * 10_000n) / stream.activeCover,
-    )
-  }
+  const aprBps = stream ? premiumAprBps(stream.rewardRate, stream.activeCover) : undefined
 
   const periodFinish = stream ? Number(stream.periodFinish) : 0
-  const secondsRemaining = Math.max(0, periodFinish - now)
+  // On the chain clock (an anvil warp moves it), floored to the minute above
+  // 60 s: `formatDuration` shows no seconds there, so the caller re-renders
+  // once a minute rather than every second.
+  const secondsRemaining = useDisplayNowSelect((now) => {
+    const s = Math.max(0, periodFinish - now)
+    return s < 60 ? s : s - (s % 60)
+  })
   const isStreaming = !!stream && stream.rewardRate > 0n && secondsRemaining > 0
 
   return {
     stream,
-    premiumAprBps,
+    premiumAprBps: aprBps,
     isStreaming,
     secondsRemaining,
     isLoading: stateLoading,
     refetch: () => {
       void refetchState()
-      void refetchJunior()
     },
   }
 }

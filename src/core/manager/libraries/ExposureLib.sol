@@ -6,63 +6,50 @@ import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManag
 import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
 
 /// @title ExposureLib
-/// @notice Single source of truth for the per-(user, token) exposure arithmetic that backs the
-///         allocation invariant INV-3 (`totalForfeitable <= totalEncumbered`). The arithmetic was
-///         historically inlined at several call sites; the shared-loss mutual settle path needs the
-///         *same* invariant honored under an **incremental, survive-and-rebase** decrement
-///         (ERC-COMMITMENTS-MUTUALS), so the logic is lifted here and reused so the invariant lives in one
-///         implementation.
-/// @dev All functions are `internal` → inlined into the calling delegatecall library; no extra
-///      delegatecall and no behavior change versus the previous inline arithmetic.
+/// @notice Single source of truth for the per-(user, token) forfeitable exposure that backs the
+///         allocation invariant INV-3 (`totalForfeitable <= encumberedBalance`). The encumbered side
+///         is the custody ledger itself; this library keeps only the forfeitable side.
+/// @dev INV-3 holds by construction, so nothing checks it with a revert: every lien adds at most its
+///      own amount (`maxPenaltyBps <= 10_000`), and every later writer keeps a lien's forfeitable
+///      share at most its live amount (the diff rule in `resize`, the mutual settle moving both
+///      sides by the same units). All functions are `internal`, inlined into the calling library.
 library ExposureLib {
     /// @notice The forfeitable exposure a lien of `amount` units at `penaltyBps` contributes:
-    ///         `amount * penaltyBps / 10_000`. This is the *value* half of INV-3; keeping it beside
-    ///         the storage-delta helpers keeps the whole exposure formula in one implementation
-    ///         instead of inlined at every create / settle / forfeit site.
+    ///         `amount * penaltyBps / 10_000`.
     function exposureOf(uint256 amount, uint16 penaltyBps) internal pure returns (uint256) {
         return (amount * penaltyBps) / BPS_DENOMINATOR;
     }
 
-    /// @notice Add `encDelta` to encumbered and `forfDelta` to forfeitable (create / contribute).
-    function increment(
-        CommitmentManagerStorage.Layout storage s,
-        address user,
-        address token,
-        uint256 encDelta,
-        uint256 forfDelta
-    ) internal {
-        ICM.UserExposure storage ex = s.userExposures[user][token];
-        ex.totalEncumbered += encDelta;
-        ex.totalForfeitable += forfDelta;
+    /// @notice Add `forfDelta` to the user's forfeitable exposure (create / propose / accept).
+    function increment(CommitmentManagerStorage.Layout storage s, address user, address token, uint256 forfDelta)
+        internal
+    {
+        s.userForfeitable[user][token] += forfDelta;
     }
 
-    /// @notice Subtract `encDelta` from encumbered and `forfDelta` from forfeitable. Used by the
-    ///         terminal close / single-forfeit decrement (encDelta = amount, forfDelta = exposure)
-    ///         and by the mutual-aware terminal close (encDelta = residual, forfDelta = remaining).
-    function decrement(
-        CommitmentManagerStorage.Layout storage s,
-        address user,
-        address token,
-        uint256 encDelta,
-        uint256 forfDelta
-    ) internal {
-        ICM.UserExposure storage ex = s.userExposures[user][token];
-        ex.totalEncumbered -= encDelta;
-        ex.totalForfeitable -= forfDelta;
+    /// @notice Subtract `forfDelta` from the user's forfeitable exposure. Used by the terminal close /
+    ///         single forfeit (the lien's whole exposure), the mutual settle (`owedUnits`) and the
+    ///         mutual-aware terminal close (the remaining liability).
+    function decrement(CommitmentManagerStorage.Layout storage s, address user, address token, uint256 forfDelta)
+        internal
+    {
+        s.userForfeitable[user][token] -= forfDelta;
     }
 
-    /// @notice Incremental mutual-settle decrement: move **both** legs by the same `owedUnits`
-    ///         (ERC-COMMITMENTS-MUTUALS INV-G9). Because the forfeited units are drawn entirely from the member's
-    ///         frozen forfeitable allotment `E_i`, the per-commitment gap
-    ///         `(encumbered − forfeitable) = amount_join − E_i` is preserved across every settle,
-    ///         so the aggregate INV-3 holds by construction even for a user simultaneously backing
-    ///         other high-penalty commitments on the same token.
-    function decrementForfeited(
-        CommitmentManagerStorage.Layout storage s,
-        address user,
-        address token,
-        uint256 owedUnits
-    ) internal {
-        decrement(s, user, token, owedUnits, owedUnits);
+    /// @notice Set a live lien's `amount` and move the committer's forfeitable exposure by the
+    ///         exposure diff (the dust-free diff rule: never recomputed from the moved units). A
+    ///         shrink is clamped at zero as a defence against drift.
+    function resize(CommitmentManagerStorage.Layout storage s, ICM.Commitment storage c, uint256 newAmount) internal {
+        uint256 pre = exposureOf(c.amount, c.maxPenaltyBps);
+        uint256 post = exposureOf(newAmount, c.maxPenaltyBps);
+        c.amount = newAmount;
+        mapping(address => uint256) storage forfeitable = s.userForfeitable[c.committer];
+        if (post >= pre) {
+            forfeitable[c.token] += post - pre;
+        } else {
+            uint256 cur = forfeitable[c.token];
+            uint256 dec = pre - post;
+            forfeitable[c.token] = dec > cur ? 0 : cur - dec;
+        }
     }
 }

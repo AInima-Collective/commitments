@@ -109,7 +109,11 @@ contract OperatorRegistryTest is ManagerTestBase {
         registry.register(commitmentId);
 
         assertTrue(registry.isOperator(operator1), "operator1 should be active");
-        assertEq(registry.getOperatorStake(operator1), MIN_OPERATOR_STAKE, "stake should equal commitment amount");
+        assertEq(
+            registry.getOperator(operator1).totalDelegatedStake,
+            MIN_OPERATOR_STAKE,
+            "stake should equal commitment amount"
+        );
         assertEq(registry.getOperatorCount(), 1, "should have 1 operator");
     }
 
@@ -187,7 +191,7 @@ contract OperatorRegistryTest is ManagerTestBase {
         registry.delegate(operator1, commitmentId);
 
         assertEq(
-            registry.getOperatorStake(operator1),
+            registry.getOperator(operator1).totalDelegatedStake,
             MIN_OPERATOR_STAKE + delegateAmount,
             "total stake should include delegation"
         );
@@ -228,7 +232,7 @@ contract OperatorRegistryTest is ManagerTestBase {
     }
 
     // =========================================================================
-    // Test 9: getOperatorStake returns correct total stake (self + delegated) (OPER-02)
+    // Test 9: getOperator returns correct total stake (self + delegated) (OPER-02)
     // =========================================================================
 
     function testGetOperatorStake_selfPlusDelegated_correct() public {
@@ -246,7 +250,7 @@ contract OperatorRegistryTest is ManagerTestBase {
         registry.delegate(operator1, commitmentId2);
 
         uint256 expectedStake = MIN_OPERATOR_STAKE + delegateAmount1 + delegateAmount2;
-        assertEq(registry.getOperatorStake(operator1), expectedStake, "total stake mismatch");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, expectedStake, "total stake mismatch");
     }
 
     // =========================================================================
@@ -334,12 +338,12 @@ contract OperatorRegistryTest is ManagerTestBase {
         vm.prank(staker1);
         registry.delegate(operator1, commitmentId);
 
-        uint256 stakeBefore = registry.getOperatorStake(operator1);
+        uint256 stakeBefore = registry.getOperator(operator1).totalDelegatedStake;
 
         // Execute forfeit via arbiter (OPER-05: operator service as arbiter)
         _executeFullForfeit(commitmentId, MAX_PENALTY_BPS);
 
-        uint256 stakeAfter = registry.getOperatorStake(operator1);
+        uint256 stakeAfter = registry.getOperator(operator1).totalDelegatedStake;
 
         // Audit fix: on forfeit, full commitment amount is removed (not just penalty portion)
         // because the entire commitment is terminated
@@ -381,13 +385,13 @@ contract OperatorRegistryTest is ManagerTestBase {
         vm.prank(staker1);
         registry.delegate(operator1, commitmentId);
 
-        uint256 stakeBefore = registry.getOperatorStake(operator1);
+        uint256 stakeBefore = registry.getOperator(operator1).totalDelegatedStake;
 
         // Arbiter releases the commitment
         vm.prank(arbiter);
         manager.releaseCommitment(commitmentId);
 
-        uint256 stakeAfter = registry.getOperatorStake(operator1);
+        uint256 stakeAfter = registry.getOperator(operator1).totalDelegatedStake;
         assertEq(stakeAfter, stakeBefore - delegateAmount, "stake should decrease by full delegation amount");
 
         IOperatorRegistry.Operator memory op = registry.getOperator(operator1);
@@ -395,10 +399,10 @@ contract OperatorRegistryTest is ManagerTestBase {
     }
 
     // =========================================================================
-    // Test 16: Forfeit reduces stake below minOperatorStake — belowMinStake flag set (D-08)
+    // Test 16: Forfeit reduces stake below minOperatorStake — OperatorBelowMinStake emitted (D-08)
     // =========================================================================
 
-    function testForfeit_belowMinStake_flagSet() public {
+    function testForfeit_belowMinStake_emits() public {
         // Register with just min stake
         _registerOperator1();
 
@@ -418,7 +422,7 @@ contract OperatorRegistryTest is ManagerTestBase {
         manager.executeForfeit(selfCommitmentId);
 
         IOperatorRegistry.Operator memory opAfter = registry.getOperator(operator1);
-        assertTrue(opAfter.belowMinStake, "belowMinStake should be flagged after forfeit");
+        assertLt(opAfter.totalDelegatedStake, registry.minOperatorStake(), "below the minimum after forfeit");
     }
 
     // =========================================================================
@@ -434,7 +438,6 @@ contract OperatorRegistryTest is ManagerTestBase {
         assertEq(op.totalDelegatedStake, MIN_OPERATOR_STAKE, "totalDelegatedStake mismatch");
         assertEq(op.activeDelegationCount, 1, "activeDelegationCount should be 1");
         assertTrue(op.active, "should be active");
-        assertFalse(op.belowMinStake, "should not be below min stake");
         assertGt(op.registeredAt, 0, "registeredAt should be set");
     }
 
@@ -449,7 +452,7 @@ contract OperatorRegistryTest is ManagerTestBase {
         IOperatorRegistry.Operator memory op = registry.getOperator(operator1);
         uint256 selfCommitmentId = op.selfStakeCommitmentId;
 
-        uint256 stakeBefore = registry.getOperatorStake(operator1);
+        uint256 stakeBefore = registry.getOperator(operator1).totalDelegatedStake;
 
         // service arbiter initiates forfeit
         vm.prank(arbiter);
@@ -458,7 +461,7 @@ contract OperatorRegistryTest is ManagerTestBase {
         vm.warp(block.timestamp + WINDOW + 1);
         manager.executeForfeit(selfCommitmentId);
 
-        uint256 stakeAfter = registry.getOperatorStake(operator1);
+        uint256 stakeAfter = registry.getOperator(operator1).totalDelegatedStake;
         // Audit fix: full commitment amount removed on forfeit (not just penalty portion)
         assertEq(stakeAfter, stakeBefore - MIN_OPERATOR_STAKE, "service arbiter forfeit should reduce stake");
     }
@@ -634,7 +637,7 @@ contract OperatorRegistryTest is ManagerTestBase {
         registry.deregister();
 
         // The live delegation's accounting is untouched by the blocked deregister.
-        assertEq(registry.getOperatorStake(operator1), delegateAmount, "delegated stake preserved");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, delegateAmount, "delegated stake preserved");
 
         // Step 4: delegation closes → zombie can now deregister (count == 0, no self-stake).
         vm.prank(arbiter);
@@ -794,5 +797,141 @@ contract OperatorRegistryTest is ManagerTestBase {
         vm.prank(operator1);
         registry.deregister(); // clears the live self-stake routing
         assertEq(registry.trackedCommitmentCount(), 0, "deregister untracks the live self-stake");
+    }
+
+    // =========================================================================
+    // reconcile: repair a swallowed release/forfeit hook
+    // =========================================================================
+
+    /// @dev Delegate `amount` from staker1 to operator1 and return the commitment id.
+    function _delegateStaker1(uint256 amount) internal returns (uint256 id) {
+        id = _createCommitmentToRegistry(staker1, amount, MAX_PENALTY_BPS);
+        vm.prank(staker1);
+        registry.delegate(operator1, id);
+    }
+
+    function test_reconcile_repairsFailedReleaseHook() public {
+        _registerOperator1();
+        uint256 id = _delegateStaker1(200e18);
+
+        // The manager swallows the failed hook; the release still lands.
+        vm.mockCallRevert(address(registry), abi.encodeWithSelector(registry.onDelegationReleased.selector), "");
+        vm.expectEmit(true, true, false, false, address(manager));
+        emit ICM.RegistryHookFailed(id, registry.onDelegationReleased.selector);
+        vm.prank(arbiter);
+        manager.releaseCommitment(id);
+        vm.clearMockedCalls();
+
+        assertEq(registry.operatorForCommitment(id), operator1, "still routed after the failed hook");
+        vm.roll(block.number + 1);
+        vm.prank(operator1);
+        vm.expectRevert(IOperatorRegistry.ActiveDelegationsExist.selector);
+        registry.deregister();
+
+        // Anyone can repair it.
+        vm.expectEmit(true, true, true, true, address(registry));
+        emit IOperatorRegistry.DelegationReleased(staker1, operator1, id, 200e18);
+        vm.prank(unauthorized);
+        registry.reconcile(id);
+
+        assertEq(registry.operatorForCommitment(id), address(0), "routing cleared");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, MIN_OPERATOR_STAKE, "delegation removed");
+        assertEq(registry.getOperator(operator1).activeDelegationCount, 1, "only the self-stake remains");
+        assertEq(registry.trackedCommitmentCount(), 1, "untracked");
+
+        vm.prank(operator1);
+        registry.deregister();
+        assertFalse(registry.isOperator(operator1), "operator can deregister after reconcile");
+    }
+
+    function test_reconcile_repairsFailedForfeitHook() public {
+        _registerOperator1();
+        uint256 id = _delegateStaker1(200e18);
+
+        vm.mockCallRevert(address(registry), abi.encodeWithSelector(registry.onDelegationForfeited.selector), "");
+        _executeFullForfeit(id, MAX_PENALTY_BPS);
+        vm.clearMockedCalls();
+        assertEq(registry.operatorForCommitment(id), operator1, "still routed after the failed hook");
+
+        uint256 forfeited = manager.forfeitedUnitsOf(id);
+        assertGt(forfeited, 0);
+        vm.expectEmit(true, true, true, true, address(registry));
+        emit IOperatorRegistry.DelegationForfeited(staker1, operator1, id, forfeited);
+        registry.reconcile(id);
+
+        assertEq(
+            registry.getOperator(operator1).totalDelegatedStake, MIN_OPERATOR_STAKE, "full credited amount removed"
+        );
+        assertEq(registry.getOperator(operator1).activeDelegationCount, 1, "only the self-stake remains");
+    }
+
+    function test_reconcile_openCommitment_reverts() public {
+        _registerOperator1();
+        uint256 id = _delegateStaker1(200e18);
+        vm.expectRevert(IOperatorRegistry.CommitmentStillOpen.selector);
+        registry.reconcile(id);
+    }
+
+    function test_reconcile_untracked_reverts() public {
+        _registerOperator1();
+        uint256 id = _delegateStaker1(200e18);
+        vm.prank(arbiter);
+        manager.releaseCommitment(id); // hook succeeds and untracks
+        vm.expectRevert(IOperatorRegistry.CommitmentNotTracked.selector);
+        registry.reconcile(id);
+    }
+
+    // =========================================================================
+    // deregister clears the registry's own stake figures
+    // =========================================================================
+
+    function test_deregister_liveSelfStake_zeroesStakeFigures() public {
+        _registerOperator1();
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, MIN_OPERATOR_STAKE);
+
+        vm.roll(block.number + 1);
+        vm.warp(block.timestamp + 1);
+        vm.prank(operator1);
+        registry.deregister();
+
+        IOperatorRegistry.Operator memory op = registry.getOperator(operator1);
+        assertEq(op.totalDelegatedStake, 0, "totalDelegatedStake zeroed");
+        assertEq(op.activeDelegationCount, 0, "activeDelegationCount zeroed");
+    }
+
+    // =========================================================================
+    // Closed commitments and config setters
+    // =========================================================================
+
+    function test_register_closedCommitment_revertsCommitmentClosed() public {
+        uint256 id = _createCommitmentToRegistry(operator1, MIN_OPERATOR_STAKE, MAX_PENALTY_BPS);
+        vm.prank(arbiter);
+        manager.releaseCommitment(id);
+        vm.prank(operator1);
+        vm.expectRevert(IOperatorRegistry.CommitmentClosed.selector);
+        registry.register(id);
+    }
+
+    function test_delegate_closedCommitment_revertsCommitmentClosed() public {
+        _registerOperator1();
+        uint256 id = _createCommitmentToRegistry(staker1, MIN_OPERATOR_STAKE, MAX_PENALTY_BPS);
+        vm.prank(arbiter);
+        manager.releaseCommitment(id);
+        vm.prank(staker1);
+        vm.expectRevert(IOperatorRegistry.CommitmentClosed.selector);
+        registry.delegate(operator1, id);
+    }
+
+    function test_configSetters_emit() public {
+        vm.expectEmit(address(registry));
+        emit IOperatorRegistry.MinOperatorStakeUpdated(MIN_OPERATOR_STAKE, 7);
+        vm.prank(admin);
+        registry.setMinOperatorStake(7);
+
+        uint256 oldMax = registry.maxDelegationsPerOperator();
+        vm.expectEmit(address(registry));
+        emit IOperatorRegistry.MaxDelegationsPerOperatorUpdated(oldMax, 9);
+        vm.prank(admin);
+        registry.setMaxDelegationsPerOperator(9);
     }
 }

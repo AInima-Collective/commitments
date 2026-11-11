@@ -5,7 +5,7 @@ import { type Address } from 'viem'
 import { getBlockExplorer } from '../../lib/blockExplorer'
 import { AddressDisplay, Notice, TokenAmount } from '../ui'
 import { useRegistryPolicy } from '../../hooks/useRegistryPolicy'
-import { formatBps } from '../../utils/commitments'
+import { formatBps } from '../../lib/commitments'
 
 interface ServiceDetailsPanelProps {
   /** OperatorRegistry address — also drives the policy/params read. */

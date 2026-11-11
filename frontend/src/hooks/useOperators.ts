@@ -1,7 +1,8 @@
 import { useReadContracts } from 'wagmi'
 import { type Address, type ReadContractReturnType } from 'viem'
 import { operatorRegistryAbi } from '../generated'
-import { type OperatorInfo, deriveOperatorStatus, type OperatorStatus } from '../utils/mesh'
+import { type OperatorInfo, deriveOperatorStatus, type OperatorStatus } from '../lib/mesh'
+import { POLL } from './polling'
 
 /** ABI-derived shape of `getOperator`'s returned struct. */
 type OperatorStruct = ReadContractReturnType<typeof operatorRegistryAbi, 'getOperator'>
@@ -16,17 +17,25 @@ interface OperatorWithStatus extends OperatorInfo {
 }
 
 export function useOperators({ registryAddress }: UseOperatorsOptions) {
-  // Step 1: Get operator set (all addresses in one call)
+  // Step 1: Get operator set and the minimum stake (one batch)
   const { data: setResult, isLoading: isLoadingSet, refetch } = useReadContracts({
-    contracts: [{
-      abi: operatorRegistryAbi,
-      address: registryAddress!,
-      functionName: 'getOperatorSet',
-    }],
+    contracts: [
+      {
+        abi: operatorRegistryAbi,
+        address: registryAddress!,
+        functionName: 'getOperatorSet',
+      },
+      {
+        abi: operatorRegistryAbi,
+        address: registryAddress!,
+        functionName: 'minOperatorStake',
+      },
+    ],
     query: { enabled: !!registryAddress },
   })
 
   const addresses = (setResult?.[0]?.status === 'success' ? setResult[0].result : []) as Address[]
+  const minStake = setResult?.[1]?.status === 'success' ? setResult[1].result : undefined
 
   // Step 2: Batch-fetch Operator structs for each address
   const { data: operatorResults, isLoading: isLoadingData } = useReadContracts({
@@ -36,7 +45,7 @@ export function useOperators({ registryAddress }: UseOperatorsOptions) {
       functionName: 'getOperator' as const,
       args: [addr] as const,
     })),
-    query: { enabled: addresses.length > 0, refetchInterval: 30_000 },
+    query: { enabled: addresses.length > 0, refetchInterval: POLL.slow },
   })
 
   // Build typed operator list
@@ -63,12 +72,9 @@ export function useOperators({ registryAddress }: UseOperatorsOptions) {
       activeDelegationCount: BigInt(op.activeDelegationCount),
       registeredAt: op.registeredAt,
     }
-    const belowMinStake = op.belowMinStake
-    // Use belowMinStake from contract when available; deriveOperatorStatus handles minStake threshold
-    const status = belowMinStake
-      ? ('BELOW_MIN_STAKE' as const)
-      : deriveOperatorStatus(info)
-    return { ...info, belowMinStake, status }
+    // The registry does not store a below-minimum flag; derive it from the current threshold.
+    const status = deriveOperatorStatus(info, minStake)
+    return { ...info, belowMinStake: status === 'BELOW_MIN_STAKE', status }
   })
 
   return {

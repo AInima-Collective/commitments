@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {IFlowQuery} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
-
-interface IFanIn is IFlowQuery {
+interface IFanIn {
     /// @notice Initialize the fan-in node (called once by factory after clone)
     /// @param consumer The single consumer address that receives aggregated stake
     /// @param manager The manager/owner address that can register providers
@@ -35,7 +33,7 @@ interface IFanIn is IFlowQuery {
     /// @notice Total stake aggregated for a local output denom.
     function totalStake(bytes32 denomOut) external view returns (uint256);
 
-    /// @notice Consumer releases stake back to its registered provider.
+    /// @notice Consumer or manager releases stake back to its registered provider.
     /// @dev the provider is derived from `outputSources[denomOut]`
     ///      rather than passed in, so off-chain indexers cannot be poisoned by a consumer
     ///      emitting an arbitrary provider address.

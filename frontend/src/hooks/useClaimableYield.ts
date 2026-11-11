@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useReadContracts } from 'wagmi'
 import { commitmentManagerAbi } from '../generated'
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 import {
   buildClaimableEntries,
   type ClaimableBindingRow,
   type ClaimableYieldEntry,
 } from '../lib/claimableYield'
+import { POLL } from './polling'
 
 export type { ClaimableYieldEntry }
 
@@ -50,43 +51,23 @@ export function useClaimableYield({
   managerAddress,
   viewAddress,
 }: UseClaimableYieldParams): UseClaimableYieldReturn {
-  const [rows, setRows] = useState<ClaimableBindingRow[]>([])
-  const [bindingsLoading, setBindingsLoading] = useState(hasIndexer)
-  const [error, setError] = useState<Error | null>(null)
-  const [tick, setTick] = useState(0)
-  const requestIdRef = useRef(0)
-
-  useEffect(() => {
-    if (!hasIndexer || !viewAddress) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription reset on indexer/address change
-      setRows([])
-      setBindingsLoading(false)
-      return
-    }
-    const reqId = ++requestIdRef.current
-    setBindingsLoading(true)
-    setError(null)
-    indexerFetch(`/account/${viewAddress}/claimable-yield`)
-      .then((res) => res.json() as Promise<{ bindings: RawBinding[] }>)
-      .then((data) => {
-        if (reqId !== requestIdRef.current) return
-        const next: ClaimableBindingRow[] = (data.bindings ?? []).map((b) => ({
-          commitmentId: b.commitmentId,
-          strategy: b.strategy,
-          committer: b.commitment.committer,
-          token: b.commitment.token,
-          vault: b.commitment.vault ?? null,
-        }))
-        setRows(next)
-        setBindingsLoading(false)
-      })
-      .catch((e: unknown) => {
-        if (reqId !== requestIdRef.current) return
-        setRows([])
-        setError(e instanceof Error ? e : new Error('Failed to load claimable yield'))
-        setBindingsLoading(false)
-      })
-  }, [viewAddress, tick])
+  const bindings = useQuery({
+    enabled: hasIndexer && !!viewAddress,
+    queryKey: ['claimable-yield-bindings', viewAddress?.toLowerCase()],
+    queryFn: async (): Promise<ClaimableBindingRow[]> => {
+      const data = await indexerJson<{ bindings: RawBinding[] }>(
+        `/account/${viewAddress}/claimable-yield`,
+      )
+      return (data.bindings ?? []).map((b) => ({
+        commitmentId: b.commitmentId,
+        strategy: b.strategy,
+        committer: b.commitment.committer,
+        token: b.commitment.token,
+        vault: b.commitment.vault ?? null,
+      }))
+    },
+  })
+  const rows = bindings.data ?? []
 
   const {
     data: pendingData,
@@ -99,7 +80,7 @@ export function useClaimableYield({
       functionName: 'pending' as const,
       args: [BigInt(r.commitmentId), r.strategy as Address, '0x'] as const,
     })),
-    query: { enabled: !!managerAddress && rows.length > 0, refetchInterval: 15_000 },
+    query: { enabled: !!managerAddress && rows.length > 0, refetchInterval: POLL.fast },
   })
 
   const pendings = rows.map((_, i) => pendingData?.[i]?.result as bigint | undefined)
@@ -107,11 +88,11 @@ export function useClaimableYield({
 
   return {
     entries,
-    isLoading: bindingsLoading || pendingLoading,
-    error,
+    isLoading: bindings.isLoading || pendingLoading,
+    error: bindings.error,
     indexerOnline: hasIndexer,
     refetch: () => {
-      setTick((t) => t + 1)
+      void bindings.refetch()
       void refetchPending()
     },
   }

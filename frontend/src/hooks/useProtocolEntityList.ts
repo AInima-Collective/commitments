@@ -1,28 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Address } from 'viem'
 
-import { hasIndexer, indexerFetch, indexerGraphql } from '../config/indexer'
-import type { CommitmentStatus } from '../utils/commitments'
+import { hasIndexer, indexerGraphql, indexerGraphqlData, indexerJson } from '../config/indexer'
+import { parseCommitmentRow, type CommitmentRowWire } from '../lib/indexerRows'
+import type { CommitmentStatus } from '../lib/commitments'
+import { POLL } from './polling'
 
 /**
  * Hooks that power the Explorer's Etherscan-style entity browser tabs.
  * Each tab pulls a paginated, sortable list of one entity type. The hooks
  * are intentionally lean (no joins, no denormalization) — `EntityBrowser`
- * formats and routes from these rows.
- *
- * Operators tab reuses the existing `useOperatorsIndexed` hook (no need to
- * duplicate). Vaults tab is composed in-page from `VITE_VAULT_ADDRESS` +
- * `useVaultStats` since the indexer has no vault entity.
+ * formats and routes from these rows. The browser has no operators or
+ * vaults tab, so there are no hooks for them here (the indexer does index
+ * both).
  */
-
-const STATUS_WIRE_TO_DOMAIN: Record<string, CommitmentStatus> = {
-  active: 'ACTIVE',
-  unbonding: 'UNBONDING',
-  forfeitPending: 'FORFEIT_PENDING',
-  forfeited: 'FORFEITED',
-  released: 'RELEASED',
-  expired: 'EXPIRED',
-}
 
 export interface ProtocolCommitmentRow {
   id: bigint
@@ -38,72 +29,67 @@ export interface ProtocolCommitmentRow {
   forfeitChallengeEnd: bigint | null
   unbondMaturesAt: bigint | null
   createdBlock: bigint
-}
-
-interface CommitmentWire {
-  id: string
-  manager: string
-  committer: string
-  arbiter: string
-  counterparty: string
-  token: string
-  amount: string
-  maxPenaltyBps: number
-  status: string
-  forfeitChallengeEnd: string | null
-  unbondMaturesAt: string | null
-  createdBlock: string
+  /** Block timestamp of creation (unix seconds); null on rows that predate the column. */
+  createdAt: bigint | null
 }
 
 interface UrgentEnvelope {
-  rows: CommitmentWire[]
+  rows: CommitmentRowWire[]
+  counts?: { total: number }
 }
+
+const EMPTY_COMMITMENTS: ProtocolCommitmentRow[] = []
+
+/** `/commitments/urgent` serves at most this many rows per request. */
+const URGENT_PAGE = 100
 
 /**
  * useProtocolCommitmentsList — protocol-wide commitment list using the
  * canonical `/commitments/urgent` sort (forfeitPending → unbonding → active →
- * terminal, then deadline ASC, then id DESC). Caller may filter by status.
+ * terminal, then deadline ASC, then id DESC): the first page of 100, the
+ * endpoint's maximum. Callers wanting fewer rows slice, so every caller shares
+ * one cached request. `address` filters server-side to commitments where it is
+ * committer or counterparty. `total` counts every matching row.
  */
-export function useProtocolCommitmentsList(options: {
-  status?: 'active' | 'unbonding' | 'forfeitPending' | 'forfeited' | 'released' | 'expired'
-  limit?: number
-} = {}): {
+export function useProtocolCommitmentsList(options: { address?: string } = {}): {
   rows: ProtocolCommitmentRow[]
+  total: number
   isLoading: boolean
   error: unknown
 } {
-  const { status, limit = 100 } = options
+  const address = options.address?.toLowerCase()
   const query = useQuery({
     enabled: hasIndexer,
-    queryKey: ['protocol-commitments-list', status ?? null, limit],
-    queryFn: async (): Promise<ProtocolCommitmentRow[]> => {
-      const params = new URLSearchParams()
-      params.set('limit', String(limit))
-      if (status) params.set('status', status)
-      const res = await indexerFetch(`/commitments/urgent?${params.toString()}`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const env = (await res.json()) as UrgentEnvelope
-      return (env.rows ?? []).map(
-        (w): ProtocolCommitmentRow => ({
-          id: BigInt(w.id),
+    queryKey: ['protocol-commitments-list', address ?? null],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(URGENT_PAGE) })
+      if (address) params.set('address', address)
+      const env = await indexerJson<UrgentEnvelope>(`/commitments/urgent?${params.toString()}`)
+      const rows = (env.rows ?? []).map((w): ProtocolCommitmentRow => {
+        const r = parseCommitmentRow(w)
+        return {
+          id: r.id,
           manager: w.manager as Address,
-          committer: w.committer as Address,
-          arbiter: w.arbiter as Address,
-          counterparty: w.counterparty as Address,
-          token: w.token as Address,
-          amount: BigInt(w.amount),
-          maxPenaltyBps: w.maxPenaltyBps,
-          status: STATUS_WIRE_TO_DOMAIN[w.status] ?? 'ACTIVE',
-          forfeitChallengeEnd: w.forfeitChallengeEnd ? BigInt(w.forfeitChallengeEnd) : null,
-          unbondMaturesAt: w.unbondMaturesAt ? BigInt(w.unbondMaturesAt) : null,
-          createdBlock: BigInt(w.createdBlock),
-        }),
-      )
+          committer: r.committer,
+          arbiter: r.arbiter,
+          counterparty: r.counterparty,
+          token: r.token,
+          amount: r.amount,
+          maxPenaltyBps: r.maxPenaltyBps,
+          status: r.status,
+          forfeitChallengeEnd: r.forfeitChallengeEnd ?? null,
+          unbondMaturesAt: r.unbondMaturesAt ?? null,
+          createdBlock: r.createdBlock,
+          createdAt: r.createdAt ?? null,
+        }
+      })
+      return { rows, total: env.counts?.total ?? rows.length }
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return {
-    rows: query.data ?? [],
+    rows: query.data?.rows ?? EMPTY_COMMITMENTS,
+    total: query.data?.total ?? 0,
     isLoading: query.isLoading,
     error: query.error,
   }
@@ -127,6 +113,7 @@ export interface ProtocolAgreementRow {
 
 interface AgreementWire {
   id: string
+  manager: string
   commitmentIdA: string
   commitmentIdB: string
   status: string
@@ -137,6 +124,7 @@ interface AgreementWire {
 
 interface CommitmentLiteWire {
   id: string
+  manager: string
   committer: string
   amount: string
 }
@@ -146,6 +134,7 @@ const AGREEMENTS_QUERY = /* GraphQL */ `
     agreements(limit: $limit, orderBy: "id", orderDirection: "desc") {
       items {
         id
+        manager
         commitmentIdA
         commitmentIdB
         status
@@ -162,6 +151,7 @@ const COMMITMENTS_BY_ID_QUERY = /* GraphQL */ `
     commitments(where: { id_in: $ids }, limit: 1000) {
       items {
         id
+        manager
         committer
         amount
       }
@@ -190,14 +180,11 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
     enabled: hasIndexer,
     queryKey: ['protocol-agreements-list', limit],
     queryFn: async (): Promise<ProtocolAgreementRow[]> => {
-      const res = await indexerGraphql<{ agreements: { items: AgreementWire[] } }>(
+      const data = await indexerGraphqlData<{ agreements: { items: AgreementWire[] } }>(
         AGREEMENTS_QUERY,
         { limit },
       )
-      if (res.errors && res.errors.length > 0) {
-        throw new Error(res.errors[0].message)
-      }
-      const items = res.data?.agreements.items ?? []
+      const items = data.agreements.items
       if (items.length === 0) return []
 
       const ids = new Set<string>()
@@ -209,14 +196,17 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
         COMMITMENTS_BY_ID_QUERY,
         { ids: Array.from(ids) },
       )
-      const byId = new Map<string, CommitmentLiteWire>()
+      // Commitment ids repeat across managers, so key the join by (manager, id);
+      // an agreement's legs live on the agreement's own manager.
+      const key = (manager: string, id: string) => `${manager.toLowerCase()}-${id}`
+      const byKey = new Map<string, CommitmentLiteWire>()
       for (const c of cRes.data?.commitments.items ?? []) {
-        byId.set(c.id, c)
+        byKey.set(key(c.manager, c.id), c)
       }
 
       return items.map((w): ProtocolAgreementRow => {
-        const a = byId.get(w.commitmentIdA)
-        const b = byId.get(w.commitmentIdB)
+        const a = byKey.get(key(w.manager, w.commitmentIdA))
+        const b = byKey.get(key(w.manager, w.commitmentIdB))
         const exposure =
           a && b ? BigInt(a.amount) + BigInt(b.amount) : a ? BigInt(a.amount) : b ? BigInt(b.amount) : undefined
         return {
@@ -233,7 +223,7 @@ export function useProtocolAgreementsList(options: { limit?: number } = {}): {
         }
       })
     },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
   return {
     rows: query.data ?? [],
@@ -280,15 +270,13 @@ export function useProtocolArbitersList(options: {
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
       if (address) params.set('address', address.toLowerCase())
-      const response = await indexerFetch(`/protocol/arbiters?${params.toString()}`)
-      if (!response.ok) throw new Error(`Arbiter directory error: ${response.status}`)
-      const body = (await response.json()) as ArbiterDirectoryWire
+      const body = await indexerJson<ArbiterDirectoryWire>(`/protocol/arbiters?${params.toString()}`)
       return {
         rows: body.rows.map((row) => ({ ...row, address: row.address as Address })),
         page: body.page,
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     rows: query.data?.rows ?? [],
@@ -348,9 +336,7 @@ export function useProtocolCasesList(options: {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
       if (arbiter) params.set('arbiter', arbiter.toLowerCase())
       if (openOnly) params.set('open', 'true')
-      const response = await indexerFetch(`/protocol/cases?${params.toString()}`)
-      if (!response.ok) throw new Error(`Cases explorer error: ${response.status}`)
-      const body = (await response.json()) as CasesWire
+      const body = await indexerJson<CasesWire>(`/protocol/cases?${params.toString()}`)
       return {
         rows: body.rows.map((row) => ({
           ...row,
@@ -362,7 +348,7 @@ export function useProtocolCasesList(options: {
         page: body.page,
       }
     },
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
   })
   return {
     rows: query.data?.rows ?? [],

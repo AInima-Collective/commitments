@@ -115,7 +115,8 @@ contract CommitmentsVault is
         return idle;
     }
 
-    /// @notice Max depositable amount — returns 0 when depositsPaused; routes through strategy when set.
+    /// @notice Max depositable amount — returns 0 when depositsPaused, so a paused `deposit` reverts
+    ///         `ERC4626ExceededMaxDeposit`; routes through strategy when set.
     function maxDeposit(address) public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         CommitmentsVaultStorage.Layout storage s = CommitmentsVaultStorage.layout();
         if (s.depositsPaused) return 0;
@@ -125,7 +126,8 @@ contract CommitmentsVault is
         return type(uint256).max;
     }
 
-    /// @notice Max mintable shares — returns 0 when depositsPaused; mirrors the strategy deposit cap
+    /// @notice Max mintable shares — returns 0 when depositsPaused (a paused `mint` reverts
+    ///         `ERC4626ExceededMaxMint`); mirrors the strategy deposit cap
     ///         so mint() and deposit() agree (ERC-4626 requires maxMint to be the true maximum).
     function maxMint(address) public view override(ERC4626Upgradeable, IERC4626) returns (uint256) {
         CommitmentsVaultStorage.Layout storage s = CommitmentsVaultStorage.layout();
@@ -139,41 +141,13 @@ contract CommitmentsVault is
         return type(uint256).max;
     }
 
-    /// @notice Deposit assets into vault. Reverts with DepositsPaused if paused.
-    function deposit(uint256 assets, address receiver)
-        public
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 shares)
-    {
-        if (CommitmentsVaultStorage.layout().depositsPaused) {
-            revert DepositsPaused();
-        }
-        return super.deposit(assets, receiver);
-    }
-
-    /// @notice Mint exact shares. Reverts with DepositsPaused if paused.
-    function mint(uint256 shares, address receiver)
-        public
-        override(ERC4626Upgradeable, IERC4626)
-        returns (uint256 assets)
-    {
-        if (CommitmentsVaultStorage.layout().depositsPaused) {
-            revert DepositsPaused();
-        }
-        return super.mint(shares, receiver);
-    }
-
     /// @notice Override deposit hook to forward assets to strategy after minting shares.
     /// @dev nonReentrant guard applied here to protect the full deposit path including strategy interaction.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override nonReentrant {
         // super._deposit: pulls tokens from caller into this contract and mints shares
         super._deposit(caller, receiver, assets, shares);
         // Push assets to strategy after they land in the vault
-        CommitmentsVaultStorage.Layout storage s = CommitmentsVaultStorage.layout();
-        if (s.yieldStrategy != address(0)) {
-            IERC20(asset()).safeTransfer(s.yieldStrategy, assets);
-            IYieldStrategy(s.yieldStrategy).deposit(assets);
-        }
+        _pushToStrategy(CommitmentsVaultStorage.layout().yieldStrategy, assets);
     }
 
     /// @notice Override withdraw hook to pull any shortfall from the strategy before paying out.
@@ -250,10 +224,7 @@ contract CommitmentsVault is
         // totalAssets() counts idle either way, so this only redeploys capital.
         if (yieldStrategy_ != address(0)) {
             uint256 idleBal = IERC20(asset()).balanceOf(address(this));
-            if (idleBal > 0) {
-                IERC20(asset()).safeTransfer(yieldStrategy_, idleBal);
-                IYieldStrategy(yieldStrategy_).deposit(idleBal);
-            }
+            if (idleBal > 0) _pushToStrategy(yieldStrategy_, idleBal);
         }
 
         s.yieldStrategy = yieldStrategy_;
@@ -285,14 +256,8 @@ contract CommitmentsVault is
     /// @param assets Amount of underlying asset to donate.
     function donate(uint256 assets) external nonReentrant {
         if (assets == 0) revert ZeroAmount();
-        CommitmentsVaultStorage.Layout storage s = CommitmentsVaultStorage.layout();
-
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), assets);
-
-        if (s.yieldStrategy != address(0)) {
-            IERC20(asset()).safeTransfer(s.yieldStrategy, assets);
-            IYieldStrategy(s.yieldStrategy).deposit(assets);
-        }
+        _pushToStrategy(CommitmentsVaultStorage.layout().yieldStrategy, assets);
 
         emit Donation(msg.sender, assets);
     }
@@ -304,7 +269,7 @@ contract CommitmentsVault is
     /// @inheritdoc ICommitmentsVault
     /// @dev Only DEFAULT_ADMIN_ROLE may call. Overwrites any prior record with
     ///      `(uri, contentHash, uint64(block.timestamp))` and emits `VaultMetadataUpdated`.
-    function setMetadata(string calldata uri, bytes32 contentHash) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setMetadata(string calldata uri, bytes32 contentHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (bytes(uri).length > MAX_METADATA_URI_LENGTH) revert URITooLong();
 
         CommitmentsVaultStorage.Layout storage s = CommitmentsVaultStorage.layout();
@@ -317,6 +282,14 @@ contract CommitmentsVault is
     /// @inheritdoc ICommitmentsVault
     function getMetadata() external view returns (ICommitmentsVault.VaultMetadata memory) {
         return CommitmentsVaultStorage.layout().vaultMetadata;
+    }
+
+    /// @dev Push model (see `IYieldStrategy.deposit`): transfer `assets` to `strategy`, then notify
+    ///      it. No-op when `strategy` is zero (idle mode).
+    function _pushToStrategy(address strategy, uint256 assets) private {
+        if (strategy == address(0)) return;
+        IERC20(asset()).safeTransfer(strategy, assets);
+        IYieldStrategy(strategy).deposit(assets);
     }
 
     // =========================================================================

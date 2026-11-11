@@ -4,7 +4,6 @@ pragma solidity ^0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
-import {IFlowQuery, ProviderInfo, ConsumerInfo, AvailableDenom} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 
 contract TokenWeightingTest is Test {
@@ -211,36 +210,6 @@ contract TokenWeightingTest is Test {
 
         uint256 expectedTotal = (100e18 * WEIGHT_WSETH / 10000) + (200e6 * WEIGHT_USDC / 10000);
         assertEq(tw.getTotalPower(), expectedTotal);
-    }
-
-    // ============================================================
-    // IFLOWQUERY TESTS
-    // ============================================================
-
-    function test_flowQuery_nodeType() public view {
-        assertEq(tw.nodeTypeName(), "token_weighting");
-    }
-
-    function test_flowQuery_providers() public {
-        vm.prank(provider);
-        tw.stake(provider, DENOM_WSETH, 100e18);
-
-        ProviderInfo[] memory pInfo = tw.providers();
-        assertEq(pInfo.length, 1, "should have one provider");
-        assertEq(pInfo[0].provider, provider);
-        assertGt(pInfo[0].stakes.length, 0, "should have stake info");
-    }
-
-    /// @notice Sink node — no downstream consumers
-    function test_flowQuery_consumers() public view {
-        ConsumerInfo[] memory cInfo = tw.consumers();
-        assertEq(cInfo.length, 0, "sink node should have no consumers");
-    }
-
-    function test_flowQuery_availableDenoms() public view {
-        AvailableDenom[] memory denoms = tw.availableDenoms();
-        // Two denoms registered via updateWeight in setUp
-        assertEq(denoms.length, 2, "should return two registered denoms");
     }
 
     // ============================================================

@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
-import { type Address, parseUnits } from 'viem'
+import { type Address } from 'viem'
 
 import {
   BalanceLine,
+  Button,
   Card,
   Notice,
   TokenAmount,
   TokenChip,
   useToasts,
 } from '../ui'
-import { formatTokenAmount } from '../../lib/format'
+import { useAmountInput } from '../../hooks/useAmountInput'
 import { useDepositFlow } from '../../hooks/useDepositFlow'
 import { useLedgerBalance } from '../../hooks/useLedgerBalance'
-import { type LedgerFlowStep, useManagerLedgerFlow } from '../../hooks/useManagerLedgerFlow'
+import { useManagerLedgerFlow } from '../../hooks/useManagerLedgerFlow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { useVaultPosition } from '../../hooks/useVaultPosition'
 import type { BackingOption } from '../../config/contracts'
+import { DepositStepper } from '../vault/DepositStepper'
+import { deriveDepositSteps, type StepDescriptor } from '../vault/depositSteps'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 interface BackingFlowProps {
   managerAddress: Address | undefined
@@ -26,15 +30,6 @@ interface BackingFlowProps {
    *  (e.g. the dashboard) refetch its own reads. The flow already refetches its
    *  internal ledger/vault reads on success. */
   onDeposited?: () => void
-}
-
-// Stepper tone/glyph vocabulary, matching DepositWizard.deriveSteps.
-type StepTone = 'neutral' | 'info' | 'success' | 'danger'
-type StepGlyph = '[ ]' | '[…]' | '[✓]' | '[!]'
-interface StepDescriptor {
-  tone: StepTone
-  glyph: StepGlyph
-  label: string
 }
 
 type Phase = 'mint' | 'back'
@@ -53,65 +48,6 @@ function descriptorFor(
   }
   if (flowStep === 'error') return { tone: 'danger', glyph: '[!]', label: baseLabel }
   return { tone: 'info', glyph: '[ ]', label: baseLabel }
-}
-
-/**
- * Stepper descriptors for the raw-ERC-20 back hop (single deposit hop into the
- * manager ledger). Mirrors DepositWizard.deriveSteps so the approval is a
- * first-class, visible step — "STEP 1 OF 2 — APPROVE" → "STEP 2 OF 2 — DEPOSIT"
- * — collapsing to a single "STEP 1 OF 1 — DEPOSIT" when allowance already
- * covers the amount or the token self-authorizes via a one-tap permit.
- *
- * `oneStep` is the analogue of DepositWizard's `hasAllowance`: once approval
- * confirms and the allowance refetch lands, the stepper collapses to the 1-step
- * form, matching the vault wizard's behavior exactly.
- */
-function deriveRawSteps(
-  step: LedgerFlowStep,
-  oneStep: boolean,
-): { step1: StepDescriptor; step2: StepDescriptor | null } {
-  // 1-step path: allowance covers the requested amount, or permit self-authorizes.
-  if (oneStep) {
-    if (step === 'signing') return { step1: { tone: 'info', glyph: '[…]', label: 'STEP 1 OF 1 — SIGNING PERMIT…' }, step2: null }
-    if (step === 'depositing') return { step1: { tone: 'info', glyph: '[…]', label: 'STEP 1 OF 1 — DEPOSITING…' }, step2: null }
-    if (step === 'complete') return { step1: { tone: 'success', glyph: '[✓]', label: 'DEPOSIT COMPLETE' }, step2: null }
-    if (step === 'error') return { step1: { tone: 'danger', glyph: '[!]', label: 'STEP 1 OF 1 — DEPOSIT' }, step2: null }
-    return { step1: { tone: 'info', glyph: '[ ]', label: 'STEP 1 OF 1 — DEPOSIT' }, step2: null }
-  }
-
-  // 2-step path: approve then deposit.
-  switch (step) {
-    case 'approving':
-      return {
-        step1: { tone: 'info', glyph: '[…]', label: 'STEP 1 OF 2 — APPROVING…' },
-        step2: { tone: 'neutral', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-    case 'approved':
-      return {
-        step1: { tone: 'success', glyph: '[✓]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'info', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-    case 'depositing':
-      return {
-        step1: { tone: 'success', glyph: '[✓]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'info', glyph: '[…]', label: 'STEP 2 OF 2 — DEPOSITING…' },
-      }
-    case 'complete':
-      return {
-        step1: { tone: 'success', glyph: '[✓]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'success', glyph: '[✓]', label: 'DEPOSIT COMPLETE' },
-      }
-    case 'error':
-      return {
-        step1: { tone: 'danger', glyph: '[!]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'neutral', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-    default:
-      return {
-        step1: { tone: 'info', glyph: '[ ]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'neutral', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-  }
 }
 
 /**
@@ -187,53 +123,32 @@ export function BackingFlow({
   // Raw backing has no mint hop, so it starts (and stays) on 'back'.
   const [phase, setPhase] = useState<Phase>(isVaultShare ? 'mint' : 'back')
   const [mintSkipped, setMintSkipped] = useState(false)
-  const [inputValue, setInputValue] = useState('')
-  const [parsed, setParsed] = useState<bigint | undefined>(undefined)
-  const [parseError, setParseError] = useState(false)
 
   const activeDecimals = phase === 'mint' ? position.assetDecimals ?? 18 : shareDecimals
   const activeSymbol = phase === 'mint' ? position.assetSymbol ?? 'TOKEN' : shareSymbol
+  const amountInput = useAmountInput(activeDecimals)
+  const parsed = amountInput.amount
+  const parseError = amountInput.invalid
 
-  function resetInput() {
-    setInputValue('')
-    setParsed(undefined)
-    setParseError(false)
-  }
-
-  function handleInputChange(value: string) {
-    setInputValue(value)
-    if (!value) {
-      setParsed(undefined)
-      setParseError(false)
-      return
-    }
-    try {
-      setParsed(parseUnits(value, activeDecimals))
-      setParseError(false)
-    } catch {
-      setParsed(undefined)
-      setParseError(true)
-    }
-  }
+  const resetInput = amountInput.clear
 
   // The wallet balance the active phase draws against: the underlying asset for
   // the mint hop, the share/token balance for the back hop.
   const sourceBalance = phase === 'mint' ? mintFlow.tokenBalance : backFlow.walletBalance
   function handleMax() {
-    if (sourceBalance === undefined) return
-    handleInputChange(formatTokenAmount(sourceBalance, activeDecimals).full)
+    if (sourceBalance !== undefined) amountInput.setMax(sourceBalance)
   }
 
   // Auto-advance to the back hop once minting confirms; prefill nothing (the
   // user MAXes the freshly-minted shares) and surface them on the BalanceLine.
   useEffect(() => {
     if (isVaultShare && mintFlow.step === 'complete' && phase === 'mint') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- moves to the back hop when the mint transaction confirms
       setPhase('back')
       resetInput()
       mintFlow.reset()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on the mint step only; the flow object and input reset are new every render
   }, [mintFlow.step])
 
   // Toast feedback off both sub-flow state machines.
@@ -242,9 +157,9 @@ export function BackingFlow({
       push({ tone: 'success', title: 'APPROVAL CONFIRMED', body: <>{activeSymbol} approved for the vault. Tap MINT next.</> })
     }
     if (mintFlow.step === 'error') {
-      push({ tone: 'danger', title: 'MINT FAILED', body: mintFlow.error?.message?.split('\n')[0] ?? 'Unknown error.' })
+      push({ tone: 'danger', title: 'MINT FAILED', body: legibleWriteError(mintFlow.error) })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [mintFlow.step])
 
   useEffect(() => {
@@ -269,9 +184,9 @@ export function BackingFlow({
       return () => clearTimeout(timer)
     }
     if (backFlow.step === 'error') {
-      push({ tone: 'danger', title: 'DEPOSIT FAILED', body: backFlow.error?.message?.split('\n')[0] ?? 'Unknown error.' })
+      push({ tone: 'danger', title: 'DEPOSIT FAILED', body: legibleWriteError(backFlow.error) })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [backFlow.step])
 
   // --- Active phase action wiring ---
@@ -405,7 +320,7 @@ export function BackingFlow({
     parsed !== undefined &&
     backFlow.currentAllowance !== undefined &&
     backFlow.currentAllowance >= parsed
-  const rawSteps = deriveRawSteps(backFlow.step, rawHasAllowance || backUsesPermit)
+  const rawSteps = deriveDepositSteps(backFlow.step, (rawHasAllowance && !backFlow.approvedInFlow) || backUsesPermit)
 
   return (
     <Card>
@@ -436,19 +351,7 @@ export function BackingFlow({
         {/* Stepper. Vault-share backing is two hops (mint → deposit); raw
             backing is a single hop rendered as an explicit APPROVE → DEPOSIT
             sequence so the approval is always a visible step. */}
-        {isVaultShare ? (
-          <div className="ds-stepper">
-            <Notice tone={step1.tone} size="sm" icon={step1.glyph}>{step1.label}</Notice>
-            <Notice tone={step2.tone} size="sm" icon={step2.glyph}>{step2.label}</Notice>
-          </div>
-        ) : (
-          <div className="ds-stepper">
-            <Notice tone={rawSteps.step1.tone} size="sm" icon={rawSteps.step1.glyph}>{rawSteps.step1.label}</Notice>
-            {rawSteps.step2 && (
-              <Notice tone={rawSteps.step2.tone} size="sm" icon={rawSteps.step2.glyph}>{rawSteps.step2.label}</Notice>
-            )}
-          </div>
-        )}
+        <DepositStepper steps={isVaultShare ? [step1, step2] : [rawSteps.step1, rawSteps.step2]} />
 
         {!isConnected && (
           <Notice tone="info" size="md" title="WALLET NOT CONNECTED">
@@ -462,8 +365,8 @@ export function BackingFlow({
           className="ds-input"
           placeholder={`Amount (${activeSymbol})`}
           aria-label={`Amount in ${activeSymbol}`}
-          value={inputValue}
-          onChange={(e) => handleInputChange(e.target.value)}
+          value={amountInput.text}
+          onChange={(e) => amountInput.setText(e.target.value)}
           disabled={!isConnected || inProgress}
         />
 
@@ -493,35 +396,20 @@ export function BackingFlow({
           </Notice>
         )}
 
-        <button
-          type="button"
-          className="ds-btn ds-btn--primary ds-btn--full"
-          onClick={handleAction}
-          disabled={actionDisabled}
-        >
+        <Button variant="primary" fullWidth onClick={handleAction} disabled={actionDisabled}>
           {actionLabel()}
-        </button>
+        </Button>
 
         {/* Phase navigation (vault-share only). */}
         {isVaultShare && phase === 'mint' && (
-          <button
-            type="button"
-            className="ds-btn ds-btn--sm ds-btn--ghost ds-btn--full"
-            onClick={skipToBack}
-            disabled={inProgress}
-          >
+          <Button size="sm" variant="ghost" fullWidth onClick={skipToBack} disabled={inProgress}>
             Skip — I already hold shares
-          </button>
+          </Button>
         )}
         {isVaultShare && phase === 'back' && (
-          <button
-            type="button"
-            className="ds-btn ds-btn--sm ds-btn--ghost ds-btn--full"
-            onClick={skipToMint}
-            disabled={inProgress}
-          >
+          <Button size="sm" variant="ghost" fullWidth onClick={skipToMint} disabled={inProgress}>
             ← Mint more shares first
-          </button>
+          </Button>
         )}
       </div>
     </Card>

@@ -6,7 +6,7 @@ generated: true
 ---
 # OptimisticInsuranceArbiter
 **Inherits:**
-[IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter), ReentrancyGuardTransient
+[ArbiterBase](/docs/protocol/reference/contracts/shared/arbitration/ArbiterBase), ReentrancyGuardTransient
 
 **Title:**
 OptimisticInsuranceArbiter
@@ -33,7 +33,7 @@ executed externally — execution is permissionless); bonds settle
 ```
 The manager-side forfeit proposal is opened AT PROPOSE TIME so the
 committer cannot exit through `finalizeUnbond` / `expire` while a
-claim is pending (`_forfeitActive` blocks both). Each dispute
+claim is pending (`MovementLib.forfeitLive` blocks both). Each dispute
 re-initiates the hold at the capped counter-answer, so the manager
 proposal always mirrors the current top-of-stack assertion and its
 challenge window restarts with the answer timer. `proposeClaim`
@@ -81,7 +81,7 @@ finalize denials promptly; prefer commitments whose
 `challengeWindow` comfortably exceeds `answerTimeout`.
 
 
-## Constants
+## State Variables
 ### MAX_BOND_DOUBLINGS
 Maximum bond stack depth. 8 doublings ≡ 256× minBond. Above
 this, dispute griefing risks pricing legitimate disputers out;
@@ -102,15 +102,6 @@ Mirrors `CommitmentManager.FORFEIT_PROPOSAL_TTL` semantics.
 
 ```solidity
 uint64 public constant CLAIM_STALE_TTL = 14 days
-```
-
-
-### manager
-CommitmentManager this arbiter dispatches to.
-
-
-```solidity
-ICommitmentManager public immutable manager
 ```
 
 
@@ -187,7 +178,6 @@ address public immutable treasury
 ```
 
 
-## State Variables
 ### _claims
 
 ```solidity
@@ -222,19 +212,7 @@ constructor(
     uint64 answerTimeout_,
     uint16 winnerShareBps_,
     address treasury_
-) ;
-```
-
-### commitmentManager
-
-Returns the CommitmentManager this arbiter dispatches to.
-
-Implementations should make this immutable to preserve the trust
-model commitments opt into when naming this contract as arbiter.
-
-
-```solidity
-function commitmentManager() external view returns (address);
+) ArbiterBase(manager_);
 ```
 
 ### arbiterCapabilities
@@ -261,19 +239,6 @@ pointer; returns empty.
 
 ```solidity
 function arbiterMetadataURI() external pure returns (string memory);
-```
-
-### supportsInterface
-
-Returns true if this contract implements the interface defined by
-`interfaceId`. See the corresponding
-https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section]
-to learn more about how these ids are created.
-This function call must use less than 30 000 gas.
-
-
-```solidity
-function supportsInterface(bytes4 interfaceId) external pure returns (bool);
 ```
 
 ### getClaim
@@ -433,15 +398,6 @@ function _bondFloor(ICommitmentManager.Commitment memory cm, uint16 amountBps)
     returns (uint256 floor);
 ```
 
-### _proposalActive
-
-An initiated proposal that is neither executed nor cancelled.
-
-
-```solidity
-function _proposalActive(ICommitmentManager.ForfeitProposal memory p) internal pure returns (bool);
-```
-
 ### _capped
 
 Cap an asserted amount to the commitment's consented maximum.
@@ -504,7 +460,7 @@ event ClaimCancelled(uint256 indexed claimId);
 ### ClaimRuled
 
 ```solidity
-event ClaimRuled(uint256 indexed claimId, uint16 winningAmtBps, address indexed source);
+event ClaimRuled(uint256 indexed claimId, uint16 winningAmtBps);
 ```
 
 ### ClaimFinalized
@@ -537,12 +493,6 @@ event ClaimUnwound(uint256 indexed claimId);
 ```
 
 ## Errors
-### WrongBondToken
-
-```solidity
-error WrongBondToken();
-```
-
 ### BondBelowFloor
 
 ```solidity
@@ -559,18 +509,6 @@ error BondNotDoubled(uint256 required, uint256 provided);
 
 ```solidity
 error InvalidAmountBps(uint16 amountBps);
-```
-
-### CommitmentNotActive
-
-```solidity
-error CommitmentNotActive(uint256 commitmentId);
-```
-
-### WrongArbiter
-
-```solidity
-error WrongArbiter(address expected, address actual);
 ```
 
 ### ClaimAlreadyActive
@@ -649,12 +587,6 @@ error InvalidWinnerShareBps();
 
 ```solidity
 error StaleTtlNotElapsed(uint64 readyAt, uint64 nowTs);
-```
-
-### ChallengeWindowTooShort
-
-```solidity
-error ChallengeWindowTooShort(uint64 required, uint64 actual);
 ```
 
 ### ClaimAlreadyEnforced

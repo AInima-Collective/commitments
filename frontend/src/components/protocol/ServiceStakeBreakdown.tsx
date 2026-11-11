@@ -103,7 +103,6 @@ function ServiceStakeRow({
   // Prefer a logoURI off vault.v1 metadata; otherwise let TokenIcon render
   // the asset symbol's stock glyph (USDC, ETH, etc.).
   const usingLogo = Boolean(logoSrc)
-  const usdTone = usd === null ? 'unavailable' : 'neutral'
   return (
     <div className="ds-service-stake-row">
       <div className="ds-service-stake-identity">
@@ -119,7 +118,7 @@ function ServiceStakeRow({
       </div>
       <div className="ds-stack ds-stack-1 ds-service-stake-amounts">
         <TokenAmount amount={amount} decimals={decimals} symbol={amountSymbol} compact size="inline" />
-        {usd !== undefined && <UsdAmount amount={usd} size="inline" tone={usdTone} compact />}
+        {usd !== undefined && <UsdAmount amount={usd} size="inline" compact />}
       </div>
     </div>
   )

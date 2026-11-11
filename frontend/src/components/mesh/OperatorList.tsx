@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { type Address } from 'viem'
-import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../utils/mesh'
-import { EmptyState, Notice, Skeleton } from '../ui'
+import { type OperatorInfo, type OperatorStatus, type ServiceOperatorInfo } from '../../lib/mesh'
+import { Button, EmptyState, Notice, Skeleton } from '../ui'
 import { OperatorRow } from './OperatorRow'
 import { OperatorFilterBar } from './OperatorFilterBar'
 import {
@@ -12,19 +12,21 @@ import {
   type OperatorFilterState,
   type OperatorMetadataLite,
 } from '../../lib/operatorFilter'
-import { useOperatorMetadata } from '../../hooks/useIndexerMetadata'
-import { useAgentIdentities, type AgentIdentity } from '../../hooks/useAgentIdentities'
+import { useAgentIdentities } from '../../hooks/useAgentIdentities'
 import { useMyDelegations } from '../../hooks/useMyDelegations'
-import { type CommitmentWithStatus } from '../../utils/commitments'
 
 interface OperatorWithStatus extends OperatorInfo {
   status: OperatorStatus
+  /** Verified profile metadata, when the operator list came from the indexer. */
+  metadata?: OperatorMetadataLite | null
 }
 
 interface OperatorListProps {
   operators: OperatorWithStatus[]
   isLoading: boolean
   serviceOperators?: ServiceOperatorInfo[]
+  /** Decimals of the token operators stake (the registry's required token). */
+  stakeDecimals?: number
 }
 
 /** Number of body cells in each operator-table row — kept in one place so the
@@ -56,7 +58,7 @@ function SkeletonOperatorRow() {
   )
 }
 
-export function OperatorList({ operators, isLoading, serviceOperators }: OperatorListProps) {
+export function OperatorList({ operators, isLoading, serviceOperators, stakeDecimals }: OperatorListProps) {
   const myDelegations = useMyDelegations()
   const [expandedAddress, setExpandedAddress] = useState<Address | null>(null)
   const [filterState, setFilterState] = useState<OperatorFilterState>({
@@ -64,30 +66,6 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
     selectedTags: new Set(),
     serviceOnly: false,
   })
-  const [metadataByAddress, setMetadataByAddress] = useState<
-    Map<Address, OperatorMetadataLite | null>
-  >(new Map())
-
-  const handleMetadataReady = useCallback(
-    (addr: Address, meta: OperatorMetadataLite | null) => {
-      setMetadataByAddress((prev) => {
-        const cur = prev.get(addr)
-        if (
-          cur === meta ||
-          (cur &&
-            meta &&
-            cur.name === meta.name &&
-            arraysShallowEqual(cur.services, meta.services))
-        ) {
-          return prev
-        }
-        const next = new Map(prev)
-        next.set(addr, meta)
-        return next
-      })
-    },
-    [],
-  )
 
   const serviceMap = useMemo(() => {
     const m = new Map<string, ServiceOperatorInfo>()
@@ -103,10 +81,10 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
     () =>
       operators.map((op) => ({
         operator: op,
-        metadata: metadataByAddress.get(op.address as Address) ?? null,
+        metadata: op.metadata ?? null,
         serviceInfo: serviceMap.get(op.address.toLowerCase()),
       })),
-    [operators, metadataByAddress, serviceMap],
+    [operators, serviceMap],
   )
 
   const availableTags = useMemo(
@@ -181,9 +159,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
           title="NO OPERATORS MATCH"
           description="Try a different search, clear a tag filter, or toggle off service-registered."
           action={
-            <button
-              type="button"
-              className="ds-btn"
+            <Button
               onClick={() =>
                 setFilterState({
                   search: '',
@@ -193,7 +169,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
               }
             >
               CLEAR FILTERS
-            </button>
+            </Button>
           }
         />
       ) : (
@@ -212,7 +188,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
               {sortedInputs.map((entry) => {
                 const op = entry.operator as OperatorWithStatus
                 return (
-                  <OperatorRowItem
+                  <OperatorRow
                     key={op.address}
                     operator={op}
                     agent={agents.get(op.address)}
@@ -224,7 +200,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
                       )
                     }
                     columnCount={COLUMN_COUNT}
-                    onMetadataReady={handleMetadataReady}
+                    decimals={stakeDecimals}
                     hasDelegated={myDelegations.delegatedOperators.has(
                       op.address.toLowerCase(),
                     )}
@@ -239,73 +215,4 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
       )}
     </div>
   )
-}
-
-function OperatorRowItem({
-  operator,
-  agent,
-  serviceInfo,
-  expanded,
-  onToggle,
-  columnCount,
-  onMetadataReady,
-  hasDelegated,
-  myDelegations,
-  onDelegationActed,
-}: {
-  operator: OperatorWithStatus
-  agent?: AgentIdentity
-  serviceInfo?: ServiceOperatorInfo
-  expanded: boolean
-  onToggle: () => void
-  columnCount: number
-  onMetadataReady: (addr: Address, meta: OperatorMetadataLite | null) => void
-  hasDelegated: boolean
-  myDelegations?: CommitmentWithStatus[]
-  onDelegationActed?: () => void
-}) {
-  const md = useOperatorMetadata(operator.address as Address)
-
-  useEffect(() => {
-    if (md.status === 'ok' && md.content && typeof md.content === 'object') {
-      const c = md.content as Record<string, unknown>
-      const lite: OperatorMetadataLite = {
-        name: typeof c.name === 'string' ? c.name : undefined,
-        services: Array.isArray(c.services)
-          ? c.services.filter((s): s is string => typeof s === 'string')
-          : undefined,
-      }
-      onMetadataReady(operator.address as Address, lite)
-    } else if (md.status !== 'empty') {
-      onMetadataReady(operator.address as Address, null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [md.status, md.content, operator.address])
-
-  return (
-    <OperatorRow
-      operator={operator}
-      agent={agent}
-      expanded={expanded}
-      onToggle={onToggle}
-      serviceInfo={serviceInfo}
-      columnCount={columnCount}
-      hasDelegated={hasDelegated}
-      myDelegations={myDelegations}
-      onDelegationActed={onDelegationActed}
-    />
-  )
-}
-
-function arraysShallowEqual(
-  a: string[] | undefined,
-  b: string[] | undefined,
-): boolean {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
 }

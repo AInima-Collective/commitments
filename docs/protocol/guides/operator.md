@@ -102,15 +102,14 @@ IOperatorRegistry.Operator memory op = operatorRegistry.getOperator(msg.sender);
 op.totalDelegatedStake;    // self + delegated stake, in required-token units
 op.activeDelegationCount;  // active delegations, including self-stake
 op.active;                 // registration status
-op.belowMinStake;          // flagged if stake dropped below the minimum
 op.selfStakeActive;        // whether the self-stake commitment is still tracked
 ```
 
 ### Below minimum stake
 
 If a delegation is forfeited or released and your `totalDelegatedStake` drops
-below `minOperatorStake`, `belowMinStake` is set and an `OperatorBelowMinStake`
-event fires. You remain active, but service consumers should check the flag. To
+below `minOperatorStake`, an `OperatorBelowMinStake` event fires. You remain
+active. Consumers compare `totalDelegatedStake` with `minOperatorStake()`. To
 recover, attract more delegations.
 
 ## 4. Service-compatible views
@@ -118,10 +117,10 @@ recover, attract more delegations.
 Service frameworks can query your operator set through standard views:
 
 ```solidity
-operatorRegistry.getOperatorStake(operatorAddress); // total stake
-operatorRegistry.isOperator(operatorAddress);        // active?
-operatorRegistry.getOperatorSet();                   // all active operators
-operatorRegistry.getOperatorCount();                 // count
+operatorRegistry.getOperator(operatorAddress).totalDelegatedStake; // total stake
+operatorRegistry.isOperator(operatorAddress);                      // active?
+operatorRegistry.getOperatorSet();                                 // all active operators
+operatorRegistry.getOperatorCount();                               // count
 ```
 
 ### Voting power requires a mesh weight
@@ -135,13 +134,19 @@ weighted power, confirm the weight has been set for `operatorRegistry.stakeDenom
 ## 5. Forfeits and releases
 
 When a delegation commitment is forfeited or released by its arbiter, the
-CommitmentManager notifies the registry via callbacks, atomically, in the same
+CommitmentManager notifies the registry via callbacks in the same
 transaction — no action is required from you:
 
 - **Release:** `onDelegationReleased(commitmentId, amount)` — decrements your
   `totalDelegatedStake` and `activeDelegationCount`.
 - **Forfeit:** `onDelegationForfeited(commitmentId, forfeitedAmount, fullAmount)`
-  — decrements your `totalDelegatedStake` by the forfeited portion.
+  — closes the delegation. It removes the full amount credited at delegation
+  from your `totalDelegatedStake`, not only the penalty.
+
+The manager's hook call is gas-capped and a failure does not revert the close
+(`RegistryHookFailed`). A failed hook leaves the delegation credited, which
+blocks `deregister`. Anyone can call `operatorRegistry.reconcile(commitmentId)`
+on a closed commitment to run the same close path.
 
 ## 6. Deregister
 

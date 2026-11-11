@@ -7,7 +7,7 @@ import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandle
 /// @notice Generic envelope-verification vocabulary: a service manager validates
 ///         a signed `IServiceHandler.Envelope` against a quorum/threshold of
 ///         registered operator signatures. Consumed by `ServiceEnvelopeVerifier`
-///         (and through it `AttestationArbiter` / `MerkleSnapshotAdapter`). The
+///         (and through it `AttestationArbiter`). The
 ///         name predates the protocol but the mechanism is not AVS-specific.
 interface IServiceManager {
     // Validation errors

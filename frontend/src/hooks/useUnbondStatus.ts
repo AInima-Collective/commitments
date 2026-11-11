@@ -1,9 +1,8 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerUnbondInitiatedAt,
-  useReadCommitmentManagerUnbondingPeriod,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
 import { useNowSeconds } from './useNow'
+import { POLL } from './polling'
 
 export interface UnbondStatus {
   /** 0n means no unbond pending. */
@@ -39,19 +38,23 @@ export function useUnbondStatus({
     data: initiatedAtRaw,
     isLoading: initiatedLoading,
     refetch: refetchInitiated,
-  } = useReadCommitmentManagerUnbondInitiatedAt({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'unbondInitiatedAt',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled: enabledManager, refetchInterval: 15_000 },
+    query: { enabled: enabledManager, refetchInterval: POLL.fast },
   })
 
   const {
     data: periodRaw,
     isLoading: periodLoading,
     refetch: refetchPeriod,
-  } = useReadCommitmentManagerUnbondingPeriod({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'unbondingPeriod',
     address: managerAddress,
-    query: { enabled: !!managerAddress, refetchInterval: 60_000 },
+    query: { enabled: !!managerAddress, refetchInterval: POLL.idle },
   })
 
   const unbondInitiatedAt =

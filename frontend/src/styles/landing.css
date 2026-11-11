@@ -436,27 +436,6 @@
   .lp-concept-illus-plate { padding: var(--space-3); }
 }
 
-/* Subsection heading + body: a smaller heading-pair used inside .lp-concept
- * blocks. Same vocabulary as .lp-section-heading / .lp-section-lead but a
- * step down in the hierarchy. */
-.lp-subsection-heading {
-  font-family: var(--font-display);
-  font-size: calc(var(--text-xl) * var(--display-scale) * 1.15);
-  line-height: 1.15;
-  margin: 0;
-  color: var(--text);
-  font-weight: var(--display-weight);
-  letter-spacing: var(--display-tracking);
-}
-
-.lp-subsection-body {
-  font-family: var(--font-mono);
-  font-size: var(--text-base);
-  line-height: var(--leading-normal);
-  color: var(--text-muted);
-  margin: 0;
-}
-
 /* Footer bar of the plate: full-bleed across the frame, divided by a hairline,
  * so it reads as the caption *of* the figure rather than another line of copy
  * that happens to sit underneath it. */

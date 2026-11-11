@@ -5,10 +5,6 @@ source: src/extensions/mesh/interfaces/IFanIn.sol
 generated: true
 ---
 # IFanIn
-**Inherits:**
-[IFlowQuery](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFlowQuery)
-
-
 ## Functions
 ### initialize
 
@@ -83,7 +79,7 @@ function totalStake(bytes32 denomOut) external view returns (uint256);
 
 ### releaseStake
 
-Consumer releases stake back to its registered provider.
+Consumer or manager releases stake back to its registered provider.
 
 the provider is derived from `outputSources[denomOut]`
 rather than passed in, so off-chain indexers cannot be poisoned by a consumer

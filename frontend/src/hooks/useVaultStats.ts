@@ -1,8 +1,7 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentsVaultTotalAssets,
-  useReadCommitmentsVaultTotalSupply,
-} from '../generated'
+import { commitmentsVaultAbi } from '../generated'
+import { POLL } from './polling'
 
 export interface VaultStats {
   /** Underlying assets currently held by the vault (TVL in asset units). */
@@ -18,13 +17,17 @@ export interface VaultStats {
  */
 export function useVaultStats(vaultAddress: Address | undefined): VaultStats {
   const enabled = !!vaultAddress
-  const queryOpts = { enabled, refetchInterval: 15_000 }
+  const queryOpts = { enabled, refetchInterval: POLL.fast }
 
-  const { data: totalAssets, isLoading: tvlLoading } = useReadCommitmentsVaultTotalAssets({
+  const { data: totalAssets, isLoading: tvlLoading } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'totalAssets',
     address: vaultAddress,
     query: queryOpts,
   })
-  const { data: totalSupply, isLoading: supplyLoading } = useReadCommitmentsVaultTotalSupply({
+  const { data: totalSupply, isLoading: supplyLoading } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'totalSupply',
     address: vaultAddress,
     query: queryOpts,
   })

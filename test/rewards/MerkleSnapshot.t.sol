@@ -45,7 +45,6 @@ contract MerkleSnapshotTest is Test {
 
     function test_initialize_correctUpdater() public view {
         assertEq(snap.activeUpdater(), updater);
-        assertEq(snap.updater(), updater);
     }
 
     function test_initialize_correctDelays() public view {
@@ -94,7 +93,6 @@ contract MerkleSnapshotTest is Test {
         assertEq(id, ROOT_A);
 
         IMerkleSnapshot.RewardsRoot memory r = snap.rootById(ROOT_A);
-        assertEq(r.merkleRoot, ROOT_A);
         assertEq(r.submittedAt, uint64(block.timestamp));
         assertEq(r.activeAt, uint64(block.timestamp + INIT_DELAY));
         assertEq(r.disabled, false);
@@ -145,17 +143,6 @@ contract MerkleSnapshotTest is Test {
         IMerkleSnapshot.RewardsRoot memory r = snap.rootById(ROOT_A);
         assertEq(r.submittedAt, 1000);
         assertEq(r.activeAt, 1000 + INIT_DELAY);
-    }
-
-    function test_submitRoot_appendsToHistory() public {
-        vm.prank(updater);
-        snap.submitRoot(ROOT_A);
-        vm.prank(updater);
-        snap.submitRoot(ROOT_B);
-
-        assertEq(snap.rootCount(), 2);
-        assertEq(snap.rootAt(0), ROOT_A);
-        assertEq(snap.rootAt(1), ROOT_B);
     }
 
     function test_submitRoot_emitsRootSubmitted() public {

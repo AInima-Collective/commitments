@@ -85,13 +85,6 @@ export type OperatorsGraphOperatorNode = {
 
 export type OperatorsGraphNode = OperatorsGraphServiceNode | OperatorsGraphOperatorNode
 
-export type OperatorsGraphEdge = {
-  from: Hex // operator
-  to: Hex // service
-  votingPower: bigint
-  shareBps: number
-}
-
 export type OperatorsGraphPayload = {
   service: { address: Hex; totalPower: bigint }
   operators: Array<{
@@ -244,19 +237,4 @@ export type SankeyLayout = {
   links: LaidOutSankeyLink[]
   width: number
   height: number
-}
-
-export type HoverState = {
-  kind: 'none' | 'node' | 'edge'
-  id: string | null
-  // Derived highlight sets — pre-computed on hover so renderer stays fast.
-  highlightedNodes: Set<string>
-  highlightedEdges: Set<string>
-}
-
-export const EMPTY_HOVER: HoverState = {
-  kind: 'none',
-  id: null,
-  highlightedNodes: new Set(),
-  highlightedEdges: new Set(),
 }

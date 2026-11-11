@@ -52,13 +52,10 @@ interface ICommitmentsRewardsCoordinator {
     error ZeroAmount();
     error ZeroAddress();
     error NotService();
-    error RootDisabled();
     error RootNotActive();
     error InvalidProof();
     error CumulativeRegression(); // D12 enforcement
     error NoOp(); // zero-delta re-claim
-    error InsufficientBalance();
-    error AlreadyInitialized();
     error ClaimsFrozen(); // emergency pause engaged
     error NotFrozen();
     error AlreadyFrozen();
@@ -72,8 +69,8 @@ interface ICommitmentsRewardsCoordinator {
     ///         the event. `safeTransferFrom` semantics; reverts on failure.
     /// @dev Funding semantics are off-chain : the coordinator does NOT
     ///         track per-root obligations. The updater is responsible for not
-    ///         over-promising; an under-funded coordinator reverts payouts with
-    ///         `InsufficientBalance` rather than fail-closed at submit.
+    ///         over-promising; an under-funded coordinator's payout reverts in the
+    ///         token transfer rather than fail-closed at submit.
     function depositRewards(address token, uint256 amount) external;
 
     /// @notice Claim cumulative rewards for `token` against `rootId`. Caller must
@@ -84,7 +81,7 @@ interface ICommitmentsRewardsCoordinator {
     ///         `CumulativeRegression` if `cumulativeAmount < claimed[caller][token]`.
     /// @param proof Merkle proof for `keccak256(abi.encode(caller, token, cumulativeAmount))`.
     /// @return amountPaidOut Equals `cumulativeAmount - claimed[caller][token]`.
-    ///         Reverts `NoOp` if zero. Reverts `InsufficientBalance` if the
+    ///         Reverts `NoOp` if zero. Reverts in the token transfer if the
     ///         coordinator does not hold enough of `token`.
     function processClaim(bytes32 rootId, address token, uint256 cumulativeAmount, bytes32[] calldata proof)
         external

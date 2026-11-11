@@ -142,7 +142,7 @@ export function formatCompact(value: bigint | number): string | null {
 /**
  * Format basis points as a percentage string, with optional precision control.
  * This is the canonical bps→percent formatter; the protocol-domain `formatBps`
- * in `utils/commitments` is a fixed-2-decimal alias that delegates here.
+ * in `lib/commitments` is a fixed-2-decimal alias that delegates here.
  *
  * @example
  * formatPercent(5000) // → '50.00%'
@@ -244,4 +244,20 @@ export function formatDuration(seconds: number): string {
   const d = Math.floor(h / 24)
   const remH = h % 24
   return remH ? `${d}d ${remH}h` : `${d}d`
+}
+
+/**
+ * A unix-seconds timestamp as a short local date and time ("Mar 04, 09:30"),
+ * or "—" when there is none.
+ */
+export function formatTimestamp(ts: bigint | null | undefined): string {
+  if (ts == null) return '—'
+  const date = new Date(Number(ts) * 1000)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

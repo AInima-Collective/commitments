@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { zeroAddress, type Address } from 'viem'
 
 import { CommitmentsSankey } from '../graph/CommitmentsSankey'
+import { commitmentDetailPath } from '../../lib/arbitrationRoutes'
 import { bigintToUsd } from '../../lib/format'
 import { commitmentLabel } from '../../lib/commitmentLabel'
 import type { PriceEntry } from '../../hooks/useAssetPrices'
@@ -93,7 +94,7 @@ export function PortfolioSankey({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- labelsKey is the content fingerprint of mineRows+labelTexts
   }, [labelsKey])
   const openCommitment = useCallback(
-    (id: bigint) => navigate(`/app/commitments/${id.toString()}`),
+    (id: bigint) => navigate(commitmentDetailPath(id)),
     [navigate],
   )
 
@@ -117,10 +118,11 @@ export function PortfolioSankey({
         maxPenaltyBps: r.maxPenaltyBps,
         status: r.status === 'PENDING' ? 'ACTIVE' : r.status,
         forfeitChallengeEnd: r.forfeitChallengeEnd ?? null,
-        // Neither field is read by buildSankey — they exist on
-        // ProtocolCommitmentRow for the Explorer's urgency sort.
+        // None of these is read by buildSankey — they exist on
+        // ProtocolCommitmentRow for the Explorer.
         unbondMaturesAt: null,
         createdBlock: 0n,
+        createdAt: null,
       }))
   }, [mineRows])
 

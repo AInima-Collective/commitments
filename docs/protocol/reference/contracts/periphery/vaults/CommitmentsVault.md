@@ -23,7 +23,7 @@ Uses the UUPS proxy pattern; all state lives in EIP-7201 namespaced storage
 decimals offset of 9.
 
 
-## Constants
+## State Variables
 ### PAUSER_ROLE
 
 ```solidity
@@ -137,7 +137,8 @@ function totalAssets() public view override(ERC4626Upgradeable, IERC4626) return
 
 ### maxDeposit
 
-Max depositable amount — returns 0 when depositsPaused; routes through strategy when set.
+Max depositable amount — returns 0 when depositsPaused, so a paused `deposit` reverts
+`ERC4626ExceededMaxDeposit`; routes through strategy when set.
 
 
 ```solidity
@@ -146,36 +147,13 @@ function maxDeposit(address) public view override(ERC4626Upgradeable, IERC4626) 
 
 ### maxMint
 
-Max mintable shares — returns 0 when depositsPaused; mirrors the strategy deposit cap
+Max mintable shares — returns 0 when depositsPaused (a paused `mint` reverts
+`ERC4626ExceededMaxMint`); mirrors the strategy deposit cap
 so mint() and deposit() agree (ERC-4626 requires maxMint to be the true maximum).
 
 
 ```solidity
 function maxMint(address) public view override(ERC4626Upgradeable, IERC4626) returns (uint256);
-```
-
-### deposit
-
-Deposit assets into vault. Reverts with DepositsPaused if paused.
-
-
-```solidity
-function deposit(uint256 assets, address receiver)
-    public
-    override(ERC4626Upgradeable, IERC4626)
-    returns (uint256 shares);
-```
-
-### mint
-
-Mint exact shares. Reverts with DepositsPaused if paused.
-
-
-```solidity
-function mint(uint256 shares, address receiver)
-    public
-    override(ERC4626Upgradeable, IERC4626)
-    returns (uint256 assets);
 ```
 
 ### _deposit
@@ -298,7 +276,7 @@ Only DEFAULT_ADMIN_ROLE may call. Overwrites any prior record with
 
 
 ```solidity
-function setMetadata(string calldata uri, bytes32 contentHash) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE);
+function setMetadata(string calldata uri, bytes32 contentHash) external onlyRole(DEFAULT_ADMIN_ROLE);
 ```
 
 ### getMetadata
@@ -310,6 +288,16 @@ Returns the vault's metadata sidecar (uri, contentHash, updatedAt).
 
 ```solidity
 function getMetadata() external view returns (ICommitmentsVault.VaultMetadata memory);
+```
+
+### _pushToStrategy
+
+Push model (see `IYieldStrategy.deposit`): transfer `assets` to `strategy`, then notify
+it. No-op when `strategy` is zero (idle mode).
+
+
+```solidity
+function _pushToStrategy(address strategy, uint256 assets) private;
 ```
 
 ### _authorizeUpgrade

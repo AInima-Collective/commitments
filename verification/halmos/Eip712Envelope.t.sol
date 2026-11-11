@@ -24,7 +24,7 @@ import {HalmosBase} from "./HalmosBase.sol";
 ///             verification DIFFERS from the signed digest whenever the field differs. This
 ///             is the "params A does not authorize params B" statement at the layer halmos
 ///             reasons about soundly (keccak256 is modeled). It reproduces the manager's
-///             exact digest assembly (CommitmentLifecycleLib.isValidCreateSignature). The
+///             exact digest assembly (CommitmentLifecycleLib._isValidCreateSignature). The
 ///             ecrecover step that turns "different digest" into "different recovered signer"
 ///             is NOT halmos-decidable (SYMBOLIC-TAMPER GAP, C1) — but a signature is bound
 ///             to exactly one digest, so a provably-different digest is a provably-different
@@ -140,7 +140,7 @@ contract Eip712Envelope is HalmosBase {
         sig = _sign(_paramsA(), 0, DEADLINE);
     }
 
-    // ---- params + digest helpers (mirror CommitmentLifecycleLib.isValidCreateSignature) ----
+    // ---- params + digest helpers (mirror CommitmentLifecycleLib._isValidCreateSignature) ----
 
     function _paramsA() internal view returns (ICM.CommitmentParams memory p) {
         p.arbiter = ARBITER;

@@ -57,7 +57,7 @@ export function SharedLossGauge({
         <StatBlock
           label={label}
           value={<span title={lambdaFull}>{lambdaPct.toFixed(2)}%</span>}
-          tone={lambdaPct >= 50 ? 'negative' : 'neutral'}
+          tone={lambdaPct >= 50 ? 'danger' : 'neutral'}
           meta={
             snapshotPct !== undefined ? (
               <span title={snapshotFull}>snapshot {snapshotPct.toFixed(2)}%</span>

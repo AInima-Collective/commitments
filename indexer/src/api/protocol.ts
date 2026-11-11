@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
-import { and, desc, eq, sql } from 'ponder'
+import { and, desc, eq, isNull, notExists, or, sql } from 'ponder'
 import { db } from 'ponder:api'
 import schema from 'ponder:schema'
 import { isAddress } from 'viem'
+import { parseLimit } from './http'
 
 const app = new Hono()
 
@@ -31,7 +32,6 @@ function nextCaseAction(
       return 'Appeal controller must rule before the human-response deadline'
     case 'loss-proposed':
       return 'The veto controller may veto before the mechanism deadline; otherwise settle afterward'
-    case 'ruled':
     case 'manager-enforcement':
     case 'human-ruling':
       return 'Await or execute the separate CommitmentManager enforcement step'
@@ -164,51 +164,80 @@ app.get('/cases', async (c) => {
   if (rawArbiter && !isAddress(rawArbiter)) return c.json({ error: 'invalid arbiter' }, 400)
   const arbiter = rawArbiter?.toLowerCase() as `0x${string}` | undefined
   const openOnly = c.req.query('open') === 'true'
+  // The page is the top `offset + limit` of the two sources merged by time, so
+  // neither source needs more than that many rows.
+  const window = offset + limit
+  const fe = schema.forfeitEvent
+  const ac = schema.arbitrationCase
+
+  // Latest transition per manager-forfeit attempt. Every transition copies its
+  // attempt's proposal fields (penaltyBps, challengeEnd, proposalInitiatedAt).
+  const attempt = db
+    .selectDistinctOn([fe.manager, fe.commitmentId, fe.proposalInitiatedAt])
+    .from(fe)
+    .where(arbiter ? eq(fe.arbiter, arbiter) : undefined)
+    .orderBy(fe.manager, fe.commitmentId, fe.proposalInitiatedAt, desc(fe.blockNumber), desc(fe.logIndex))
+    .as('attempt')
+  // An attempt whose commitment has a mechanism case is shown as that case.
   const managerWhere = and(
-    eq(schema.forfeitEvent.kind, 'initiated'),
-    arbiter ? eq(schema.forfeitEvent.arbiter, arbiter) : undefined,
+    notExists(
+      db
+        .select({ one: sql`1` })
+        .from(ac)
+        .where(
+          and(
+            eq(ac.manager, attempt.manager),
+            eq(ac.commitmentId, attempt.commitmentId),
+            arbiter ? eq(ac.arbiter, arbiter) : undefined,
+          ),
+        ),
+    ),
+    openOnly ? eq(attempt.kind, 'initiated') : undefined,
   )
-  const mechanismWhere = arbiter ? eq(schema.arbitrationCase.arbiter, arbiter) : undefined
-  const [initiated, allForfeitEvents, mechanismCases, mutualEvents] = await Promise.all([
+  const mechanismWhere = and(
+    arbiter ? eq(ac.arbiter, arbiter) : undefined,
+    openOnly ? isNull(ac.terminalOutcome) : undefined,
+  )
+  const [attempts, attemptCount, mechanismCases, mechanismCount] = await Promise.all([
     db
       .select()
-      .from(schema.forfeitEvent)
+      .from(attempt)
       .where(managerWhere)
-      .orderBy(desc(schema.forfeitEvent.blockNumber), desc(schema.forfeitEvent.logIndex)),
-    db
-      .select()
-      .from(schema.forfeitEvent)
-      .where(arbiter ? eq(schema.forfeitEvent.arbiter, arbiter) : undefined)
-      .orderBy(desc(schema.forfeitEvent.blockNumber), desc(schema.forfeitEvent.logIndex)),
-    db
-      .select()
-      .from(schema.arbitrationCase)
-      .where(mechanismWhere)
-      .orderBy(desc(schema.arbitrationCase.updatedBlock)),
-    db
-      .select()
-      .from(schema.mutualEvent)
-      .orderBy(desc(schema.mutualEvent.blockNumber)),
+      .orderBy(desc(attempt.blockTimestamp), desc(attempt.blockNumber), desc(attempt.logIndex))
+      .limit(window),
+    db.select({ count: sql<string>`COUNT(*)::text` }).from(attempt).where(managerWhere),
+    db.select().from(ac).where(mechanismWhere).orderBy(desc(ac.updatedAt), desc(ac.updatedBlock)).limit(window),
+    db.select({ count: sql<string>`COUNT(*)::text` }).from(ac).where(mechanismWhere),
   ])
 
-  const attemptLatest = new Map<string, (typeof allForfeitEvents)[number]>()
-  const commitmentLatest = new Map<string, (typeof allForfeitEvents)[number]>()
-  for (const event of allForfeitEvents) {
-    const base = `${event.manager?.toLowerCase()}-${event.commitmentId}`
-    const attempt = `${base}-${event.proposalInitiatedAt}`
-    if (!attemptLatest.has(attempt)) attemptLatest.set(attempt, event)
-    if (!commitmentLatest.has(base)) commitmentLatest.set(base, event)
-  }
-  const mutualLatest = new Map<string, (typeof mutualEvents)[number]>()
-  for (const event of mutualEvents) {
-    const key = `${event.manager.toLowerCase()}-${event.mutualId}`
-    if (!mutualLatest.has(key)) mutualLatest.set(key, event)
-  }
-  const mechanismCommitments = new Set(
-    mechanismCases
-      .filter((row) => row.manager && row.commitmentId !== null)
-      .map((row) => `${row.manager!.toLowerCase()}-${row.commitmentId}`),
-  )
+  // Latest manager transition per mechanism case's commitment, and latest mutual
+  // event per optimistic-mutual case, for this page's cases only.
+  const commitmentKeys = mechanismCases.filter((r) => r.manager && r.commitmentId !== null)
+  const mutualKeys = mechanismCases.filter((r) => r.manager && r.mechanism === 'optimistic-mutual')
+  const me = schema.mutualEvent
+  const [commitmentEvents, mutualEvents] = await Promise.all([
+    commitmentKeys.length === 0
+      ? []
+      : db
+          .selectDistinctOn([fe.manager, fe.commitmentId])
+          .from(fe)
+          .where(
+            and(
+              arbiter ? eq(fe.arbiter, arbiter) : undefined,
+              or(...commitmentKeys.map((r) => and(eq(fe.manager, r.manager!), eq(fe.commitmentId, r.commitmentId!)))),
+            ),
+          )
+          .orderBy(fe.manager, fe.commitmentId, desc(fe.blockNumber), desc(fe.logIndex)),
+    mutualKeys.length === 0
+      ? []
+      : db
+          .selectDistinctOn([me.manager, me.mutualId])
+          .from(me)
+          .where(or(...mutualKeys.map((r) => and(eq(me.manager, r.manager!), eq(me.mutualId, r.caseId)))))
+          .orderBy(me.manager, me.mutualId, desc(me.blockNumber), desc(me.logIndex)),
+  ])
+  const commitmentLatest = new Map(commitmentEvents.map((e) => [`${e.manager?.toLowerCase()}-${e.commitmentId}`, e]))
+  const mutualLatest = new Map(mutualEvents.map((e) => [`${e.manager.toLowerCase()}-${e.mutualId}`, e]))
 
   const mechanismRows = mechanismCases.map((mechanismCase) => {
     const base = `${mechanismCase.manager?.toLowerCase()}-${mechanismCase.commitmentId}`
@@ -217,6 +246,11 @@ app.get('/cases', async (c) => {
       ? mutualLatest.get(`${mechanismCase.manager.toLowerCase()}-${mechanismCase.caseId}`)
       : undefined
     const terminal = mechanismCase.terminalOutcome
+    const managerPhase = latestManager
+      ? latestManager.kind === 'initiated' ? 'Execution delay' : latestManager.kind
+      : latestMutual
+        ? latestMutual.kind === 'lossInitiated' ? 'Mutual execution delay' : latestMutual.kind
+        : 'No manager proposal indexed'
     return {
       source: 'arbiter mechanism',
       mechanismSource: 'arbiter mechanism',
@@ -227,21 +261,9 @@ app.get('/cases', async (c) => {
       manager: mechanismCase.manager,
       arbiter: mechanismCase.arbiter,
       mechanismPhase: mechanismCase.phase,
-      managerPhase: latestManager
-        ? latestManager.kind === 'initiated' ? 'Execution delay' : latestManager.kind
-        : latestMutual
-          ? latestMutual.kind === 'lossInitiated' ? 'Mutual execution delay' : latestMutual.kind
-          : 'No manager proposal indexed',
+      managerPhase,
       nextDeadline: mechanismCase.nextDeadline?.toString() ?? null,
-      nextAction: nextCaseAction(
-        mechanismCase.phase,
-        latestManager
-          ? latestManager.kind === 'initiated' ? 'Execution delay' : latestManager.kind
-          : latestMutual
-            ? latestMutual.kind === 'lossInitiated' ? 'Mutual execution delay' : latestMutual.kind
-            : 'No manager proposal indexed',
-        terminal,
-      ),
+      nextAction: nextCaseAction(mechanismCase.phase, managerPhase, terminal),
       terminalOutcome: terminal,
       penaltyBps: latestManager?.penaltyBps ?? null,
       proposalInitiatedAt: latestManager?.proposalInitiatedAt.toString() ?? null,
@@ -250,53 +272,45 @@ app.get('/cases', async (c) => {
     }
   })
 
-  const managerRows = initiated
-    .filter((proposal) => !mechanismCommitments.has(`${proposal.manager?.toLowerCase()}-${proposal.commitmentId}`))
-    .map((proposal) => {
-      const base = `${proposal.manager?.toLowerCase()}-${proposal.commitmentId}`
-      const latest = attemptLatest.get(`${base}-${proposal.proposalInitiatedAt}`) ?? proposal
-      const terminalOutcome =
-        latest.kind === 'executed'
-          ? 'forfeited'
-          : latest.kind === 'cancelled'
-            ? 'cancelled by arbiter'
-            : latest.kind === 'cancelledStale'
-              ? 'stale-cancelled'
-              : null
-      return {
-        source: 'CommitmentManager',
-        mechanismSource: null,
-        managerSource: 'CommitmentManager',
-        mechanism: null,
-        caseId: null,
-        commitmentId: proposal.commitmentId.toString(),
-        manager: proposal.manager,
-        arbiter: proposal.arbiter,
-        mechanismPhase: 'Mechanism state not indexed for this manager proposal',
-        managerPhase:
-          latest.kind === 'initiated' ? 'Execution delay' : latest.kind,
-        nextDeadline:
-          latest.kind === 'initiated' ? proposal.challengeEnd?.toString() ?? null : null,
-        nextAction: latest.kind === 'initiated'
-          ? 'Anyone may execute after the manager delay; the arbiter may cancel before execution'
-          : null,
-        terminalOutcome,
-        penaltyBps: proposal.penaltyBps,
-        proposalInitiatedAt: proposal.proposalInitiatedAt.toString(),
-        updatedAt: latest.blockTimestamp.toString(),
-        transactionHash: latest.txHash,
-      }
-    })
-  const candidateRows = openOnly
-    ? [...mechanismRows, ...managerRows].filter((row) => row.terminalOutcome === null)
-    : [...mechanismRows, ...managerRows]
-  const allRows = candidateRows.sort((a, b) => {
-    const left = BigInt(a.updatedAt)
-    const right = BigInt(b.updatedAt)
-    return left === right ? 0 : left > right ? -1 : 1
+  const managerRows = attempts.map((latest) => {
+    const terminalOutcome =
+      latest.kind === 'executed'
+        ? 'forfeited'
+        : latest.kind === 'cancelled'
+          ? 'cancelled by arbiter'
+          : latest.kind === 'cancelledStale'
+            ? 'stale-cancelled'
+            : null
+    return {
+      source: 'CommitmentManager',
+      mechanismSource: null,
+      managerSource: 'CommitmentManager',
+      mechanism: null,
+      caseId: null,
+      commitmentId: latest.commitmentId.toString(),
+      manager: latest.manager,
+      arbiter: latest.arbiter,
+      mechanismPhase: 'Mechanism state not indexed for this manager proposal',
+      managerPhase: latest.kind === 'initiated' ? 'Execution delay' : latest.kind,
+      nextDeadline: latest.kind === 'initiated' ? latest.challengeEnd?.toString() ?? null : null,
+      nextAction: latest.kind === 'initiated'
+        ? 'Anyone may execute after the manager delay; the arbiter may cancel before execution'
+        : null,
+      terminalOutcome,
+      penaltyBps: latest.penaltyBps,
+      proposalInitiatedAt: latest.proposalInitiatedAt.toString(),
+      updatedAt: latest.blockTimestamp.toString(),
+      transactionHash: latest.txHash,
+    }
   })
-  const total = allRows.length
-  const rows = allRows.slice(offset, offset + limit)
+  const rows = [...mechanismRows, ...managerRows]
+    .sort((a, b) => {
+      const left = BigInt(a.updatedAt)
+      const right = BigInt(b.updatedAt)
+      return left === right ? 0 : left > right ? -1 : 1
+    })
+    .slice(offset, window)
+  const total = Number(attemptCount[0]?.count ?? '0') + Number(mechanismCount[0]?.count ?? '0')
   return c.json({
     rows,
     page: {
@@ -325,15 +339,57 @@ app.get('/cases', async (c) => {
  * BigInt fields are serialized as strings; numeric counts as JS numbers.
  */
 app.get('/stats', async (c) => {
-  // Commitment status histogram + totalForfeitable across active rows.
-  const commitmentStatusRows = await db
-    .select({
-      status: schema.commitment.status,
-      count: sql<string>`COUNT(*)::text`,
-      forfeitableSum: sql<string>`COALESCE(FLOOR(SUM(${schema.commitment.amount} * ${schema.commitment.maxPenaltyBps}) / 10000), 0)::text`,
-    })
-    .from(schema.commitment)
-    .groupBy(schema.commitment.status)
+  const [commitmentStatusRows, [{ count: arbitersCountRaw }], agreementStatusRows, operatorRows, meshNodeRows, [ledgerAgg]] =
+    await Promise.all([
+      // Commitment status histogram + totalForfeitable across active rows.
+      db
+        .select({
+          status: schema.commitment.status,
+          count: sql<string>`COUNT(*)::text`,
+          forfeitableSum: sql<string>`COALESCE(FLOOR(SUM(${schema.commitment.amount} * ${schema.commitment.maxPenaltyBps}) / 10000), 0)::text`,
+        })
+        .from(schema.commitment)
+        .groupBy(schema.commitment.status),
+      // Distinct arbiter count.
+      db
+        .select({ count: sql<string>`COUNT(DISTINCT ${schema.commitment.arbiter})::text` })
+        .from(schema.commitment),
+      // Agreement status histogram.
+      db
+        .select({
+          status: schema.agreement.status,
+          count: sql<string>`COUNT(*)::text`,
+        })
+        .from(schema.agreement)
+        .groupBy(schema.agreement.status),
+      // Operator counts + total delegated stake (registered only).
+      db
+        .select({
+          status: schema.operator.status,
+          count: sql<string>`COUNT(*)::text`,
+          totalDelegatedSum: sql<string>`COALESCE(SUM(${schema.operator.totalDelegatedStake}), 0)::text`,
+        })
+        .from(schema.operator)
+        .groupBy(schema.operator.status),
+      // Mesh node counts by type.
+      db
+        .select({
+          nodeType: schema.meshNode.nodeType,
+          count: sql<string>`COUNT(*)::text`,
+        })
+        .from(schema.meshNode)
+        .groupBy(schema.meshNode.nodeType),
+      // Encumbrance proxy — sum of the per-(token, user) encumbered balances in the
+      // manager ledger. Not the same as Σ vault.totalAssets but a useful "how much
+      // is locked up" metric the indexer can answer without on-chain reads. (There
+      // is no withdrawal queue in v2, so queued shares/assets are gone.)
+      db
+        .select({
+          totalEncumbered: sql<string>`COALESCE(SUM(${schema.ledgerPosition.encumbered}), 0)::text`,
+          positionCount: sql<string>`COUNT(*)::text`,
+        })
+        .from(schema.ledgerPosition),
+    ])
 
   const commitmentStatuses: Record<string, number> = {
     active: 0,
@@ -351,20 +407,6 @@ app.get('/stats', async (c) => {
     }
   }
 
-  // Distinct arbiter count.
-  const [{ count: arbitersCountRaw }] = await db
-    .select({ count: sql<string>`COUNT(DISTINCT ${schema.commitment.arbiter})::text` })
-    .from(schema.commitment)
-
-  // Agreement status histogram.
-  const agreementStatusRows = await db
-    .select({
-      status: schema.agreement.status,
-      count: sql<string>`COUNT(*)::text`,
-    })
-    .from(schema.agreement)
-    .groupBy(schema.agreement.status)
-
   const agreementStatuses: Record<string, number> = {
     active: 0,
     forfeited: 0,
@@ -375,16 +417,6 @@ app.get('/stats', async (c) => {
   for (const row of agreementStatusRows) {
     agreementStatuses[row.status] = Number(row.count)
   }
-
-  // Operator counts + total delegated stake (registered only).
-  const operatorRows = await db
-    .select({
-      status: schema.operator.status,
-      count: sql<string>`COUNT(*)::text`,
-      totalDelegatedSum: sql<string>`COALESCE(SUM(${schema.operator.totalDelegatedStake}), 0)::text`,
-    })
-    .from(schema.operator)
-    .groupBy(schema.operator.status)
 
   let operatorsRegistered = 0
   let operatorsDeregistered = 0
@@ -398,15 +430,6 @@ app.get('/stats', async (c) => {
     }
   }
 
-  // Mesh node counts by type.
-  const meshNodeRows = await db
-    .select({
-      nodeType: schema.meshNode.nodeType,
-      count: sql<string>`COUNT(*)::text`,
-    })
-    .from(schema.meshNode)
-    .groupBy(schema.meshNode.nodeType)
-
   const meshNodes = { fanIn: 0, fanOut: 0, tokenWeighting: 0, total: 0 }
   for (const row of meshNodeRows) {
     const n = Number(row.count)
@@ -415,17 +438,6 @@ app.get('/stats', async (c) => {
     else if (row.nodeType === 'token_weighting') meshNodes.tokenWeighting = n
     meshNodes.total += n
   }
-
-  // Encumbrance proxy — sum of the per-(token, user) encumbered balances in the
-  // manager ledger. Not the same as Σ vault.totalAssets but a useful "how much
-  // is locked up" metric the indexer can answer without on-chain reads. (There
-  // is no withdrawal queue in v2, so queued shares/assets are gone.)
-  const [ledgerAgg] = await db
-    .select({
-      totalEncumbered: sql<string>`COALESCE(SUM(${schema.ledgerPosition.encumbered}), 0)::text`,
-      positionCount: sql<string>`COUNT(*)::text`,
-    })
-    .from(schema.ledgerPosition)
 
   return c.json({
     commitments: commitmentStatuses,
@@ -463,8 +475,7 @@ app.get('/stats', async (c) => {
  */
 app.get('/leaderboard', async (c) => {
   const metric = c.req.query('metric') ?? 'arbiter'
-  const rawLimit = Number(c.req.query('limit') ?? 10)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 10, 1), 50)
+  const limit = parseLimit(c, 10, 50)
 
   if (metric === 'arbiter') {
     const rows = await db

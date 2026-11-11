@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {
     IDistributionStrategy,
@@ -12,8 +12,6 @@ import {
     TokenMovement,
     MovementKind
 } from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
-import {MockERC20} from "../helpers/MockERC20.sol";
 import {
     RecordingStrategy,
     RevertingStrategy,
@@ -29,33 +27,14 @@ import {
 ///         gas-guzzling, invalid-movement-returning, and reentrant strategies all degrade to
 ///         parked accrual — never to a blocked lifecycle transition. Plus the gas-starvation
 ///         case: a caller cannot hand-tune gas so hooks fail while the forfeit lands.
-contract HookLivenessTest is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
-
-    address internal admin = makeAddr("admin");
+contract HookLivenessTest is ManagerTestBase {
     address internal alice = makeAddr("alice");
     address internal arbiter = makeAddr("arbiter");
     address internal bob = makeAddr("bob");
 
-    uint64 internal constant WINDOW = 2 days;
-
-    function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
-
-        token.mint(alice, 1_000e18);
-        vm.startPrank(alice);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
+    function setUp() public override {
+        super.setUp();
+        _fund(alice, 1_000e18);
     }
 
     function _createWith(address strategy) internal returns (uint256 id) {
@@ -74,8 +53,8 @@ contract HookLivenessTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 
     // =========================================================================

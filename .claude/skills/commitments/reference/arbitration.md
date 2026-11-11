@@ -32,14 +32,16 @@ constructor(address owner_, address manager_);
 function initiateForfeit(uint256 commitmentId, uint16 penaltyBps) external; // onlyOwner
 function cancelForfeit(uint256 commitmentId) external;                      // onlyOwner
 function release(uint256 commitmentId) external;                            // onlyOwner → manager.releaseCommitment
-function executeForfeit(uint256 commitmentId) external;                     // anyone (time-gated)
 function forfeitAgreement(uint256 agreementId, uint16 penaltyBps) external; // onlyOwner
 function releaseAgreement(uint256 agreementId) external;                    // onlyOwner
 function settleAgreement(uint256 agreementId, bool fromProposer, uint256 units, bytes32 evidenceHash) external; // onlyOwner
+function activateMutual(uint256 mutualId) external;                         // onlyOwner
+function initiateMutualLoss(uint256 mutualId, uint256 lossNumeraire, bytes32 evidenceHash) external; // onlyOwner
+function cancelMutualLoss(uint256 mutualId) external;                       // onlyOwner
 ```
 
 Operating flow: as owner, `initiateForfeit(id, penaltyBps)` → wait the
-commitment's `challengeWindow` → anyone (or you) calls `executeForfeit(id)`. To
+commitment's `challengeWindow` → anyone (or you) calls `manager.executeForfeit(id)`. To
 let the committer off instead, `release(id)`. No signing, no envelopes.
 
 ---

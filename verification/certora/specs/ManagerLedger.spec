@@ -36,7 +36,6 @@ methods {
     function totalEncumberedOf(address) external returns (uint256) envfree;
     function totalEscrowOf(address) external returns (uint256) envfree;
     function totalMutualPremiumOf(address) external returns (uint256) envfree;
-    function totalMutualJuniorOf(address) external returns (uint256) envfree;
 
     // Manager views
     function freeBalance(address, address) external returns (uint256) envfree;
@@ -71,9 +70,9 @@ methods {
 
 definition sumOfCompartments(address token) returns mathint =
     totalFreeOf(token) + totalEncumberedOf(token) + totalEscrowOf(token)
-        + totalMutualPremiumOf(token) + totalMutualJuniorOf(token);
+        + totalMutualPremiumOf(token);
 
-/// INV-1 / INV-P13 (tier 1): the five per-token compartments partition the
+/// INV-1 / INV-P1 (tier 1): the four per-token compartments partition the
 /// manager's real token balance, preserved by every manager method.
 ///
 /// Stated as a preservation rule rather than a CVL invariant (run-260713

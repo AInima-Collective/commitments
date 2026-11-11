@@ -46,9 +46,9 @@ function donate(uint256 assets) external;  // permissionless NAV uplift, no shar
 // previews: previewDeposit/Mint/Withdraw/Redeem; convertToAssets/convertToShares
 ```
 
-**Decimals:** `_decimalsOffset() = 9`, so vault shares have **9 fewer decimals**
+**Decimals:** `_decimalsOffset() = 9`, so vault shares have **9 more decimals**
 than the underlying (an inflation-attack guard via virtual shares). E.g. 6-dp
-USDC → 15-dp `cvUSDC` shares; 18-dp asset → 9-dp shares. When you compute an
+USDC → 15-dp `cvUSDC` shares; 18-dp asset → 27-dp shares. When you compute an
 `amount` to encumber, use **share** units and **share** decimals, not the
 underlying's. Always `convertToShares` / read `balanceOf` rather than assuming
 1:1.
@@ -67,10 +67,11 @@ await write(manager, 'deposit', [vaultAddress, shares])
 
 ### Vault yield strategy (admin)
 
-The vault plugs an idle/yield `IStrategy` (`deposit/withdraw/totalAssets/
-maxDeposit/asset/vault`). `setStrategy` (admin) requires the outgoing strategy to
-hold 0 assets and the incoming one's `asset()`/`vault()` to match. The default
-`IdleStrategy` just holds assets in the vault. Yield accrues into `totalAssets`,
+The vault plugs an optional `IYieldStrategy` (`deposit/withdraw/totalAssets/
+maxDeposit/asset/vault`). `setYieldStrategy` (admin) requires the outgoing strategy
+to hold 0 assets (`StrategyHasAssets`) and the incoming one's `asset()`/`vault()`
+to match, then sweeps the vault's idle balance into it. With no strategy
+(`address(0)`) the vault holds its assets idle. Yield accrues into `totalAssets`,
 lifting the share price — which is exactly what `ERC4626Adapter.indexNow` reads
 and `IndexAppreciationYield` pays out on.
 

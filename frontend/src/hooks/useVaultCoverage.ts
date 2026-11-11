@@ -1,15 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
-import { useChainId } from 'wagmi'
+import { useChainId, useReadContract } from 'wagmi'
 
-import {
-  useReadCommitmentsVaultYieldStrategy,
-  useReadSkimmingMockStrategyOperator,
-  useReadSkimmingMockStrategyOperatorFeeBps,
-  useReadSkimmingMockStrategySkimBps,
-} from '../generated'
+import { commitmentsVaultAbi, skimmingMockStrategyAbi } from '../generated'
 import { getContractAddresses } from '../config/contracts'
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 import { parsePerilURI, type PerilMeta } from '../lib/peril'
 import { useMutualListings } from './useMutualListings'
 import { useMutualPremium, type MutualPremiumStream } from './useMutualPremium'
@@ -104,20 +99,28 @@ export function useVaultCoverage(vaultAddress: Address | undefined): {
 
   // Skim terms come from the vault's CURRENT strategy — resolved live so the
   // card survives a strategy rotation without env changes.
-  const { data: strategyAddress } = useReadCommitmentsVaultYieldStrategy({
+  const { data: strategyAddress } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'yieldStrategy',
     address: vaultAddress,
     query: { enabled: covered },
   })
   const strategyReadEnabled = covered && Boolean(strategyAddress)
-  const { data: skimBps } = useReadSkimmingMockStrategySkimBps({
+  const { data: skimBps } = useReadContract({
+    abi: skimmingMockStrategyAbi,
+    functionName: 'skimBps',
     address: strategyAddress,
     query: { enabled: strategyReadEnabled },
   })
-  const { data: operatorFeeBps } = useReadSkimmingMockStrategyOperatorFeeBps({
+  const { data: operatorFeeBps } = useReadContract({
+    abi: skimmingMockStrategyAbi,
+    functionName: 'operatorFeeBps',
     address: strategyAddress,
     query: { enabled: strategyReadEnabled },
   })
-  const { data: operator } = useReadSkimmingMockStrategyOperator({
+  const { data: operator } = useReadContract({
+    abi: skimmingMockStrategyAbi,
+    functionName: 'operator',
     address: strategyAddress,
     query: { enabled: strategyReadEnabled },
   })
@@ -127,9 +130,7 @@ export function useVaultCoverage(vaultAddress: Address | undefined): {
     enabled: hasIndexer && covered,
     staleTime: 30_000,
     queryFn: async () => {
-      const res = await indexerFetch(`/vaults/${vaultLower}/coverage`)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      const wire = (await res.json()) as CoverageWire
+      const wire = await indexerJson<CoverageWire>(`/vaults/${vaultLower}/coverage`)
       if (!wire.totals) return null
       return {
         skimmed: BigInt(wire.totals.skimmed),

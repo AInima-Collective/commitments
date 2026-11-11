@@ -6,7 +6,7 @@ generated: true
 ---
 # FlatFeeAtCreate
 **Inherits:**
-[IDistributionStrategy](/docs/protocol/reference/contracts/core/interfaces/IDistributionStrategy), ReentrancyGuardTransient
+[StrategyBase](/docs/protocol/reference/contracts/distributions/StrategyBase), ReentrancyGuardTransient
 
 **Title:**
 FlatFeeAtCreate
@@ -32,29 +32,11 @@ returns no movements and emits `DistributionPaid` itself, as §D.7 requires of
 self-custody strategies.
 
 
-## Constants
-### manager
-
-```solidity
-address public immutable manager
-```
-
-
 ## State Variables
 ### feeOf
 
 ```solidity
 mapping(uint256 commitmentId => FeeState) public feeOf
-```
-
-
-### allocated
-Per-token total of uncollected fee obligations; consuming a binding moves value
-from `credit` into `allocated`, so balanceOf(this) ≥ Σcredit + allocated per token.
-
-
-```solidity
-mapping(address token => uint256) public allocated
 ```
 
 
@@ -74,14 +56,7 @@ mapping(address committer => mapping(address token => uint256)) public creditOf
 
 
 ```solidity
-constructor(address manager_) ;
-```
-
-### onlyManager
-
-
-```solidity
-modifier onlyManager() ;
+constructor(address manager_) StrategyBase(manager_);
 ```
 
 ### prefund
@@ -166,44 +141,6 @@ Pending amount claimable by the implied recipient.
 function pending(ClaimContext calldata ctx, bytes calldata) external view returns (uint256);
 ```
 
-### distribute
-
-Permissionlessly advance accrual state. Called by the manager from
-`manager.distribute(id, strategy)`; reverts bubble to the caller.
-Allowed kinds: FromEncumberedToEscrow, FromEncumberedToExternal.
-
-
-```solidity
-function distribute(DistributeContext calldata) external view onlyManager returns (TokenMovement[] memory);
-```
-
-### onCommitmentReleased
-
-Manager-only; called under guarded semantics (ERC §D.6) BEFORE the committer's
-remaining encumbrance is freed, so the strategy can take its final accrual sweep.
-Allowed kinds: FromEncumberedToEscrow, FromEscrowToExternal, FromEscrowToFree.
-
-
-```solidity
-function onCommitmentReleased(LifecycleContext calldata)
-    external
-    view
-    onlyManager
-    returns (TokenMovement[] memory);
-```
-
-### onCommitmentForfeited
-
-Manager-only; called under guarded semantics (ERC §D.6), strictly AFTER the
-manager-internal forfeit transfer. Disposes of strategy-side in-flight accrual only;
-cannot affect the forfeit itself. `FromEncumbered*` caps run against the post-forfeit
-residual. Allowed kinds: FromEncumberedToEscrow, FromEscrowToExternal, FromEscrowToFree.
-
-
-```solidity
-function onCommitmentForfeited(ForfeitContext calldata) external view onlyManager returns (TokenMovement[] memory);
-```
-
 ## Events
 ### Prefunded
 A prefund was credited to `committer` (pulled from `funder`).
@@ -222,46 +159,16 @@ event CreditRefunded(address indexed committer, address indexed token, uint256 a
 ```
 
 ## Errors
-### OnlyManager
-
-```solidity
-error OnlyManager();
-```
-
 ### FeeNotFunded
 
 ```solidity
 error FeeNotFunded(uint256 required, uint256 available);
 ```
 
-### AlreadyBound
-
-```solidity
-error AlreadyBound();
-```
-
-### NothingToClaim
-
-```solidity
-error NothingToClaim();
-```
-
-### NotAuthorized
-
-```solidity
-error NotAuthorized();
-```
-
 ### InsufficientCredit
 
 ```solidity
 error InsufficientCredit(uint256 requested, uint256 available);
-```
-
-### ZeroAmount
-
-```solidity
-error ZeroAmount();
 ```
 
 ### ZeroAddress
@@ -278,5 +185,6 @@ struct FeeState {
     uint256 fee;
     address token;
     bool collected;
+    bool bound;
 }
 ```

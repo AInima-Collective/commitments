@@ -10,7 +10,7 @@ import {OperatorServiceRegistry} from "src/extensions/services/service-registry/
 import {IOperatorServiceRegistry} from "src/extensions/services/interfaces/IOperatorServiceRegistry.sol";
 import {IServiceManager} from "src/extensions/services/interfaces/IServiceManager.sol";
 import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandler.sol";
-import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
+import {MockVotingPowerSource} from "../helpers/Mocks.sol";
 
 /// @dev Minimal mock OperatorRegistry — only implements eligibility.
 contract MockOperatorRegistry {
@@ -26,50 +26,6 @@ contract MockOperatorRegistry {
 
     function isOperator(address op) external view returns (bool) {
         return activeOperators[op];
-    }
-}
-
-/// @dev Mock voting-power source backing the registry. Tests set per-operator power
-///      directly; historical queries return the live value (tests that need historical
-///      divergence set values at specific blocks).
-contract MockVotingPowerSource is IVotingPowerSource {
-    mapping(address => uint256) public power;
-    mapping(address => mapping(uint256 => uint256)) public powerAt;
-    uint256 public total;
-    mapping(uint256 => uint256) public totalAt;
-
-    function setPower(address who, uint256 v) external {
-        uint256 old = power[who];
-        power[who] = v;
-        total = total + v - old;
-    }
-
-    /// @dev Set a historical snapshot; useful when a test needs to validate a
-    ///      past reference block without advancing chain state.
-    function setPowerAt(address who, uint256 blockNumber, uint256 v) external {
-        powerAt[who][blockNumber] = v;
-    }
-
-    function setTotalAt(uint256 blockNumber, uint256 v) external {
-        totalAt[blockNumber] = v;
-    }
-
-    function getVotingPower(address who) external view returns (uint256) {
-        return power[who];
-    }
-
-    function getVotingPowerAt(address who, uint256 blockNumber) external view returns (uint256) {
-        uint256 snapshot = powerAt[who][blockNumber];
-        return snapshot == 0 ? power[who] : snapshot;
-    }
-
-    function getTotalPower() external view returns (uint256) {
-        return total;
-    }
-
-    function getTotalPowerAt(uint256 blockNumber) external view returns (uint256) {
-        uint256 snapshot = totalAt[blockNumber];
-        return snapshot == 0 ? total : snapshot;
     }
 }
 
@@ -164,7 +120,6 @@ contract OperatorServiceRegistryTest is Test {
         registry.enrollServiceOperator();
 
         assertTrue(registry.operatorRegistered(operator1));
-        assertEq(registry.totalOperators(), 1);
     }
 
     function test_registerOperator_notInRegistry_reverts() public {
@@ -192,7 +147,6 @@ contract OperatorServiceRegistryTest is Test {
         registry.withdrawServiceOperator(operator1);
 
         assertFalse(registry.operatorRegistered(operator1));
-        assertEq(registry.totalOperators(), 0);
     }
 
     function test_deregisterOperator_admin() public {
@@ -529,9 +483,27 @@ contract OperatorServiceRegistryTest is Test {
         registry.updateStakeThreshold(500);
     }
 
-    function test_updateQuorum() public {
+    function test_updateQuorum_appliesFromNextBlock() public {
+        _registerAndSetKey(operator1, operator1Key, signingKey1, signingKey1Pk);
+        _registerAndSetKey(operator2, operator2Key, signingKey2, signingKey2Pk);
+        mockSource.setPower(operator1, 600);
+        mockSource.setPower(operator2, 400); // operator1 alone holds exactly 3/5
+
+        IServiceHandler.Envelope memory env = _env("quorum");
+        IServiceHandler.SignatureData memory sig = _sign(env, _pks(signingKey1Pk), _addrs(signingKey1));
+        vm.expectRevert(abi.encodeWithSelector(IServiceManager.InsufficientQuorum.selector, 600, THRESHOLD, 1000));
+        registry.validate(env, sig);
+
         vm.prank(admin);
         registry.updateQuorum(3, 5);
+        vm.roll(block.number + 1);
+        registry.validate(env, _sign(env, _pks(signingKey1Pk), _addrs(signingKey1)));
+    }
+
+    function test_updateQuorum_denominatorAbove80Bits_reverts() public {
+        vm.prank(admin);
+        vm.expectRevert(IServiceManager.InvalidQuorumParameters.selector);
+        registry.updateQuorum(1, uint256(type(uint80).max) + 1);
     }
 
     function test_updateQuorum_invalidParameters_revertsWithInterfaceError() public {

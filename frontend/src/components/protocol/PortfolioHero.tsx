@@ -88,7 +88,6 @@ export function PortfolioHero({
             <UsdAmount
               amount={totalUsd}
               size="display"
-              tone={isLoading && totalUsd === null ? 'unavailable' : 'neutral'}
             />
           </div>
           {priceNote && <span className="ds-text-xs ds-subtle">{priceNote}</span>}
@@ -142,13 +141,13 @@ export function PortfolioHero({
         />
         <StatBlock
           label="CLAIMABLE YIELD"
-          tone={claimableUsd && claimableUsd > 0n ? 'positive' : 'neutral'}
+          tone={claimableUsd && claimableUsd > 0n ? 'success' : 'neutral'}
           value={<UsdAmount amount={claimableUsd} compact size="inline" />}
           loading={isLoading && claimableUsd === null}
         />
         <StatBlock
           label="LOSSES"
-          tone={lossesUsd && lossesUsd > 0n ? 'negative' : 'neutral'}
+          tone={lossesUsd && lossesUsd > 0n ? 'danger' : 'neutral'}
           value={<UsdAmount amount={lossesUsd} compact size="inline" />}
           loading={isLoading && lossesUsd === null}
         />

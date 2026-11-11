@@ -25,7 +25,7 @@ export interface VoteTallyBarProps {
  * the protocol's standard tone vocabulary:
  *
  *   for     → success (green)
- *   against → error   (red)
+ *   against → danger  (red)
  *   abstain → muted   (neutral)
  *
  * The underlying AllocationBar handles segment widths and percentage labels;
@@ -68,7 +68,7 @@ export function VoteTallyBar({
       compact={compact}
       segments={[
         { label: 'for', value: forVotes, tone: 'success' },
-        { label: 'against', value: againstVotes, tone: 'error' },
+        { label: 'against', value: againstVotes, tone: 'danger' },
         { label: 'abstain', value: abstainVotes, tone: 'muted' },
       ]}
     />

@@ -22,7 +22,7 @@ export interface StrategyCardProps {
 /**
  * Maps the `vault.v1` strategy.riskTier vocabulary
  * (`conservative | moderate | aggressive | agent`) to the existing
- * RiskTierBadge tone vocabulary (`success | warn | error | unknown`).
+ * RiskTierBadge tone vocabulary (`success | warn | danger | unknown`).
  * `agent` collapses to `warn` since agent vaults carry counterparty
  * exposure even when the strategy itself is structurally simple.
  */
@@ -33,7 +33,7 @@ function mapRiskTier(tier: string | undefined): RiskTierBadgeTier {
     case 'moderate':
       return 'warn'
     case 'aggressive':
-      return 'error'
+      return 'danger'
     case 'agent':
       return 'warn'
     default:

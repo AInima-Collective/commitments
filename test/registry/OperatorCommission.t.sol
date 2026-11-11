@@ -11,6 +11,7 @@ import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {NoopStrategy} from "../manager/mocks/StrategyMocks.sol";
 import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 /// @title OperatorCommissionTest
 /// @notice Covers the operator-commission feature (issue #60): the registry's admin-curated
@@ -132,7 +133,7 @@ contract OperatorCommissionTest is ManagerTestBase {
         vm.prank(staker1);
         registry.delegate(operator1, delegCid);
 
-        assertEq(registry.getOperatorStake(operator1), 150e18, "delegation credited with coupon bound");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 150e18, "delegation credited with coupon bound");
         assertEq(registry.operatorForCommitment(delegCid), operator1, "routing resolvable");
     }
 
@@ -179,7 +180,7 @@ contract OperatorCommissionTest is ManagerTestBase {
 
         // Non-draining: the delegated backing (and thus operator stake) is untouched.
         assertEq(manager.getCommitment(delegCid).amount, 50e18, "commission never drains the stake");
-        assertEq(registry.getOperatorStake(operator1), 150e18, "no phantom stake shift");
+        assertEq(registry.getOperator(operator1).totalDelegatedStake, 150e18, "no phantom stake shift");
     }
 
     function testCommission_fundGuards() public {
@@ -190,18 +191,18 @@ contract OperatorCommissionTest is ManagerTestBase {
         // Unbound id.
         _fundWallet(staker1, 5e18);
         vm.prank(staker1);
-        vm.expectRevert(OperatorCommissionCoupon.NotBound.selector);
+        vm.expectRevert(StrategyBase.NotBound.selector);
         coupon.fundCommission(999, 1e18);
 
         // Non-committer cannot fund.
         _fundWallet(operator1, 5e18);
         vm.prank(operator1);
-        vm.expectRevert(OperatorCommissionCoupon.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         coupon.fundCommission(delegCid, 1e18);
 
         // Zero amount.
         vm.prank(staker1);
-        vm.expectRevert(OperatorCommissionCoupon.ZeroAmount.selector);
+        vm.expectRevert(StrategyBase.ZeroAmount.selector);
         coupon.fundCommission(delegCid, 0);
     }
 
@@ -224,7 +225,7 @@ contract OperatorCommissionTest is ManagerTestBase {
 
         // A stranger (even the delegator) cannot claim the operator's commission.
         vm.prank(staker1);
-        vm.expectRevert(OperatorCommissionCoupon.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(delegCid, address(coupon), "");
     }
 
@@ -247,6 +248,11 @@ contract OperatorCommissionTest is ManagerTestBase {
         vm.prank(trustedArbiter);
         manager.releaseCommitment(delegCid);
         assertEq(registry.operatorForCommitment(delegCid), address(0), "registry cleared routing at close");
+
+        // No more commission once the delegation commitment has closed.
+        vm.prank(staker1);
+        vm.expectRevert(OperatorCommissionCoupon.CommitmentClosed.selector);
+        coupon.fundCommission(delegCid, 1e18);
 
         // The latched operator can still collect after close.
         vm.prank(operator1);

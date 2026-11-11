@@ -1,4 +1,4 @@
-import { AddressDisplay } from '../ui'
+import { AddressDisplay, Button } from '../ui'
 import { useViewContext } from '../../hooks/useViewAddress'
 
 /**
@@ -24,9 +24,9 @@ export function ViewingBanner() {
           ? 'Actions still belong to your own wallet, so they are turned off here.'
           : 'Connect a wallet to act on your own position.'}
       </span>
-      <button type="button" className="ds-btn ds-btn--sm" onClick={() => setViewAddress(undefined)}>
+      <Button size="sm" onClick={() => setViewAddress(undefined)}>
         {connectedAddress ? 'back to my wallet' : 'clear'}
-      </button>
+      </Button>
     </div>
   )
 }

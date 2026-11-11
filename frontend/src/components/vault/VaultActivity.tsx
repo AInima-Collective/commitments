@@ -3,7 +3,7 @@ import { useChainId } from 'wagmi'
 import { type VaultActivityEntry } from '../../hooks/useVaultActivity'
 import { DataTable, EmptyState, TokenAmount, type DataTableColumn } from '../ui'
 import { getBlockExplorer } from '../../lib/blockExplorer'
-import { truncateAddress } from '../../lib/format'
+import { formatTimestamp, truncateAddress } from '../../lib/format'
 
 interface VaultActivityProps {
   entries: VaultActivityEntry[] | undefined
@@ -14,28 +14,13 @@ interface VaultActivityProps {
 
 const KIND_LABEL: Record<VaultActivityEntry['kind'], string> = {
   deposit: 'deposit',
-  'withdraw-queued': 'withdrawal queued',
-  'withdraw-claimed': 'withdrawal claimed',
+  withdraw: 'withdrawal',
 }
 
 const KIND_BADGE: Record<VaultActivityEntry['kind'], string> = {
   deposit: 'ds-badge ds-badge--success',
-  'withdraw-queued': 'ds-badge ds-badge--warn',
-  'withdraw-claimed': 'ds-badge ds-badge--muted',
+  withdraw: 'ds-badge ds-badge--muted',
 }
-
-function formatTimestamp(ts: bigint | undefined): string {
-  if (ts === undefined) return '—'
-  const date = new Date(Number(ts) * 1000)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 
 export function VaultActivity({
   entries,
@@ -45,8 +30,6 @@ export function VaultActivity({
 }: VaultActivityProps) {
   const chainId = useChainId()
   const explorer = getBlockExplorer(chainId)
-  const decimals = assetDecimals ?? 6
-  const symbol = assetSymbol ?? 'USDC'
 
   const columns = useMemo<DataTableColumn<VaultActivityEntry>[]>(
     () => [
@@ -65,9 +48,12 @@ export function VaultActivity({
         id: 'amount',
         header: 'Amount',
         align: 'right',
-        render: (e) => (
-          <TokenAmount amount={e.assets} decimals={decimals} symbol={symbol} size="inline" />
-        ),
+        render: (e) =>
+          assetDecimals === undefined ? (
+            <span className="ds-subtle">—</span>
+          ) : (
+            <TokenAmount amount={e.assets} decimals={assetDecimals} symbol={assetSymbol} size="inline" />
+          ),
       },
       {
         id: 'tx',
@@ -90,7 +76,7 @@ export function VaultActivity({
           ),
       },
     ],
-    [decimals, symbol, explorer],
+    [assetDecimals, assetSymbol, explorer],
   )
 
   return (

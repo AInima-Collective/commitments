@@ -158,15 +158,15 @@ require(TokenWeighting(tokenWeighting).getVotingPower(operator) > 0, "0 power - 
 require(service.getVotingPower(operator) == TokenWeighting(tokenWeighting).getVotingPower(operator));
 
 // raw stake is nonzero too (sanity: distinguishes "no stake" from "no weight")
-require(operatorRegistry.getOperatorStake(operator) > 0, "operator has no stake");
+require(operatorRegistry.getOperator(operator).totalDelegatedStake > 0, "operator has no stake");
 ```
 
-If `getOperatorStake > 0` but `getVotingPower == 0`, the weight for
+If `totalDelegatedStake > 0` but `getVotingPower == 0`, the weight for
 `stakeDenom()` is unset (or set on the wrong denom) — return to step 3.
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `getVotingPower == 0`, `getOperatorStake > 0` | Denom weight unset | `updateWeight(stakeDenom(), w)` |
+| `getVotingPower == 0`, `totalDelegatedStake > 0` | Denom weight unset | `updateWeight(stakeDenom(), w)` |
 | Power stays 0 after `updateWeight` | Weight set on the wrong denom | Use `operatorRegistry.stakeDenom()` exactly |
 | Early operators have 0 power | `setMeshWiring` ran after they registered | Wire before registration |
 | Service reads 0 but sink is nonzero | Wrong `votingPowerSource` at init | Point the service at the wired `TokenWeighting` |

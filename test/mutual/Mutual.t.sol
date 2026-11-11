@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {MutualRegistry} from "src/extensions/mutuals/MutualRegistry.sol";
@@ -38,12 +38,7 @@ contract MutualE2ETest is Test {
     uint256 internal constant MIN_BOND = 100e18;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         usdc = new MockERC20("USD Coin", "USDC", 18);
         bondTok = new MockERC20("Bond", "BOND", 18);
 
@@ -70,7 +65,6 @@ contract MutualE2ETest is Test {
             arbiter: address(arbiter),
             numeraire: address(usdc),
             beneficiary: address(router),
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -90,7 +84,7 @@ contract MutualE2ETest is Test {
         p.challengeWindow = 1 days;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(mutualId, p, 0, "");
+        cid = manager.joinMutual(mutualId, p);
     }
 
     function test_e2e_proposeExecuteSettleCollect() public {
@@ -189,7 +183,7 @@ contract MutualE2ETest is Test {
         manager.executeMutualLoss(gid);
         uint256[] memory ids = new uint256[](1);
         ids[0] = c1;
-        router.settle(ids); // permissionless settle
+        manager.settleMembers(ids); // permissionless settle
         vm.expectRevert(ClaimRouter.NotClaimant.selector);
         router.collect(address(usdc), address(0xdead));
     }

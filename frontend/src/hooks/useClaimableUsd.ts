@@ -3,31 +3,44 @@ import { type Address, erc20Abi } from 'viem'
 import { useReadContracts } from 'wagmi'
 
 import { commitmentsVaultAbi } from '../generated'
-import {
-  type ClaimableYieldEntry,
-  type TokenValuation,
-  usdForAmount,
-} from '../lib/claimableYield'
+import { type TokenValuation, usdForAmount } from '../lib/claimableYield'
 import { useAssetPrices } from './useAssetPrices'
 import { useTokenMetaMap } from './useTokenMeta'
+import { POLL } from './polling'
+
+/** What a token is valued in. `vault` is set when the token is that vault's share. */
+export interface ValuedToken {
+  token: Address
+  vault: Address | undefined
+}
+
+/** An amount restated in the asset its USD price is quoted for. */
+export interface AssetAmount {
+  amount: bigint
+  decimals: number
+  symbol: string
+}
 
 interface UseClaimableUsdReturn {
   /** Token-aware USD valuation: prices `amount` of `token` in USD (6-decimal
    *  bigint), or `null` when no price is available. Raw ERC-20s price by their
    *  own symbol; vault shares convert to underlying first. */
   usdFor: (token: Address, amount: bigint) => bigint | null
+  /** `amount` of `token` in the priced asset: itself for a raw ERC-20, the
+   *  underlying for a vault share. Undefined until the share rate is read. */
+  inAsset: (token: Address, amount: bigint) => AssetAmount | undefined
   /** True while token metadata / share-rate reads are in flight. */
   isLoading: boolean
 }
 
 /**
- * useClaimableUsd — per-token USD valuation for the claimable-yield panel.
+ * useClaimableUsd — per-token USD valuation for a set of backing tokens.
  *
- * v2 claimable entries can be backed by heterogeneous tokens, so a single
+ * v2 positions can be backed by heterogeneous tokens, so a single
  * `shareToUsd` (canonical-vault-only) is wrong the moment two backing tokens
  * appear. This hook resolves, per distinct entry token:
  *   - raw ERC-20s → priced directly by their own decimals + symbol;
- *   - ERC-4626 vault shares (entries that carry a `vault`) → converted to the
+ *   - ERC-4626 vault shares (tokens that carry a `vault`) → converted to the
  *     underlying asset via a single `convertToAssets`/`asset` read, then the
  *     underlying asset's symbol is priced.
  *
@@ -36,7 +49,7 @@ interface UseClaimableUsdReturn {
  * Returns `usdFor(token, amount)`; unavailable prices yield `null` so callers
  * degrade to token-only display.
  */
-export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsdReturn {
+export function useClaimableUsd(entries: readonly ValuedToken[]): UseClaimableUsdReturn {
   // Decimals/symbol for every entry token (raw ERC-20 or vault share). For a
   // vault share this `decimals` IS the share precision used by convertToAssets.
   const tokenMeta = useTokenMetaMap(useMemo(() => entries.map((e) => e.token), [entries]))
@@ -77,7 +90,7 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
     // the transient 18-decimal fallback, or the two would briefly disagree.
     query: {
       enabled: vaultTokens.length > 0 && !tokenMeta.isLoading,
-      refetchInterval: 30_000,
+      refetchInterval: POLL.slow,
     },
   })
 
@@ -104,7 +117,8 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
   const priceSymbols = useMemo(() => {
     const symbols = new Set<string>()
     for (const e of entries) {
-      if (!e.vault) symbols.add(tokenMeta.metaFor(e.token).symbol)
+      const meta = e.vault ? undefined : tokenMeta.byAddress[e.token.toLowerCase()]
+      if (meta) symbols.add(meta.symbol)
     }
     const present = assetAddresses.filter((a): a is Address => !!a)
     present.forEach((_, i) => {
@@ -112,14 +126,13 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
       if (symbol) symbols.add(symbol)
     })
     return [...symbols]
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenMeta.metaFor is stable per byAddress
   }, [entries, tokenMeta.byAddress, assetAddresses, assetData])
 
   const { getPrice } = useAssetPrices({ symbols: priceSymbols })
 
   // Build a valuation per distinct token, keyed by lowercased address.
   const valuations = useMemo(() => {
-    const map = new Map<string, TokenValuation>()
+    const map = new Map<string, { valuation: TokenValuation; symbol: string }>()
 
     // Vault shares: convertToAssets rate + underlying asset meta.
     const present = assetAddresses.filter((a): a is Address => !!a)
@@ -139,11 +152,14 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
       const assetMeta = assetMetaByAddr.get(asset.toLowerCase())
       if (!assetMeta) return
       map.set(token.toLowerCase(), {
-        kind: 'share',
-        shareDecimals: tokenMeta.metaFor(token).decimals,
-        oneShareAssets,
-        assetDecimals: assetMeta.decimals,
-        priceUsd: getPrice(assetMeta.symbol)?.usd ?? null,
+        symbol: assetMeta.symbol,
+        valuation: {
+          kind: 'share',
+          shareDecimals: tokenMeta.metaFor(token).decimals,
+          oneShareAssets,
+          assetDecimals: assetMeta.decimals,
+          priceUsd: getPrice(assetMeta.symbol)?.usd ?? null,
+        },
       })
     })
 
@@ -151,12 +167,12 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
     for (const e of entries) {
       if (e.vault) continue
       const key = e.token.toLowerCase()
-      if (map.has(key)) continue
-      const meta = tokenMeta.metaFor(e.token)
+      const meta = tokenMeta.byAddress[key]
+      // Unvalued until the token's own decimals are known, never at the placeholder's.
+      if (map.has(key) || !meta) continue
       map.set(key, {
-        kind: 'direct',
-        decimals: meta.decimals,
-        priceUsd: getPrice(meta.symbol)?.usd ?? null,
+        symbol: meta.symbol,
+        valuation: { kind: 'direct', decimals: meta.decimals, priceUsd: getPrice(meta.symbol)?.usd ?? null },
       })
     }
 
@@ -164,12 +180,21 @@ export function useClaimableUsd(entries: ClaimableYieldEntry[]): UseClaimableUsd
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tokenMeta.metaFor is stable per byAddress; getPrice per prices
   }, [entries, vaultTokens, vaultData, assetAddresses, assetData, tokenMeta.byAddress, getPrice])
 
-  const usdFor = useMemo(
-    () =>
-      (token: Address, amount: bigint): bigint | null =>
-        usdForAmount(amount, valuations.get(token.toLowerCase())),
-    [valuations],
-  )
-
-  return { usdFor, isLoading: tokenMeta.isLoading }
+  return useMemo(() => {
+    const usdFor = (token: Address, amount: bigint): bigint | null =>
+      usdForAmount(amount, valuations.get(token.toLowerCase())?.valuation)
+    const inAsset = (token: Address, amount: bigint): AssetAmount | undefined => {
+      const entry = valuations.get(token.toLowerCase())
+      if (!entry) return undefined
+      const v = entry.valuation
+      return v.kind === 'direct'
+        ? { amount, decimals: v.decimals, symbol: entry.symbol }
+        : {
+            amount: (amount * v.oneShareAssets) / 10n ** BigInt(v.shareDecimals),
+            decimals: v.assetDecimals,
+            symbol: entry.symbol,
+          }
+    }
+    return { usdFor, inAsset, isLoading: tokenMeta.isLoading }
+  }, [valuations, tokenMeta.isLoading])
 }

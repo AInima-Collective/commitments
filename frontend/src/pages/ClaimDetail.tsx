@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { type ReactNode } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAccount, useChainId } from 'wagmi'
 
@@ -7,6 +7,7 @@ import { ClaimActions } from '../components/claim/ClaimActions'
 import { PageHeader } from '../components/protocol'
 import {
   AddressDisplay,
+  Button,
   ErrorPanel,
   Notice,
   StatBlock,
@@ -15,7 +16,10 @@ import {
 import { findOptimisticInsuranceArbiter, getOptimisticInsuranceArbiters } from '../config/arbiters'
 import { useDisplayNow } from '../hooks/useDisplayNow'
 import { useOptimisticClaim } from '../hooks/useOptimisticClaim'
-import { formatBps } from '../utils/commitments'
+import { commitmentDetailPath } from '../lib/arbitrationRoutes'
+import { formatDuration } from '../lib/format'
+import { parseIdParam } from '../lib/routeParams'
+import { formatBps } from '../lib/commitments'
 
 /**
  * /claims/:id — read-shareable detail surface for an optimistic-insurance
@@ -41,20 +45,12 @@ export default function ClaimDetail() {
     getOptimisticInsuranceArbiters(chainId)[0]
   )?.address
 
-  const claimId = useMemo<bigint | null>(() => {
-    if (!idParam) return null
-    try {
-      return BigInt(idParam)
-    } catch {
-      return null
-    }
-  }, [idParam])
+  const claimId = parseIdParam(idParam)
 
   const { claim, config, isLoading, error, refetch } = useOptimisticClaim(
     arbiterAddress,
     claimId !== null && claimId > 0n ? claimId : undefined,
   )
-  const now = useDisplayNow()
 
   if (idParam && claimId === null) {
     return <Navigate to="/app" replace />
@@ -71,48 +67,44 @@ export default function ClaimDetail() {
     )
   }
 
+  const placeholder = (body: ReactNode) => (
+    <div className="ds-page">
+      <BackLink />
+      <PageHeader eyebrow="optimistic-insurance" title={`Claim #${claimId?.toString() ?? ''}`} />
+      {body}
+    </div>
+  )
+
   if (error) {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="optimistic-insurance" title={`Claim #${claimId?.toString() ?? ''}`} />
-        <Notice
-          tone="danger"
-          title="Failed to load claim"
-          actions={
-            <button type="button" className="ds-btn ds-btn--sm" onClick={refetch}>
-              retry
-            </button>
-          }
-        >
-          {error.message}
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice
+        tone="danger"
+        title="Failed to load claim"
+        actions={
+          <Button size="sm" onClick={refetch}>
+            retry
+          </Button>
+        }
+      >
+        {error.message}
+      </Notice>,
     )
   }
 
   if (isLoading || !claim || !config) {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="optimistic-insurance" title={`Claim #${claimId?.toString() ?? ''}`} />
-        <Notice tone="info" title="Loading claim…">
-          Reading claim state from the OptimisticInsuranceArbiter.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="info" title="Loading claim…">
+        Reading claim state from the OptimisticInsuranceArbiter.
+      </Notice>,
     )
   }
 
   if (claim.state === 'None') {
-    return (
-      <div className="ds-page">
-        <BackLink />
-        <PageHeader eyebrow="optimistic-insurance" title={`Claim #${claimId?.toString() ?? ''}`} />
-        <Notice tone="warn" title="Claim not found">
-          No claim with id <code>#{claimId?.toString()}</code> exists on this
-          arbiter.
-        </Notice>
-      </div>
+    return placeholder(
+      <Notice tone="warn" title="Claim not found">
+        No claim with id <code>#{claimId?.toString()}</code> exists on this
+        arbiter.
+      </Notice>,
     )
   }
 
@@ -125,7 +117,7 @@ export default function ClaimDetail() {
         lead={
           <span>
             Against commitment{' '}
-            <Link to={`/app/commitments/${claim.commitmentId.toString()}`}>
+            <Link to={commitmentDetailPath(claim.commitmentId)}>
               <code>#{claim.commitmentId.toString()}</code>
             </Link>
             . Bond stack escalates ≥ 2× per dispute up to
@@ -161,7 +153,7 @@ export default function ClaimDetail() {
         <StatBlock
           value={
             claim.state === 'Proposed' ? (
-              <Countdown deadline={claim.answerDeadline} now={now} />
+              <AnswerWindow deadline={claim.answerDeadline} />
             ) : claim.state === 'Resolved' ? (
               `winning ${formatBps(claim.winningAmtBps)}`
             ) : (
@@ -238,9 +230,9 @@ export default function ClaimDetail() {
             size="inline"
           />
           {' · '}answer timeout:{' '}
-          {humanSeconds(config.answerTimeout)}
+          {formatDuration(Number(config.answerTimeout))}
           {' · '}stale TTL:{' '}
-          {humanSeconds(config.staleTtl)}
+          {formatDuration(Number(config.staleTtl))}
         </div>
       </section>
     </div>
@@ -255,16 +247,9 @@ function BackLink() {
   )
 }
 
-function Countdown({ deadline, now }: { deadline: bigint; now: number }) {
-  const remaining = Number(deadline) - now
+/** Time left in the answer window; owns the clock so only it re-renders each second. */
+function AnswerWindow({ deadline }: { deadline: bigint }) {
+  const remaining = Number(deadline) - useDisplayNow()
   if (remaining <= 0) return <span>ready to finalize</span>
-  return <span>{humanSeconds(BigInt(remaining))}</span>
-}
-
-function humanSeconds(secs: bigint): string {
-  const n = Number(secs)
-  if (n < 60) return `${n}s`
-  if (n < 3_600) return `${Math.round(n / 60)}m`
-  if (n < 86_400) return `${Math.round(n / 3_600)}h`
-  return `${Math.round(n / 86_400)}d`
+  return <span>{formatDuration(remaining)}</span>
 }

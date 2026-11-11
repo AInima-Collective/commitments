@@ -11,11 +11,9 @@ import {
     IDistributionStrategy,
     TokenMovement,
     CreatedContext,
-    DistributeContext,
-    ClaimContext,
-    LifecycleContext,
-    ForfeitContext
+    ClaimContext
 } from "src/core/interfaces/IDistributionStrategy.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 
 /// @title OperatorCommissionCoupon
 /// @notice Lets a delegator route a commission to the operator they delegate to. A delegation
@@ -40,7 +38,7 @@ import {
 ///      never latched (the delegation closed before the operator claimed or latched) is
 ///      reclaimable by the delegator via `refundCommission` — so an operator should `claim` or
 ///      `latchOperator` while the delegation is live.
-contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTransient {
+contract OperatorCommissionCoupon is StrategyBase, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     /// @param funded Total commission the delegator has deposited for this commitment.
@@ -58,7 +56,6 @@ contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTrans
         bool bound;
     }
 
-    address public immutable manager;
     address public immutable registry;
     mapping(uint256 commitmentId => Coupon) public couponOf;
 
@@ -69,24 +66,13 @@ contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTrans
     /// @notice Unclaimed, unlatched commission was returned to the delegator.
     event CommissionRefunded(uint256 indexed commitmentId, address indexed committer, uint256 amount);
 
-    error OnlyManager();
-    error AlreadyBound();
-    error NotBound();
-    error NotAuthorized();
-    error NothingToClaim();
     error NotDelegated();
-    error StreamEnded();
+    /// @notice Commission cannot be funded once the delegation commitment has closed.
+    error CommitmentClosed();
     error Delegated();
-    error ZeroAmount();
 
-    constructor(address manager_, address registry_) {
-        manager = manager_;
+    constructor(address manager_, address registry_) StrategyBase(manager_) {
         registry = registry_;
-    }
-
-    modifier onlyManager() {
-        if (msg.sender != manager) revert OnlyManager();
-        _;
     }
 
     // =========================================================================
@@ -105,12 +91,9 @@ contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTrans
         Coupon storage cp = couponOf[commitmentId];
         if (!cp.bound) revert NotBound();
         if (msg.sender != cp.committer) revert NotAuthorized();
-        if (ICM(manager).closedAt(commitmentId) != 0) revert StreamEnded();
+        if (ICM(manager).closedAt(commitmentId) != 0) revert CommitmentClosed();
 
-        uint256 balanceBefore = IERC20(cp.token).balanceOf(address(this));
-        IERC20(cp.token).safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = IERC20(cp.token).balanceOf(address(this)) - balanceBefore;
-        if (received == 0) revert ZeroAmount();
+        uint256 received = _pullMeasured(IERC20(cp.token), amount);
 
         cp.funded += received;
         emit CommissionFunded(commitmentId, msg.sender, received);
@@ -168,7 +151,6 @@ contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTrans
     ///      Never reverts on a valid token, so it cannot block delegation-commitment creation.
     function onCommitmentCreated(CreatedContext calldata ctx) external onlyManager {
         Coupon storage cp = couponOf[ctx.base.commitmentId];
-        if (cp.bound) revert AlreadyBound();
         cp.token = ctx.base.token;
         cp.committer = ctx.base.committer;
         cp.bound = true;
@@ -185,7 +167,7 @@ contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTrans
         returns (TokenMovement[] memory)
     {
         Coupon storage cp = couponOf[ctx.base.commitmentId];
-        if (!cp.bound) revert NothingToClaim();
+        if (!cp.bound) revert NotBound();
 
         address operator = cp.operator;
         if (operator == address(0)) {
@@ -209,30 +191,6 @@ contract OperatorCommissionCoupon is IDistributionStrategy, ReentrancyGuardTrans
     function pending(ClaimContext calldata ctx, bytes calldata) external view returns (uint256) {
         Coupon storage cp = couponOf[ctx.base.commitmentId];
         return cp.funded - cp.claimed;
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    /// @dev No-op: commission is held self-custody, so there is nothing to accrue into escrow and
-    ///      no movement to emit. Keeping it empty guarantees the strategy never drains `c.amount`.
-    function distribute(DistributeContext calldata) external view onlyManager returns (TokenMovement[] memory) {
-        return new TokenMovement[](0);
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    /// @dev No-op — the commission obligation is independent of the delegation close (mirrors
-    ///      `FlatFeeAtCreate`). Never drains encumbrance.
-    function onCommitmentReleased(LifecycleContext calldata)
-        external
-        view
-        onlyManager
-        returns (TokenMovement[] memory)
-    {
-        return new TokenMovement[](0);
-    }
-
-    /// @inheritdoc IDistributionStrategy
-    function onCommitmentForfeited(ForfeitContext calldata) external view onlyManager returns (TokenMovement[] memory) {
-        return new TokenMovement[](0);
     }
 
     // =========================================================================

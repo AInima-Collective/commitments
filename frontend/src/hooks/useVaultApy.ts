@@ -2,9 +2,9 @@
  * Vault APY headline.
  *
  * Derives the realized rolling-window APY from the indexer's periodic-snapshot
- * pipeline (`/vaults/:vault/periodic`) — the same source the `VaultApyChart`
- * plots. We read the freshest snapshot row that carries a populated value,
- * preferring the 7-day window (most responsive) and falling back to 30-day.
+ * pipeline (`/vaults/:vault/periodic?latest=1`) — the same rows the
+ * `VaultApyChart` plots. We read the newest snapshot, preferring the 7-day
+ * window (most responsive) and falling back to 30-day.
  *
  * Until enough snapshot history accumulates (~3.5 days, half the 7d window),
  * both windows are null and `netBps` is `null` — callers MUST branch on that
@@ -32,13 +32,10 @@ export interface VaultApyBreakdown {
 }
 
 export function useVaultApy(vaultAddress?: Address): VaultApyBreakdown {
-  // Reuse the 30d history Vault.tsx already fetches — React Query dedupes the
-  // cache key, so this adds no network round-trip. Each snapshot row carries
-  // both rolling windows; rows are newest-first.
-  const { data } = useVaultPeriodicHistory({ vaultAddress, days: 30 })
-  const rows = data?.rows ?? []
-  const latest7d = rows.find((r) => r.apy7d !== null)?.apy7d ?? null
-  const latest30d = rows.find((r) => r.apy30d !== null)?.apy30d ?? null
+  // One row: the newest snapshot carries both rolling windows.
+  const { data } = useVaultPeriodicHistory({ vaultAddress, latest: true })
+  const latest7d = data?.rows[0]?.apy7d ?? null
+  const latest30d = data?.rows[0]?.apy30d ?? null
 
   if (latest7d !== null) {
     return {

@@ -1,9 +1,7 @@
 import { useMemo } from 'react'
-import { type Address } from 'viem'
-import { useCommitments } from './useCommitments'
 import { useNowSeconds } from './useNow'
-import { riskTier } from '../utils/risk'
-import type { RiskTierBadgeTier } from '../components/protocol'
+import { type UnifiedRow } from './useUnifiedRows'
+import { riskTier, type RiskTierBadgeTier } from '../lib/risk'
 
 export interface VaultRiskMetrics {
   /** Active + forfeit-pending commitments only. */
@@ -16,50 +14,33 @@ export interface VaultRiskMetrics {
   tier: RiskTierBadgeTier
 }
 
-interface UseVaultRiskMetricsParams {
-  managerAddress: Address | undefined
-  viewAddress: Address | undefined
-}
-
-interface UseVaultRiskMetricsReturn {
-  metrics: VaultRiskMetrics
-  isLoading: boolean
-  refetch: () => void
-}
-
 /**
  * Aggregate the viewer's commitment exposure into the metrics surfaced by the
- * vault hero risk badge and the risk-parameters card. Single source of truth
- * so the badge and the card never diverge.
+ * vault hero risk badge and the risk-parameters card. Pass the rows the page
+ * already holds, scoped to its vault; only rows the viewer committed count.
  */
-export function useVaultRiskMetrics({
-  managerAddress,
-  viewAddress,
-}: UseVaultRiskMetricsParams): UseVaultRiskMetricsReturn {
+export function useVaultRiskMetrics(rows: readonly UnifiedRow[]): VaultRiskMetrics {
   const nowSec = useNowSeconds()
-  const { commitments, isLoading, refetch } = useCommitments({
-    managerAddress,
-    committerAddress: viewAddress,
-  })
-
-  const metrics = useMemo<VaultRiskMetrics>(() => {
-    const active = commitments.filter((c) => c.status === 'ACTIVE' || c.status === 'FORFEIT_PENDING')
+  return useMemo<VaultRiskMetrics>(() => {
+    const active = rows.flatMap((r) =>
+      r.kind === 'commitment' &&
+      r.role === 'committer' &&
+      (r.status === 'ACTIVE' || r.status === 'FORFEIT_PENDING')
+        ? [r]
+        : [],
+    )
     if (active.length === 0) {
       return { activeCount: 0, maxPenaltyBps: 0, oldestSec: 0, tier: 'unknown' }
     }
-    const maxPenaltyBps = Math.max(...active.map((c) => c.maxPenaltyBps))
-    const oldestCreatedAt = active.reduce(
-      (oldest, c) => (c.createdAt < oldest ? c.createdAt : oldest),
-      active[0].createdAt,
-    )
-    const oldestSec = Math.max(0, Number(nowSec) - Number(oldestCreatedAt))
+    const maxPenaltyBps = Math.max(...active.map((r) => r.maxPenaltyBps))
+    // Rows that predate the createdAt column don't count toward the age.
+    const created = active.flatMap((r) => (r.commitment.createdAt !== undefined ? [r.commitment.createdAt] : []))
+    const oldestCreatedAt = created.reduce((oldest, t) => (t < oldest ? t : oldest), nowSec)
     return {
       activeCount: active.length,
       maxPenaltyBps,
-      oldestSec,
+      oldestSec: Math.max(0, Number(nowSec - oldestCreatedAt)),
       tier: riskTier(maxPenaltyBps) as RiskTierBadgeTier,
     }
-  }, [commitments, nowSec])
-
-  return { metrics, isLoading, refetch }
+  }, [rows, nowSec])
 }

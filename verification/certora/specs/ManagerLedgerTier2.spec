@@ -2,7 +2,7 @@
  * ManagerLedgerTier2.spec — the tier-2 "ledger walk"
  * (discharges the tier-2 assumption noted in ManagerLedger.spec).
  *
- * Tier 1 (ManagerLedger.spec) proved the five O(1) per-token aggregates
+ * Tier 1 (ManagerLedger.spec) proved the four O(1) per-token aggregates
  * partition the manager's token balance. Tier 2 closes the remaining gap
  * between the aggregates and the per-user/per-strategy maps they claim to
  * summarize: ghost sums, maintained by storage hooks on the EIP-7201

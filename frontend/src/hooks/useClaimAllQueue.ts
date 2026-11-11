@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Address, type Hex } from 'viem'
-import { useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import { useConfig } from 'wagmi'
+import { waitForTransactionReceipt } from 'wagmi/actions'
 import { commitmentManagerAbi } from '../generated'
 import { useToasts } from '../components/ui'
+import { useTx } from './useWriteAction'
 
 export interface ClaimAllQueueEntry {
   commitmentId: bigint
@@ -25,9 +27,9 @@ export interface ClaimAllQueueProgress {
   total: number
 }
 
-export interface UseClaimAllQueueReturn {
+export interface UseClaimAllQueueReturn<T> {
   /** Kick off a sequential claim across the supplied entries. No-op when busy. */
-  run: (entries: ClaimAllQueueEntry[]) => void
+  run: (entries: T[]) => void
   /** Stop after the in-flight tx settles (best-effort: a tx already submitted will still complete). */
   cancel: () => void
   /** True between `run()` and the queue's natural completion / halt. */
@@ -36,102 +38,99 @@ export interface UseClaimAllQueueReturn {
   progress: ClaimAllQueueProgress | null
 }
 
+interface TxQueueParams<T> {
+  /** The write for one entry, or null to skip it. */
+  send: (
+    entry: T,
+    write: ReturnType<typeof useTx>['writeAsync'],
+  ) => Promise<Hex> | null
+  commitmentIdOf: (entry: T) => bigint
+  onRowClaimed?: (commitmentId: bigint) => void
+  haltTitle: string
+  /** Toast body when the failure has no short message. */
+  haltBody: (commitmentId: bigint) => string
+}
+
+/**
+ * Send one write per entry in order, each after the last one mines. Halts on
+ * the first rejection or revert with a danger toast; the remaining entries
+ * stay claimable per row.
+ */
+export function useTxQueue<T>({
+  send,
+  commitmentIdOf,
+  onRowClaimed,
+  haltTitle,
+  haltBody,
+}: TxQueueParams<T>): UseClaimAllQueueReturn<T> {
+  const config = useConfig()
+  const { writeAsync } = useTx()
+  const { push } = useToasts()
+  const [progress, setProgress] = useState<ClaimAllQueueProgress | null>(null)
+  const cancelledRef = useRef(false)
+  // Leaving the page stops the queue: no wallet prompts for a list no longer shown.
+  useEffect(() => () => {
+    cancelledRef.current = true
+  }, [])
+
+  async function drain(entries: T[]) {
+    cancelledRef.current = false
+    for (let i = 0; i < entries.length && !cancelledRef.current; i++) {
+      setProgress({ current: i + 1, total: entries.length })
+      const id = commitmentIdOf(entries[i])
+      try {
+        const sent = send(entries[i], writeAsync)
+        if (!sent) continue
+        await waitForTransactionReceipt(config, { hash: await sent })
+        onRowClaimed?.(id)
+      } catch (error) {
+        push({
+          tone: 'danger',
+          title: haltTitle,
+          body: (error as { shortMessage?: string })?.shortMessage ?? haltBody(id),
+        })
+        break
+      }
+    }
+    setProgress(null)
+  }
+
+  return {
+    run: (entries) => {
+      if (entries.length === 0 || progress) return
+      void drain(entries)
+    },
+    cancel: () => {
+      cancelledRef.current = true
+    },
+    isRunning: progress !== null,
+    progress,
+  }
+}
+
 /**
  * useClaimAllQueue — sequential per-(commitment, strategy) `claim` queue.
  *
  * The CommitmentManager exposes claim per (commitment, strategy); there is no
- * batch entry. To give users a one-click "Claim all" CTA we drive a queue
- * ourselves: fire one writeContract, await the receipt, advance to the next
- * entry. Halts on any revert with a danger toast — remaining entries stay
- * claimable so the user can retry per-row.
- *
- * v2: each entry carries a `strategy` + `claimData` (claim is per-strategy); the
- * dashboard builds these from useClaimableYield's per-binding entries.
+ * batch entry, so "Claim all" drives a {@link useTxQueue}.
  */
 export function useClaimAllQueue({
   managerAddress,
   onRowClaimed,
-}: UseClaimAllQueueParams): UseClaimAllQueueReturn {
-  const { writeContract, data: hash, reset } = useWriteContract()
-  const { isSuccess, isError, error } = useWaitForTransactionReceipt({ hash })
-  const { push } = useToasts()
-
-  const [queue, setQueue] = useState<ClaimAllQueueEntry[]>([])
-  const [index, setIndex] = useState(0)
-  const cancelledRef = useRef(false)
-
-  const total = queue.length
-  const isRunning = total > 0 && index < total
-  const progress: ClaimAllQueueProgress | null = isRunning
-    ? { current: index + 1, total }
-    : null
-
-  // Fire the in-flight tx for the current index whenever queue or index changes.
-  useEffect(() => {
-    if (!isRunning) return
-    if (!managerAddress) return
-    if (cancelledRef.current) return
-    const entry = queue[index]
-    if (!entry.strategy) return
-    writeContract({
-      abi: commitmentManagerAbi,
-      address: managerAddress,
-      functionName: 'claim',
-      args: [entry.commitmentId, entry.strategy, entry.claimData ?? ('0x' as Hex)],
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- writeContract is stable; deps narrowed to drivers
-  }, [queue, index, managerAddress])
-
-  // On success: notify caller, advance, and clear receipt state for the next loop.
-  useEffect(() => {
-    if (!isSuccess || !isRunning) return
-    const id = queue[index]?.commitmentId
-    if (id !== undefined) onRowClaimed?.(id)
-    const next = index + 1
-    reset()
-    if (cancelledRef.current || next >= queue.length) {
-      setQueue([])
-      setIndex(0)
-      cancelledRef.current = false
-    } else {
-      setIndex(next)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  // On revert: halt the queue; emit a toast that names the failing commitment.
-  useEffect(() => {
-    if (!isError || !isRunning) return
-    const id = queue[index]?.commitmentId
-    push({
-      tone: 'danger',
-      title: 'CLAIM HALTED',
-      body:
-        (error as { shortMessage?: string })?.shortMessage ??
-        `Claim of #${id?.toString() ?? '?'} reverted. Remaining rows still claimable.`,
-    })
-    reset()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription (wagmi revert) halts queue
-    setQueue([])
-    setIndex(0)
-    cancelledRef.current = false
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isError])
-
-  const run = useCallback(
-    (entries: ClaimAllQueueEntry[]) => {
-      if (entries.length === 0) return
-      if (queue.length > 0) return
-      cancelledRef.current = false
-      setIndex(0)
-      setQueue(entries)
-    },
-    [queue.length],
-  )
-
-  const cancel = useCallback(() => {
-    cancelledRef.current = true
-  }, [])
-
-  return { run, cancel, isRunning, progress }
+}: UseClaimAllQueueParams): UseClaimAllQueueReturn<ClaimAllQueueEntry> {
+  return useTxQueue<ClaimAllQueueEntry>({
+    send: (entry, write) =>
+      managerAddress && entry.strategy
+        ? write({
+            abi: commitmentManagerAbi,
+            address: managerAddress,
+            functionName: 'claim',
+            args: [entry.commitmentId, entry.strategy, entry.claimData ?? '0x'],
+          })
+        : null,
+    commitmentIdOf: (entry) => entry.commitmentId,
+    onRowClaimed,
+    haltTitle: 'CLAIM HALTED',
+    haltBody: (id) => `Claim of #${id.toString()} reverted. Remaining rows still claimable.`,
+  })
 }

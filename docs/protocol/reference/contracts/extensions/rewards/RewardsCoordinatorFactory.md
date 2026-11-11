@@ -24,7 +24,7 @@ per-service factory-spawned. Mirrors `VaultFactory` and `MeshFactory`
 patterns elsewhere in the protocol.
 
 
-## Constants
+## State Variables
 ### coordinatorImplementation
 The shared coordinator implementation. New services proxy to it.
 
@@ -107,10 +107,4 @@ event CoordinatorDeployed(
 
 ```solidity
 error ZeroAddress();
-```
-
-### ActivationDelayBelowFloor
-
-```solidity
-error ActivationDelayBelowFloor();
 ```

@@ -1,23 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
 import {VaultFactory} from "src/periphery/vaults/VaultFactory.sol";
-import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
-import {ERC4626Adapter} from "src/backing/ERC4626Adapter.sol";
-import {IndexAppreciationYield} from "src/distributions/IndexAppreciationYield.sol";
-import {FlatFeeAtCreate} from "src/distributions/FlatFeeAtCreate.sol";
-import {OperatorRegistry} from "src/extensions/services/operator-registry/OperatorRegistry.sol";
-import {ManualArbiter} from "src/periphery/arbiters/ManualArbiter.sol";
 import {TwoTierArbiter} from "src/periphery/arbiters/TwoTierArbiter.sol";
 import {AttestationArbiter} from "src/periphery/arbiters/AttestationArbiter.sol";
 import {OptimisticInsuranceArbiter} from "src/periphery/arbiters/OptimisticInsuranceArbiter.sol";
@@ -31,14 +23,8 @@ import {PremiumScheduler} from "src/extensions/mutuals/PremiumScheduler.sol";
 import {LinkedMutualPolicy} from "src/extensions/mutuals/LinkedMutualPolicy.sol";
 import {FanInNode} from "src/extensions/mesh/FanInNode.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
-import {Outflow} from "src/extensions/mesh/interfaces/IFanOut.sol";
 import {TokenWeighting} from "src/extensions/mesh/TokenWeighting.sol";
-import {MeshFactory} from "src/extensions/mesh/MeshFactory.sol";
-import {OperatorServiceRegistry} from "src/extensions/services/service-registry/OperatorServiceRegistry.sol";
-import {IServiceHandler} from "src/extensions/services/interfaces/IServiceHandler.sol";
-import {RewardsCoordinatorFactory} from "src/extensions/rewards/RewardsCoordinatorFactory.sol";
-import {CommitmentsRewardsCoordinator} from "src/extensions/rewards/CommitmentsRewardsCoordinator.sol";
-import {MerkleSnapshot} from "src/extensions/rewards/MerkleSnapshot.sol";
+import {Outflow} from "src/extensions/mesh/interfaces/IFanOut.sol";
 import {CommitmentsGovernor} from "src/periphery/governance/CommitmentsGovernor.sol";
 import {CommitmentsTimelock} from "src/periphery/governance/CommitmentsTimelock.sol";
 import {GovernorFactory} from "src/periphery/governance/GovernorFactory.sol";
@@ -47,13 +33,14 @@ import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 import {VaultCoverConduit} from "src/periphery/vaults/VaultCoverConduit.sol";
 import {MockERC20} from "../test/helpers/MockERC20.sol";
 import {MockERC20Permit} from "../test/helpers/MockERC20Permit.sol";
-import {SkimmingMockStrategy} from "../test/helpers/SkimmingMockStrategy.sol";
+import {SkimmingMockStrategy} from "src/periphery/vaults/strategies/SkimmingMockStrategy.sol";
+import {DeployCore} from "./DeployCore.sol";
 
 /// @title Simulate
 /// @notice Deploys the full v2 Commitments Protocol stack on Anvil and seeds it with
 ///         realistic test data: funded accounts, vault-share-backed manager deposits,
 ///         commitments with distribution strategies, registered operators, delegations,
-///         agreements, mesh topology, service middleware, rewards, and governance.
+///         agreements, mesh topology, service middleware, mutuals, and governance.
 ///
 /// @dev v2 topology: ONE token-agnostic direct-custody CommitmentManager replaces the
 ///      per-vault managers of v1. CommitmentsVault is now a clean yield-bearing
@@ -87,7 +74,7 @@ import {SkimmingMockStrategy} from "../test/helpers/SkimmingMockStrategy.sol";
 ///   `--slow` is REQUIRED: TokenWeighting / governance use OZ Checkpoints whose state
 ///   depends on block.number advancing between txs. Batched broadcast collapses txs
 ///   into one block -> gas underestimates -> mid-script reverts. One tx per block.
-contract Simulate is Script {
+contract Simulate is DeployCore {
     // ─── Scenario config (env overridable) ───────────────────────────────────
     uint256 numDepositors;
     uint256 numOperators;
@@ -122,21 +109,15 @@ contract Simulate is Script {
     // donate() with real backing tokens (see _seedDistributableYield) — never a
     // fabricated reported-assets ledger. No MockStrategy is bound here; doing so
     // would mint fake NAV with no tokens behind it.
-    // ONE direct-custody manager for ALL backing tokens (raw USDC, raw WETH, and
-    // cvUSDC vault shares all live in the same per-(token, user) ledger).
-    CommitmentManager manager;
-    ERC20StaticAdapter erc20Adapter;
-    ERC4626Adapter erc4626Adapter;
-    IndexAppreciationYield indexYield;
-    FlatFeeAtCreate flatFee;
-    OperatorRegistry operatorRegistry;
-    MeshFactory meshFactory;
-    // Reference arbiter: owned by `arbiter.addr` (anvil account 1). Every
+    // The core (manager, adapters, strategies, ManualArbiter, OperatorRegistry,
+    // MeshFactory, TokenWeighting node, service registry) is declared in DeployCore.
+    // ONE direct-custody manager holds ALL backing tokens (raw USDC, raw WETH, and
+    // cvUSDC vault shares all live in the same per-(token, user) ledger). The
+    // ManualArbiter is owned by `arbiter.addr` (anvil account 1); every
     // commitment/agreement in this seed names address(manualArbiter) as its
     // arbiter rather than arbiter.addr directly, so the registry's requiredArbiter
     // gate is exercised by a real contract and forfeit demos go through the arbiter
     // API (arbiter.addr -> manualArbiter.initiateForfeit -> manager.initiateForfeit).
-    ManualArbiter manualArbiter;
     TwoTierArbiter twoTierArbiter;
     AttestationArbiter attestationArbiter;
 
@@ -192,26 +173,14 @@ contract Simulate is Script {
     ClaimRouter navClaimRouter;
     ClaimRouter depegClaimRouter;
     ClaimRouter slashingClaimRouter;
-    // mutualId of each seeded peril. seededMutualId aliases the NAV mutual so any
-    // tooling that referenced the single-mutual seed keeps working.
+    // mutualId of each seeded peril.
     uint256 navMutualId;
     uint256 depegMutualId;
     uint256 slashingMutualId;
-    uint256 seededMutualId;
-
-    // ─── service middleware ──────────────────────────────────────────────────────
-    OperatorServiceRegistry stakeRegistry;
 
     // ─── Mesh nodes ──────────────────────────────────────────────────────────
     address fanInNode;
     address fanOutNode;
-    address tokenWeightingNode;
-
-    // Rewards coordinator (Part R)
-    RewardsCoordinatorFactory rewardsFactory;
-    CommitmentsRewardsCoordinator rewardsCoordinator;
-    MerkleSnapshot rewardsSnapshot;
-    bytes32 seededRewardsRoot;
 
     // ─── Governance (reference DAO) ───────────────────────────────────────────
     GovernorFactory governorFactory;
@@ -238,9 +207,6 @@ contract Simulate is Script {
     // import the mnemonic. Simulate's depositors map to real Anvil accounts.
     string constant ANVIL_MNEMONIC = "test test test test test test test test test test test junk";
 
-    bytes32 internal constant EIP712_DOMAIN_TYPEHASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-
     struct Wallet {
         address addr;
         uint256 key;
@@ -264,9 +230,9 @@ contract Simulate is Script {
         // inline literal.
         _loadMetadata();
         _createCommitments();
-        // Deploy + wire the mesh BEFORE operators register: register/delegate now
-        // credit the mesh automatically via OperatorRegistry._meshOnIncrease, so the
-        // wiring (and per-denom weights) must already be in place for power to flow.
+        // The mesh is wired in _deploy (DeployCore), before operators register:
+        // register/delegate credit it automatically via OperatorRegistry._meshOnIncrease.
+        // This step adds the illustrative WETH weight and the FanOut node.
         _deployMeshTopology();
         _registerOperators();
         _createAgreements();
@@ -274,7 +240,6 @@ contract Simulate is Script {
         _seedServiceMetadata();
         _wireMeshConsumer();
         _registerOperatorsInMiddleware();
-        _validateSignedEnvelope();
         _deployGovernance();
         _seedGovernanceProposal();
         _seedDistributableYield();
@@ -283,7 +248,6 @@ contract Simulate is Script {
         _deployMarketplacePatternContracts();
         _seedOptimisticClaim();
         _seedAgentBond();
-        _seedRewardsCoordinator();
         _seedMutuals();
         // After _seedMutuals: the underwriting market reuses the shared mutual
         // periphery (registry / scheduler / policy) deployed there.
@@ -401,34 +365,28 @@ contract Simulate is Script {
         console.log("CommitmentsVault (USDT):", address(usdtVault));
         console.log("  (idle - NAV via donate() only)");
 
-        // 3. THE CommitmentManager — one token-agnostic custody root for every
-        //    backing token in this seed (raw USDC, raw WETH, cvUSDC shares).
-        CommitmentManager cmImpl = new CommitmentManager();
-        bytes memory cmInit = abi.encodeCall(CommitmentManager.initialize, (admin.addr, unbondingPeriod, 14 days));
-        ERC1967Proxy cmProxy = new ERC1967Proxy(address(cmImpl), cmInit);
-        manager = CommitmentManager(address(cmProxy));
-        console.log("CommitmentManager:  ", address(manager));
-
-        // 4. Backing adapters — stateless singletons. ERC20StaticAdapter prices
-        //    plain tokens at a constant 1e18 index; ERC4626Adapter prices vault
-        //    shares at convertToAssets(1e18) so the index appreciates with NAV.
-        erc20Adapter = new ERC20StaticAdapter();
-        erc4626Adapter = new ERC4626Adapter();
-        console.log("ERC20StaticAdapter: ", address(erc20Adapter));
-        console.log("ERC4626Adapter:     ", address(erc4626Adapter));
-
-        // 5. Distribution strategies — bound to commitments at create time via
-        //    StrategyBinding. One deployment per manager (hooks are manager-only).
-        indexYield = new IndexAppreciationYield(address(manager));
-        flatFee = new FlatFeeAtCreate(address(manager));
-        console.log("IndexAppreciationYield:", address(indexYield));
-        console.log("FlatFeeAtCreate:    ", address(flatFee));
-
-        // 6. ManualArbiter — contract arbiter owned by arbiter.addr (anvil
-        //    account 1). Forfeit/release demos go arbiter.addr -> manualArbiter.X
-        //    -> manager.X.
-        manualArbiter = new ManualArbiter(arbiter.addr, address(manager));
-        console.log("ManualArbiter:      ", address(manualArbiter));
+        // 3. The shared core (DeployCore): manager, adapters, strategies,
+        //    ManualArbiter, OperatorRegistry, mesh and service registry. Operator
+        //    stake is cvUSDC vault SHARES (the registry's requiredToken), so
+        //    operators secure services with productive capital. The mesh is wired
+        //    before operators register: register/delegate credit it automatically.
+        //    See `_deployMeshTopology` for the cvUSDC weight; the service threshold
+        //    is half the minimum operator stake.
+        _deployCore(
+            CoreConfig({
+                admin: admin.addr,
+                arbiterOwner: arbiter.addr,
+                stakeToken: address(usdcVault),
+                unbondingPeriod: unbondingPeriod,
+                minOperatorStake: minOperatorStake,
+                maxOperators: 1024,
+                weightingSalt: keccak256("sim.tw.v1"),
+                stakeWeight: CVUSDC_DENOM_WEIGHT,
+                serviceThreshold: minOperatorStake / 2,
+                quorumNumerator: 2,
+                quorumDenominator: 3
+            })
+        );
 
         // Two-tier reference court: account #1 is the fast primary controller;
         // account #0 is the final appeal controller. The 1h execution buffer
@@ -446,43 +404,7 @@ contract Simulate is Script {
         );
         console.log("TwoTierArbiter:     ", address(twoTierArbiter));
 
-        // 7. OperatorRegistry — single registry for the single manager. v2
-        //    acceptance policy (7-arg initialize): commitments presented to
-        //    register/delegate must name address(manualArbiter) as arbiter,
-        //    carry maxPenaltyBps >= 10_000, be backed by cvUSDC vault SHARES (the
-        //    requiredToken — stake quantities are denominated in it, so operators
-        //    secure services with productive capital), and have NO bound
-        //    distribution strategies (audit H-5). The mesh denom and its voting
-        //    weight (set in _deployMeshTopology) follow this token.
-        OperatorRegistry orImpl = new OperatorRegistry();
-        bytes memory orInit = abi.encodeCall(
-            OperatorRegistry.initialize,
-            (
-                address(manager),
-                minOperatorStake,
-                1024,
-                admin.addr,
-                address(manualArbiter),
-                uint16(10_000),
-                address(usdcVault)
-            )
-        );
-        ERC1967Proxy orProxy = new ERC1967Proxy(address(orImpl), orInit);
-        operatorRegistry = OperatorRegistry(address(orProxy));
-        console.log("OperatorRegistry:   ", address(operatorRegistry));
-
-        // 8. Wire the manager's delegation callbacks to the registry.
-        manager.setOperatorRegistry(address(operatorRegistry));
-        console.log("Wiring complete.");
-
-        // 9. Mesh implementations + factory
-        FanInNode fanInImpl = new FanInNode();
-        FanOutNode fanOutImpl = new FanOutNode();
-        TokenWeighting twImpl = new TokenWeighting();
-        meshFactory = new MeshFactory(address(fanInImpl), address(fanOutImpl), address(twImpl));
-        console.log("MeshFactory:        ", address(meshFactory));
-
-        // 10. ERC-8004 Identity Registry — the vendored canonical implementation
+        // 4. ERC-8004 Identity Registry — the vendored canonical implementation
         //     behind a dev bootstrap proxy (src/vendor/erc8004/README.md). Dev chains only;
         //     production consumers bind to the canonical registry address.
         ERC8004IdentityRegistryDev agentRegImpl = new ERC8004IdentityRegistryDev();
@@ -492,7 +414,7 @@ contract Simulate is Script {
         agentIdentityRegistry = IERC8004IdentityRegistry(address(agentRegProxy));
         console.log("ERC8004 IdentityRegistry:", address(agentIdentityRegistry));
 
-        // 11. The agent-managed vault: cvaDAI over a fresh mock DAI (its own asset,
+        // 5. The agent-managed vault: cvaDAI over a fresh mock DAI (its own asset,
         //     so the factory's one-vault-per-asset rule keeps it factory-deployed and
         //     therefore indexer-discovered via VaultDeployed) plus the restitution
         //     beneficiary that donates mutual loss settlements back to the vault's
@@ -536,12 +458,10 @@ contract Simulate is Script {
             '"tags":["demo","usdc"],',
             '"riskTier":"conservative",',
             '"curator":{"name":"Demo Labs","website":"https://example.com/"},',
-            '"strategy":{"name":"Demo Yield (USDC)",',
-            '"summary":"Live strategy; NAV grows with yield."}}'
+            '"strategy":{"name":"Idle (USDC)",',
+            '"summary":"No yield strategy; NAV moves only by donation."}}'
         );
-        usdcVault.setMetadata(
-            string.concat("data:application/json;base64,", Base64.encode(bytes(usdcJson))), keccak256(bytes(usdcJson))
-        );
+        usdcVault.setMetadata(_dataUri(usdcJson), keccak256(bytes(usdcJson)));
         console.log("  usdcVault: metadata set");
 
         string memory ethJson = string.concat(
@@ -552,12 +472,10 @@ contract Simulate is Script {
             '"tags":["demo","weth"],',
             '"riskTier":"conservative",',
             '"curator":{"name":"Demo Labs","website":"https://example.com/"},',
-            '"strategy":{"name":"Demo Yield (WETH)",',
-            '"summary":"Live strategy; NAV grows with yield."}}'
+            '"strategy":{"name":"Idle (WETH)",',
+            '"summary":"No yield strategy; NAV moves only by donation."}}'
         );
-        wethVault.setMetadata(
-            string.concat("data:application/json;base64,", Base64.encode(bytes(ethJson))), keccak256(bytes(ethJson))
-        );
+        wethVault.setMetadata(_dataUri(ethJson), keccak256(bytes(ethJson)));
         console.log("  wethVault: metadata set");
 
         string memory usdtJson = string.concat(
@@ -568,12 +486,10 @@ contract Simulate is Script {
             '"tags":["demo","usdt"],',
             '"riskTier":"moderate",',
             '"curator":{"name":"Demo Labs","website":"https://example.com/"},',
-            '"strategy":{"name":"Demo Yield (USDT)",',
-            '"summary":"Live strategy; De-Peg cover available."}}'
+            '"strategy":{"name":"Idle (USDT)",',
+            '"summary":"No yield strategy; De-Peg cover available."}}'
         );
-        usdtVault.setMetadata(
-            string.concat("data:application/json;base64,", Base64.encode(bytes(usdtJson))), keccak256(bytes(usdtJson))
-        );
+        usdtVault.setMetadata(_dataUri(usdtJson), keccak256(bytes(usdtJson)));
         console.log("  usdtVault: metadata set");
 
         vm.stopBroadcast();
@@ -596,7 +512,7 @@ contract Simulate is Script {
             '"website":"https://example.com/",',
             '"twitter":"https://twitter.com/example_service"}'
         );
-        stakeRegistry.setServiceURI(string.concat("data:application/json;base64,", Base64.encode(bytes(serviceJson))));
+        stakeRegistry.setServiceURI(_dataUri(serviceJson));
         console.log("  operator service: metadata set");
 
         vm.stopBroadcast();
@@ -1071,10 +987,7 @@ contract Simulate is Script {
                 '"social":{"github":"https://github.com/example",',
                 '"twitter":"https://twitter.com/example_service"}}'
             );
-            operatorRegistry.setOperatorMetadata(
-                string.concat("data:application/json;base64,", Base64.encode(bytes(operatorJson))),
-                keccak256(bytes(operatorJson))
-            );
+            operatorRegistry.setOperatorMetadata(_dataUri(operatorJson), keccak256(bytes(operatorJson)));
 
             vm.stopBroadcast();
 
@@ -1258,40 +1171,23 @@ contract Simulate is Script {
 
         vm.startBroadcast(admin.key);
 
-        // TokenWeighting is the IVotingPowerSource for the middleware. The PROVIDER is
-        // the OperatorRegistry: register/delegate/release/forfeit/deregister flow stake
-        // through OperatorRegistry._meshOnIncrease/_meshOnDecrease, which call
-        // tw.stake / tw.releaseStake (onlyProvider). Governance stays with admin so the
-        // weight policy below (and the governance proposal later) can be set/tuned.
-        tokenWeightingNode =
-            meshFactory.deployTokenWeightingAt(keccak256("sim.tw.v1"), address(operatorRegistry), admin.addr);
-        console.log("TokenWeighting:  ", tokenWeightingNode);
-
+        // The TokenWeighting node (provider = the OperatorRegistry) and the registry's
+        // mesh wiring come from DeployCore, which also sets the cvUSDC weight below.
+        //
         // Per-denom governance weights — risk POLICY, NOT a price oracle. Voting power is
         // `stake * weight / 10_000` (BPS), so each weight folds BOTH the token's decimal
         // scale AND a governance risk factor into a single 18-decimal "USD-equivalent"
         // voting unit. Denoms are token-address-keyed to match OperatorRegistry._stakeDenom,
-        // which now keys on cvUSDC (the requiredToken) — so the credited axis is cvUSDC.
+        // which keys on cvUSDC (the requiredToken) — so the credited axis is cvUSDC.
         //   cvUSDC (15-dec, 1.0x risk): 1e3 decimal lift (18-15) * 1e4 BPS        = 1e7
         //   WETH   (18-dec, ~4000 USD/ETH, 0.8x risk): 1e4 BPS * 4000 * 0.8       = 3.2e7
         // The cvUSDC weight is chosen so 1 cvUSDC stake -> 1e18 voting units (a cvUSDC share
-        // is ~1 USDC at par NAV), preserving the same power exposure operators carried under
-        // raw-USDC staking. The WETH denom is a forward-compat illustrative row (zero stake
-        // here — operators stake cvUSDC only); the ~4000 ETH/USD figure is a governance-set
-        // parameter with no on-chain oracle dependency.
-        bytes32 usdcStakeDenom = _denomFor(address(usdcVault));
-        bytes32 wethStakeDenom = _denomFor(address(weth));
-        TokenWeighting(tokenWeightingNode).updateWeight(usdcStakeDenom, CVUSDC_DENOM_WEIGHT);
-        TokenWeighting(tokenWeightingNode).updateWeight(wethStakeDenom, WETH_DENOM_WEIGHT);
+        // is ~1 USDC at par NAV). The WETH denom is a forward-compat illustrative row (zero
+        // stake here — operators stake cvUSDC only); the ~4000 ETH/USD figure is a
+        // governance-set parameter with no on-chain oracle dependency.
+        TokenWeighting(tokenWeightingNode).updateWeight(_denomFor(address(weth)), WETH_DENOM_WEIGHT);
         console.log("  cvUSDC denom weight: 1e7 (3-dec lift * BPS, 1.0x risk)");
         console.log("  WETH denom weight: 3.2e7 (BPS * 4000 USD/ETH * 0.8x risk, illustrative)");
-
-        // Wire the registry -> mesh pipeline ONCE. From here, every register/delegate
-        // credits the operator's per-operator FanIn AND this TokenWeighting sink with the
-        // SAME verified amount; release/forfeit/deregister debit it. The registry is the
-        // FanIn manager (the verified-backing binding) and this TokenWeighting's provider.
-        operatorRegistry.setMeshWiring(tokenWeightingNode, address(meshFactory));
-        console.log("  Registry mesh wiring set (TokenWeighting + MeshFactory)");
 
         // FanOut deploys here (no upstream dependency on the StakeRegistry);
         // FanIn waits for StakeRegistry deployment so it can be wired with
@@ -1361,23 +1257,9 @@ contract Simulate is Script {
 
         vm.startBroadcast(admin.key);
 
-        // Deploy OperatorServiceRegistry (impl + proxy). The TokenWeighting mesh node
-        // is the IVotingPowerSource — per-operator power is read directly from the mesh.
-        OperatorServiceRegistry srImpl = new OperatorServiceRegistry();
-        bytes memory srInit = abi.encodeCall(
-            OperatorServiceRegistry.initialize,
-            (
-                address(operatorRegistry),
-                tokenWeightingNode,
-                admin.addr,
-                minOperatorStake / 2, // threshold = half min operator stake
-                2, // quorum numerator (2/3)
-                3 // quorum denominator
-            )
-        );
-        ERC1967Proxy srProxy = new ERC1967Proxy(address(srImpl), srInit);
-        stakeRegistry = OperatorServiceRegistry(address(srProxy));
-        console.log("OperatorServiceRegistry:", address(srProxy));
+        // The OperatorServiceRegistry comes from DeployCore; the TokenWeighting mesh
+        // node is its IVotingPowerSource.
+        console.log("OperatorServiceRegistry:", address(stakeRegistry));
         console.log("  votingPowerSource ->", tokenWeightingNode);
 
         // Reference quorum-attestation arbiter. It is configured even when no
@@ -1417,95 +1299,6 @@ contract Simulate is Script {
         // Voting power was already credited when each operator registered/delegated in
         // `_registerOperators` (OperatorRegistry._meshOnIncrease -> TokenWeighting), so
         // the mesh is the live source of truth here — no separate staking step.
-        console.log("");
-    }
-
-    function _validateSignedEnvelope() internal {
-        console.log("--- E2E Signature Validation ---");
-
-        // Build an envelope
-        IServiceHandler.Envelope memory envelope = IServiceHandler.Envelope({
-            eventId: bytes20(keccak256("simulation.test.event")),
-            ordering: bytes12(0),
-            payload: abi.encode("Hello from Commitments!")
-        });
-
-        // Hash it the way validate() does: EIP-712 typed data over the Envelope
-        // struct, with the domain separator folding in chain id + verifying instance.
-        bytes32 structHash = keccak256(
-            abi.encode(
-                keccak256("Envelope(bytes20 eventId,bytes12 ordering,bytes payload)"),
-                envelope.eventId,
-                envelope.ordering,
-                keccak256(envelope.payload)
-            )
-        );
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("CommitmentsServiceManager"),
-                keccak256("1"),
-                block.chainid,
-                address(stakeRegistry)
-            )
-        );
-        bytes32 digest = MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
-
-        // Collect all operator signing keys and sign
-        // Build arrays, then sort by signing key address (ascending)
-        address[] memory signingAddrs = new address[](operators.length);
-        uint256[] memory signingPks = new uint256[](operators.length);
-        for (uint256 i = 0; i < operators.length; i++) {
-            signingPks[i] = operators[i].key + 100;
-            signingAddrs[i] = vm.addr(signingPks[i]);
-        }
-
-        // Simple insertion sort by address (operators.length is small)
-        for (uint256 i = 1; i < operators.length; i++) {
-            address keyAddr = signingAddrs[i];
-            uint256 keyPk = signingPks[i];
-            uint256 j = i;
-            while (j > 0 && signingAddrs[j - 1] > keyAddr) {
-                signingAddrs[j] = signingAddrs[j - 1];
-                signingPks[j] = signingPks[j - 1];
-                j--;
-            }
-            signingAddrs[j] = keyAddr;
-            signingPks[j] = keyPk;
-        }
-
-        // Sign with all operators
-        bytes[] memory signatures = new bytes[](operators.length);
-        for (uint256 i = 0; i < operators.length; i++) {
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(signingPks[i], digest);
-            signatures[i] = abi.encodePacked(r, s, v);
-        }
-
-        // Audit H-6 (May 2026): the magic-value `type(uint32).max` "live" path
-        // was removed. Validation now requires `referenceBlock < block.number`
-        // and within `maxReferenceBlockAge` of the head. Roll one block forward
-        // so signing-key registration checkpoints (written at the prior block)
-        // resolve under `upperLookup(block.number - 1)`.
-        vm.roll(block.number + 1);
-        IServiceHandler.SignatureData memory sigData = IServiceHandler.SignatureData({
-            signers: signingAddrs, signatures: signatures, referenceBlock: uint32(block.number - 1)
-        });
-
-        // View call — no broadcast needed
-        stakeRegistry.validate(envelope, sigData);
-        console.log("  PASSED: Envelope validated with %d operator signatures", operators.length);
-
-        // Per-denom subtotals — the value-prop demo line: one service draws
-        // unified voting power from cvUSDC-backed operator stake.
-        TokenWeighting tw = TokenWeighting(tokenWeightingNode);
-        // Raw staked amounts per denom (pre-weight). Only the cvUSDC axis carries stake in
-        // this single-registry seed; the WETH denom is policy-configured for when a
-        // WETH-backed registry is wired (its weight is set, its stake is 0 here).
-        uint256 totalUsdc = tw.totalStake(_denomFor(address(usdcVault)));
-        uint256 totalWeth = tw.totalStake(_denomFor(address(weth)));
-        console.log("  Total voting power (18-dec USD-equiv): %d", stakeRegistry.getTotalPower() / 1e18);
-        console.log("    cvUSDC denom raw stake: %d cvUSDC (1e7 weight)", totalUsdc / 1e15);
-        console.log("    WETH denom raw stake: %d WETH (3.2e7 weight)", totalWeth / 1e18);
         console.log("");
     }
 
@@ -1692,54 +1485,6 @@ contract Simulate is Script {
         console.log("");
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    //  EIP-712 COMMITMENT DIGEST — for signed `createCommitmentFor` legs
-    // ═════════════════════════════════════════════════════════════════════════
-
-    /// @dev EIP-712 digest over the manager's canonical CREATE_COMMITMENT_TYPEHASH,
-    ///      domain ("Commitments", "1", chainid, manager). `strategiesHash` covers the
-    ///      exact bindings, so a relayer can't strip them.
-    function _createCommitmentDigest(
-        address committer,
-        ICommitmentManager.CommitmentParams memory p,
-        uint256 nonce,
-        uint256 deadline
-    ) internal view returns (bytes32) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPEHASH,
-                keccak256(bytes("Commitments")),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(manager)
-            )
-        );
-        bytes32 structHash = keccak256(
-            bytes.concat(
-                abi.encode(
-                    manager.CREATE_COMMITMENT_TYPEHASH(),
-                    committer,
-                    p.arbiter,
-                    p.counterparty,
-                    p.token,
-                    p.adapter,
-                    p.amount
-                ),
-                abi.encode(
-                    uint256(p.maxPenaltyBps),
-                    uint256(p.challengeWindow),
-                    uint256(p.expiresAt),
-                    keccak256(abi.encode(p.strategies)),
-                    keccak256(bytes(p.metadataURI)),
-                    p.metadataHash,
-                    nonce,
-                    deadline
-                )
-            )
-        );
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-    }
-
     /// @dev Seeds an open, disputed optimistic-insurance claim so the §5.2/§5.3
     ///      marketplace card has live state to render. Depositor 1 plays
     ///      the underwriter (the depositor whose backing can be forfeited);
@@ -1832,9 +1577,7 @@ contract Simulate is Script {
             '"supportedTrust":["reputation","crypto-economic"]}'
         );
         vm.startBroadcast(agent.key);
-        seededAgentId = agentIdentityRegistry.register(
-            string.concat("data:application/json;base64,", Base64.encode(bytes(regJson)))
-        );
+        seededAgentId = agentIdentityRegistry.register(_dataUri(regJson));
 
         // 2. Capital goes to work: USDC -> cvUSDC shares -> manager free balance
         //    (the same productive-backing funnel the depositors use).
@@ -1902,9 +1645,7 @@ contract Simulate is Script {
             '"curator":{"name":"Demo Intent Agent (ERC-8004 #0)"}}'
         );
         vm.startBroadcast(admin.key);
-        agentVault.setMetadata(
-            string.concat("data:application/json;base64,", Base64.encode(bytes(vaultJson))), keccak256(bytes(vaultJson))
-        );
+        agentVault.setMetadata(_dataUri(vaultJson), keccak256(bytes(vaultJson)));
 
         // 2. The cvaDAI coverage market: fresh DAI-bonded mutual arbiter (bond token
         //    must match the market's payout denomination), registered against the
@@ -1913,14 +1654,14 @@ contract Simulate is Script {
         agentMutualArbiter.setCoverPolicy(address(mutualPolicy));
         string memory perilURI = _perilURI(
             "cvaDAI Drawdown Floor",
-            "Vault-funded cover for every cvaDAI depositor: the strategy skims part of realized yield as premium; underwriters absorb strategy drawdowns beyond the floor and are paid from the vault's own yield.",
+            // Kept short: the inline data: URI must fit MutualRegistry's 512-byte peril URI cap.
+            "Vault-funded cover for cvaDAI depositors: the strategy skims part of realized yield as premium, and underwriters absorb drawdowns beyond the floor.",
             "cvaDAI NAV/share falls >5% below its post-skim high-water mark; loss = convertToShares(shortfall below floor)"
         );
         ICommitmentManager.MutualParams memory gp = ICommitmentManager.MutualParams({
             arbiter: address(agentMutualArbiter),
             numeraire: address(agentVault),
             beneficiary: address(agentVaultBeneficiary),
-            valuationAuthority: address(0), // homogeneous (oracle-free)
             challengeWindow: 172_800, // 2 days (hard mutual floor)
             deallocationWindow: 172_800
         });
@@ -2004,67 +1745,9 @@ contract Simulate is Script {
         );
         p.challengeWindow = 86_400; // 1 day (member commitment; the mutual window governs losses)
 
-        uint256 commitmentId = manager.joinMutual(agentMutualId, p, 0, "");
+        uint256 commitmentId = manager.joinMutual(agentMutualId, p);
         vm.stopBroadcast();
         console.log("  Underwriter %s: commitment %d (%d cvaDAI)", member.addr, commitmentId, shares / 1e27);
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    //  REWARDS COORDINATOR SEED  (Part R / sibling ERC, ADR-006)
-    // ═════════════════════════════════════════════════════════════════════════
-
-    /// @dev Deploys a `RewardsCoordinatorFactory`, spawns one (snapshot,
-    ///      coordinator) pair owned by the arbiter (acting as service +
-    ///      updater for the seed), funds the coordinator with 1000 USDC, and
-    ///      submits a two-leaf cumulative root. The frontend / indexer pick up
-    ///      `CoordinatorDeployed`, `RewardsDeposited`, and `RootSubmitted`
-    ///      events from the seed; claims land organically once the activation
-    ///      delay elapses (60 seconds with the seed factory's tiny floor).
-    ///
-    ///      Activation-delay floor in the seed is intentionally tiny (60s) so
-    ///      the dev environment can exercise the claim path without waiting a
-    ///      full day. Production deploys use `DeployRewardsCoordinator.s.sol`,
-    ///      which keeps the floor at the standard's MIN_CHALLENGE_WINDOW
-    ///      (86_400s = 1 day) by default.
-    function _seedRewardsCoordinator() internal {
-        // Deploy implementations + factory under admin's broadcast.
-        // Floor = 60s only for this explicitly non-shipping rewards seed.
-        vm.startBroadcast(admin.key);
-        MerkleSnapshot snapImpl = new MerkleSnapshot();
-        CommitmentsRewardsCoordinator coordImpl = new CommitmentsRewardsCoordinator();
-        rewardsFactory = new RewardsCoordinatorFactory(address(coordImpl), address(snapImpl), 60);
-        vm.stopBroadcast();
-
-        // Per-service deploy: arbiter as both service and updater for the seed.
-        vm.startBroadcast(arbiter.key);
-        (address coordAddr, address snapAddr) = rewardsFactory.deployCoordinator(arbiter.addr, arbiter.addr, 60);
-        rewardsCoordinator = CommitmentsRewardsCoordinator(coordAddr);
-        rewardsSnapshot = MerkleSnapshot(snapAddr);
-        vm.stopBroadcast();
-
-        // Fund the coordinator: 1000 USDC.
-        uint256 fund = 1000 * 1e6;
-        vm.startBroadcast(admin.key);
-        usdc.mint(admin.addr, fund);
-        usdc.approve(coordAddr, fund);
-        rewardsCoordinator.depositRewards(address(usdc), fund);
-        vm.stopBroadcast();
-
-        // Build and submit a cumulative root: depositors[0] = 100 USDC, depositors[1] = 200 USDC.
-        bytes32 leaf0 = keccak256(abi.encode(depositors[0].addr, address(usdc), uint256(100 * 1e6)));
-        bytes32 leaf1 = keccak256(abi.encode(depositors[1].addr, address(usdc), uint256(200 * 1e6)));
-        bytes32 root =
-            leaf0 < leaf1 ? keccak256(abi.encodePacked(leaf0, leaf1)) : keccak256(abi.encodePacked(leaf1, leaf0));
-        seededRewardsRoot = root;
-
-        vm.startBroadcast(arbiter.key);
-        rewardsSnapshot.submitRoot(root);
-        vm.stopBroadcast();
-
-        // Claims happen post-seed once 60 seconds have elapsed on anvil.
-        // The seeded leaves and proofs are emitted in the event log
-        // (RootSubmitted) and reproducible via the leaf order
-        // (depositors[0], depositors[1]) for indexer / frontend consumers.
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -2114,7 +1797,6 @@ contract Simulate is Script {
             uint128(5_000 * 1e15),
             address(navClaimRouter)
         );
-        seededMutualId = navMutualId; // alias for single-mutual tooling
         _joinMutual(depositors[0], navMutualId, address(navClaimRouter), 1_500 * 1e6, "mutual.nav");
         _joinMutual(depositors[1], navMutualId, address(navClaimRouter), 1_000 * 1e6, "mutual.nav");
         _joinMutual(depositors[2], navMutualId, address(navClaimRouter), 500 * 1e6, "mutual.nav");
@@ -2157,9 +1839,7 @@ contract Simulate is Script {
         console.log("");
     }
 
-    /// @dev Deploy the shared mutual periphery and wire the premium leg. The pricing authority
-    ///      (scheduler owner = admin) is distinct from every mutual's arbiter contract and
-    ///      beneficiary router, so `assertNotCaptured` passes at bind time.
+    /// @dev Deploy the shared mutual periphery and wire the premium leg.
     function _seedMutualPeriphery() internal {
         uint256 minBond = 100 * 1e6; // 100 USDC loss-declaration bond (raw USDC)
         vm.startBroadcast(admin.key);
@@ -2169,12 +1849,11 @@ contract Simulate is Script {
         premiumScheduler = new PremiumScheduler(address(manager), admin.addr);
         mutualPolicy = new LinkedMutualPolicy(address(manager), address(premiumScheduler));
 
-        // Wire: scheduler -> policy, a default utilization curve, and the cover-policy pointers
-        // the registry (utilization reads) and arbiter (loss-claim cover snapshots) reference.
+        // Wire: scheduler -> policy, a default utilization curve, and the cover-policy pointer
+        // the arbiter (loss-claim cover snapshots) references.
         premiumScheduler.setPolicy(address(mutualPolicy));
         // base 2%/yr; +8%/yr below the 80% kink; +50%/yr above; 5x leverage cap.
         premiumScheduler.setDefaultCurve(0.02e18, 0.08e18, 0.5e18, 0.8e18, 50_000);
-        mutualRegistry.setCoverPolicy(address(mutualPolicy));
         optimisticMutualArbiter.setCoverPolicy(address(mutualPolicy));
         vm.stopBroadcast();
 
@@ -2204,7 +1883,6 @@ contract Simulate is Script {
             arbiter: address(optimisticMutualArbiter),
             numeraire: address(usdcVault),
             beneficiary: beneficiary,
-            valuationAuthority: address(0), // homogeneous (oracle-free)
             challengeWindow: 172_800, // 2 days (hard mutual floor)
             deallocationWindow: 172_800 // >= challengeWindow
         });
@@ -2213,6 +1891,11 @@ contract Simulate is Script {
         optimisticMutualArbiter.activate(mutualId);
         vm.stopBroadcast();
         console.log("  Registered + activated mutualId %d (target %d cvUSDC)", mutualId, targetCapacity / 1e15);
+    }
+
+    /// @dev An inline `data:application/json;base64,` URI carrying `json`.
+    function _dataUri(string memory json) internal pure returns (string memory) {
+        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
     /// @dev Inline `data:application/json;base64,` peril metadata (schema `peril.v1`), mirroring the
@@ -2232,15 +1915,14 @@ contract Simulate is Script {
             trigger,
             '"}'
         );
-        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
+        return _dataUri(json);
     }
 
     /// @dev Mint fresh USDC to `member`, route it through the vault into cvUSDC shares in the
     ///      manager, then `joinMutual` (committer = caller, counterparty = the mutual beneficiary).
     ///      The join line is the ACTUAL shares minted (vault NAV has lifted from earlier donations,
-    ///      so a fixed share figure can't be assumed). maxPenaltyBps = 10_000 so E_i == amount in
-    ///      homogeneous mode; the member commitment's own challengeWindow is 1 day. `creditedValue
-    ///      = 0` + empty attestation: the lib derives creditedValue = E_i automatically.
+    ///      so a fixed share figure can't be assumed). maxPenaltyBps = 10_000 so E_i == amount ==
+    ///      creditedValue; the member commitment's own challengeWindow is 1 day.
     function _joinMutual(
         Wallet memory member,
         uint256 mutualId,
@@ -2269,7 +1951,7 @@ contract Simulate is Script {
         // underwrites the same thing, and the differences are amounts.
         if (bytes(metadataKey).length > 0) _withMetadata(p, metadataKey);
 
-        uint256 commitmentId = manager.joinMutual(mutualId, p, 0, "");
+        uint256 commitmentId = manager.joinMutual(mutualId, p);
         vm.stopBroadcast();
         console.log("  Member %s joined mutual %d: commitment %d", member.addr, mutualId, commitmentId);
     }
@@ -2383,57 +2065,40 @@ contract Simulate is Script {
         bytes32 usdcStakeDenom = _denomFor(address(usdcVault));
 
         // ----- Proposal 1: weight update -----
-        {
-            address[] memory targets = new address[](1);
-            uint256[] memory values = new uint256[](1);
-            bytes[] memory calldatas = new bytes[](1);
-            targets[0] = tokenWeightingNode;
-            values[0] = 0;
-            // Apply a 10% governance risk haircut to the cvUSDC denom: 1e7 -> 9e6 (0.9x),
-            // keeping the 18-dec normalization intact (a raw bps value would wipe it out).
-            calldatas[0] = abi.encodeCall(TokenWeighting.updateWeight, (usdcStakeDenom, (CVUSDC_DENOM_WEIGHT * 9) / 10));
-            string memory description = "[Weight] Apply 0.9x risk haircut to cvUSDC denom";
-            seededGovernanceProposalId = _runProposalLifecycle(targets, values, calldatas, description, "weight_update");
-        }
+        // Apply a 10% governance risk haircut to the cvUSDC denom: 1e7 -> 9e6 (0.9x),
+        // keeping the 18-dec normalization intact (a raw bps value would wipe it out).
+        seededGovernanceProposalId = _runProposalLifecycle(
+            tokenWeightingNode,
+            abi.encodeCall(TokenWeighting.updateWeight, (usdcStakeDenom, (CVUSDC_DENOM_WEIGHT * 9) / 10)),
+            "[Weight] Apply 0.9x risk haircut to cvUSDC denom",
+            "weight_update"
+        );
 
         // ----- Proposal 2: signaling (metadata-only) -----
         // Empty calldata to the timelock = no-op; description carries the signal.
-        {
-            address[] memory targets = new address[](1);
-            uint256[] memory values = new uint256[](1);
-            bytes[] memory calldatas = new bytes[](1);
-            targets[0] = address(timelock);
-            values[0] = 0;
-            calldatas[0] = "";
-            string memory description = "[Signal] Adopt mesh-aware risk tier metadata schema v1";
-            _runProposalLifecycle(targets, values, calldatas, description, "signaling");
-        }
+        _runProposalLifecycle(
+            address(timelock), "", "[Signal] Adopt mesh-aware risk tier metadata schema v1", "signaling"
+        );
 
         // ----- Proposal 3: governance self-update -----
         // Bumps votingPeriod from 1 (seed-tight) to USABLE_VOTING_PERIOD so
         // user-created proposals get a real voting window. Walks the full
         // lifecycle while votingPeriod=1 is still in effect — the new value
         // takes effect for proposals created AFTER this one executes.
-        {
-            address[] memory targets = new address[](1);
-            uint256[] memory values = new uint256[](1);
-            bytes[] memory calldatas = new bytes[](1);
-            targets[0] = address(governor);
-            values[0] = 0;
-            calldatas[0] = abi.encodeWithSignature("setVotingPeriod(uint32)", USABLE_VOTING_PERIOD);
-            string memory description = string(
-                abi.encodePacked(
-                    "[Governance] Bump votingPeriod 1 -> ",
-                    Strings.toString(USABLE_VOTING_PERIOD),
-                    " for usable voting window"
-                )
-            );
-            _runProposalLifecycle(targets, values, calldatas, description, "governance");
-        }
+        _runProposalLifecycle(
+            address(governor),
+            abi.encodeWithSignature("setVotingPeriod(uint32)", USABLE_VOTING_PERIOD),
+            string.concat(
+                "[Governance] Bump votingPeriod 1 -> ",
+                Strings.toString(USABLE_VOTING_PERIOD),
+                " for usable voting window"
+            ),
+            "governance"
+        );
         console.log("");
     }
 
-    /// @dev Walk a proposal through propose -> vote -> queue -> execute.
+    /// @dev Walk a one-call proposal through propose -> vote -> queue -> execute.
     ///      Seed-tuned config (votingDelay=0, votingPeriod=1,
     ///      lateQuorumExtension=0, timelockMinDelay=0) keeps the lifecycle to
     ///      four consecutive blocks. operators[0] alone clears 4% quorum.
@@ -2446,12 +2111,21 @@ contract Simulate is Script {
     ///      new anvil block naturally so both passes agree on the resulting
     ///      proposal state.
     function _runProposalLifecycle(
-        address[] memory targets,
-        uint256[] memory values,
-        bytes[] memory calldatas,
+        address target,
+        bytes memory callData,
         string memory description,
         string memory label
     ) internal returns (uint256 proposalId) {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        targets[0] = target;
+        calldatas[0] = callData;
+
+        // OZ Governor reads a proposal whose snapshot block is 0 as nonexistent. On a fresh anvil
+        // the simulation pass starts at block 0 and only vm.roll moves it, so make sure T >= 1.
+        if (block.number == 0) vm.roll(1);
+
         // Block T: propose. voteStart=T, voteEnd=T+1.
         vm.startBroadcast(operators[0].key);
         proposalId = governor.propose(targets, values, calldatas, description);
@@ -2553,51 +2227,6 @@ contract Simulate is Script {
         console.log("    router:             ", address(slashingClaimRouter));
         console.log("  numeraire cvUSDC (homogeneous); ACTIVE, Lambda=0, live premium streams");
         console.log("");
-        console.log("--- Rewards Coordinator (Part R / ADR-006) ---");
-        console.log("RewardsCoordinatorFactory:", address(rewardsFactory));
-        console.log("MerkleSnapshot:           ", address(rewardsSnapshot));
-        console.log("CommitmentsRewardsCoordinator:", address(rewardsCoordinator));
-        console.log("  service / updater:      ", arbiter.addr);
-        console.log("  activation delay:        60 seconds (dev floor)");
-        console.log("  seeded root:             ");
-        console.logBytes32(seededRewardsRoot);
-        console.log("  total deposit:           1000 USDC");
-        console.log("  pending claims:          depositors[0] 100 USDC, depositors[1] 200 USDC");
-        console.log("                           (claimable after activation delay elapses)");
-        console.log("");
-        console.log("--- Frontend .env ---");
-        console.log("Paste into frontend/.env:");
-        console.log("");
-        _logEnvLine("VITE_COMMITMENTS_VAULT_ADDRESS", address(usdcVault));
-        _logEnvLine("VITE_ETH_VAULT_ADDRESS", address(wethVault));
-        _logEnvLine("VITE_USDT_VAULT_ADDRESS", address(usdtVault));
-        _logEnvLine("VITE_COMMITMENT_MANAGER_ADDRESS", address(manager));
-        _logEnvLine("VITE_ERC20_ADAPTER_ADDRESS", address(erc20Adapter));
-        _logEnvLine("VITE_ERC4626_ADAPTER_ADDRESS", address(erc4626Adapter));
-        _logEnvLine("VITE_INDEX_YIELD_STRATEGY_ADDRESS", address(indexYield));
-        _logEnvLine("VITE_FLAT_FEE_STRATEGY_ADDRESS", address(flatFee));
-        _logEnvLine("VITE_MANUAL_ARBITER_ADDRESS", address(manualArbiter));
-        _logEnvLine("VITE_TWO_TIER_ARBITER_ADDRESS", address(twoTierArbiter));
-        _logEnvLine("VITE_ATTESTATION_ARBITER_ADDRESS", address(attestationArbiter));
-        _logEnvLine("VITE_OPERATOR_REGISTRY_ADDRESS", address(operatorRegistry));
-        _logEnvLine("VITE_STAKE_REGISTRY_ADDRESS", address(stakeRegistry));
-        _logEnvLine("VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS", address(optimisticArbiter));
-        _logEnvLine("VITE_MUTUAL_REGISTRY_ADDRESS", address(mutualRegistry));
-        _logEnvLine("VITE_OPTIMISTIC_MUTUAL_ARBITER_ADDRESS", address(optimisticMutualArbiter));
-        _logEnvLine("VITE_PREMIUM_SCHEDULER_ADDRESS", address(premiumScheduler));
-        _logEnvLine("VITE_LINKED_MUTUAL_POLICY_ADDRESS", address(mutualPolicy));
-        _logEnvLine("VITE_CLAIM_ROUTER_ADDRESS", address(navClaimRouter));
-        _logEnvLine("VITE_DEPEG_CLAIM_ROUTER_ADDRESS", address(depegClaimRouter));
-        _logEnvLine("VITE_SLASHING_CLAIM_ROUTER_ADDRESS", address(slashingClaimRouter));
-        _logEnvLine("VITE_GOVERNOR_FACTORY_ADDRESS", address(governorFactory));
-        _logEnvLine("VITE_GOVERNOR_ADDRESS", address(governor));
-        _logEnvLine("VITE_TIMELOCK_ADDRESS", address(timelock));
-        _logEnvLine("VITE_VOTES_SHIM_ADDRESS", address(votesShim));
-        _logEnvLine("VITE_AGENT_STRATEGY_ADDRESS", address(agentVaultStrategy));
-        _logEnvLine("VITE_VAULT_COVER_CONDUIT_ADDRESS", address(vaultCoverConduit));
-        _logEnvLine("VITE_AGENT_MUTUAL_ARBITER_ADDRESS", address(agentMutualArbiter));
-        _logEnvLine("VITE_RPC_URL_ANVIL", "http://127.0.0.1:8545");
-        console.log("");
         console.log("--- Test Wallets ---");
         console.log("Admin (account 0):   ", admin.addr);
         console.log("Arbiter (account 1): ", arbiter.addr);
@@ -2617,13 +2246,5 @@ contract Simulate is Script {
         console.log("Import account 2 into MetaMask:");
         console.log("  Private key: 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a");
         console.log("===============================================");
-    }
-
-    function _logEnvLine(string memory key, address value) internal pure {
-        console.log(string.concat(key, "="), value);
-    }
-
-    function _logEnvLine(string memory key, string memory value) internal pure {
-        console.log(string.concat(key, "=", value));
     }
 }

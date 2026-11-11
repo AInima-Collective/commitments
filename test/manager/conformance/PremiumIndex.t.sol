@@ -2,41 +2,13 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
-
-/// @dev Fee-on-transfer / deflationary ERC-20: every non-mint/non-burn transfer skims `feeBps`
-///      to a sink, so the recipient receives strictly less than `value`. Used to prove the
-///      measured-receipt funding path (INV-P1) credits the delta that ARRIVED, not the amount
-///      requested.
-contract FeeOnTransferToken is ERC20 {
-    address internal constant SINK = address(0xFEE);
-    uint256 public immutable feeBps;
-
-    constructor(uint256 feeBps_) ERC20("Fee", "FEE") {
-        feeBps = feeBps_;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0) && feeBps != 0) {
-            uint256 fee = (value * feeBps) / 10_000;
-            super._update(from, to, value - fee);
-            if (fee != 0) super._update(from, SINK, fee);
-        } else {
-            super._update(from, to, value);
-        }
-    }
-}
+import {FeeOnTransferERC20} from "../../helpers/Mocks.sol";
 
 /// @title PremiumIndexTest
 /// @notice INV-P0..P10 of the Mutual premium index (Π) asserted as CHECKED properties.
@@ -46,8 +18,8 @@ contract FeeOnTransferToken is ERC20 {
 ///         exercise the reward half against the (already-audited, frozen) loss half and lock:
 ///         pool == funded−claimed (P0), extended partition (P1), funding-time solvency + NoActiveCover
 ///         (P2), poke-before-stake-change non-retroactivity (P5/P8), exact dual-track activeCover with
-///         Belt-2 asserted inert (P9), zombie-freeness (P4/P4b), dust conservation, overflow
-///         failure-isolation (P10), and settleAndClaim == the two separate calls.
+///         Belt-2 asserted inert (P9), zombie-freeness (P4/P4b), dust conservation, and overflow
+///         failure-isolation (P10).
 contract PremiumIndexTest is Test {
     CommitmentManager internal manager;
     MockERC20 internal token; // homogeneous numeraire
@@ -83,12 +55,7 @@ contract PremiumIndexTest is Test {
     }
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         token = new MockERC20("Numeraire", "NUM", 18);
         other = new MockERC20("Other", "OTH", 18);
 
@@ -166,7 +133,6 @@ contract PremiumIndexTest is Test {
             arbiter: arbiter,
             numeraire: address(numeraire),
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -189,7 +155,7 @@ contract PremiumIndexTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
         gCids.push(cid);
     }
 
@@ -205,14 +171,13 @@ contract PremiumIndexTest is Test {
         manager.executeMutualLoss(gid);
     }
 
-    /// @dev Recompute `effCover_i` the contract way: premiumWeight·min(E_i−settled, c.amount)/E_i.
+    /// @dev Recompute `effCover_i` the contract way: min(E_i−settled, c.amount).
     function _effCover(uint256 cid) internal view returns (uint256) {
         ICM.Membership memory m = manager.getMembership(cid);
-        if (m.mutualId == 0 || m.forfeitableUnits == 0) return 0;
+        if (m.mutualId == 0) return 0;
         uint256 deliverable = m.forfeitableUnits - m.settledUnits;
         uint256 amt = manager.getCommitment(cid).amount;
-        if (amt < deliverable) deliverable = amt;
-        return Math.mulDiv(m.premiumWeight, deliverable, m.forfeitableUnits);
+        return amt < deliverable ? amt : deliverable;
     }
 
     /// @dev INV-P9 (exact, dual-tracked) + Belt-2 inert: activeCover == totalShares − settledTotal
@@ -236,12 +201,9 @@ contract PremiumIndexTest is Test {
 
     /// @dev INV-P1 (extended partition) on `numeraire`, single premium-funded mutual `gid`.
     function _assertP1(uint256 gid, MockERC20 numeraire) internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(numeraire));
-        assertEq(
-            free + enc + esc + _ps(gid).pool,
-            numeraire.balanceOf(address(manager)),
-            "INV-P1: free+enc+esc+pool == balanceOf"
-        );
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(numeraire));
+        assertEq(mp, _ps(gid).pool, "totalMutualPremium == the mutual's pool");
+        assertEq(free + enc + esc + mp, numeraire.balanceOf(address(manager)), "INV-P1: free+enc+esc+pool == balanceOf");
     }
 
     /// @dev INV-P2 (Synthetix solvency): rewardRate·(periodFinish−lastUpdate) + Σ rewardBank ≤ pool.
@@ -520,7 +482,7 @@ contract PremiumIndexTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(u1);
-        uint256 cB = manager.joinMutual(gB, p, 0, "");
+        uint256 cB = manager.joinMutual(gB, p);
 
         uint256 effA_before = _effCover(cA);
 
@@ -550,9 +512,9 @@ contract PremiumIndexTest is Test {
         _fund(gid, 61, 61); // 61 units over 61s (rate 1/s); 61 is not divisible by activeCover 3
         vm.warp(block.timestamp + 61);
 
-        uint256[] memory ids = new uint256[](3);
-        (ids[0], ids[1], ids[2]) = (c1, c2, c3);
-        manager.claimMembersPremium(ids);
+        manager.claimMemberPremium(c1);
+        manager.claimMemberPremium(c2);
+        manager.claimMemberPremium(c3);
 
         // Each member earns floor(61/3) == 20; the leftover 1 unit is carried as remainder dust.
         assertEq(manager.freeBalance(address(token), u1), 1_000_000e18 - 1 + 20, "u1 paid 20");
@@ -602,38 +564,37 @@ contract PremiumIndexTest is Test {
         assertGt(manager.getMembership(cid).settledUnits, 0, "loss leg applied (not bricked)");
     }
 
-    // =========================================================================
-    // settleAndClaim == settleMemberLoss + claimMemberPremium (independent CEI passes)
-    // =========================================================================
+    function testFuzz_invP10_tinyCoverHugeStream_claimMatchesView(
+        uint256 eiSeed,
+        uint256 fundSeed,
+        uint64 durSeed,
+        uint256 warpSeed
+    ) public {
+        // The other extreme: a cover of a few units under a stream up to the uint128 rate cap, where
+        // `piDelta` is largest. The member accrual is a plain `mulDiv`; it must not revert, must match
+        // the view, and can never pay more than was funded.
+        uint256 ei = bound(eiSeed, 1, 1e6);
+        uint64 dur = uint64(bound(uint256(durSeed), 1 minutes, 365 days));
+        uint256 fundAmt = bound(fundSeed, 1e18, uint256(type(uint128).max) * dur);
 
-    function test_settleAndClaim_equalsSeparateCalls() public {
         uint256 gid = _createMutual(token);
-        uint256 c1 = _join(gid, token, u1, 100e18, 10_000);
-        _join(gid, token, u2, 100e18, 10_000);
+        uint256 cid = _join(gid, token, u1, ei, 10_000); // E_i == activeCover == ei
+        token.mint(policyholder, fundAmt);
+        _fund(gid, fundAmt, dur);
+        vm.warp(block.timestamp + bound(warpSeed, 1, 2 * uint256(dur)));
 
-        _fund(gid, 200e18, 200);
-        _declareAndExecute(gid, 50e18); // Λ = 0.25e18; c1 owes 25e18 (stream fully accrued by execute)
+        uint256 expected = manager.pendingMemberPremium(cid);
+        uint256 freeBefore = manager.freeBalance(address(token), u1);
+        manager.claimMemberPremium(cid);
+        uint256 paid = manager.freeBalance(address(token), u1) - freeBefore;
+        assertEq(paid, expected, "claim pays what the view reported");
+        assertLe(paid, fundAmt, "never more than was funded");
+        assertEq(manager.pendingMemberPremium(cid), 0, "nothing left to claim at the same instant");
+        _assertP1(gid, token);
 
-        uint256 snap = vm.snapshotState();
-
-        manager.settleAndClaim(c1);
-        uint256 benA = manager.freeBalance(address(token), beneficiary);
-        uint256 comA = manager.freeBalance(address(token), u1);
-        uint256 setA = manager.getMembership(c1).settledUnits;
-        uint256 poolA = _ps(gid).pool;
-        uint256 acA = _ps(gid).activeCover;
-        uint256 amtA = manager.getCommitment(c1).amount;
-
-        vm.revertToState(snap);
-
-        manager.settleMemberLoss(c1);
-        manager.claimMemberPremium(c1);
-        assertEq(manager.freeBalance(address(token), beneficiary), benA, "beneficiary identical");
-        assertEq(manager.freeBalance(address(token), u1), comA, "committer identical");
-        assertEq(manager.getMembership(c1).settledUnits, setA, "settledUnits identical");
-        assertEq(_ps(gid).pool, poolA, "pool identical");
-        assertEq(_ps(gid).activeCover, acA, "activeCover identical");
-        assertEq(manager.getCommitment(c1).amount, amtA, "residual amount identical");
+        _declareAndExecute(gid, ei);
+        manager.settleMemberLoss(cid); // the loss leg still applies
+        assertEq(manager.getMembership(cid).settledUnits, ei, "loss leg applied");
     }
 
     // =========================================================================
@@ -677,33 +638,11 @@ contract PremiumIndexTest is Test {
     }
 
     // =========================================================================
-    // Premium funding is HOMOGENEOUS-ONLY — attested mode (valuationAuthority != 0) is fenced off
-    // =========================================================================
-
-    function test_fundMutualPremium_attestedMode_reverts() public {
-        ICM.MutualParams memory p = ICM.MutualParams({
-            arbiter: arbiter,
-            numeraire: address(token),
-            beneficiary: beneficiary,
-            valuationAuthority: makeAddr("valuation"), // != 0 and != arbiter => attested heterogeneous mode
-            challengeWindow: MUTUAL_WINDOW,
-            deallocationWindow: MUTUAL_WINDOW
-        });
-        uint256 gid = manager.createMutual(p);
-        vm.prank(arbiter);
-        manager.activateMutual(gid);
-
-        vm.prank(policyholder);
-        vm.expectRevert(ICM.HeterogeneousPremiumUnsupported.selector);
-        manager.fundMutualPremium(gid, 100e18, 100);
-    }
-
-    // =========================================================================
     // Fee-on-transfer numeraire — measured-receipt funding credits the DELTA
     // =========================================================================
 
     function test_feeOnTransfer_fundingCreditsMeasuredDelta() public {
-        FeeOnTransferToken fot = new FeeOnTransferToken(1_000); // 10% fee
+        FeeOnTransferERC20 fot = new FeeOnTransferERC20(1_000); // 10% fee
 
         // u1 posts FOT collateral (deposit also credits the measured delta).
         fot.mint(u1, 1_000e18);
@@ -716,7 +655,6 @@ contract PremiumIndexTest is Test {
             arbiter: arbiter,
             numeraire: address(fot),
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -734,7 +672,7 @@ contract PremiumIndexTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(u1);
-        manager.joinMutual(gid, p, 0, "");
+        manager.joinMutual(gid, p);
 
         // Fund 100e18; only 90e18 ARRIVES (10% skimmed). The pool/rate must reflect the delta.
         fot.mint(policyholder, 100e18);
@@ -747,7 +685,8 @@ contract PremiumIndexTest is Test {
         assertEq(uint256(_ps(gid).rewardRate), 90e18 / 100, "rate uses the received delta");
 
         // INV-P1 closes on the ACTUAL balance (free 800e18 + enc 100e18 + pool 90e18 == 990e18 held).
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(fot));
-        assertEq(free + enc + esc + _ps(gid).pool, fot.balanceOf(address(manager)), "INV-P1 on FOT actual balance");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(fot));
+        assertEq(mp, _ps(gid).pool, "totalMutualPremium == the mutual's pool");
+        assertEq(free + enc + esc + mp, fot.balanceOf(address(manager)), "INV-P1 on FOT actual balance");
     }
 }

@@ -9,7 +9,7 @@ import { useArbiterProfile } from '../hooks/useArbiterProfile'
 import { useTokenMetaMap } from '../hooks/useTokenMeta'
 import { getBlockExplorer } from '../lib/blockExplorer'
 import { commitmentDetailPath } from '../lib/arbitrationRoutes'
-import { AddressDisplay, Button, EmptyState, Notice, Skeleton, TokenAmount } from '../components/ui'
+import { AddressDisplay, EmptyState, Notice, Pagination, Skeleton, TokenAmount } from '../components/ui'
 import { PageHeader, PartyRow } from '../components/protocol'
 import { mechanismAdapter } from '../lib/arbitrationMechanisms'
 import { useMechanismArbitration } from '../hooks/useMechanismArbitration'
@@ -278,27 +278,15 @@ export default function ArbiterDetail() {
                 </span>
               </div>
             ))}
-            <nav className="ds-row ds-row-2" aria-label="Arbiter cases pages" style={{ justifyContent: 'space-between' }}>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={caseOffset === 0 || cases.isLoading}
-                onClick={() => setCaseOffset((value) => Math.max(0, value - 25))}
-              >
-                Previous
-              </Button>
-              <span className="ds-text-xs ds-subtle">
-                {cases.page.offset + 1}–{cases.page.offset + cases.rows.length} of {cases.page.total}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={cases.page.nextOffset === null || cases.isLoading}
-                onClick={() => cases.page.nextOffset !== null && setCaseOffset(cases.page.nextOffset)}
-              >
-                Next
-              </Button>
-            </nav>
+            <Pagination
+              aria-label="Arbiter cases pages"
+              offset={caseOffset}
+              limit={25}
+              count={cases.rows.length}
+              total={cases.page.total}
+              loading={cases.isLoading}
+              onOffsetChange={setCaseOffset}
+            />
           </div>
         )}
       </section>
@@ -367,27 +355,15 @@ export default function ArbiterDetail() {
           </div>
         )}
         {overview.counts.total > 0 && (
-          <nav className="ds-row ds-row-2" aria-label="Arbiter commitments pages" style={{ justifyContent: 'space-between' }}>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={commitmentOffset === 0 || overview.isLoading}
-              onClick={() => setCommitmentOffset((value) => Math.max(0, value - commitmentLimit))}
-            >
-              Previous
-            </Button>
-            <span className="ds-text-xs ds-subtle">
-              {overview.page.offset + 1}–{overview.page.offset + overview.commitments.length} of {overview.counts.total}
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={overview.page.nextOffset === null || overview.isLoading}
-              onClick={() => overview.page.nextOffset !== null && setCommitmentOffset(overview.page.nextOffset)}
-            >
-              Next
-            </Button>
-          </nav>
+          <Pagination
+            aria-label="Arbiter commitments pages"
+            offset={commitmentOffset}
+            limit={commitmentLimit}
+            count={overview.commitments.length}
+            total={overview.counts.total}
+            loading={overview.isLoading}
+            onOffsetChange={setCommitmentOffset}
+          />
         )}
       </section>
 

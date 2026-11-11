@@ -2,35 +2,18 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
-import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
 import {IndexAppreciationYield} from "src/distributions/IndexAppreciationYield.sol";
 import {RewardsCoordinatorFactory} from "src/extensions/rewards/RewardsCoordinatorFactory.sol";
 import {MerkleSnapshot} from "src/extensions/rewards/MerkleSnapshot.sol";
 import {CommitmentsRewardsCoordinator} from "src/extensions/rewards/CommitmentsRewardsCoordinator.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
 import {MerkleHelper} from "../../rewards/MerkleHelper.sol";
-
-/// @dev The worked example's appreciating venue: index 1.00e18 → 1.04e18.
-contract MockIndexAdapter is IBackingAdapter {
-    uint256 public index = 1e18;
-
-    function setIndex(uint256 v) external {
-        index = v;
-    }
-
-    function indexNow(address) external view returns (uint256) {
-        return index;
-    }
-
-    function payoutDenomination(address token) external pure returns (address) {
-        return token;
-    }
-}
+import {MockIndexAdapter} from "../../helpers/Mocks.sol";
 
 /// @title WorkedExampleTest
 /// @notice ERC-COMMITMENTS §D.9 end-to-end, with the spec's exact numbers: one commitment,
@@ -55,14 +38,7 @@ contract WorkedExampleTest is Test {
     uint256 internal constant COMMISSION = uint256(2e18) * 1e18 / 1.04e18; // 1.923076923076923076e18
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (makeAddr("admin"), 7 days, 14 days))
-                )
-            )
-        );
+        manager = deployManager(makeAddr("admin"), 7 days, 14 days);
         mUSDC = new MockERC20("Morpho USDC", "mUSDC", 18);
         adapter = new MockIndexAdapter();
         indexYield = new IndexAppreciationYield(address(manager));
@@ -80,8 +56,8 @@ contract WorkedExampleTest is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(mUSDC));
-        assertEq(free + enc + esc, mUSDC.balanceOf(address(manager)), "INV-1 inside the manager");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(mUSDC));
+        assertEq(free + enc + esc + mp, mUSDC.balanceOf(address(manager)), "INV-1 inside the manager");
     }
 
     function test_workedExample_endToEnd() public {
@@ -159,9 +135,7 @@ contract WorkedExampleTest is Test {
         bytes32[] memory proof = MerkleHelper.buildProof(leaves, 0);
 
         vm.expectEmit(true, true, true, true, address(merkleRewards));
-        emit CommitmentsRewardsCoordinator.DistributionPaid(
-            address(merkleRewards), alice, address(mUSDC), 50e18, 0, rootId
-        );
+        emit ICM.DistributionPaid(address(merkleRewards), alice, address(mUSDC), 50e18, 0, rootId);
         vm.prank(alice);
         merkleRewards.processClaim(rootId, address(mUSDC), 50e18, proof);
         assertEq(mUSDC.balanceOf(alice), 50e18);

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { type Address } from 'viem'
-import { type CommitmentWithStatus } from '../../utils/commitments'
+import { type CommitmentWithStatus } from '../../lib/commitments'
+import { Button } from '../ui'
 import { ResolveCommitmentModal } from './ResolveCommitmentModal'
 
 interface ResolveCommitmentButtonProps {
   commitment: CommitmentWithStatus
   managerAddress: Address
-  vaultAddress: Address | undefined
   connectedAddress: Address | undefined
   isConnected: boolean
   onActed?: () => void
@@ -23,7 +23,6 @@ interface ResolveCommitmentButtonProps {
 export function ResolveCommitmentButton({
   commitment,
   managerAddress,
-  vaultAddress,
   connectedAddress,
   isConnected,
   onActed,
@@ -33,26 +32,27 @@ export function ResolveCommitmentButton({
 
   return (
     <>
-      <button
-        type="button"
-        className="ds-btn ds-btn--sm"
+      <Button
+        size="sm"
         onClick={(e) => {
           e.stopPropagation()
           setOpen(true)
         }}
       >
         {label}
-      </button>
-      <ResolveCommitmentModal
-        open={open}
-        onClose={() => setOpen(false)}
-        commitment={commitment}
-        managerAddress={managerAddress}
-        vaultAddress={vaultAddress}
-        connectedAddress={connectedAddress}
-        isConnected={isConnected}
-        onActed={onActed}
-      />
+      </Button>
+      {/* Mounted only while open: the modal body runs a clock and several reads. */}
+      {open && (
+        <ResolveCommitmentModal
+          open
+          onClose={() => setOpen(false)}
+          commitment={commitment}
+          managerAddress={managerAddress}
+          connectedAddress={connectedAddress}
+          isConnected={isConnected}
+          onActed={onActed}
+        />
+      )}
     </>
   )
 }

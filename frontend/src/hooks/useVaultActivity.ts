@@ -1,17 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Address, parseAbiItem } from 'viem'
 import { usePublicClient } from 'wagmi'
+import { POLL } from './polling'
 
-export type VaultActivityKind = 'deposit' | 'withdraw-queued' | 'withdraw-claimed'
+export type VaultActivityKind = 'deposit' | 'withdraw'
 
 export interface VaultActivityEntry {
   kind: VaultActivityKind
   blockNumber: bigint
   txHash: `0x${string}`
-  /** Asset amount (USDC, 6 decimals) */
+  /** Asset amount, in the vault asset's units. */
   assets: bigint
-  /** Share amount (vault shares); claim events do not carry shares so it is undefined for that kind. */
-  shares?: bigint
+  /** Share amount (vault shares). */
+  shares: bigint
   /** Best-effort timestamp from the block; resolved lazily, may be undefined initially. */
   timestamp?: bigint
 }
@@ -26,11 +27,8 @@ interface UseVaultActivityParams {
 const DEPOSIT_EVENT = parseAbiItem(
   'event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares)',
 )
-const WITHDRAWAL_QUEUED_EVENT = parseAbiItem(
-  'event WithdrawalQueued(address indexed user, uint256 indexed requestId, uint256 shares, uint256 assets, uint256 maturesAt)',
-)
-const WITHDRAWAL_CLAIMED_EVENT = parseAbiItem(
-  'event WithdrawalClaimed(address indexed user, uint256 indexed requestId, uint256 assets)',
+const WITHDRAW_EVENT = parseAbiItem(
+  'event Withdraw(address indexed sender, address indexed receiver, address indexed owner, uint256 assets, uint256 shares)',
 )
 
 /**
@@ -59,7 +57,7 @@ export function useVaultActivity({
       String(fromBlockOffset),
     ],
     enabled,
-    refetchInterval: 30_000,
+    refetchInterval: POLL.slow,
     queryFn: async () => {
       if (!client || !vaultAddress || !userAddress) return []
 
@@ -67,7 +65,7 @@ export function useVaultActivity({
       const fromBlock =
         head > fromBlockOffset ? head - fromBlockOffset : 0n
 
-      const [depositLogs, queuedLogs, claimedLogs] = await Promise.all([
+      const [depositLogs, withdrawLogs] = await Promise.all([
         client.getLogs({
           address: vaultAddress,
           event: DEPOSIT_EVENT,
@@ -77,15 +75,8 @@ export function useVaultActivity({
         }),
         client.getLogs({
           address: vaultAddress,
-          event: WITHDRAWAL_QUEUED_EVENT,
-          args: { user: userAddress },
-          fromBlock,
-          toBlock: head,
-        }),
-        client.getLogs({
-          address: vaultAddress,
-          event: WITHDRAWAL_CLAIMED_EVENT,
-          args: { user: userAddress },
+          event: WITHDRAW_EVENT,
+          args: { owner: userAddress },
           fromBlock,
           toBlock: head,
         }),
@@ -103,25 +94,15 @@ export function useVaultActivity({
           shares: a.shares,
         })
       }
-      for (const log of queuedLogs) {
+      for (const log of withdrawLogs) {
         const a = log.args
         if (a.assets === undefined || a.shares === undefined) continue
         entries.push({
-          kind: 'withdraw-queued',
+          kind: 'withdraw',
           blockNumber: log.blockNumber!,
           txHash: log.transactionHash!,
           assets: a.assets,
           shares: a.shares,
-        })
-      }
-      for (const log of claimedLogs) {
-        const a = log.args
-        if (a.assets === undefined) continue
-        entries.push({
-          kind: 'withdraw-claimed',
-          blockNumber: log.blockNumber!,
-          txHash: log.transactionHash!,
-          assets: a.assets,
         })
       }
 

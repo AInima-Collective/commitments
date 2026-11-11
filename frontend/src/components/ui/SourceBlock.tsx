@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Button } from './Button'
 
 /**
  * Languages supported by {@link SourceBlock}'s `data-language` attribute. The
@@ -89,24 +90,26 @@ export function SourceBlock({
     <div className={rootClass} data-language={language}>
       {label && <div className="ds-source-block-label">{label}</div>}
       <div className="ds-source-block-toolbar">
-        <button
-          type="button"
-          className="ds-btn ds-btn--sm ds-btn--ghost ds-source-block-toggle"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ds-source-block-toggle"
           aria-expanded={expanded}
           onClick={handleToggle}
         >
           {expanded ? 'HIDE SOURCE' : 'SHOW SOURCE'}
-        </button>
+        </Button>
         {expanded && (
-          <button
-            type="button"
-            className="ds-btn ds-btn--sm ds-btn--ghost ds-source-block-copy"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ds-source-block-copy"
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : 'Copy source'}
             title={copied ? 'Copied' : 'Copy source'}
           >
             {copied ? 'COPIED' : 'COPY'}
-          </button>
+          </Button>
         )}
       </div>
       {expanded && (

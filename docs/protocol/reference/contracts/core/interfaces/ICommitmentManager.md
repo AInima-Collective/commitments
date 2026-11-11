@@ -8,8 +8,10 @@ generated: true
 **Title:**
 ICommitmentManager
 
-Full interface for the direct-custody commitment manager (ERC-COMMITMENTS Parts A–D
-plus the agreements extension). The manager is the custody root: it holds backing
+Interface for the direct-custody commitment manager (ERC-COMMITMENTS Parts A–D
+plus the agreements and mutuals extensions). It covers the protocol surface, not the
+whole contract: `ledgerTotals`, `failedHook`, `MIN_CHALLENGE_WINDOW` and the admin
+setters are on CommitmentManager only, though their events and errors are declared here. The manager is the custody root: it holds backing
 tokens, maintains the per-(token, user) free/encumbered ledger and per-strategy escrow,
 owns the commitment state machine, and is the sole executor of token movements.
 
@@ -142,15 +144,6 @@ Unpause forfeit execution (UNPAUSER_ROLE).
 
 ```solidity
 function unpauseForfeiture() external;
-```
-
-### forfeiturePaused
-
-Whether forfeit execution is paused.
-
-
-```solidity
-function forfeiturePaused() external view returns (bool);
 ```
 
 ### pauseState
@@ -380,13 +373,6 @@ function strategiesOf(uint256 commitmentId) external view returns (address[] mem
 function unbondInitiatedAt(uint256 commitmentId) external view returns (uint64);
 ```
 
-### getUserCommitmentIds
-
-
-```solidity
-function getUserCommitmentIds(address user) external view returns (uint256[] memory);
-```
-
 ### closedAt
 
 Close timestamp of a commitment (0 = still active). `getCommitment().amount` is
@@ -406,15 +392,6 @@ can reconstruct the forfeit magnitude after the commitment `amount` is zeroed.
 
 ```solidity
 function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256);
-```
-
-### acceptsContributions
-
-Whether the commitment accepts third-party `contributeEncumbered` calls (ERC §C.6).
-
-
-```solidity
-function acceptsContributions(uint256 commitmentId) external view returns (bool);
 ```
 
 ### distribute
@@ -443,16 +420,6 @@ accrual is recoverable (ERC §D.3).
 
 ```solidity
 function claim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
-```
-
-### distributeAndClaim
-
-Distribute one strategy's accrual then claim it, atomically. Resolves the ordering
-footgun where `pending()` shows live accrual but `claim()` pays only banked accrual.
-
-
-```solidity
-function distributeAndClaim(uint256 commitmentId, address strategy, bytes calldata claimData) external;
 ```
 
 ### pending
@@ -539,13 +506,6 @@ function forfeitAgreement(uint256 agreementId, uint16 penaltyBps) external;
 function releaseAgreement(uint256 agreementId) external;
 ```
 
-### requestAgreementUnbond
-
-
-```solidity
-function requestAgreementUnbond(uint256 agreementId) external;
-```
-
 ### settleAgreement
 
 Arbiter-instructed value flow between the two parties of an agreement, bounded
@@ -568,10 +528,9 @@ function getAgreementSettlement(uint256 agreementId)
 
 ### createMutual
 
-Create a Mutual. Starts inactive; the creator (assembler/arbiter) activates
-it once capacity is filled. `valuationAuthority == 0` selects the oracle-free
-homogeneous-numeraire subset (every member posts the mutual's `numeraire` token and
-`creditedValue == E_i` by construction).
+Create a Mutual. Starts inactive; members can only join once its arbiter
+activates it. Every member posts the mutual's `numeraire` token and is weighted
+by its forfeitable allotment `E_i` (oracle-free).
 
 
 ```solidity
@@ -580,54 +539,23 @@ function createMutual(MutualParams calldata params) external returns (uint256 mu
 
 ### activateMutual
 
-Flip an inactive mutual active (arbiter or creator). No new losses until active.
+Flip an inactive mutual active (arbiter only; no creator is stored). No joins and no
+losses until active.
 
 
 ```solidity
 function activateMutual(uint256 mutualId) external;
 ```
 
-### configureHeterogeneous
-
-Configure heterogeneous mode (valuationAuthority-only, while inactive & non-terminal).
-Sets the manipulation-resistant band adapter, the band bounds, the junior split, and
-the per-collateral haircuts. Immutable after this call; reverts otherwise. Only valid
-for mutuals created with a non-zero `valuationAuthority` (homogeneous mutuals can never
-be configured). Once configured, premium funding (`fundMutualPremium`) is re-enabled and
-new joins derive their `premiumWeight` from the band+haircut instead of the attestation.
-
-
-```solidity
-function configureHeterogeneous(uint256 mutualId, HeteroConfig calldata config) external;
-```
-
-### remark
-
-Permissionless down-only re-mark of one member's premium weight (heterogeneous only).
-Recomputes the band+haircut weight and ratchets `premiumWeight` to the MIN of the
-current and recomputed value (monotone non-increasing, INV-P11). Reverts while a mutual
-loss is pending (INV-P12). Writes ONLY `premiumWeight` and the premium aggregates —
-never the loss denominator (`creditedValue` / `totalShares` / Lambda / headroom).
-
-
-```solidity
-function remark(uint256 mutualId, uint256 commitmentId) external;
-```
-
 ### joinMutual
 
-Create a fresh commitment and join it to `mutualId` atomically, freezing the opaque
-capacity weight `creditedValue`. In homogeneous mode `creditedValue` is ignored and
-set to `E_i`; in attested mode it must be signed by the mutual's `valuationAuthority`.
+Create a fresh commitment and join it to `mutualId` atomically, freezing its weight
+`E_i` (emitted as `MemberJoined.creditedValue`). `params.token` must be the mutual's numeraire. Reverts
+`MutualExhausted` once the mutual is `exhausted` (a loss left it no cover to give).
 
 
 ```solidity
-function joinMutual(
-    uint256 mutualId,
-    CommitmentParams calldata params,
-    uint128 creditedValue,
-    bytes calldata attestation
-) external returns (uint256 commitmentId);
+function joinMutual(uint256 mutualId, CommitmentParams calldata params) external returns (uint256 commitmentId);
 ```
 
 ### initiateMutualLoss
@@ -670,7 +598,8 @@ function cancelStaleMutualLoss(uint256 mutualId) external;
 ### settleMemberLoss
 
 Permissionless, lazy: settle one member's accrued share of the shared loss. K
-deferred losses collapse into one O(1) settle (reads current Lambda).
+deferred losses collapse into one O(1) settle (reads current Lambda). Also clears a
+lapsed exit request (`MemberExitLapsed`), taking the member out of `exitingCover`.
 
 
 ```solidity
@@ -679,7 +608,7 @@ function settleMemberLoss(uint256 commitmentId) external;
 
 ### settleMembers
 
-Bounded batch convenience over `settleMemberLoss`.
+Batch convenience over `settleMemberLoss`. Unbounded: the caller sizes the batch.
 
 
 ```solidity
@@ -689,7 +618,10 @@ function settleMembers(uint256[] calldata commitmentIds) external;
 ### requestMutualExit
 
 Member-only: start the deallocation window. The line stays in `totalShares` and
-mutual-slashable until the window elapses (pre-declaration escape defense).
+mutual-slashable until the window elapses (pre-declaration escape defense), and its
+cover is counted in `exitingCover` until release or until a lapsed request is cleared.
+On a lapsed request this starts a fresh one; on one that has not lapsed it reverts
+`UnbondAlreadyRequested`.
 
 
 ```solidity
@@ -698,8 +630,11 @@ function requestMutualExit(uint256 commitmentId) external;
 
 ### releaseMutualMember
 
-Release a mutual member once fully settled and past the deallocation window. Returns
-the residual encumbrance to the committer's free balance.
+Release a mutual member once fully settled and inside its exit window:
+`deallocationWindow <= elapsed < 2 * deallocationWindow` (pause-adjusted). At or past
+the end it reverts `ExitRequestLapsed`. A pending loss still blocks release, so a
+request can lapse while a loss is pending. Returns the residual encumbrance to the
+committer's free balance.
 
 
 ```solidity
@@ -713,8 +648,11 @@ fee-on-transfer safe) and (re)start a Synthetix stream over `duration` seconds. 
 core is pricing-agnostic — it only sets a future rate under the funding-time solvency
 guard (INV-P2). Reverts `NoActiveCover` when there is no live cover to distribute to,
 `StreamDurationOutOfBounds` when `duration` is outside [1 minutes, 365 days] (or the
-uint64 deadline would overflow), and `PremiumRateDecreased` when a live stream's rate
-would drop (permissionless funding may only maintain or raise the rate).
+uint64 deadline would overflow), `PremiumRateDecreased` when a live stream's rate
+would drop (permissionless funding may only maintain or raise the rate), and
+`MutualExhausted` once the mutual is `exhausted`. While a stream is live its end never moves
+earlier: the new end is `max(periodFinish, now + duration)` and premium plus leftover
+is spread over the time to it.
 
 
 ```solidity
@@ -730,15 +668,6 @@ Permissionless: bank-and-pay a member's accrued premium to its committer (CEI-st
 function claimMemberPremium(uint256 commitmentId) external;
 ```
 
-### claimMembersPremium
-
-Bounded batch convenience over `claimMemberPremium`.
-
-
-```solidity
-function claimMembersPremium(uint256[] calldata commitmentIds) external;
-```
-
 ### reclaimPremium
 
 Policyholder-of-record reclaims the unstreamed premium remainder and halts the stream.
@@ -746,16 +675,6 @@ Policyholder-of-record reclaims the unstreamed premium remainder and halts the s
 
 ```solidity
 function reclaimPremium(uint256 mutualId) external;
-```
-
-### settleAndClaim
-
-Convenience: `settleMemberLoss` then `claimMemberPremium` for one member under a
-single reentrancy guard — two INDEPENDENT CEI passes with zero shared accounting.
-
-
-```solidity
-function settleAndClaim(uint256 commitmentId) external;
 ```
 
 ### getMutualPremiumState
@@ -803,15 +722,6 @@ Premium currently claimable by `commitmentId` if claimed now (banked + simulated
 function pendingMemberPremium(uint256 commitmentId) external view returns (uint256 claimable);
 ```
 
-### getMutualJuniorPool
-
-Junior shortfall absorber reserve (`funded − drawn`) for a mutual, in its numeraire.
-
-
-```solidity
-function getMutualJuniorPool(uint256 mutualId) external view returns (uint256 juniorPool);
-```
-
 ### getMutual
 
 
@@ -853,22 +763,6 @@ function createCommitmentFor(
     uint256 nonce,
     bytes calldata sig
 ) external returns (uint256 commitmentId);
-```
-
-### batchCreateCommitments
-
-
-```solidity
-function batchCreateCommitments(CommitmentParams[] calldata params)
-    external
-    returns (uint256[] memory commitmentIds);
-```
-
-### batchReleaseCommitments
-
-
-```solidity
-function batchReleaseCommitments(uint256[] calldata commitmentIds) external;
 ```
 
 ### nonces
@@ -955,12 +849,6 @@ event EncumbrancePaidExternal(
 );
 ```
 
-### EncumbranceTransferred
-
-```solidity
-event EncumbranceTransferred(address indexed from, address indexed to, address indexed token, uint256 units);
-```
-
 ### EncumbranceContributed
 
 ```solidity
@@ -992,20 +880,6 @@ event CommitmentCreated(
     string metadataURI,
     bytes32 metadataHash
 );
-```
-
-### CommitmentCounterparty
-Companion to CommitmentCreated: exposes `counterparty` as an indexed discovery axis.
-
-CommitmentCreated's three topic slots are full (commitmentId, committer, arbiter), so the
-counterparty discovery axis ("commitments where I am the counterparty") is emitted here,
-joined to the creation event by `commitmentId`. Emitted from the libraries, so it costs
-the manager's bytecode budget nothing. Only emitted when `counterparty != address(0)` —
-the zero counterparty carries no queryable identity and is never indexed.
-
-
-```solidity
-event CommitmentCounterparty(uint256 indexed commitmentId, address indexed counterparty);
 ```
 
 ### CommitmentReleased
@@ -1187,12 +1061,6 @@ event AgreementReleased(uint256 indexed agreementId);
 event AgreementPartialForfeit(uint256 indexed agreementId, uint256 indexed commitmentId);
 ```
 
-### AgreementUnbondRequested
-
-```solidity
-event AgreementUnbondRequested(uint256 indexed agreementId);
-```
-
 ### AgreementSettled
 
 ```solidity
@@ -1209,13 +1077,7 @@ event AgreementSettled(
 ### MutualCreated
 
 ```solidity
-event MutualCreated(
-    uint256 indexed mutualId,
-    address indexed arbiter,
-    address numeraire,
-    address beneficiary,
-    address valuationAuthority
-);
+event MutualCreated(uint256 indexed mutualId, address indexed arbiter, address numeraire, address beneficiary);
 ```
 
 ### MutualActivated
@@ -1285,6 +1147,10 @@ event MemberSettled(
 ```
 
 ### MemberExitRequested
+A member started its deallocation window. It stays slashable until `slashableUntil`
+(the no-further-pause estimate); the exit window then runs from `slashableUntil` for
+one more `deallocationWindow`, after which the request lapses.
+
 
 ```solidity
 event MemberExitRequested(uint256 indexed mutualId, uint256 indexed commitmentId, uint64 slashableUntil);
@@ -1294,6 +1160,15 @@ event MemberExitRequested(uint256 indexed mutualId, uint256 indexed commitmentId
 
 ```solidity
 event MemberReleased(uint256 indexed mutualId, uint256 indexed commitmentId);
+```
+
+### MemberExitLapsed
+A lapsed exit request was cleared (by any settle of the member): the member is no
+longer exiting and its cover left `exitingCover`.
+
+
+```solidity
+event MemberExitLapsed(uint256 indexed mutualId, uint256 indexed commitmentId);
 ```
 
 ### MutualPremiumFunded
@@ -1308,8 +1183,8 @@ event MutualPremiumFunded(
 ```
 
 ### MemberPremiumClaimed
-A member's accrued premium was paid to its committer (via `claimMemberPremium`,
-`settleAndClaim`, or the auto-pay on `releaseMutualMember`).
+A member's accrued premium was paid to its committer (via `claimMemberPremium` or
+the auto-pay on `releaseMutualMember`).
 
 
 ```solidity
@@ -1330,52 +1205,6 @@ Terminal sweep of a wound-down mutual's residual reserve (so INV-P1 closes at ze
 
 ```solidity
 event MutualPremiumSwept(uint256 indexed mutualId, address indexed recipient, uint256 amount);
-```
-
-### MutualHeterogeneousConfigured
-A mutual was configured for heterogeneous mode (immutable after; pre-activation only).
-
-
-```solidity
-event MutualHeterogeneousConfigured(
-    uint256 indexed mutualId,
-    address indexed bandAdapter,
-    uint64 valuationFloorBps,
-    uint64 valuationCeilBps,
-    uint64 juniorBps
-);
-```
-
-### MemberRemarked
-A member's premium weight was down-only re-marked (monotone non-increasing, INV-P11).
-
-
-```solidity
-event MemberRemarked(uint256 indexed commitmentId, uint128 oldWeight, uint128 newWeight);
-```
-
-### MutualJuniorFunded
-The junior shortfall absorber was funded by the premium split (`juniorBps` of a receipt).
-
-
-```solidity
-event MutualJuniorFunded(uint256 indexed mutualId, address indexed funder, uint256 amount);
-```
-
-### MutualJuniorDrawn
-The junior absorber was drawn at settle to top up the beneficiary's numeraire recovery.
-
-
-```solidity
-event MutualJuniorDrawn(uint256 indexed commitmentId, uint256 amount);
-```
-
-### MutualJuniorSwept
-Terminal sweep of a wound-down mutual's residual junior reserve (so INV-P13 closes at zero).
-
-
-```solidity
-event MutualJuniorSwept(uint256 indexed mutualId, address indexed recipient, uint256 amount);
 ```
 
 ### OperatorRegistryUpdated
@@ -1476,12 +1305,6 @@ error ZeroCounterparty();
 
 ```solidity
 error PenaltyExceedsMax();
-```
-
-### ExposureAllocationExceeded
-
-```solidity
-error ExposureAllocationExceeded();
 ```
 
 ### TooManyStrategies
@@ -1726,14 +1549,6 @@ A FromEncumbered* movement exceeded the commitment's live amount cap (INV-4).
 error MovementExceedsCommitment(uint256 units, uint256 amount);
 ```
 
-### MovementBlockedByForfeit
-A distribute-site movement was attempted while a forfeit proposal is active.
-
-
-```solidity
-error MovementBlockedByForfeit();
-```
-
 ### MovementFromNotStrategy
 A FromEscrow* movement's `from` was not the calling strategy (INV-5).
 
@@ -1886,10 +1701,16 @@ error DeallocationWindowActive();
 error ExitNotRequested();
 ```
 
-### ValuationAuthorityIsArbiter
+### ExitRequestLapsed
 
 ```solidity
-error ValuationAuthorityIsArbiter();
+error ExitRequestLapsed();
+```
+
+### MutualExhausted
+
+```solidity
+error MutualExhausted();
 ```
 
 ### InvalidCreditedValue
@@ -1934,12 +1755,6 @@ error TotalSharesOverflow();
 error ReinitTooSoon();
 ```
 
-### InvalidValuationAttestation
-
-```solidity
-error InvalidValuationAttestation();
-```
-
 ### CommitmentInMutual
 
 ```solidity
@@ -1982,48 +1797,6 @@ error StreamDurationOutOfBounds();
 error PremiumRateDecreased();
 ```
 
-### HeterogeneousPremiumUnsupported
-
-```solidity
-error HeterogeneousPremiumUnsupported();
-```
-
-### InsufficientMutualJunior
-
-```solidity
-error InsufficientMutualJunior(uint256 requested, uint256 available);
-```
-
-### NotValuationAuthority
-
-```solidity
-error NotValuationAuthority();
-```
-
-### NotHeterogeneous
-
-```solidity
-error NotHeterogeneous();
-```
-
-### MutualAlreadyConfigured
-
-```solidity
-error MutualAlreadyConfigured();
-```
-
-### MutualAlreadyActive
-
-```solidity
-error MutualAlreadyActive();
-```
-
-### InvalidHeteroConfig
-
-```solidity
-error InvalidHeteroConfig();
-```
-
 ### OperatorRegistrySwapBlocked
 setOperatorRegistry would orphan live delegations: the outgoing registry still
 reports tracked commitments (or cannot report a count at all). Their later
@@ -2039,27 +1812,31 @@ error OperatorRegistrySwapBlocked(address outgoingRegistry);
 ### Commitment
 A unilateral commitment: a parameterized lien on the committer's encumbered backing.
 
-`amount` is denominated in raw backing-token units (ERC §0.1).
+`amount` is denominated in raw backing-token units (ERC §0.1). Packed into eight
+slots: each address shares its slot with the small fields, grouped so close writes one
+slot (flags + `closedAt`) and an unbond request one (`unbondInitiatedAt`); the two pause
+snapshots, rarely non-zero, share the last slot.
 
 
 ```solidity
 struct Commitment {
     address committer;
-    address arbiter;
-    address counterparty;
-    address token; // backing token
-    address adapter; // backing adapter (read-only pricing metadata)
-    uint256 amount; // raw units currently encumbered under this commitment
     uint16 maxPenaltyBps; // 0..10_000
-    uint64 challengeWindow; // seconds
-    uint64 createdAt;
-    uint64 expiresAt; // 0 = no expiry
     bool released;
     bool forfeited;
-    string metadataURI;
-    bytes32 metadataHash;
-    // ---- Pause erratum (append-only) ----
+    uint64 closedAt; // close timestamp; 0 = active
+    address arbiter;
+    uint64 challengeWindow; // seconds
+    address counterparty;
+    uint64 createdAt;
+    address token; // backing token
+    uint64 expiresAt; // 0 = no expiry
+    address adapter; // backing adapter (read-only pricing metadata)
+    uint64 unbondInitiatedAt; // committer-unbond start; 0 = none pending
+    uint256 amount; // raw units currently encumbered under this commitment
+    bytes32 metadataHash; // on-chain anchor; the URI is carried only by `CommitmentCreated`
     uint64 cumulativePausedAtStart; // creditable-pause snapshot at create; anchors the expiry clock-stop
+    uint64 unbondCumulativePausedAtStart; // creditable-pause snapshot at unbond request; anchors the unbonding clock-stop
 }
 ```
 
@@ -2102,13 +1879,15 @@ struct ForfeitProposal {
 ```
 
 ### UserExposure
-Per-(user, token) exposure tracking for the allocation invariant (INV-3).
+Per-(user, token) view of the allocation invariant (INV-3). Returned by
+`getUserExposure`; only `totalForfeitable` is stored, `totalEncumbered` is read from the
+custody ledger.
 
 
 ```solidity
 struct UserExposure {
-    uint256 totalEncumbered; // Σ commitment.amount over active commitments
-    uint256 totalForfeitable; // Σ amount × maxPenaltyBps / 10_000 over active commitments
+    uint256 totalEncumbered; // ledger encumberedBalance (Σ amount over live liens and pending proposals)
+    uint256 totalForfeitable; // Σ amount × maxPenaltyBps / 10_000 over the same liens
 }
 ```
 
@@ -2206,91 +1985,69 @@ individually-custodied, exogenous member commitments. Tokens never centralize �
 the index rebases *attribution*, not custody (INV-1 preserved). See the Mutuals standard
 (ERC-COMMITMENTS-MUTUALS). Economically: Lloyd's several liability with a shared loss ratio.
 
+Packed into ten slots: the join and loss-initiation guards (`arbiter`, `active`,
+`terminal`) share one, the two denominators a join or release moves (`totalShares`,
+`activeCover`) share another, and `settledTotal` shares a slot with `exitingCover`,
+which settle and release write together.
+
 
 ```solidity
 struct Mutual {
     address arbiter; // sole authority to INITIATE a mutual loss
-    address numeraire; // unit of account for creditedValue & L (pricing only; never moved)
-    address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
-    address valuationAuthority; // attests creditedValue in attested mode; MUST != arbiter; 0 = homogeneous mode
     uint64 challengeWindow; // >= MUTUAL_MIN_CHALLENGE_WINDOW (longer than the per-commitment floor)
-    uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
-    uint64 lastInitiatedAt; // re-initiation rate-limit cursor (griefing guard)
-    uint128 totalShares; // Σ creditedValue of non-exited members. join / release ONLY — never on loss.
-    uint256 cumulativeLoss; // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18.
-    bool active; // assembler holds inactive until capacity filled
+    bool active; // set by the arbiter; members can only join an active mutual
     bool terminal; // wound down: no new joins / losses
-    // ---- Premium index (reward side, Mutuals premium; append-only) ----
+    bool exhausted; // a loss took all the cover that was left (or all but dust): no new joins / premium
+    address numeraire; // the token every member posts; unit of E_i, L and premium
+    uint64 deallocationWindow; // post-exit-request slashable window; >= challengeWindow
+    address beneficiary; // who settled units pay to (typically a ClaimRouter) — REQUIRED
+    uint128 totalShares; // Σ E_i of non-exited members. join / release ONLY — never on loss.
     // A second native MasterChef index `Pi` over a SEPARATE live-deliverable-capacity
     // denominator `activeCover` (never `totalShares`). Distinct from the loss index in
-    // denominator, identical in pull-accumulator shape. All fields default-zero, so a mutual
-    // that never funds premium is byte-for-byte the pre-premium behaviour (pure-loss short-circuit).
-    uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing.
+    // denominator, identical in pull-accumulator shape. All premium fields default-zero, so a
+    // mutual that never funds premium pays nothing for them (pure-loss short-circuit).
     uint128 activeCover; // Σ effCover_i over active members = the premium denominator (live deliverable cover)
-    uint256 settledTotal; // Σ settledUnits — cross-checks `activeCover == totalShares − settledTotal` (INV-P9)
+    uint256 cumulativeLoss; // Lambda, 1e18-scaled fraction. Monotonic non-decreasing, <= 1e18.
     uint128 rewardRate; // streamed numeraire per second (Synthetix). 0 == never/no-longer funded (short-circuit)
     uint64 lastUpdate; // last `_pokePremium` time, clamped to periodFinish
     uint64 periodFinish; // end of the current stream; accrual stops here
+    uint256 premiumPerShareStored; // Pi — premium-per-unit-cover, 1e27-scaled. Monotone non-decreasing.
+    uint128 settledTotal; // Σ settledUnits (<= totalShares) — cross-checks `activeCover == totalShares − settledTotal` (INV-P9)
+    // Σ effCover_i over members with an exit request on record (`unbondRequestedAt != 0`), lapsed
+    // or not; <= activeCover (INV-P11). Such a member still earns premium and is still slashable;
+    // `activeCover − exitingCover` is the cover that has not asked to leave.
+    uint128 exitingCover;
     uint256 premiumRemainder; // sub-1e27 dust carried forward between pokes (no value ever lost)
     uint256 bankedTotal; // Σ rewardBank_i — `outstandingBank` for the funding-time solvency guard (INV-P2)
-    // ---- Heterogeneous mode (append-only; all zero in homogeneous & attested-unconfigured) ----
-    // A mutual is HETEROGENEOUS iff `bandAdapter != 0`. These are set ONCE by `configureHeterogeneous`
-    // (valuationAuthority-only, while !active && !terminal) and immutable after. They drive ONLY the
-    // premium (reward) side — `premiumWeight` band-clamping + haircut + the junior split — and NEVER
-    // the loss denominator, so homogeneous mutuals (all fields zero) are byte-for-byte unchanged.
-    address bandAdapter; // 0 = homogeneous / attested-unconfigured (homogeneous behaviour); nonzero = heterogeneous
-    uint64 valuationFloorBps; // band lower bound on `premiumWeight` as floorBps*adapterValue/1e4 (INV-P11)
-    uint64 valuationCeilBps; // band upper bound; <= 1e4 (no inflation above the adapter value, INV-P11)
-    uint64 juniorBps; // premium-funding split routed to the junior shortfall absorber (0 = no split)
-}
-```
-
-### HeteroConfig
-Heterogeneous-mode configuration, applied ONCE via `configureHeterogeneous` before the
-mutual is activated and immutable thereafter. Only meaningful for mutuals
-with a non-zero `valuationAuthority`; homogeneous mutuals can never be configured.
-
-
-```solidity
-struct HeteroConfig {
-    address bandAdapter; // manipulation-resistant valuation adapter (TWAP / 4626 rate); REQUIRED, != 0
-    uint64 valuationFloorBps; // band lower bound (<= ceil)
-    uint64 valuationCeilBps; // band upper bound (<= 1e4)
-    uint64 juniorBps; // premium split to the junior absorber (<= 1e4)
-    address[] collaterals; // per-collateral haircut keys (parallel to `haircutBps`)
-    uint64[] haircutBps; // per-collateral haircut bps (each <= 1e4); parallel to `collaterals`
 }
 ```
 
 ### Membership
 Per-commitment membership in a Mutual (sparse; mutualId 0 == not a member).
 
+Packed into five slots: the id, the loss snapshot and both exit fields share the first,
+so settle, exit request and release read one slot for all of them. `forfeitableUnits`
+is also the member's `totalShares` weight (E_i, checked <= uint128 max at join).
+
 
 ```solidity
 struct Membership {
-    uint256 mutualId; // 0 == not a member (single, non-rebindable)
-    uint256 forfeitableUnits; // E_i = amount*maxPenaltyBps/10_000, FROZEN at join (the loss base, raw units)
-    uint256 settledUnits; // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
-    uint128 creditedValue; // valuation(token, E_i) in numeraire, FROZEN at join (totalShares accounting)
-    uint256 lossSnapshot; // Lambda at join / last settle — liable only for cumulativeLoss - snapshot
+    uint64 mutualId; // 0 == not a member (single, non-rebindable). Mutual ids count up from 1, one per createMutual.
+    uint64 lossSnapshot; // Lambda at join / last settle (<= 1e18) — liable only for cumulativeLoss - snapshot
     uint64 unbondRequestedAt; // 0 == active; nonzero starts the deallocation window (still slashable until elapsed)
-    // ---- Premium index (reward side; append-only) ----
-    // Numeraire PREMIUM weight; == creditedValue in homogeneous v1, re-priceable in heterogeneous mode.
-    uint128 premiumWeight;
-    // Kept distinct from creditedValue so a reward re-mark can never touch the loss denominator (INV-P6).
+    uint64 memberExitCumulativePausedAtStart; // creditable-pause snapshot at requestMutualExit; anchors the deallocation clock-stop
+    uint256 forfeitableUnits; // E_i = amount*maxPenaltyBps/10_000, FROZEN at join (the loss base and totalShares weight, raw units)
+    uint256 settledUnits; // cumulative owedUnits already forfeited (remaining = E_i - settledUnits)
     uint256 premiumSnapshot; // Pi at join / last sync — earns only Pi-growth after (reward non-retroactivity, INV-P5)
     uint256 rewardBank; // accrued-but-unclaimed premium in numeraire (paid to the committer on claim/release)
-    // (The deallocation-window pause snapshot lives in the sibling
-    //  `memberExitCumulativePausedAtStart` mapping, written at requestMutualExit — a struct
-    //  field would cost every join a slot touch for a value only exits read.)
 }
 ```
 
 ### MutualLossProposal
 Pending two-phase mutual-loss declaration (at most one active per mutual).
 
-`proposer`/`evidenceHash` make the dispute model storage-ready; bond custody itself
-lives in the pluggable mutual arbiter (periphery), keeping the custody root ETH-free.
+The proposer is always the mutual's arbiter (`MutualLossInitiated` carries it). Bond
+custody lives in the pluggable mutual arbiter (periphery), keeping the custody root ETH-free.
 
 
 ```solidity
@@ -2298,7 +2055,6 @@ struct MutualLossProposal {
     uint256 lossNumeraire; // declared loss L in the mutual's numeraire
     uint64 initiatedAt; // 0 == none
     bytes32 evidenceHash;
-    address proposer; // the mutual arbiter that initiated
     bool executed;
     bool cancelled;
     // ---- Pause erratum (append-only) ----
@@ -2315,7 +2071,6 @@ struct MutualParams {
     address arbiter;
     address numeraire;
     address beneficiary;
-    address valuationAuthority; // 0 = homogeneous-numeraire mode (oracle-free; numeraire == member token)
     uint64 challengeWindow;
     uint64 deallocationWindow;
 }

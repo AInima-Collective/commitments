@@ -18,6 +18,7 @@ import {
 import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManagerStorage.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
+import {HOOK_GAS_RESERVE} from "src/shared/Constants.sol";
 
 /// @notice The call site a movement batch came from. Determines the allowed kinds (ERC §D.4)
 ///         and whether exposure effects apply (skipped on the Forfeited site — the commitment's
@@ -56,25 +57,13 @@ interface IHookRunner {
 library MovementLib {
     using SafeERC20 for IERC20;
 
-    /// @dev ERC §0.3 — SHOULD-level floor on the per-hook gas cap (§D.6); lazy default when
-    ///      the stored config is 0.
-    uint64 internal constant HOOK_GAS_CAP_FLOOR = 500_000;
-    /// @dev Gas reserved for post-hook bookkeeping when sizing the min-gas guard (§D.6 rule 3).
-    uint64 internal constant HOOK_GAS_RESERVE = 50_000;
-
     // =========================================================================
     // Guarded lifecycle frames (ERC §D.6)
     // =========================================================================
 
-    /// @notice Run every bound strategy's lifecycle hook in array order, each in its own
-    ///         guarded frame. A failed frame parks that strategy's in-flight accrual and never
-    ///         blocks the lifecycle transition.
-    function runGuardedHooks(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint8 hook) external {
-        _runGuardedHooks(s, commitmentId, hook);
-    }
-
-    /// @dev Internal twin so sibling external functions in this library (and other libraries
-    ///      via the external wrapper) share one implementation.
+    /// @dev Run every bound strategy's lifecycle hook in array order, each in its own guarded
+    ///      frame. A failed frame parks that strategy's in-flight accrual and never blocks the
+    ///      lifecycle transition. Internal: inlined into CommitmentLifecycleLib.
     function _runGuardedHooks(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint8 hook) internal {
         address[] storage strategies = s.commitmentStrategies[commitmentId];
         uint256 n = strategies.length;
@@ -83,30 +72,36 @@ library MovementLib {
         }
     }
 
-    /// @notice One guarded frame (external for sweepFailedHook and the pre-settle distribute).
+    /// @notice One guarded frame (external for the agreements pre-settle distribute).
     function guardedCall(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy, uint8 hook)
         external
     {
         _guardedCall(s, commitmentId, strategy, hook);
     }
 
+    /// @notice Core of `manager.sweepFailedHook`: re-drive the parked lifecycle hook under the same
+    ///         guarded semantics and clear its marker on success.
+    function sweepFailedHookCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy)
+        external
+    {
+        bytes4 sel = s.failedHookSelector[commitmentId][strategy];
+        if (sel == bytes4(0)) revert ICM.NoFailedHook();
+
+        uint8 hook = sel == IDistributionStrategy.onCommitmentForfeited.selector ? HOOK_FORFEITED : HOOK_RELEASED;
+        if (_guardedCall(s, commitmentId, strategy, hook)) delete s.failedHookSelector[commitmentId][strategy];
+    }
+
     /// @dev Min-gas guard + capped external self-call wrapping {strategy call + movement
-    ///      validation + application} + park-don't-forfeit failure disposition.
+    ///      validation + application} + park-don't-forfeit failure disposition. Success writes
+    ///      nothing: a lifecycle hook runs once at close, before any marker can exist, and the
+    ///      only re-drive (`sweepFailedHook`) clears the marker it already loaded.
     function _guardedCall(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy, uint8 hook)
         internal
+        returns (bool ok)
     {
-        uint64 stored = s.hookGasCap;
-        uint256 cap = stored == 0 ? HOOK_GAS_CAP_FLOOR : stored;
-
-        // Min-gas guard (§D.6 rule 3): under EIP-150 the callee receives at most 63/64 of
-        // gasleft. If the frame cannot genuinely receive the full cap, revert the WHOLE
-        // transaction — a caller cannot hand-tune gas so hooks starve while the forfeit lands.
-        if (gasleft() < cap + cap / 63 + HOOK_GAS_RESERVE) revert ICM.InsufficientGasForHook();
-
+        uint256 cap = hookGas(s);
         try IHookRunner(address(this)).__runStrategyHook{gas: cap}(commitmentId, strategy, hook) {
-            if (hook != HOOK_DISTRIBUTE && s.failedHookSelector[commitmentId][strategy] != bytes4(0)) {
-                delete s.failedHookSelector[commitmentId][strategy];
-            }
+            ok = true;
         } catch {
             bytes4 sel;
             if (hook == HOOK_FORFEITED) {
@@ -123,6 +118,15 @@ library MovementLib {
         }
     }
 
+    /// @dev The per-hook gas cap, behind the min-gas guard (§D.6 rule 3) shared by the strategy
+    ///      hooks and the registry notifications. Under EIP-150 the callee receives at most 63/64
+    ///      of gasleft. If the frame cannot genuinely receive the full cap, revert the WHOLE
+    ///      transaction — a caller cannot hand-tune gas so hooks starve while the forfeit lands.
+    function hookGas(CommitmentManagerStorage.Layout storage s) internal view returns (uint256 cap) {
+        cap = s.hookGasCap;
+        if (gasleft() < cap + cap / 63 + HOOK_GAS_RESERVE) revert ICM.InsufficientGasForHook();
+    }
+
     // =========================================================================
     // Engine entry cores (called by the manager's thin wrappers via DELEGATECALL)
     // =========================================================================
@@ -135,7 +139,7 @@ library MovementLib {
     function distributeGuardedCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy)
         external
     {
-        if (!s.isBoundStrategy[commitmentId][strategy]) revert ICM.UnknownStrategy();
+        _requireBound(s, commitmentId, strategy);
         _requireActiveNoForfeit(s, commitmentId);
         _distributeInto(s, commitmentId, strategy);
     }
@@ -147,22 +151,38 @@ library MovementLib {
         address strategy,
         bytes calldata claimData
     ) external {
+        _requireBound(s, commitmentId, strategy);
         TokenMovement[] memory moves = IDistributionStrategy(strategy).claim(claimContext(s, commitmentId), claimData);
         _validateAndApply(s, commitmentId, strategy, moves, MovementSite.Claim);
     }
 
+    /// @notice Whether a forfeit proposal is live: initiated and neither executed nor cancelled. The
+    ///         one statement of the predicate for the lifecycle, movement and agreement libraries.
+    function forfeitLive(ICM.ForfeitProposal storage p) internal view returns (bool) {
+        return p.initiatedAt != 0 && !p.cancelled && !p.executed;
+    }
+
+    /// @dev Reverts `UnknownStrategy` unless `strategy` is bound to the commitment.
+    function _requireBound(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy)
+        private
+        view
+    {
+        if (!s.isBoundStrategy[commitmentId][strategy]) revert ICM.UnknownStrategy();
+    }
+
     /// @dev Reverts unless the commitment is active (not released/forfeited) and carries no live
-    ///      forfeit proposal — the guard the `distribute` site requires. Mirrors the manager's
-    ///      `_checkActiveNoForfeit`; hosted here so the distribute-family cores share one copy.
+    ///      forfeit proposal — the guard the `distribute` site requires. Every Distribute-site
+    ///      entry checks it (the agreements pre-settle skips the leg instead), and the reentrancy
+    ///      guard stops a proposal appearing mid-call, so `_applyFromEncumbered` need not re-check.
     function _requireActiveNoForfeit(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) private view {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
-        ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-        if (p.initiatedAt != 0 && !p.cancelled && !p.executed) revert ICM.ForfeitPending();
+        if (forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.ForfeitPending();
     }
 
-    /// @dev Run one strategy's distribute leg (mirrors distributeOne). Inlined at call sites below
-    ///      because a library cannot internally call its own `external` functions.
+    /// @dev Run one strategy's distribute leg (shared by `distributeGuardedCore` and
+    ///      `distributeAllCore`). `caller` is the manager's caller here; on the guarded pre-settle
+    ///      path (`runHook`, HOOK_DISTRIBUTE) it is the manager itself.
     function _distributeInto(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy)
         private
     {
@@ -182,29 +202,11 @@ library MovementLib {
         }
     }
 
-    /// @notice Core of `manager.distributeAndClaim(id, strategy, claimData)`: advance the strategy's
-    ///         accrual then claim it, as one revertable unit. Mirrors the manager's `distribute`
-    ///         guards (bound strategy, active, un-forfeited) — the distribute leg requires them —
-    ///         before running distribute and claim back to back.
-    function distributeAndClaimCore(
-        CommitmentManagerStorage.Layout storage s,
-        uint256 commitmentId,
-        address strategy,
-        bytes calldata claimData
-    ) external {
-        if (!s.isBoundStrategy[commitmentId][strategy]) revert ICM.UnknownStrategy();
-        _requireActiveNoForfeit(s, commitmentId);
-
-        // Distribute leg, then claim leg (mirrors claimCore). Inlined because a library cannot
-        // internally call its own `external` functions.
-        _distributeInto(s, commitmentId, strategy);
-        TokenMovement[] memory claimMoves =
-            IDistributionStrategy(strategy).claim(claimContext(s, commitmentId), claimData);
-        _validateAndApply(s, commitmentId, strategy, claimMoves, MovementSite.Claim);
-    }
-
     /// @notice Core of the guarded `__runStrategyHook` frame: build the lifecycle context, call
     ///         the strategy, validate + apply — one revertable unit (ERC §D.6 rule 1).
+    /// @dev Reached through the manager's self-call, so `msg.sender` is the manager: on the
+    ///      HOOK_DISTRIBUTE (agreements pre-settle) path `DistributeContext.caller` is the manager,
+    ///      not the account that called `settleAgreement`.
     function runHook(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, address strategy, uint8 hook)
         external
     {
@@ -214,11 +216,11 @@ library MovementLib {
             moves = IDistributionStrategy(strategy)
                 .onCommitmentForfeited(
                     ForfeitContext({
-                    base: baseContext(s, commitmentId),
-                    penaltyBps: s.forfeitProposals[commitmentId].penaltyBps,
-                    forfeitRecipient: c.counterparty,
-                    forfeitedUnits: s.forfeitedUnits[commitmentId]
-                })
+                        base: baseContext(s, commitmentId),
+                        penaltyBps: s.forfeitProposals[commitmentId].penaltyBps,
+                        forfeitRecipient: c.counterparty,
+                        forfeitedUnits: s.forfeitedUnits[commitmentId]
+                    })
                 );
             _validateAndApply(s, commitmentId, strategy, moves, MovementSite.Forfeited);
         } else if (hook == HOOK_DISTRIBUTE) {
@@ -256,8 +258,9 @@ library MovementLib {
         view
         returns (ClaimContext memory)
     {
-        return
-            ClaimContext({base: baseContext(s, commitmentId), caller: msg.sender, closedAt: s.closedAt[commitmentId]});
+        return ClaimContext({
+            base: baseContext(s, commitmentId), caller: msg.sender, closedAt: s.commitments[commitmentId].closedAt
+        });
     }
 
     /// @notice Core of the `manager.pending` view.
@@ -267,6 +270,7 @@ library MovementLib {
         address strategy,
         bytes calldata claimData
     ) external view returns (uint256) {
+        _requireBound(s, commitmentId, strategy);
         return IDistributionStrategy(strategy).pending(claimContext(s, commitmentId), claimData);
     }
 
@@ -337,12 +341,8 @@ library MovementLib {
 
         // --- Caps ---
         if (m.units > c.amount) revert ICM.MovementExceedsCommitment(m.units, c.amount);
-        // Defense-in-depth: the distribute entry point already rejects while a forfeit proposal
-        // is active (§D.3); the encumbered position is spoken for until the proposal resolves.
-        if (site == MovementSite.Distribute) {
-            ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-            if (p.initiatedAt != 0 && !p.cancelled && !p.executed) revert ICM.MovementBlockedByForfeit();
-        }
+        // No forfeit-pending check here: every Distribute-site entry rejects a live proposal
+        // first (see `_requireActiveNoForfeit`).
 
         // --- Manager-applied exposure-preserving shrink (never strategy-supplied, §D.5) ---
         // On the Forfeited site the commitment's full exposure contribution was already removed
@@ -350,15 +350,7 @@ library MovementLib {
         if (site == MovementSite.Forfeited) {
             c.amount -= m.units;
         } else {
-            uint256 expPre = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-            c.amount -= m.units;
-            uint256 expPost = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-
-            ICM.UserExposure storage mag = s.userExposures[c.committer][c.token];
-            mag.totalEncumbered -= m.units;
-            uint256 dec = expPre - expPost;
-            if (dec > mag.totalForfeitable) dec = mag.totalForfeitable; // defense vs drift
-            mag.totalForfeitable -= dec;
+            ExposureLib.resize(s, c, c.amount - m.units);
         }
 
         // --- Apply ---

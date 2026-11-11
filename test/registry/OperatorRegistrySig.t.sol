@@ -165,7 +165,7 @@ contract OperatorRegistrySigTest is ManagerTestBase {
         registry.registerWithSig(operatorEoa, id, deadline, 0, sig);
 
         assertTrue(registry.isOperator(operatorEoa), "operator active");
-        assertEq(registry.getOperatorStake(operatorEoa), MIN_OPERATOR_STAKE, "stake credited");
+        assertEq(registry.getOperator(operatorEoa).totalDelegatedStake, MIN_OPERATOR_STAKE, "stake credited");
         assertEq(registry.sigNonces(operatorEoa), 1, "nonce consumed");
     }
 
@@ -180,7 +180,7 @@ contract OperatorRegistrySigTest is ManagerTestBase {
         registry.registerWithSig(op, id, deadline, 0, sig);
 
         assertTrue(registry.isOperator(op), "contract operator active");
-        assertEq(registry.getOperatorStake(op), MIN_OPERATOR_STAKE, "stake credited");
+        assertEq(registry.getOperator(op).totalDelegatedStake, MIN_OPERATOR_STAKE, "stake credited");
         assertEq(registry.sigNonces(op), 1, "nonce consumed");
     }
 
@@ -207,7 +207,7 @@ contract OperatorRegistrySigTest is ManagerTestBase {
         emit IOperatorRegistry.DelegationCreated(stakerEoa, operatorEoa, id, MIN_OPERATOR_STAKE);
         registry.delegateWithSig(stakerEoa, operatorEoa, id, deadline, 0, sig);
 
-        assertEq(registry.getOperatorStake(operatorEoa), 2 * MIN_OPERATOR_STAKE, "delegation credited");
+        assertEq(registry.getOperator(operatorEoa).totalDelegatedStake, 2 * MIN_OPERATOR_STAKE, "delegation credited");
         assertEq(registry.sigNonces(stakerEoa), 1, "nonce consumed");
     }
 
@@ -222,7 +222,7 @@ contract OperatorRegistrySigTest is ManagerTestBase {
         vm.prank(relayer);
         registry.delegateWithSig(staker, operatorEoa, id, deadline, 0, sig);
 
-        assertEq(registry.getOperatorStake(operatorEoa), 2 * MIN_OPERATOR_STAKE, "delegation credited");
+        assertEq(registry.getOperator(operatorEoa).totalDelegatedStake, 2 * MIN_OPERATOR_STAKE, "delegation credited");
         assertEq(registry.sigNonces(staker), 1, "nonce consumed");
     }
 

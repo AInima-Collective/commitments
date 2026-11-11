@@ -83,6 +83,11 @@ bounded appeal to a separate final controller. See the
 [two-tier arbiter deployment guide](two-tier-arbiter.md) for its DAO, timing,
 policy, and keeper requirements.
 
+All five inherit `ArbiterBase` (`src/shared/arbitration/ArbiterBase.sol`). It
+holds the immutable manager binding, `commitmentManager()`, ERC-165
+`supportsInterface`, and the shared errors. A new arbiter can inherit it and
+implement `arbiterCapabilities()` and `arbiterMetadataURI()`.
+
 ## Releasing a commitment
 
 When the backed condition is satisfied and the committer should get their
@@ -199,7 +204,9 @@ manager.forfeitAgreement(agreementId, penaltyBps);
 Initiates forfeit proposals on **both** legs at the caller-supplied `penaltyBps`,
 which must not exceed either leg's `maxPenaltyBps` (the two legs may carry
 different maxima, so the tighter ceiling binds). Each still requires a separate
-`executeForfeit()` after its pause-adjusted manager execution delay elapses.
+`executeForfeit()` after its pause-adjusted manager execution delay elapses. A
+repeat call reverts `ForfeitPending` when every unresolved leg already has a
+live proposal.
 
 ### Settle a directional flow
 
@@ -246,4 +253,5 @@ yield field — payouts flow through the strategy, not the commitment struct.
    URI) so the record is auditable.
 
 4. **Check the pause state.** `executeForfeit` reverts when forfeiture is paused
-   at the manager level. Query `manager.forfeiturePaused()` before attempting it.
+   at the manager level. Query `manager.pauseState()` (its first value is the paused
+   flag) before attempting it.

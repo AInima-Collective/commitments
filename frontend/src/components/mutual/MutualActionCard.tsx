@@ -11,7 +11,7 @@ interface MutualActionCardProps {
   stat?: {
     label: string
     value: ReactNode
-    tone?: 'neutral' | 'positive' | 'negative' | 'accent'
+    tone?: 'neutral' | 'success' | 'danger' | 'accent'
     meta?: string
   }
   /** Optional paired-risk / pricing note rendered above the CTA. */

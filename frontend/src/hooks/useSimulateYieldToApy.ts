@@ -4,11 +4,11 @@ import { useChainId, usePublicClient } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { commitmentsVaultAbi } from '../generated'
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJson } from '../config/indexer'
 import { useAnvilTime } from './useAnvilTime'
 import { useDevWalletClient } from './useDevWalletClient'
-
-const ANVIL_CHAIN_ID = 31337
+import { MOCK_ERC20_MINT_ABI } from '../lib/mockErc20Abi'
+import { anvil } from '../config/anvil'
 
 /**
  * Chain-time advance between the two snapshots: 4 days. Chosen to sit ABOVE the
@@ -19,43 +19,23 @@ const ANVIL_CHAIN_ID = 31337
  */
 const SIMULATE_WARP_SECONDS = 4 * 86_400
 
-/** MockERC20.mint — anvil-only faucet to top up the donor before donate(). */
-const MOCK_ERC20_MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const
-
 /** One leg of the orchestration, surfaced for progress UI. */
 export type SimulateYieldStep = 'idle' | 'baseline' | 'donating' | 'warping' | 'snapshot' | 'done'
 
-interface SnapshotWireData {
-  timestamp: string
-  sharePrice: string
-  apy7d: number | null
+interface LatestSnapshotWire {
+  rows: { timestamp: string; sharePrice: string; apy7d: number | null }[]
 }
 
-interface SnapshotWireResult {
-  status: 'created' | 'exists' | 'error'
-  message: string
-  timestamp: string
-  data?: SnapshotWireData
-}
-
-/** A parsed snapshot POST response. */
+/** The indexer's newest snapshot for the vault. */
 interface SnapshotResult {
-  status: 'created' | 'exists' | 'error'
   timestamp: number
-  sharePrice: bigint | null
+  sharePrice: bigint
   apy7d: number | null
 }
+
+/** The indexer writes a snapshot every 15 blocks (~30s) on anvil; allow for indexing lag. */
+const SNAPSHOT_WAIT_MS = 120_000
+const SNAPSHOT_POLL_MS = 2_000
 
 export interface SimulateYieldResult {
   vault: Address
@@ -79,19 +59,22 @@ export interface UseSimulateYieldToApyParams {
   decimals: number
 }
 
-async function postSnapshot(vault: Address): Promise<SnapshotResult> {
-  const res = await indexerFetch(`/vaults/${vault.toLowerCase()}/periodic/snapshot`, {
-    method: 'POST',
-  })
-  if (!res.ok) {
-    throw new Error(`snapshot failed: indexer returned ${res.status}`)
-  }
-  const wire = (await res.json()) as SnapshotWireResult
-  return {
-    status: wire.status,
-    timestamp: Number(wire.data?.timestamp ?? wire.timestamp),
-    sharePrice: wire.data ? BigInt(wire.data.sharePrice) : null,
-    apy7d: wire.data?.apy7d ?? null,
+async function latestSnapshot(vault: Address): Promise<SnapshotResult | null> {
+  const wire = await indexerJson<LatestSnapshotWire>(`/vaults/${vault.toLowerCase()}/periodic?latest=1`)
+  const row = wire.rows[0]
+  return row ? { timestamp: Number(row.timestamp), sharePrice: BigInt(row.sharePrice), apy7d: row.apy7d } : null
+}
+
+/** Poll until the indexer has a snapshot taken at or after `chainTime`. */
+async function waitForSnapshot(vault: Address, chainTime: number): Promise<SnapshotResult> {
+  const deadline = Date.now() + SNAPSHOT_WAIT_MS
+  for (;;) {
+    const snapshot = await latestSnapshot(vault)
+    if (snapshot && snapshot.timestamp >= chainTime) return snapshot
+    if (Date.now() > deadline) {
+      throw new Error('The indexer has not written a post-warp snapshot yet. Is it running and synced?')
+    }
+    await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_POLL_MS))
   }
 }
 
@@ -99,15 +82,16 @@ async function postSnapshot(vault: Address): Promise<SnapshotResult> {
  * End-to-end "simulate yield → APY" orchestration for a plain (strategy-less)
  * vault on anvil. Closes the loop with REAL backing rather than a mock strategy:
  *
- *   1. POST a baseline periodic snapshot (captures the current chain-time price).
+ *   1. Read the indexer's newest snapshot as the baseline (the pre-donate price).
  *   2. `vault.donate(amount)` — raises NAV/share for real; mints the MockERC20
  *      underlying if the actor is short, then approves + donates. `donate` works
  *      even when the vault has no yield strategy (idle), so this is the canonical
  *      NAV source now that plain vaults ship strategy-less.
  *   3. Advance anvil chain time by ~4 days (above the apy7d guard floor, below
  *      the 7-day window ceiling) and mine, so `block.timestamp` moves forward.
- *   4. POST a second snapshot (now at chain-time +4d with the higher price) →
- *      apy7d computes a real positive delta against the baseline.
+ *   4. Wait for the indexer's next `VaultSnapshot` tick (every 15 blocks on
+ *      anvil), now at chain-time +4d with the higher price → apy7d computes a
+ *      real positive delta against the oldest snapshot in its window.
  *   5. Invalidate the `vault-periodic-history` query so the chart refetches.
  *
  * Anvil-only: `run` throws unless the connected chain is 31337. Callers should
@@ -137,7 +121,7 @@ export function useSimulateYieldToApy(): {
       setIsPending(true)
       setStep('baseline')
       try {
-        if (chainId !== ANVIL_CHAIN_ID) {
+        if (chainId !== anvil.id) {
           throw new Error('Simulate yield is anvil-only (chain 31337).')
         }
         if (!hasIndexer) {
@@ -155,8 +139,8 @@ export function useSimulateYieldToApy(): {
           throw new Error('Donate amount must be greater than zero.')
         }
 
-        // step 1 — baseline snapshot at the current chain-time price.
-        const baseline = await postSnapshot(vault)
+        // step 1 — the indexer's newest snapshot, before the donate.
+        const baseline = await latestSnapshot(vault)
 
         // step 2 — donate real backing (mint-if-short → approve → donate),
         // mirroring YieldTab's DonateNavPanel.
@@ -218,18 +202,19 @@ export function useSimulateYieldToApy(): {
         setStep('warping')
         await time.advance(SIMULATE_WARP_SECONDS)
 
-        // step 4 — snapshot at chain-time +4d with the raised price.
+        // step 4 — wait for the indexer's first snapshot at chain-time +4d.
         setStep('snapshot')
-        const final = await postSnapshot(vault)
+        const warped = await publicClient.getBlock({ blockTag: 'latest' })
+        const final = await waitForSnapshot(vault, Number(warped.timestamp))
 
         // step 5 — refetch the periodic history so the chart reflects the delta.
         await queryClient.invalidateQueries({ queryKey: ['vault-periodic-history'] })
 
         const result: SimulateYieldResult = {
           vault,
-          baselineTimestamp: baseline.timestamp || null,
-          finalTimestamp: final.timestamp || null,
-          sharePriceBefore: baseline.sharePrice,
+          baselineTimestamp: baseline?.timestamp ?? null,
+          finalTimestamp: final.timestamp,
+          sharePriceBefore: baseline?.sharePrice ?? null,
           sharePriceAfter: final.sharePrice,
           apy7dBps: final.apy7d,
         }

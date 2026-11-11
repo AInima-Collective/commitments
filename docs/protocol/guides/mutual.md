@@ -28,7 +28,6 @@ indices do all the work:
 |------|-----|----------------|
 | Creator | anyone | Registers the mutual and its terms |
 | Arbiter | a contract (e.g. `OptimisticMutualArbiter`) | Sole authority to declare a loss; activates the pool |
-| Valuation authority | an attestor, or `address(0)` | Signs each member's credited value in *heterogeneous* mode; `0` = oracle-free homogeneous mode |
 | Beneficiary | a `ClaimRouter` | Receives settled member units and forwards them to the claimant |
 | Member | a backer | Posts backing, earns premium, is severally liable for losses |
 | Policyholder | the covered party | Funds the premium stream via a cover policy |
@@ -37,21 +36,19 @@ The reference periphery — `MutualRegistry` (a listing directory),
 `OptimisticMutualArbiter` (bonded, optimistic loss arbitration), `ClaimRouter`
 (beneficiary), `PremiumScheduler` + `LinkedMutualPolicy` (cover pricing) — lives
 in `src/extensions/mutuals/`. You can wire your own; the manager only cares about the
-`arbiter`, `numeraire`, `beneficiary`, and `valuationAuthority` addresses.
+`arbiter`, `numeraire`, and `beneficiary` addresses.
 
 ## 1. Create and activate
 
 Create the pool through `MutualRegistry` (which also lists it for discovery) or
-directly via `manager.createMutual`. Homogeneous mode — every member backs with
-the same token as the numeraire — needs no oracle: set `valuationAuthority` to
-`address(0)`.
+directly via `manager.createMutual`. Every member backs with the numeraire token,
+so the pool needs no oracle.
 
 ```solidity
 ICommitmentManager.MutualParams memory params = ICommitmentManager.MutualParams({
     arbiter: address(arbiter),        // OptimisticMutualArbiter
-    numeraire: address(usdc),         // unit of account; never moved, only priced
+    numeraire: address(usdc),         // the token every member posts
     beneficiary: address(claimRouter),// receives settled units
-    valuationAuthority: address(0),   // 0 = homogeneous (oracle-free); members back in `numeraire`
     challengeWindow: 2 days,          // ≥ MUTUAL_MIN_CHALLENGE_WINDOW (2 days)
     deallocationWindow: 2 days        // ≥ challengeWindow
 });
@@ -69,8 +66,7 @@ uint256 mutualId = mutualRegistry.registerMutual(
 arbiter.activate(mutualId); // OptimisticMutualArbiter: onlyOwner
 ```
 
-`valuationAuthority` must differ from `arbiter` (pricing trust is separated from
-loss trust), and both `deallocationWindow ≥ challengeWindow ≥ 2 days` hold.
+Both `deallocationWindow ≥ challengeWindow ≥ 2 days` must hold.
 
 ## 2. Members join
 
@@ -90,7 +86,7 @@ vm.stopPrank();
 ICommitmentManager.CommitmentParams memory p;
 p.arbiter = address(arbiter);          // == mutual.arbiter
 p.counterparty = address(claimRouter); // == mutual.beneficiary
-p.token = address(usdc);               // homogeneous: == mutual.numeraire
+p.token = address(usdc);               // == mutual.numeraire
 p.adapter = adapter;
 p.amount = 1_500e18;
 p.maxPenaltyBps = 10_000;              // 100% forfeitable → E_i = amount
@@ -98,16 +94,16 @@ p.challengeWindow = 1 days;            // per-commitment floor
 p.strategies = new StrategyBinding[](0); // members bind no strategies
 
 vm.prank(member);
-// homogeneous mode: creditedValue is ignored (set to E_i) and attestation is empty.
-uint256 commitmentId = manager.joinMutual(mutualId, p, 0, "");
+uint256 commitmentId = manager.joinMutual(mutualId, p);
 ```
 
-At join the member freezes two quantities: `forfeitableUnits` (`E_i =
-amount × maxPenaltyBps / 10000`, the most they can ever lose) and `creditedValue`
-(their share of `totalShares`). In homogeneous mode both equal `E_i`. In
-heterogeneous mode you pass a nonzero `creditedValue` and an ECDSA `attestation`
-signed by the `valuationAuthority` binding `(mutualId, committer, token, E_i,
-creditedValue)`.
+At join the member freezes `forfeitableUnits` (`E_i = amount × maxPenaltyBps /
+10000`, the most they can ever lose). It is also their share of `totalShares`,
+emitted as `creditedValue` in `MemberJoined`.
+
+A loss that takes all the cover left, or leaves no more than `EXHAUSTION_DUST`
+(1e9) of the loss fraction, marks the mutual `exhausted` when it executes.
+`joinMutual` on an exhausted mutual reverts `MutualExhausted`.
 
 ## 3. Premium: fund the stream, members claim
 
@@ -134,12 +130,13 @@ withdraws their accrued premium to their free balance at any time:
 
 ```solidity
 manager.claimMemberPremium(commitmentId);
-// or, in one call across many members:
-manager.claimMembersPremium(commitmentIds);
 ```
 
 Premium funding is solvency-guarded: a stream can never promise more than the
 reserve holds, and its rate can only be increased, never griefed downward.
+While a stream is live its end never moves earlier: the new end is
+`max(periodFinish, now + duration)`. Funding an exhausted mutual reverts
+`MutualExhausted`, and funding a terminal one reverts `MutualIsTerminal`.
 
 ## 4. A claim: propose → challenge → execute → settle → collect
 
@@ -168,17 +165,23 @@ manager.settleMembers(commitmentIds);        // batch
 vm.prank(policyholder);
 uint256 paid = claimRouter.settleAndCollect(commitmentIds, address(usdc), policyholder);
 
-// An unchallenged proposer reclaims their bond.
-vm.prank(proposer);
+// Anyone returns an unchallenged proposer's bond; it always goes to the proposer.
 arbiter.reclaimBond(mutualId);
 ```
+
+A new `proposeLoss` first refunds a prior claim whose manager proposal has
+executed or been cancelled. It reverts `ClaimActive` only while the prior
+proposal is still pending in the manager.
 
 Executing a loss bumps Λ by `applied × 1e18 / totalShares`, clamped so Λ never
 exceeds `1e18`. Each member then owes `forfeitableUnits × (Λ − lossSnapshot)`,
 capped by both their remaining frozen units and their live commitment amount — so
 a member's total loss can never exceed the units they posted. If members exited
 before the loss shrank the pool, any un-applicable excess is emitted as a
-`MutualLossShortfall` rather than over-charging survivors.
+`MutualLossShortfall` rather than over-charging survivors. A loss executed on a
+mutual with no members left marks it `terminal` and sweeps its premium reserve to
+the beneficiary; such a mutual is not marked `exhausted`, so a consumer checks
+both flags to know whether a mutual can still pay.
 
 ## 5. Exit
 
@@ -193,10 +196,17 @@ manager.settleMemberLoss(commitmentId);           // settle any pending loss fir
 manager.releaseMutualMember(commitmentId);        // frees remaining backing, auto-pays premium
 ```
 
-`releaseMutualMember` removes exactly the `creditedValue` the member added,
+Release is open from one `deallocationWindow` after the request until two
+(pause-adjusted). At or after the end, `releaseMutualMember` reverts
+`ExitRequestLapsed`. The member then calls `requestMutualExit` again, which
+starts a fresh window. Anyone can clear a lapsed request: `settleMemberLoss`
+(or `settleMembers`) drops it and emits `MemberExitLapsed`.
+
+`releaseMutualMember` removes exactly the `E_i` the member added to `totalShares`,
 returns their remaining backing to their free balance, and pays out any accrued
 premium. When the last member leaves, the mutual sweeps its premium reserve to
-the beneficiary and terminates. Exit is blocked while a loss is pending.
+the beneficiary and stops its stream; it is not marked `terminal`. Exit requests and release are blocked while a loss
+is pending, so a request can lapse while a loss is pending.
 
 ## Accounting notes
 
@@ -206,18 +216,22 @@ the beneficiary and terminates. Exit is blocked while a loss is pending.
 - **`activeCover`** tracks live deliverable cover and shrinks as members settle or
   exit; it's the Π denominator, and `activeCover == totalShares − settledTotal`
   holds as an invariant.
-- **Homogeneous vs heterogeneous.** Homogeneous (`valuationAuthority == 0`) needs
-  no oracle: members back in the numeraire and `creditedValue = E_i`.
-  Heterogeneous mode lets members back with different tokens priced by a
-  band-clamped adapter and an attested credited value, with an optional junior
-  shortfall absorber topping up recovery — see the ERC references below.
+- **`exitingCover`** is the part of `activeCover` whose members have an exit
+  request on record (counted from the request until release or the lapse is
+  cleared), so `activeCover − exitingCover` is the cover that has not asked to
+  leave. Both shrink when members settle, not when a loss executes: right after
+  `executeMutualLoss` the difference is an upper bound, to be read as zero on a
+  `terminal` or `exhausted` mutual and otherwise above the deliverable cover by
+  the members' unsettled losses (`pendingMemberLoss`).
+- **One token.** Members back in the numeraire and each member's weight is its
+  own `E_i`, so no oracle is read anywhere.
 - **Windows.** `MUTUAL_MIN_CHALLENGE_WINDOW` is 2 days (stricter than the 1-day
   per-commitment floor); `deallocationWindow ≥ challengeWindow`.
 
 ## References
 
 - Normative spec: [ERC-COMMITMENTS-MUTUALS](../../standards/ERC-COMMITMENTS-MUTUALS.md)
-  (loss index, premium index, and heterogeneous mode).
+  (loss index and premium index).
 - Core logic and periphery: `src/extensions/mutuals/`.
 - Related: the [Integrator guide](integrator.md) for single-commitment coverage
   and the `CounterpartyPremiumStream` strategy.

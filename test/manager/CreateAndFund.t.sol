@@ -2,38 +2,12 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
-import {MockERC20} from "../helpers/MockERC20.sol";
-
-/// @dev Fee-on-transfer mock: skims `feeBps` on every transfer. Proves `createAndFund` inherits the
-///      measured-delta rule from the audited `depositCore` (ERC §A.2).
-contract FeeOnTransferERC20 is ERC20 {
-    uint16 public feeBps;
-
-    constructor(uint16 feeBps_) ERC20("Fee", "FEE") {
-        feeBps = feeBps_;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0)) {
-            uint256 fee = (value * feeBps) / 10_000;
-            super._update(from, address(0xdead), fee);
-            super._update(from, to, value - fee);
-        } else {
-            super._update(from, to, value);
-        }
-    }
-}
+import {FeeOnTransferERC20} from "../helpers/Mocks.sol";
 
 /// @dev Malicious token that re-enters a nonReentrant manager entry point during its `transferFrom`
 ///      (the createAndFund deposit pull). Used to prove the reentrancy guard is held across the pull.
@@ -70,53 +44,25 @@ contract ReentrantToken is ERC20 {
 /// @notice Behaviour of the single-tx `createAndFund` (deposit + create): surplus stays free, exact
 ///         amount, shortfall covered by prior free balance, revert-before-pull on bad params,
 ///         fee-on-transfer measured delta, single CommitmentCreated emit, and the reentrancy guard.
-contract CreateAndFundTest is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
-
-    address internal admin = makeAddr("admin");
+contract CreateAndFundTest is ManagerTestBase {
     address internal alice = makeAddr("alice"); // committer
     address internal arbiter = makeAddr("arbiter");
     address internal bob = makeAddr("bob"); // counterparty
 
-    uint64 internal constant UNBONDING = 7 days;
-    uint64 internal constant WINDOW = 2 days;
-
-    function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
-
+    function setUp() public override {
+        super.setUp();
         token.mint(alice, 1_000e18);
         vm.prank(alice);
         token.approve(address(manager), type(uint256).max);
     }
 
-    function _params(uint256 amount) internal view returns (ICM.CommitmentParams memory p) {
-        p.arbiter = arbiter;
-        p.counterparty = bob;
-        p.token = address(token);
-        p.adapter = address(adapter);
-        p.amount = amount;
-        p.maxPenaltyBps = 5000;
-        p.challengeWindow = WINDOW;
-        p.expiresAt = 0;
-        p.strategies = new StrategyBinding[](0);
-        p.metadataURI = "";
-        p.metadataHash = bytes32(0);
+    function _params(uint256 amount) internal view returns (ICM.CommitmentParams memory) {
+        return _baseParams(arbiter, bob, amount, 5000);
     }
 
     function _partitionHolds(address t) internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(t);
-        assertEq(free + enc + esc, ERC20(t).balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(t);
+        assertEq(free + enc + esc + mp, ERC20(t).balanceOf(address(manager)), "INV-1 partition");
     }
 
     // ---- Surplus stays free ----

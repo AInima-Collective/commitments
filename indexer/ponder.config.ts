@@ -20,9 +20,10 @@ import {
   flatFeeAtCreateAbi,
   skimmingMockStrategyAbi,
   vaultCoverConduitAbi,
+  commitmentsGovernorAbi,
+  governorFactoryAbi,
+  agentIdentityRegistryAbi,
 } from './src/abis'
-import { agentIdentityRegistryAbi } from './src/agent-abis'
-import { commitmentsGovernorAbi, governorFactoryAbi } from './src/governance-abis'
 import { loadDeployments } from './src/loadDeployments'
 // Tri-state environment selector (LOCAL 31337 | SEPOLIA 11155111 | PROD Ethereum mainnet 1).
 import { IS_PROD, IS_SEPOLIA, CHAIN_NAME as CORE_CHAIN, CHAIN_ID as chainId } from './src/env'
@@ -30,8 +31,9 @@ import { IS_PROD, IS_SEPOLIA, CHAIN_NAME as CORE_CHAIN, CHAIN_ID as chainId } fr
 const deployments = loadDeployments(chainId)
 // Sepolia: never crawl from genesis — set PONDER_START_BLOCK_11155111 to the
 // block the deploy tx landed in (printed by `forge script`, also recoverable
-// from broadcast/**/11155111/run-latest.json). Falls back to the address
-// source's startBlock (0 unless DEPLOYMENTS_JSON sets it).
+// from broadcast/**/11155111/run-latest.json). Falls back to the deployment
+// manifest's startBlock, which script/write-frontend-env.mjs sets to the lowest
+// receipt block of the broadcast it read.
 const sepoliaStartBlock = process.env.PONDER_START_BLOCK_11155111
   ? Number(process.env.PONDER_START_BLOCK_11155111)
   : deployments.startBlock
@@ -39,14 +41,20 @@ const startBlock = IS_SEPOLIA ? sepoliaStartBlock : deployments.startBlock
 
 // ERC-8004 IdentityRegistry (issue #33). The canonical registry lives at the
 // SAME address on 20+ chains (Ethereum mainnet included), so PROD binds it directly;
-// dev/sepolia resolve the ERC8004IdentityRegistryDev proxy from the broadcast.
-// Array-shaped (like managers/registries) for forward-compat — empty when the
-// local broadcast predates the agent-bond seed, in which case Ponder simply
+// dev/sepolia resolve the ERC8004IdentityRegistryDev proxy from the deployment
+// manifest. Array-shaped (like managers/registries) for forward-compat — empty
+// when the manifest lists none, in which case Ponder simply
 // watches nothing but the handler event types still generate.
 const AGENT_IDENTITY_REGISTRY_CANONICAL = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432' as const
 const agentIdentityRegistries = IS_PROD
   ? [AGENT_IDENTITY_REGISTRY_CANONICAL]
   : deployments.agentIdentityRegistries
+// The canonical registry is older than this protocol's deployment, so on PROD
+// the manifest's startBlock (the protocol's deploy block) would miss every agent
+// registered before it. Start at the registry's own deploy block when
+// PONDER_START_BLOCK_AGENT_REGISTRY_1 gives it, and from genesis otherwise:
+// slower, never wrong. Dev and Sepolia deploy their own registry with the rest.
+const agentRegistryStartBlock = IS_PROD ? Number(process.env.PONDER_START_BLOCK_AGENT_REGISTRY_1 ?? 0) : startBlock
 
 // Factory event — new FanIn/FanOut/TokenWeighting clones are discovered from
 // the MeshFactory's NodeDeployed event and indexed automatically.
@@ -66,6 +74,7 @@ const governorDeployedEvent = parseAbiItem(
   'event GovernorDeployed(address indexed governor, address indexed timelock, address indexed shim, address source, string name)'
 )
 
+const optional = (address: `0x${string}` | undefined) => (address ? [address] : [])
 
 export default createConfig({
   chains: {
@@ -121,9 +130,7 @@ export default createConfig({
       abi: optimisticMutualArbiterAbi,
       chain: {
         [CORE_CHAIN]: {
-          address: deployments.optimisticMutualArbiter
-            ? [deployments.optimisticMutualArbiter]
-            : [],
+          address: optional(deployments.optimisticMutualArbiter),
         },
       },
       startBlock,
@@ -227,82 +234,68 @@ export default createConfig({
     AgentIdentityRegistry: {
       abi: agentIdentityRegistryAbi,
       chain: { [CORE_CHAIN]: { address: agentIdentityRegistries } },
+      startBlock: agentRegistryStartBlock,
+    },
+    // The contracts below may be absent from a deployment (PROD until launch).
+    // Each is bound unconditionally with a possibly-empty address list so the
+    // handler event types always generate; Ponder watches nothing for an empty
+    // list, factory children included. Never pass `undefined`: Ponder reads an
+    // undefined address as "every address".
+    GovernorFactory: {
+      abi: governorFactoryAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.governorFactory) } },
       startBlock,
     },
-    ...(deployments.governorFactory
-      ? {
-          GovernorFactory: {
-            abi: governorFactoryAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.governorFactory } },
-            startBlock,
-          },
-          CommitmentsGovernor: {
-            abi: commitmentsGovernorAbi,
-            chain: {
-              [CORE_CHAIN]: {
-                address: factory({
-                  address: deployments.governorFactory,
-                  event: governorDeployedEvent,
-                  parameter: 'governor',
-                }),
-              },
-            },
-            startBlock,
-          },
-        }
-      : {}),
-    // Synthetic Mutual (Mutual) market — only bound when the seed has
-    // deployed the registry (absent in PROD until launch). The mutual event
-    // surface itself is on the always-bound CommitmentManager; this binding adds
-    // the MutualRegistry so MutualRegistered annotations are indexed and
-    // the registry's `manager()` getter is chain-readable. The optimistic
-    // mutual arbiter is always declared above (with an empty address list when
-    // absent) so its own case events can be normalized independently.
-    ...(deployments.mutualRegistry
-      ? {
-          MutualRegistry: {
-            abi: mutualRegistryAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.mutualRegistry } },
-            startBlock,
-          },
-        }
-      : {}),
-    // LinkedMutualPolicy (cover/standby premium router) — bound best-effort
-    // when the seed has deployed it (absent until launch). Its CoverBound /
-    // StandbyFunded / BindingExpired events feed the premium index; the §G
-    // premium events themselves are on the always-bound CommitmentManager. Gated
-    // independently of the registry so either can ship first.
-    ...(deployments.linkedMutualPolicy
-      ? {
-          LinkedMutualPolicy: {
-            abi: linkedMutualPolicyAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.linkedMutualPolicy } },
-            startBlock,
-          },
-        }
-      : {}),
+    CommitmentsGovernor: {
+      abi: commitmentsGovernorAbi,
+      chain: {
+        [CORE_CHAIN]: {
+          address: factory({
+            address: optional(deployments.governorFactory),
+            event: governorDeployedEvent,
+            parameter: 'governor',
+          }),
+        },
+      },
+      startBlock,
+    },
+    // MutualRegistered annotates the manager's mutual rows with cover terms.
+    MutualRegistry: {
+      abi: mutualRegistryAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.mutualRegistry) } },
+      startBlock,
+    },
+    // Cover/standby premium router: CoverBound / BindingExpired feed the
+    // premium index; the §G premium events are on the manager.
+    LinkedMutualPolicy: {
+      abi: linkedMutualPolicyAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.linkedMutualPolicy) } },
+      startBlock,
+    },
     // Underwritten agent vault (agent-bonds use case): the fee-skimming strategy
     // (YieldSkimmed / OperatorFeePaid / PremiumRouted → the vault's coverage-fee
     // ledger) and the keyless VaultCoverConduit (PremiumFunded → the
-    // vault↔mutual association + funded-stream rows). Both gated on the seed
-    // deploying them, independently of the mutual periphery.
-    ...(deployments.skimmingStrategy
-      ? {
-          SkimmingStrategy: {
-            abi: skimmingMockStrategyAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.skimmingStrategy } },
-            startBlock,
-          },
-        }
-      : {}),
-    ...(deployments.vaultCoverConduit
-      ? {
-          VaultCoverConduit: {
-            abi: vaultCoverConduitAbi,
-            chain: { [CORE_CHAIN]: { address: deployments.vaultCoverConduit } },
-            startBlock,
-          },
-        }
-      : {}),
+    // vault↔mutual association + funded-stream rows).
+    SkimmingStrategy: {
+      abi: skimmingMockStrategyAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.skimmingStrategy) } },
+      startBlock,
+    },
+    VaultCoverConduit: {
+      abi: vaultCoverConduitAbi,
+      chain: { [CORE_CHAIN]: { address: optional(deployments.vaultCoverConduit) } },
+      startBlock,
+    },
+  },
+  // Vault snapshots (src/vaultSnapshot.ts): one row per vault every `interval`
+  // blocks. 25 blocks is ~5 minutes at 12s; the local chain mines every 2s
+  // (`just dev-up`), so 15 blocks is ~30s and the admin "simulate yield" flow
+  // sees its post-warp point without a manual trigger.
+  blocks: {
+    VaultSnapshot: {
+      chain: CORE_CHAIN,
+      startBlock,
+      interval: IS_PROD || IS_SEPOLIA ? 25 : 15,
+    },
   },
 })

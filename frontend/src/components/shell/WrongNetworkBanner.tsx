@@ -1,6 +1,7 @@
 import { useAccount, useSwitchChain } from 'wagmi'
 import { mainnet, sepolia } from 'wagmi/chains'
 import { EXPECTED_CHAIN_ID } from '../../config/wagmi'
+import { Button } from '../ui'
 
 const CHAIN_NAMES: Record<number, string> = {
   [mainnet.id]: 'Ethereum Mainnet',
@@ -38,13 +39,12 @@ export function WrongNetworkBanner() {
         </div>
       </div>
       <div className="ds-notice-actions" style={{ marginTop: 0 }}>
-        <button
-          type="button"
-          className="ds-btn ds-btn--sm"
+        <Button
+          size="sm"
           onClick={() => switchChain({ chainId: EXPECTED_CHAIN_ID })}
         >
           switch network
-        </button>
+        </Button>
       </div>
     </div>
   )

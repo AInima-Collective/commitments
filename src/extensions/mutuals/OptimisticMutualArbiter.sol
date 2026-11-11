@@ -5,9 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
 import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol";
 
@@ -22,28 +22,21 @@ import {ILinkedMutualPolicy} from "src/extensions/mutuals/interfaces/ILinkedMutu
 /// @dev Flow: a proposer posts an ERC-20 `bond` and declares a loss; the manager's mutual challenge
 ///      window opens. A dispute committee (the `owner`) may VETO during the window — that cancels
 ///      the declaration in the manager and slashes the bond to `treasury`. If undisputed, anyone
-///      calls `manager.executeMutualLoss` directly once the window elapses, and the honest
-///      proposer reclaims the bond here. One active claim per mutual (mirrors the manager's INV-7).
-contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTransient {
+///      calls `manager.executeMutualLoss` directly once the window elapses, and anyone reclaims the
+///      bond to the proposer here (or the next `proposeLoss` does it). One active claim per mutual
+///      (mirrors the manager's INV-7).
+contract OptimisticMutualArbiter is ArbiterBase, Ownable2Step, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
+    /// @dev The cover-binding snapshot `proposeLossFor` takes is emitted in `CoverBindingSnapshotted`,
+    ///      not stored: nothing on chain reads it.
     struct Claim {
         address proposer;
-        uint256 bond;
         uint64 proposedAt;
-        bool vetoed;
         bool resolved; // bond reclaimed or slashed
-        // ---- Cover-binding snapshot (auditability ONLY; NEVER a settlement gate) ----
-        // Captured from the LinkedMutualPolicy at propose time so periphery/indexer can surface
-        // "this loss does / does not match an active, funded policy". The core settles regardless;
-        // a plain `proposeLoss` (no binding) leaves all four fields zero. (ERC §6 / plan Risk #2.)
-        uint256 coverBindingId; // 0 == no binding referenced
-        uint256 snapshotNotional;
-        uint64 snapshotExpiry;
-        address snapshotPolicyholder;
+        uint256 bond;
     }
 
-    ICommitmentManager public immutable manager;
     IERC20 public immutable bondToken;
     uint256 public immutable minBond;
     address public treasury;
@@ -64,12 +57,10 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         uint256 indexed mutualId, uint256 indexed coverBindingId, uint256 notional, uint64 expiry, address policyholder
     );
 
-    error ZeroAddress();
     error BondTooLow();
     error ClaimActive();
     error NoClaim();
     error AlreadyResolved();
-    error NotProposer();
     error LossNotExecuted();
     error VetoWindowClosed();
     error LossNotCancelled();
@@ -78,19 +69,14 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
 
     constructor(address manager_, address bondToken_, uint256 minBond_, address treasury_, address owner_)
         Ownable(owner_)
+        ArbiterBase(manager_)
     {
-        if (manager_ == address(0) || bondToken_ == address(0) || treasury_ == address(0) || owner_ == address(0)) {
+        if (bondToken_ == address(0) || treasury_ == address(0) || owner_ == address(0)) {
             revert ZeroAddress();
         }
-        manager = ICommitmentManager(manager_);
         bondToken = IERC20(bondToken_);
         minBond = minBond_;
         treasury = treasury_;
-    }
-
-    /// @inheritdoc IArbiter
-    function commitmentManager() external view returns (address) {
-        return address(manager);
     }
 
     /// @inheritdoc IArbiter
@@ -108,11 +94,6 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         return "";
     }
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IArbiter).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-
     function setTreasury(address treasury_) external onlyOwner {
         if (treasury_ == address(0)) revert ZeroAddress();
         treasury = treasury_;
@@ -127,25 +108,26 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         emit CoverPolicyUpdated(coverPolicy_);
     }
 
-    /// @notice Activate a mutual whose arbiter is this contract (owner-gated — the assembler/committee
-    ///         flips it once target capacity is filled).
+    /// @notice Activate a mutual whose arbiter is this contract (owner-gated). Members can only join
+    ///         an active mutual, so activation means the committee accepts the mutual; it does not
+    ///         wait for target capacity.
     function activate(uint256 mutualId) external onlyOwner {
         manager.activateMutual(mutualId);
     }
 
     /// @notice Post a bond and declare a mutual loss, opening the manager's mutual challenge window.
-    ///         No cover binding is referenced (the snapshot fields stay zero).
+    ///         No cover binding is referenced.
     function proposeLoss(uint256 mutualId, uint256 lossNumeraire, bytes32 evidenceHash, uint256 bond)
         external
         nonReentrant
     {
-        _proposeLoss(mutualId, lossNumeraire, evidenceHash, bond, 0, 0, 0, address(0));
+        _proposeLoss(mutualId, lossNumeraire, evidenceHash, bond);
     }
 
     /// @notice Post a bond and declare a mutual loss, snapshotting a cover binding into the claim for
     ///         AUDITABILITY ONLY. Reads `{notional, expiry, policyholder}` from the LinkedMutual-
-    ///         Policy and records it on the `Claim`; the snapshot gates NOTHING — the core settles
-    ///         whatever is validated regardless of whether a funded policy exists (plan Risk #2,
+    ///         Policy and emits it in `CoverBindingSnapshotted`; the snapshot gates NOTHING — the core
+    ///         settles whatever is validated regardless of whether a funded policy exists (plan Risk #2,
     ///         premium-without-cover is accepted arbiter/social trust). Otherwise identical to
     ///         `proposeLoss`. The binding must belong to `mutualId`.
     function proposeLossFor(
@@ -160,38 +142,25 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         ILinkedMutualPolicy.CoverBinding memory b = ILinkedMutualPolicy(policy).getCoverBinding(coverBindingId);
         if (b.mutualId != mutualId) revert BindingMutualMismatch();
 
-        _proposeLoss(mutualId, lossNumeraire, evidenceHash, bond, coverBindingId, b.notional, b.expiry, b.policyholder);
+        _proposeLoss(mutualId, lossNumeraire, evidenceHash, bond);
         emit CoverBindingSnapshotted(mutualId, coverBindingId, b.notional, b.expiry, b.policyholder);
     }
 
-    /// @dev Shared propose body. Bond custody + claim recording + manager initiation; the snapshot
-    ///      args are advisory-only (zero for the plain path).
-    function _proposeLoss(
-        uint256 mutualId,
-        uint256 lossNumeraire,
-        bytes32 evidenceHash,
-        uint256 bond,
-        uint256 coverBindingId,
-        uint256 snapshotNotional,
-        uint64 snapshotExpiry,
-        address snapshotPolicyholder
-    ) internal {
+    /// @dev Shared propose body. Bond custody + claim recording + manager initiation. A prior
+    ///      unresolved claim whose manager proposal has executed or been cancelled is refunded to
+    ///      its proposer first; only a claim still pending in the manager reverts `ClaimActive`.
+    function _proposeLoss(uint256 mutualId, uint256 lossNumeraire, bytes32 evidenceHash, uint256 bond) internal {
         if (bond < minBond) revert BondTooLow();
         Claim storage c = claims[mutualId];
-        if (c.proposedAt != 0 && !c.resolved) revert ClaimActive();
+        if (c.proposedAt != 0 && !c.resolved) {
+            ICommitmentManager.MutualLossProposal memory p = manager.getMutualLossProposal(mutualId);
+            if (!p.executed && !p.cancelled) revert ClaimActive();
+            _refund(mutualId, c);
+        }
 
         bondToken.safeTransferFrom(msg.sender, address(this), bond);
-        claims[mutualId] = Claim({
-            proposer: msg.sender,
-            bond: bond,
-            proposedAt: uint64(block.timestamp),
-            vetoed: false,
-            resolved: false,
-            coverBindingId: coverBindingId,
-            snapshotNotional: snapshotNotional,
-            snapshotExpiry: snapshotExpiry,
-            snapshotPolicyholder: snapshotPolicyholder
-        });
+        claims[mutualId] =
+            Claim({proposer: msg.sender, proposedAt: uint64(block.timestamp), resolved: false, bond: bond});
 
         // The manager enforces arbiter == address(this), the window, and the rate limit.
         manager.initiateMutualLoss(mutualId, lossNumeraire, evidenceHash);
@@ -208,7 +177,6 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         uint64 window = manager.getMutual(mutualId).challengeWindow;
         if (block.timestamp >= uint256(c.proposedAt) + window) revert VetoWindowClosed();
 
-        c.vetoed = true;
         c.resolved = true;
         manager.cancelMutualLoss(mutualId); // arbiter == address(this)
 
@@ -217,19 +185,15 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         emit LossVetoed(mutualId, c.proposer, slashed);
     }
 
-    /// @notice After an UNDISPUTED loss has executed in the manager, the honest proposer reclaims
-    ///         the bond. Reverts until the manager has marked the proposal executed.
+    /// @notice After an UNDISPUTED loss has executed in the manager, return the bond to the
+    ///         proposer. Permissionless: the refund always goes to `proposer`. Reverts until the
+    ///         manager has marked the proposal executed.
     function reclaimBond(uint256 mutualId) external nonReentrant {
         Claim storage c = claims[mutualId];
         if (c.proposedAt == 0) revert NoClaim();
         if (c.resolved) revert AlreadyResolved();
-        if (msg.sender != c.proposer) revert NotProposer();
         if (!manager.getMutualLossProposal(mutualId).executed) revert LossNotExecuted();
-
-        c.resolved = true;
-        uint256 bond = c.bond;
-        if (bond > 0) bondToken.safeTransfer(c.proposer, bond);
-        emit BondReclaimed(mutualId, c.proposer, bond);
+        _refund(mutualId, c);
     }
 
     /// @notice Recover the bond and clear the claim when the manager proposal was CANCELLED without
@@ -246,7 +210,11 @@ contract OptimisticMutualArbiter is IArbiter, Ownable2Step, ReentrancyGuardTrans
         ICommitmentManager.MutualLossProposal memory p = manager.getMutualLossProposal(mutualId);
         if (p.executed) revert AlreadyResolved(); // executed -> use reclaimBond
         if (!p.cancelled) revert LossNotCancelled(); // still pending -> nothing to recover
+        _refund(mutualId, c);
+    }
 
+    /// @dev Mark the claim resolved and return its bond to the proposer.
+    function _refund(uint256 mutualId, Claim storage c) private {
         c.resolved = true;
         uint256 bond = c.bond;
         if (bond > 0) bondToken.safeTransfer(c.proposer, bond);

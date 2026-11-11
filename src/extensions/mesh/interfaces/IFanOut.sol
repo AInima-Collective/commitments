@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {IFlowQuery} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
-
 /// @notice Per-staker tracking for a specific denomination.
-/// @dev `totalForfeitable = Σ(amount_i × maxPenaltyBps_i 10_000)`.
+/// @dev `totalForfeitable = Σ(amount_i × maxPenaltyBps_i / 10_000)`.
 struct UserInfo {
     uint256 locked; // total stake from provider for this denom
-    uint256 maxLien; // max single consumer lien amount
-    uint256 totalForfeitable; // sum(amount_i * maxPenaltyBps_i 10_000) across all outflows
+    uint256 totalForfeitable; // sum(amount_i * maxPenaltyBps_i / 10_000) across all outflows
 }
 
 /// @notice A single outflow configuration: one consumer's slice of the staker's stake.
@@ -20,26 +17,27 @@ struct Outflow {
 }
 
 /// @notice Tracks what a consumer holds against a specific staker/denom pair.
-/// @dev `exposure = amount × maxPenaltyBps 10_000`. Named `FanOutLien` (not `Lien`)
+/// @dev `exposure = amount × maxPenaltyBps / 10_000`. Named `FanOutLien` (not `Lien`)
 ///      to avoid colliding with the manager's "a commitment is a lien" vocabulary —
 ///      this is a distinct mesh struct, not a commitment.
 struct FanOutLien {
-    uint256 amount; // amount of stake (portionBps * locked 10000)
-    uint256 exposure; // amount * maxPenaltyBps 10_000
+    uint256 amount; // amount of stake (portionBps * locked / 10_000)
+    uint256 exposure; // amount * maxPenaltyBps / 10_000
 }
 
 /// @title IFanOut
 /// @notice Interface for the FanOutNode contract.
 ///         FanOut distributes one provider's committed stake to multiple consumers
 ///         with exposure allocation enforcement.
-interface IFanOut is IFlowQuery {
+interface IFanOut {
     // =========================================================================
     // Initialization
     // =========================================================================
 
     /// @notice Initialize the fan-out node (called once by factory after clone)
     /// @param provider_ The single provider address whose stake is distributed
-    /// @param manager_ The manager/owner address that can configure outflows
+    /// @param manager_ Recorded in the `Initialized` event only; it has no powers on the node.
+    ///        Only the provider configures outflows.
     function initialize(address provider_, address manager_) external;
 
     // =========================================================================
@@ -96,7 +94,7 @@ interface IFanOut is IFlowQuery {
     /// @notice Get per-staker info for a specific denom
     /// @param staker The staker address
     /// @param denom The stake denomination
-    /// @return info UserInfo struct with locked, maxLien, totalForfeitable
+    /// @return info UserInfo struct with locked, totalForfeitable
     function getUserInfo(address staker, bytes32 denom) external view returns (UserInfo memory info);
 
     /// @notice Get all outflows configured by a staker for a specific denom

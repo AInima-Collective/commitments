@@ -25,23 +25,20 @@ export async function bumpEncumbered(
   delta: bigint,
   block: bigint,
 ) {
-  const id = `${token.toLowerCase()}-${user.toLowerCase()}`
-  const existing = await db.find(ledgerPosition, { id })
-  if (existing) {
-    const next = existing.encumbered + delta
-    await db.update(ledgerPosition, { id }).set({
-      encumbered: next > 0n ? next : 0n,
-      updatedBlock: block,
-    })
-  } else {
-    await db.insert(ledgerPosition).values({
-      id,
+  const clamp = (n: bigint) => (n > 0n ? n : 0n)
+  await db
+    .insert(ledgerPosition)
+    .values({
+      id: `${token.toLowerCase()}-${user.toLowerCase()}`,
       token,
       user,
-      encumbered: delta > 0n ? delta : 0n,
+      encumbered: clamp(delta),
       updatedBlock: block,
     })
-  }
+    .onConflictDoUpdate((row: { encumbered: bigint }) => ({
+      encumbered: clamp(row.encumbered + delta),
+      updatedBlock: block,
+    }))
 }
 
 /**
@@ -65,7 +62,6 @@ export type LedgerFlowKind =
   | 'settleIn'
   | 'distribution'
   | 'premiumIn'
-  | 'juniorIn'
 
 /**
  * The subset of ponder's event shape this module needs. Declared structurally

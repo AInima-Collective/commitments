@@ -64,7 +64,6 @@
             "getAgreementSettlement",
             "proposeAgreement",
             "releaseAgreement",
-            "requestAgreementUnbond",
             "settleAgreement"
           ],
           "events": [
@@ -76,8 +75,7 @@
             "AgreementProposed",
             "AgreementProposedTerms",
             "AgreementReleased",
-            "AgreementSettled",
-            "AgreementUnbondRequested"
+            "AgreementSettled"
           ],
           "errors": [
             "AgreementBothResolved",
@@ -106,7 +104,6 @@
       ],
       "interfaces": [
         "src/core/interfaces/ICommitmentManager.sol",
-        "src/extensions/mutuals/interfaces/IBandValuationAdapter.sol",
         "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol"
       ],
       "implementations": [
@@ -120,7 +117,6 @@
       ],
       "conformanceTests": [
         "test/manager/Mutual.t.sol",
-        "test/manager/conformance/HeterogeneousPremium.t.sol",
         "test/manager/conformance/PremiumIndex.t.sol",
         "test/mutual/Mutual.t.sol",
         "test/mutual/PremiumPolicy.t.sol"
@@ -134,14 +130,11 @@
             "cancelMutualLoss",
             "cancelStaleMutualLoss",
             "claimMemberPremium",
-            "claimMembersPremium",
-            "configureHeterogeneous",
             "createMutual",
             "executeMutualLoss",
             "fundMutualPremium",
             "getMembership",
             "getMutual",
-            "getMutualJuniorPool",
             "getMutualLossProposal",
             "getMutualPremiumState",
             "initiateMutualLoss",
@@ -150,25 +143,19 @@
             "pendingMemberPremium",
             "reclaimPremium",
             "releaseMutualMember",
-            "remark",
             "requestMutualExit",
-            "settleAndClaim",
             "settleMemberLoss",
             "settleMembers"
           ],
           "events": [
+            "MemberExitLapsed",
             "MemberExitRequested",
             "MemberJoined",
             "MemberPremiumClaimed",
             "MemberReleased",
-            "MemberRemarked",
             "MemberSettled",
             "MutualActivated",
             "MutualCreated",
-            "MutualHeterogeneousConfigured",
-            "MutualJuniorDrawn",
-            "MutualJuniorFunded",
-            "MutualJuniorSwept",
             "MutualLossCancelled",
             "MutualLossExecuted",
             "MutualLossInitiated",
@@ -183,41 +170,33 @@
             "DeallocationWindowActive",
             "DeallocationWindowTooShort",
             "ExitNotRequested",
-            "HeterogeneousPremiumUnsupported",
-            "InsufficientMutualJunior",
+            "ExitRequestLapsed",
             "InsufficientMutualPremium",
             "InvalidCreditedValue",
-            "InvalidHeteroConfig",
-            "InvalidValuationAttestation",
             "MemberStrategyForbidden",
             "MemberUnsettled",
-            "MutualAlreadyActive",
-            "MutualAlreadyConfigured",
             "MutualArbiterMismatch",
             "MutualBeneficiaryMismatch",
             "MutualChallengeWindowActive",
             "MutualChallengeWindowTooShort",
+            "MutualExhausted",
             "MutualIsTerminal",
             "MutualLossPending",
             "MutualNotActive",
             "MutualNotFound",
             "NoActiveCover",
             "NoMutualLossPending",
-            "NotHeterogeneous",
             "NotMutualArbiter",
             "NotMutualMember",
-            "NotValuationAuthority",
             "NumeraireMismatch",
             "PremiumRateDecreased",
             "PremiumStreamUnderfunded",
             "ReinitTooSoon",
             "RewardRateOverflow",
             "StreamDurationOutOfBounds",
-            "TotalSharesOverflow",
-            "ValuationAuthorityIsArbiter"
+            "TotalSharesOverflow"
           ]
         },
-        { "artifact": "IBandValuationAdapter", "selection": "all" },
         { "artifact": "ILinkedMutualPolicy", "selection": "all" }
       ]
     },
@@ -230,8 +209,6 @@
       "interfaces": [
         "src/extensions/mesh/interfaces/IFanIn.sol",
         "src/extensions/mesh/interfaces/IFanOut.sol",
-        "src/extensions/mesh/interfaces/IFlowQuery.sol",
-        "src/extensions/mesh/interfaces/IFlowQueryPath.sol",
         "src/extensions/mesh/interfaces/IMeshFactory.sol",
         "src/extensions/mesh/interfaces/ITokenWeighting.sol"
       ],
@@ -242,14 +219,11 @@
         "src/extensions/mesh/TokenWeighting.sol"
       ],
       "conformanceTests": [
-        "test/mesh/conformance/FlowQueryPathConformance.t.sol",
         "test/mesh/MeshBackingInvariant.t.sol"
       ],
       "selectors": [
         { "artifact": "IFanIn", "selection": "all" },
         { "artifact": "IFanOut", "selection": "all" },
-        { "artifact": "IFlowQuery", "selection": "all" },
-        { "artifact": "IFlowQueryPath", "selection": "all" },
         { "artifact": "IMeshFactory", "selection": "all" },
         { "artifact": "ITokenWeighting", "selection": "all" }
       ]
@@ -306,11 +280,10 @@
       "implementations": [
         "src/extensions/rewards/CommitmentsRewardsCoordinator.sol",
         "src/extensions/rewards/MerkleSnapshot.sol",
-        "src/extensions/rewards/MerkleSnapshotAdapter.sol",
         "src/extensions/rewards/RewardsCoordinatorFactory.sol"
       ],
       "conformanceTests": [
-        "test/conformance/RewardsCoordinatorInvariants.t.sol"
+        "test/rewards/conformance/RewardsCoordinatorInvariants.t.sol"
       ],
       "selectors": [
         { "artifact": "ICommitmentsRewardsCoordinator", "selection": "all" },
@@ -338,14 +311,13 @@
       { "source": "src/distributions/CounterpartyPremiumStream.sol", "declarations": ["CounterpartyPremiumStream"] },
       { "source": "src/distributions/FlatFeeAtCreate.sol", "declarations": ["FlatFeeAtCreate"] },
       { "source": "src/distributions/IndexAppreciationYield.sol", "declarations": ["IndexAppreciationYield"] },
+      { "source": "src/distributions/StrategyBase.sol", "declarations": ["StrategyBase"] },
       { "source": "src/extensions/mesh/FanInNode.sol", "declarations": ["FanInNode"] },
       { "source": "src/extensions/mesh/FanOutNode.sol", "declarations": ["FanOutNode"] },
       { "source": "src/extensions/mesh/MeshFactory.sol", "declarations": ["MeshFactory"] },
       { "source": "src/extensions/mesh/TokenWeighting.sol", "declarations": ["TokenWeighting"] },
       { "source": "src/extensions/mesh/interfaces/IFanIn.sol", "declarations": ["IFanIn"] },
       { "source": "src/extensions/mesh/interfaces/IFanOut.sol", "declarations": ["FanOutLien", "IFanOut", "Outflow", "UserInfo"] },
-      { "source": "src/extensions/mesh/interfaces/IFlowQuery.sol", "declarations": ["AvailableDenom", "ConsumerInfo", "FlowNodeTypes", "IFlowQuery", "ProviderInfo", "StakeInfo"] },
-      { "source": "src/extensions/mesh/interfaces/IFlowQueryPath.sol", "declarations": ["DenomLink", "IFlowQueryPath"] },
       { "source": "src/extensions/mesh/interfaces/IMeshFactory.sol", "declarations": ["IMeshFactory"] },
       { "source": "src/extensions/mesh/interfaces/ITokenWeighting.sol", "declarations": ["ITokenWeighting"] },
       { "source": "src/extensions/mutuals/ClaimRouter.sol", "declarations": ["ClaimRouter"] },
@@ -353,11 +325,9 @@
       { "source": "src/extensions/mutuals/MutualRegistry.sol", "declarations": ["MutualRegistry"] },
       { "source": "src/extensions/mutuals/OptimisticMutualArbiter.sol", "declarations": ["OptimisticMutualArbiter"] },
       { "source": "src/extensions/mutuals/PremiumScheduler.sol", "declarations": ["PremiumScheduler"] },
-      { "source": "src/extensions/mutuals/interfaces/IBandValuationAdapter.sol", "declarations": ["IBandValuationAdapter"] },
       { "source": "src/extensions/mutuals/interfaces/ILinkedMutualPolicy.sol", "declarations": ["ILinkedMutualPolicy"] },
       { "source": "src/extensions/rewards/CommitmentsRewardsCoordinator.sol", "declarations": ["CommitmentsRewardsCoordinator"] },
       { "source": "src/extensions/rewards/MerkleSnapshot.sol", "declarations": ["MerkleSnapshot"] },
-      { "source": "src/extensions/rewards/MerkleSnapshotAdapter.sol", "declarations": ["MerkleSnapshotAdapter"] },
       { "source": "src/extensions/rewards/RewardsCoordinatorFactory.sol", "declarations": ["RewardsCoordinatorFactory"] },
       { "source": "src/extensions/rewards/interfaces/ICommitmentsRewardsCoordinator.sol", "declarations": ["ICommitmentsRewardsCoordinator"] },
       { "source": "src/extensions/rewards/interfaces/IMerkleSnapshot.sol", "declarations": ["IMerkleSnapshot"] },
@@ -383,8 +353,9 @@
       { "source": "src/periphery/vaults/VaultFactory.sol", "declarations": ["VaultFactory"] },
       { "source": "src/periphery/vaults/interfaces/ICommitmentsVault.sol", "declarations": ["ICommitmentsVault"] },
       { "source": "src/periphery/vaults/interfaces/IYieldStrategy.sol", "declarations": ["IYieldStrategy"] },
-      { "source": "src/periphery/vaults/strategies/IdleStrategy.sol", "declarations": ["IdleStrategy"] },
       { "source": "src/periphery/vaults/strategies/PremiumSkimStrategy.sol", "declarations": ["PremiumSkimStrategy"] },
+      { "source": "src/periphery/vaults/strategies/SkimmingMockStrategy.sol", "declarations": ["SkimmingMockStrategy"] },
+      { "source": "src/shared/arbitration/ArbiterBase.sol", "declarations": ["ArbiterBase"] },
       { "source": "src/shared/arbitration/ArbiterCapabilities.sol", "declarations": ["ArbiterCapabilities"] },
       { "source": "src/shared/arbitration/interfaces/IArbiter.sol", "declarations": ["IArbiter"] },
       { "source": "src/shared/interfaces/IEntity.sol", "declarations": ["IEntity"] },
@@ -398,7 +369,6 @@
       { "source": "src/core/manager/libraries/MovementLib.sol", "declarations": ["IHookRunner", "MovementLib", "MovementSite"], "reason": "manager-internal movement and self-call declarations" },
       { "source": "src/core/manager/storage/CommitmentManagerStorage.sol", "declarations": ["CommitmentManagerStorage"], "reason": "namespaced storage library" },
       { "source": "src/extensions/agreements/AgreementLib.sol", "declarations": ["AgreementLib"], "reason": "manager-linked implementation library" },
-      { "source": "src/extensions/mesh/libraries/FlowPathLib.sol", "declarations": ["FlowPathLib"], "reason": "mesh-internal path helper" },
       { "source": "src/extensions/mutuals/MutualLib.sol", "declarations": ["MutualLib"], "reason": "manager-linked implementation library" },
       { "source": "src/extensions/rewards/storage/CommitmentsRewardsCoordinatorStorage.sol", "declarations": ["CommitmentsRewardsCoordinatorStorage"], "reason": "namespaced storage library" },
       { "source": "src/extensions/rewards/storage/MerkleSnapshotStorage.sol", "declarations": ["MerkleSnapshotStorage"], "reason": "namespaced storage library" },
@@ -411,8 +381,7 @@
       { "source": "src/shared/factories/FactoryStorage.sol", "declarations": ["FactoryStorage"], "reason": "namespaced storage library" },
       { "source": "src/shared/registries/AddressSetSwapLib.sol", "declarations": ["AddressSetSwapLib"], "reason": "shared implementation helper" },
       { "source": "src/shared/registries/MembershipBase.sol", "declarations": ["MembershipBase"], "reason": "shared implementation helper" },
-      { "source": "src/shared/registries/Registry.sol", "declarations": ["Registry"], "reason": "shared implementation helper" },
-      { "source": "src/shared/registries/RegistryStorage.sol", "declarations": ["RegistryStorage"], "reason": "namespaced storage library" },
+      { "source": "src/shared/utilities/MeasuredPull.sol", "declarations": ["MeasuredPull"], "reason": "shared implementation helper" },
       { "source": "src/shared/utilities/Multicallable.sol", "declarations": ["Multicallable"], "reason": "shared implementation helper" },
       { "source": "src/vendor/erc8004/IdentityRegistryUpgradeable.sol", "declarations": ["IdentityRegistryUpgradeable"], "reason": "vendored declaration" },
       { "source": "src/vendor/erc8004/interfaces/IERC8004IdentityRegistry.sol", "declarations": ["IERC8004IdentityRegistry"], "reason": "vendored declaration" }

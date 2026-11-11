@@ -1,49 +1,17 @@
-import type { Hex } from 'viem'
-
-import type { commitmentsVaultAbi } from '../abis'
-
 /**
- * Minimal shape of the ponder/viem publicClient the snapshot job needs.
- *
- * `getBlock` is declared here only so we can read the on-chain clock; the real
- * viem publicClient already implements it. We type just the `timestamp` field
- * we consume rather than viem's full `Block` union.
+ * Pure math for the vault snapshot pipeline: the `VaultSnapshot:block` handler
+ * (`src/vaultSnapshot.ts`) writes with it and `GET /vaults/:vault/periodic`
+ * reads with it. No ponder imports, so `node --test` can load it.
  */
-export interface PublicClientLike {
-  readContract(args: {
-    address: Hex
-    abi: typeof commitmentsVaultAbi
-    functionName: 'totalAssets' | 'totalSupply'
-  }): Promise<bigint>
-  getBlock(): Promise<{ timestamp: bigint }>
-}
 
-/**
- * Resolve the "now" anchor for a snapshot. Precedence:
- *
- *   1. `nowSeconds` — explicit override (tests, manual pin).
- *   2. on-chain block timestamp — the DEFAULT. The share price is read from the
- *      same chain, so elapsed time and price movement MUST share this clock.
- *      Anchoring "now" to wall-clock `Date.now()` while the price moves on chain
- *      time means an anvil `evm_increaseTime` warp bumps the NAV/price but not
- *      the elapsed window, so APY comes out ~0 (or absurd). Reading block time
- *      puts both on the chain clock, so time-warps produce real APY.
- *   3. wall-clock `Date.now()` — silent fallback when `getBlock` throws, so a
- *      live chain with a flaky RPC still snapshots. The tiny skew vs. block time
- *      on a real chain is acceptable for a UI KPI.
- */
-export async function resolveNowSeconds(opts: {
-  nowSeconds?: bigint
-  publicClient: Pick<PublicClientLike, 'getBlock'>
-}): Promise<bigint> {
-  if (opts.nowSeconds !== undefined) return opts.nowSeconds
-  try {
-    const block = await opts.publicClient.getBlock()
-    return block.timestamp
-  } catch {
-    // Silent fallback: a live chain with a flaky RPC still snapshots on wall time.
-    return BigInt(Math.floor(Date.now() / 1000))
-  }
+const DAY = 86_400
+export const APY_7D_SECONDS = 7 * DAY
+export const APY_30D_SECONDS = 30 * DAY
+const WAD = 10n ** 18n
+
+/** `totalAssets` per 1e18 shares; 1e18 for an empty vault. */
+export function sharePriceOf(totalAssets: bigint, totalSupply: bigint): bigint {
+  return totalSupply > 0n ? (totalAssets * WAD) / totalSupply : WAD
 }
 
 /**
@@ -71,4 +39,22 @@ export function annualizedBps(
   const annualized = Math.pow(ratio, 1 / elapsedYears) - 1
   if (!Number.isFinite(annualized)) return null
   return Math.round(annualized * 10_000)
+}
+
+/**
+ * Rolling APY at `now` against `ref`, the vault's oldest snapshot inside the
+ * trailing window (undefined when it has none).
+ */
+export function rollingApyBps(
+  now: bigint,
+  sharePrice: bigint,
+  ref: { timestamp: bigint; sharePrice: bigint } | undefined,
+  windowSec: number,
+): number | null {
+  return ref ? annualizedBps(sharePrice, ref.sharePrice, now - ref.timestamp, BigInt(windowSec)) : null
+}
+
+/** The read side's point spacing: hourly for up to 7 days, daily beyond. */
+export function periodicStepSeconds(days: number): number {
+  return days <= 7 ? 3_600 : DAY
 }

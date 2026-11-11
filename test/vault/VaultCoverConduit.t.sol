@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
@@ -48,12 +49,7 @@ contract VaultCoverConduitTest is Test {
     uint256 internal mutualId;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         dai = new MockERC20("Dai Stablecoin", "DAI", 18);
         CommitmentsVault vaultImpl = new CommitmentsVault();
         vault = CommitmentsVault(
@@ -94,7 +90,6 @@ contract VaultCoverConduitTest is Test {
             arbiter: address(arbiter),
             numeraire: numeraire,
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -120,7 +115,7 @@ contract VaultCoverConduitTest is Test {
         p.maxPenaltyBps = 10_000;
         p.challengeWindow = 1 days;
         p.strategies = new StrategyBinding[](0);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
         vm.stopPrank();
     }
 
@@ -218,6 +213,22 @@ contract VaultCoverConduitTest is Test {
         assertEq(dai.balanceOf(address(conduit)), 0);
     }
 
+    /// A wiped-out mutual takes no premium; the conduit skips and keeps the shares.
+    function test_poke_exhaustedMutualSkips() public {
+        dai.mint(address(this), 100e18);
+        dai.approve(address(arbiter), 100e18);
+        arbiter.proposeLoss(mutualId, 1e30, bytes32("e"), 100e18);
+        vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
+        manager.executeMutualLoss(mutualId);
+        assertTrue(manager.getMutual(mutualId).exhausted);
+
+        _fundConduit(10e18);
+        (uint256 premium, uint64 duration) = conduit.poke();
+        assertEq(premium, 0);
+        assertEq(duration, 0);
+        assertGt(vault.balanceOf(address(conduit)), 0);
+    }
+
     function test_poke_durationCappedByMaxStream() public {
         _fundConduit(1_000e18); // huge budget: uncapped inversion would exceed the per-poke cap
         (, uint64 duration) = conduit.poke();
@@ -255,20 +266,11 @@ contract VaultCoverConduitTest is Test {
         assertLt(vault.balanceOf(address(conduit)), residue);
     }
 
-    function test_previewPoke_matchesPoke() public {
-        _fundConduit(10e18);
-        (uint256 assetsPending, uint256 shareBudget, uint64 prevDuration, uint256 prevPremium) = conduit.previewPoke();
-        assertEq(assetsPending, 10e18);
-        assertEq(shareBudget, vault.previewDeposit(10e18));
-
-        (uint256 premium, uint64 duration) = conduit.poke();
-        assertEq(duration, prevDuration);
-        assertEq(premium, prevPremium);
-    }
-
     function test_poke_emitsPremiumFunded() public {
         _fundConduit(10e18);
-        (,, uint64 expectedDuration, uint256 expectedPremium) = conduit.previewPoke();
+        uint256 snap = vm.snapshotState();
+        (uint256 expectedPremium, uint64 expectedDuration) = conduit.poke();
+        vm.revertToState(snap);
         vm.expectEmit(true, true, true, true);
         emit VaultCoverConduit.PremiumFunded(mutualId, expectedPremium, expectedDuration);
         conduit.poke();

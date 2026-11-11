@@ -6,31 +6,21 @@ generated: true
 ---
 # TokenWeighting
 **Inherits:**
-[ITokenWeighting](/docs/protocol/reference/contracts/extensions/mesh/interfaces/ITokenWeighting), [IFlowQueryPath](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFlowQueryPath), [IEntity](/docs/protocol/reference/contracts/shared/interfaces/IEntity), ReentrancyGuard, AccessControl
+[ITokenWeighting](/docs/protocol/reference/contracts/extensions/mesh/interfaces/ITokenWeighting), [IEntity](/docs/protocol/reference/contracts/shared/interfaces/IEntity), ReentrancyGuardTransient, AccessControl
 
 **Title:**
 TokenWeighting
 
 Sink node that normalizes multi-asset stake into unified governance-compatible voting power.
 Weights are configurable per denom in basis points (e.g., 10000 = 1.0x, 8000 = 0.8x).
-Historical voting power is queryable at past block numbers via OZ Checkpoints.Trace256.
+Historical voting power is queryable at past block numbers via OZ Checkpoints.Trace208
+(`uint48` block key, `uint208` value, one slot per checkpoint).
 Implements pull-based reward accumulator (Synthetix/Compound per-share pattern).
-Implements IFlowQuery for topology discovery, IFlowQueryPath for single-call
-provenance walks, and IVotingPowerSource so service managers (ECDSA BLS)
+Implements IVotingPowerSource so service managers (ECDSA / BLS)
 can read per-address power directly from the mesh.
 
 
-## Constants
-### FACTORY_TYPE_ID
-`IEntity` type id: `keccak256("commitments.mesh.token_weighting")`. Self-verifies
-this implementation when `MeshFactory` whitelists it.
-
-
-```solidity
-bytes32 internal constant FACTORY_TYPE_ID = keccak256("commitments.mesh.token_weighting")
-```
-
-
+## State Variables
 ### REWARDER_ROLE
 role gate for distributeRewards.
 
@@ -42,7 +32,7 @@ bytes32 public constant REWARDER_ROLE = keccak256("REWARDER_ROLE")
 
 ### MAX_REWARD_TOKENS
 maximum distinct reward tokens per stakeDenom. Bounds the cost of
-stake releaseStake's reward-debt iteration, preventing a permissionless
+stake / releaseStake's reward-debt iteration, preventing a permissionless
 attacker from growing the set past the block gas limit.
 
 
@@ -64,7 +54,6 @@ uint256 public constant MAX_DENOMS = 64
 ```
 
 
-## State Variables
 ### _initialized
 Tracks whether contract has been initialized (clone guard)
 
@@ -130,7 +119,7 @@ O(1): a weight change never has to rewrite any per-staker checkpoint.
 
 
 ```solidity
-mapping(address => mapping(bytes32 => Checkpoints.Trace256)) private _stakeHistory
+mapping(address => mapping(bytes32 => Checkpoints.Trace208)) private _stakeHistory
 ```
 
 
@@ -141,7 +130,7 @@ O(denoms) on read instead of O(stakers).
 
 
 ```solidity
-mapping(bytes32 => Checkpoints.Trace256) private _totalStakeHistory
+mapping(bytes32 => Checkpoints.Trace208) private _totalStakeHistory
 ```
 
 
@@ -149,11 +138,11 @@ mapping(bytes32 => Checkpoints.Trace256) private _totalStakeHistory
 Per-denom WEIGHT history — the "weight epoch" ledger — keyed by
 block.number. `updateWeight` pushes exactly one checkpoint here;
 historical power queries resolve the weight in force at the queried
-block via `upperLookup`, so a retune is O(1) regardless of staker count.
+block via `upperLookupRecent`, so a retune is O(1) regardless of staker count.
 
 
 ```solidity
-mapping(bytes32 => Checkpoints.Trace256) private _weightHistory
+mapping(bytes32 => Checkpoints.Trace208) private _weightHistory
 ```
 
 
@@ -229,6 +218,8 @@ mapping(bytes32 => bool) internal _retired
 ### factoryTypeId
 
 A stable, unique identifier for this contract's type.
+
+`TOKEN_WEIGHTING_TYPE_ID`; self-verifies this implementation when `MeshFactory` whitelists it.
 
 
 ```solidity
@@ -307,15 +298,15 @@ function updateWeight(bytes32 denom, uint256 weightBps) external onlyGovernance;
 |Name|Type|Description|
 |----|----|-----------|
 |`denom`|`bytes32`|The denom whose weight to update (registers new denom if first call)|
-|`weightBps`|`uint256`|Full-precision normalization factor (e.g., 1e16, 3.2e7)|
+|`weightBps`|`uint256`|Full-precision normalization factor (e.g., 1e16, 3.2e7); must fit `uint208`|
 
 
 ### retireDenom
 
 Governance retires a denom so it stops contributing to voting power
 and stops accepting new stake — the bounded-set counterpart to
-`updateWeight`, needed because the unbounded `_denoms` set drives the
-O(denoms) cost of the quorum-validation voting-power queries.
+`updateWeight`, needed because the `_denoms` set (capped at `MAX_DENOMS`, 64)
+drives the O(denoms) cost of the quorum-validation voting-power queries.
 
 A denom that never accrued stake is purged from the iterated set outright
 (it contributed zero at every block, so no historical query changes). A
@@ -410,7 +401,7 @@ sink — each staker gets its own per-denom row and its own power checkpoints.
 
 
 ```solidity
-function stake(address staker, bytes32 denom, uint256 amount) external nonReentrant onlyProvider;
+function stake(address staker, bytes32 denom, uint256 amount) external onlyProvider;
 ```
 **Parameters**
 
@@ -427,7 +418,7 @@ Provider debits stake from a staker — decrements stake and updates checkpoints
 
 
 ```solidity
-function releaseStake(address staker, bytes32 denom, uint256 amount) external nonReentrant onlyProvider;
+function releaseStake(address staker, bytes32 denom, uint256 amount) external onlyProvider;
 ```
 **Parameters**
 
@@ -489,7 +480,7 @@ Distribute rewards to stakers proportional to their stake via per-share accumula
 
 role-gated and capped at MAX_REWARD_TOKENS distinct
 reward tokens per stakeDenom to prevent unbounded set growth that would
-DoS stake() releaseStake().
+DoS stake() / releaseStake().
 
 
 ```solidity
@@ -521,112 +512,6 @@ function claimRewards(bytes32 stakeDenom, address rewardToken) external nonReent
 |----|----|-----------|
 |`stakeDenom`|`bytes32`|The denom whose stake determines reward share|
 |`rewardToken`|`address`|The ERC20 reward token to claim|
-
-
-### nodeType
-
-Reserved nodeType constants. Implementations of additional node types
-SHOULD reserve their own bytes32 constants.
-
-
-```solidity
-function nodeType() external pure returns (bytes32);
-```
-
-### nodeTypeName
-
-
-```solidity
-function nodeTypeName() external pure returns (string memory);
-```
-
-### providers
-
-
-```solidity
-function providers() external view returns (ProviderInfo[] memory);
-```
-
-### consumers
-
-Sink node — no downstream consumers
-
-
-```solidity
-function consumers() external pure returns (ConsumerInfo[] memory);
-```
-
-### availableDenoms
-
-
-```solidity
-function availableDenoms() external view returns (AvailableDenom[] memory);
-```
-
-### providersPaged
-
-Paginated providers — `offset` may exceed length (returns empty array).
-
-TokenWeighting has a single provider; pagination collapses similarly.
-
-
-```solidity
-function providersPaged(uint256 offset, uint256 limit) external view returns (ProviderInfo[] memory);
-```
-
-### consumersPaged
-
-TokenWeighting is a sink — no downstream consumers — so pagination is empty.
-
-
-```solidity
-function consumersPaged(uint256, uint256) external pure returns (ConsumerInfo[] memory);
-```
-
-### availableDenomsPaged
-
-
-```solidity
-function availableDenomsPaged(uint256 offset, uint256 limit) external view returns (AvailableDenom[] memory);
-```
-
-### MAX_PATH_DEPTH
-
-Maximum depth this implementation supports for `denomPath`.
-
-SHOULD be 64 unless the implementation has a documented reason
-for a tighter bound. Reading this lets callers size requests
-without trial-and-error reverts.
-
-
-```solidity
-function MAX_PATH_DEPTH() external pure returns (uint16);
-```
-
-### denomPath
-
-Walk the denom-provenance chain upstream from a local denom.
-
-MUST NOT revert on cycles, non-mesh providers, or natural termini —
-these are reported by the returned path's terminal entry. MUST
-revert with `InvalidDepth` only on out-of-range `maxDepth`.
-
-
-```solidity
-function denomPath(bytes32 local, uint16 maxDepth) external view returns (DenomLink[] memory);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`local`|`bytes32`|The local denom on this node to trace.|
-|`maxDepth`|`uint16`|Maximum chain length to traverse; MUST satisfy `1 <= maxDepth <= MAX_PATH_DEPTH()`.|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`<none>`|`DenomLink[]`|path The walked path in source-walked order. Length <= maxDepth. The last entry's `provider == address(0)` indicates vault-rooted termination. Otherwise the chain was truncated by a non-mesh provider, a cycle, or the depth limit; callers distinguish by inspecting the path itself.|
 
 
 ### _computePower

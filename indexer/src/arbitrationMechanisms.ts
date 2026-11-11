@@ -1,8 +1,13 @@
 import { ponder } from 'ponder:registry'
-import { arbitrationCase, arbitrationMechanismEvent } from 'ponder:schema'
+import { arbitrationCase, arbitrationMechanismEvent, mutual } from 'ponder:schema'
 
-const managerCache = new Map<string, `0x${string}`>()
-const answerTimeoutCache = new Map<string, bigint>()
+import {
+  attestationArbiterAbi,
+  optimisticInsuranceArbiterAbi,
+  optimisticMutualArbiterAbi,
+  twoTierArbiterAbi,
+} from './abis'
+import { mutualKey } from './mutual'
 
 function caseKey(arbiter: string, caseId: bigint, scope = 'case') {
   return `${arbiter.toLowerCase()}-${scope}-${caseId}`
@@ -12,79 +17,18 @@ function eventKey(address: string, block: bigint, logIndex: number) {
   return `${address.toLowerCase()}-${block}-${logIndex}`
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function optimisticConfig(context: any, address: `0x${string}`) {
-  const key = address.toLowerCase()
-  let manager = managerCache.get(key)
-  let answerTimeout = answerTimeoutCache.get(key)
-  if (!manager) {
-    manager = await context.client.readContract({
-      address,
-      abi: context.contracts.OptimisticInsuranceArbiter.abi,
-      functionName: 'commitmentManager',
-    }) as `0x${string}`
-    managerCache.set(key, manager)
-  }
-  if (answerTimeout === undefined) {
-    answerTimeout = await context.client.readContract({
-      address,
-      abi: context.contracts.OptimisticInsuranceArbiter.abi,
-      functionName: 'answerTimeout',
-    }) as bigint
-    answerTimeoutCache.set(key, answerTimeout)
-  }
-  return { manager, answerTimeout }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function twoTierManager(context: any, address: `0x${string}`) {
-  const key = address.toLowerCase()
-  let manager = managerCache.get(key)
-  if (!manager) {
-    manager = await context.client.readContract({
-      address,
-      abi: context.contracts.TwoTierArbiter.abi,
-      functionName: 'commitmentManager',
-    }) as `0x${string}`
-    managerCache.set(key, manager)
-  }
-  return manager
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function attestationManager(context: any, address: `0x${string}`) {
-  const key = address.toLowerCase()
-  let manager = managerCache.get(key)
-  if (!manager) {
-    manager = await context.client.readContract({
-      address,
-      abi: context.contracts.AttestationArbiter.abi,
-      functionName: 'commitmentManager',
-    }) as `0x${string}`
-    managerCache.set(key, manager)
-  }
-  return manager
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function optimisticMutualConfig(context: any, address: `0x${string}`, mutualId: bigint) {
-  const key = address.toLowerCase()
-  let manager = managerCache.get(key)
-  if (!manager) {
-    manager = await context.client.readContract({
-      address,
-      abi: context.contracts.OptimisticMutualArbiter.abi,
-      functionName: 'commitmentManager',
-    }) as `0x${string}`
-    managerCache.set(key, manager)
-  }
-  const mutual = await context.client.readContract({
-    address: manager,
-    abi: context.contracts.CommitmentManager.abi,
-    functionName: 'getMutual',
-    args: [mutualId],
-  }) as { challengeWindow: bigint }
-  return { manager, challengeWindow: mutual.challengeWindow }
+// Every arbiter's `commitmentManager()` is immutable.
+async function arbiterManager(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  context: any,
+  address: `0x${string}`,
+  abi:
+    | typeof optimisticInsuranceArbiterAbi
+    | typeof twoTierArbiterAbi
+    | typeof attestationArbiterAbi
+    | typeof optimisticMutualArbiterAbi,
+): Promise<`0x${string}`> {
+  return context.client.readContract({ address, abi, functionName: 'commitmentManager', cache: 'immutable' })
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,7 +64,15 @@ async function insertEvent(context: any, event: any, values: {
 
 ponder.on('OptimisticInsuranceArbiter:ClaimProposed', async ({ event, context }) => {
   const { claimId, commitmentId, proposer, amountBps } = event.args
-  const { manager, answerTimeout } = await optimisticConfig(context, event.log.address)
+  const [manager, answerTimeout] = await Promise.all([
+    arbiterManager(context, event.log.address, optimisticInsuranceArbiterAbi),
+    context.client.readContract({
+      address: event.log.address,
+      abi: optimisticInsuranceArbiterAbi,
+      functionName: 'answerTimeout',
+      cache: 'immutable',
+    }),
+  ])
   const deadline = event.block.timestamp + answerTimeout
   await context.db.insert(arbitrationCase).values({
     id: caseKey(event.log.address, claimId),
@@ -148,7 +100,12 @@ ponder.on('OptimisticInsuranceArbiter:ClaimDisputed', async ({ event, context })
   const key = caseKey(event.log.address, claimId)
   const current = await context.db.find(arbitrationCase, { id: key })
   if (!current) return
-  const { answerTimeout } = await optimisticConfig(context, event.log.address)
+  const answerTimeout = await context.client.readContract({
+    address: event.log.address,
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'answerTimeout',
+    cache: 'immutable',
+  })
   const deadline = event.block.timestamp + answerTimeout
   await context.db.update(arbitrationCase, { id: key }).set({
     phase: 'disputed', nextDeadline: deadline, updatedAt: event.block.timestamp, updatedBlock: event.block.number,
@@ -192,45 +149,43 @@ ponder.on('OptimisticInsuranceArbiter:ClaimStaleCancelled', ({ event, context })
 ponder.on('OptimisticInsuranceArbiter:ClaimUnwound', ({ event, context }) =>
   updateOptimisticTerminal(event, context, 'unwound', 'manager enforcement unavailable; bonds refunded', 'claim-unwound'))
 
+// ClaimRuled is followed in the same transaction by ClaimSettled and
+// ClaimFinalized whenever the bond game settles at once (no payout, an
+// already-executed hold, or a committer that has exited). Otherwise the claim
+// waits in Forfeiture for `executeClaim`, so the case sits at
+// manager-enforcement until ClaimFinalized fires.
 ponder.on('OptimisticInsuranceArbiter:ClaimRuled', async ({ event, context }) => {
-  const { claimId, winningAmtBps, source } = event.args
+  const { claimId, winningAmtBps } = event.args
   const key = caseKey(event.log.address, claimId)
   const current = await context.db.find(arbitrationCase, { id: key })
   if (!current) return
   await context.db.update(arbitrationCase, { id: key }).set({
-    phase: 'ruled', nextDeadline: null, updatedAt: event.block.timestamp, updatedBlock: event.block.number,
+    phase: 'manager-enforcement', nextDeadline: null, updatedAt: event.block.timestamp, updatedBlock: event.block.number,
   })
   await insertEvent(context, event, {
     mechanism: current.mechanism, caseId: claimId, commitmentId: current.commitmentId,
-    manager: current.manager, kind: 'claim-ruled', actor: source, phase: 'ruled',
+    manager: current.manager, kind: 'claim-ruled', phase: 'manager-enforcement',
     outcome: `${Number(winningAmtBps)} bps ruling`,
   })
 })
 
+// ClaimFinalized fires once, from `_settle`, after the claim reaches Settled.
 ponder.on('OptimisticInsuranceArbiter:ClaimFinalized', async ({ event, context }) => {
   const { claimId, winningAmtBps } = event.args
   const key = caseKey(event.log.address, claimId)
   const current = await context.db.find(arbitrationCase, { id: key })
   if (!current) return
-  const claim = await context.client.readContract({
-    address: event.log.address,
-    abi: context.contracts.OptimisticInsuranceArbiter.abi,
-    functionName: 'getClaim',
-    args: [claimId],
-  }) as { state: number }
-  const settled = Number(claim.state) === 4
-  const phase = settled ? 'settled' : 'manager-enforcement'
   await context.db.update(arbitrationCase, { id: key }).set({
-    phase,
-    terminalOutcome: settled ? `${Number(winningAmtBps)} bps claim settled` : null,
+    phase: 'settled',
+    terminalOutcome: `${Number(winningAmtBps)} bps claim settled`,
     nextDeadline: null,
     updatedAt: event.block.timestamp,
     updatedBlock: event.block.number,
   })
   await insertEvent(context, event, {
     mechanism: current.mechanism, caseId: claimId, commitmentId: current.commitmentId,
-    manager: current.manager, kind: 'claim-finalized', phase,
-    outcome: `${Number(winningAmtBps)} bps final answer${settled ? ' and settlement' : ''}`,
+    manager: current.manager, kind: 'claim-finalized', phase: 'settled',
+    outcome: `${Number(winningAmtBps)} bps final answer and settlement`,
   })
 })
 
@@ -248,21 +203,18 @@ async function insertTwoTierCase(
   },
 ) {
   const { caseId, commitmentId, actor } = event.args as { caseId: bigint; commitmentId: bigint; actor: `0x${string}` }
-  const manager = await twoTierManager(context, event.log.address)
-  const key = caseKey(event.log.address, caseId)
-  const current = await context.db.find(arbitrationCase, { id: key })
-  if (current) {
-    await context.db.update(arbitrationCase, { id: key }).set({
-      phase: values.phase, terminalOutcome: values.terminal ?? null, nextDeadline: values.deadline ?? null,
-      updatedAt: event.block.timestamp, updatedBlock: event.block.number,
-    })
-  } else {
-    await context.db.insert(arbitrationCase).values({
-      id: key, mechanism: 'two-tier', arbiter: event.log.address, caseId, commitmentId, manager,
-      phase: values.phase, terminalOutcome: values.terminal ?? null, nextDeadline: values.deadline ?? null,
-      openedAt: event.block.timestamp, updatedAt: event.block.timestamp, updatedBlock: event.block.number,
-    })
+  const manager = await arbiterManager(context, event.log.address, twoTierArbiterAbi)
+  const update = {
+    phase: values.phase, terminalOutcome: values.terminal ?? null, nextDeadline: values.deadline ?? null,
+    updatedAt: event.block.timestamp, updatedBlock: event.block.number,
   }
+  await context.db
+    .insert(arbitrationCase)
+    .values({
+      id: caseKey(event.log.address, caseId), mechanism: 'two-tier', arbiter: event.log.address, caseId,
+      commitmentId, manager, openedAt: event.block.timestamp, ...update,
+    })
+    .onConflictDoUpdate(update)
   await insertEvent(context, event, {
     mechanism: 'two-tier', caseId, commitmentId, manager, actor,
     kind: values.kind, phase: values.phase, deadline: values.deadline, outcome: values.outcome ?? values.terminal,
@@ -294,10 +246,8 @@ ponder.on('AttestationArbiter:Acted', async ({ event, context }) => {
   // Action 0..2 is commitment-scoped. Agreement and mutual actions keep their
   // own ids and must not be presented as commitment cases.
   const commitmentId = action <= 2 ? event.args.id : null
-  const manager = await attestationManager(context, event.log.address)
+  const manager = await arbiterManager(context, event.log.address, attestationArbiterAbi)
   const scope = action <= 2 ? 'commitment' : action <= 5 ? 'agreement' : 'mutual'
-  const key = caseKey(event.log.address, event.args.id, `attestation-${scope}`)
-  const current = await context.db.find(arbitrationCase, { id: key })
   const caseValues = {
     mechanism: 'attestation',
     arbiter: event.log.address,
@@ -310,15 +260,14 @@ ponder.on('AttestationArbiter:Acted', async ({ event, context }) => {
     updatedAt: event.block.timestamp,
     updatedBlock: event.block.number,
   }
-  if (current) {
-    await context.db.update(arbitrationCase, { id: key }).set(caseValues)
-  } else {
-    await context.db.insert(arbitrationCase).values({
-      id: key,
+  await context.db
+    .insert(arbitrationCase)
+    .values({
+      id: caseKey(event.log.address, event.args.id, `attestation-${scope}`),
       ...caseValues,
       openedAt: event.block.timestamp,
     })
-  }
+    .onConflictDoUpdate(caseValues)
   await insertEvent(context, event, {
     mechanism: 'attestation', caseId: event.args.id, commitmentId, manager,
     kind: 'attestation-acted', actor: event.transaction.from, phase: `action-${action}-executed`, deadline: event.args.deadline,
@@ -328,17 +277,20 @@ ponder.on('AttestationArbiter:Acted', async ({ event, context }) => {
 
 ponder.on('OptimisticMutualArbiter:LossProposed', async ({ event, context }) => {
   const { mutualId, proposer, lossNumeraire } = event.args
-  const { manager, challengeWindow } = await optimisticMutualConfig(context, event.log.address, mutualId)
-  const deadline = event.block.timestamp + challengeWindow
-  const id = caseKey(event.log.address, mutualId, 'mutual')
-  const current = await context.db.find(arbitrationCase, { id })
+  const manager = await arbiterManager(context, event.log.address, optimisticMutualArbiterAbi)
+  // The challenge window is on the indexed mutual row (MutualCreated precedes
+  // any loss proposal).
+  const row = await context.db.find(mutual, { id: mutualKey(manager, mutualId) })
+  const deadline = row ? event.block.timestamp + row.challengeWindow : null
   const values = {
     mechanism: 'optimistic-mutual', arbiter: event.log.address, caseId: mutualId,
     commitmentId: null, manager, phase: 'loss-proposed', terminalOutcome: null,
     nextDeadline: deadline, updatedAt: event.block.timestamp, updatedBlock: event.block.number,
   }
-  if (current) await context.db.update(arbitrationCase, { id }).set(values)
-  else await context.db.insert(arbitrationCase).values({ id, ...values, openedAt: event.block.timestamp })
+  await context.db
+    .insert(arbitrationCase)
+    .values({ id: caseKey(event.log.address, mutualId, 'mutual'), ...values, openedAt: event.block.timestamp })
+    .onConflictDoUpdate(values)
   await insertEvent(context, event, {
     mechanism: 'optimistic-mutual', caseId: mutualId, manager, kind: 'loss-proposed',
     actor: proposer, phase: 'loss-proposed', deadline, outcome: `${lossNumeraire} numeraire loss declared`,
@@ -355,7 +307,6 @@ async function updateMutualTerminal(
   kind: string,
 ) {
   const mutualId = event.args.mutualId as bigint
-  const { manager } = await optimisticMutualConfig(context, event.log.address, mutualId)
   const id = caseKey(event.log.address, mutualId, 'mutual')
   const current = await context.db.find(arbitrationCase, { id })
   if (!current) return
@@ -364,7 +315,7 @@ async function updateMutualTerminal(
     updatedAt: event.block.timestamp, updatedBlock: event.block.number,
   })
   await insertEvent(context, event, {
-    mechanism: 'optimistic-mutual', caseId: mutualId, manager, kind,
+    mechanism: 'optimistic-mutual', caseId: mutualId, manager: current.manager, kind,
     actor: event.args.proposer ?? event.transaction.from, phase, outcome,
   })
 }

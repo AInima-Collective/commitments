@@ -27,7 +27,7 @@ Forfeiture can be paused at the manager. cancelForfeit is arbiter-authorized, wh
 
 ## Distribution strategies
 
-Each commitment binds zero or more StrategyBinding entries. distribute(commitmentId, strategy) asks the strategy to calculate token movements and lets the manager validate and execute those movements. claim and distributeAndClaim support strategy-specific pull claims. Strategy escrow is accounted per token and strategy inside the manager.
+Each commitment binds zero or more StrategyBinding entries. distribute(commitmentId, strategy) asks the strategy to calculate token movements and lets the manager validate and execute those movements. claim supports strategy-specific pull claims. Strategy escrow is accounted per token and strategy inside the manager.
 
 The manager is the only token mover. A strategy describes allowed movements through IDistributionStrategy; it does not receive arbitrary custody authority.
 
@@ -39,11 +39,11 @@ settleAgreement moves bounded units of the payer leg token from the payer encumb
 
 ## Mutuals
 
-Mutual members join with existing commitments. A validated mutual loss advances a shared loss index; settleMemberLoss realizes an individual member obligation into the mutual beneficiary free balance. Premium funding and claims use a distinct live-capacity index. MutualLib is another linked manager library and does not hold tokens itself.
+joinMutual creates a member's commitment and its membership in one call. A validated mutual loss advances a shared loss index; settleMemberLoss realizes an individual member obligation into the mutual beneficiary free balance. Premium funding and claims use a distinct live-capacity index. MutualLib is another linked manager library and does not hold tokens itself.
 
 ## Services and callbacks
 
-OperatorRegistry reads manager commitments when operators register or receive delegations. Once configured through setOperatorRegistry, the manager calls the registry lifecycle hooks for tracked delegation commitments. OperatorServiceRegistry reads the operator registry and an IVotingPowerSource to validate service membership and historical voting power.
+OperatorRegistry reads manager commitments when operators register or receive delegations. Once configured through setOperatorRegistry, the manager calls the registry lifecycle hooks for tracked delegation commitments. The hook call is gas-capped and a failure does not revert the close; anyone can then call OperatorRegistry.reconcile(commitmentId) to run the same close path. OperatorServiceRegistry reads the operator registry and an IVotingPowerSource to validate service membership and historical voting power.
 
 Mesh nodes are accounting components. They do not move manager-held backing.
 

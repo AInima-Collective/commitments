@@ -2,7 +2,7 @@
 
 A **commitment** is a stake-backed promise: capital locked behind an obligation, which a chosen arbiter can seize if the promise is broken.
 
-Mechanically, each commitment is a **parameterized lien**: it names an arbiter empowered to forfeit, an optional counterparty, penalty bounds, and an unbonding period, and enforcement runs through a two-phase forfeit with a minimum one-day challenge window, so no one loses their stake in a single block. Because the lien is a standard primitive, it composes: two liens facing each other form a bilateral **agreement**, pooled liens form **mutual coverage** (several-liability insurance with streamed premiums), and a **mesh topology** aggregates committed stake into governance- and service-compatible voting power. Rewards, on-chain governance, and [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) agent identity for AI-agent bonds build on the same substrate: one primitive, scaling from a handshake between two parties to an insurance market.
+Mechanically, each commitment is a **parameterized lien**: it names an arbiter empowered to forfeit, an optional counterparty, penalty bounds, a challenge window, and an optional expiry, and enforcement runs through a two-phase forfeit with a minimum one-day challenge window, so no one loses their stake in a single block. Because the lien is a standard primitive, it composes: two liens facing each other form a bilateral **agreement**, pooled liens form **mutual coverage** (several-liability insurance with streamed premiums), and a **mesh topology** aggregates committed stake into governance- and service-compatible voting power. Rewards, on-chain governance, and [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) agent identity for AI-agent bonds build on the same substrate: one primitive, scaling from a handshake between two parties to an insurance market.
 
 Commitments makes an economic promise legible as a bounded lien on productive capital. A participant keeps a clearly attributable position while accepting explicit rules for release, forfeiture, distribution, or shared loss.
 
@@ -17,20 +17,20 @@ The design favors composition over a universal market contract:
 ## How it works
 
 1. **Fund** — a user deposits tokens into the CommitmentManager, which tracks a per-(token, user) *free / encumbered* ledger.
-2. **Commit** — the user creates a commitment: an amount of backing, an arbiter, an optional counterparty, penalty bounds, and an unbonding period. The backing is encumbered but never leaves productive use — a **backing adapter** prices it (`indexNow`, payout denomination) whether it's a plain ERC-20 or an appreciating 4626 share.
+2. **Commit** — the user creates a commitment: an amount of backing, an arbiter, an optional counterparty, penalty bounds, a challenge window, and an optional expiry. The backing is encumbered but never leaves productive use — a **backing adapter** prices it (`indexNow`, payout denomination) whether it's a plain ERC-20 or an appreciating 4626 share.
 3. **Enforce** — if the promise is broken, the arbiter initiates a forfeit. A challenge window (minimum 1 day) allows dispute; after it elapses the forfeit executes and the payout is claimable pull-payment style.
-4. **Release** — commitments that run their course release cleanly, returning the backing to the free balance after unbonding.
+4. **Release** — the arbiter can release a commitment at any time. The committer can release it after its expiry, or request an unbond and exit once the manager's unbonding period has passed. The unbonding period is one manager-wide value set by the admin. Released backing returns to the free balance.
 5. **Distribute** — strategies bound to commitments move value (yield share, flat fees, premium streams, operator commissions) through a validated, invariant-checked movement pipeline.
 
 ## Key concepts
 
-- **Commitment** — a stake-backed promise, implemented as a parameterized lien on manager-custodied backing: amount, arbiter, optional counterparty, penalty bounds, unbonding period
-- **Agreement** — a bilateral commitment with symmetric enforcement; both sides lock stake and either can trigger a forfeit
+- **Commitment** — a stake-backed promise, implemented as a parameterized lien on manager-custodied backing: amount, arbiter, optional counterparty, penalty bounds, challenge window, optional expiry
+- **Agreement** — a bilateral commitment with symmetric enforcement; both sides lock stake under one shared arbiter, and only that arbiter can trigger a forfeit
 - **Backing adapter** — stateless pricer that lets any ERC-20 or appreciating ERC-4626 share serve as commitment backing
 - **Distribution strategy** — pluggable contract that moves value (yield, fees, premiums) via a validated movement pipeline, bounded by the commitment it's bound to
 - **Two-phase forfeit** — initiate, then a challenge window (minimum one day) before execution; payouts are pull-payment
-- **Partition invariant** — `Σ(free + encumbered) + Σescrow == balanceOf(manager)` per token, fuzz-locked in the conformance suite
-- **Magnitude allocation** — `totalForfeitable ≤ totalEncumbered` per (user, token); prevents over-commitment
+- **Partition invariant** — `Σ(free + encumbered) + Σescrow + Σmutual premium == balanceOf(manager)` per token, fuzz-locked in the conformance suite
+- **Magnitude allocation** — `totalForfeitable ≤` the encumbered balance per (user, token); each lien's forfeitable share is at most its amount, so it holds by construction
 - **Mesh topology** — composable FanIn/FanOut/Weighting graph for stake aggregation and governance integration
 - **Mutual coverage** — groups share losses several-liability via a loss index Λ while premiums stream to underwriters
 
@@ -64,7 +64,7 @@ The shipped Solidity contracts define current behavior and ABI. Standards formal
 ### Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/) (forge, cast, anvil)
-- [just](https://github.com/casey/just), [pnpm](https://pnpm.io/) and Node 20+ for the frontend/indexer workspace
+- [just](https://github.com/casey/just), [pnpm](https://pnpm.io/) and Node 22.6+ for the frontend/indexer workspace
 - Docker (**optional**) — only for the local IPFS node that gives seeded commitments their full metadata. Everything works without it; see below for exactly what changes.
 
 ### Build & test
@@ -91,12 +91,12 @@ One command boots the whole stack — starts anvil in the background, deploys ev
 pnpm install       # installs the frontend + indexer workspace (run from repo root)
 just ipfs-up       # optional, see below — start it BEFORE dev-up
 just dev-up        # anvil + deploy + seed + env sync
-just indexer-dev   # Terminal 2: Ponder indexer on :65422 (powers graph views)
+just indexer-dev   # Terminal 2: Ponder indexer on :65422 (lists, activity, graphs)
 just frontend-dev  # Terminal 3: Vite dev server on :5173
 just dev-down      # stop the background anvil when done
 ```
 
-Connect a wallet to `http://127.0.0.1:8545` (chain ID 31337) and import anvil's default private key (`0xac0974...ff80`) to interact with the seeded protocol. The indexer discovers contract addresses by parsing `broadcast/**/run-latest.json`, so it needs no manual configuration.
+Connect a wallet to `http://127.0.0.1:8545` (chain ID 31337) and import anvil's default private key (`0xac0974...ff80`) to interact with the seeded protocol. `just dev-up` also writes the indexer's deployment manifest (`indexer/deployments.31337.json`) from the seed's broadcast, so the indexer needs no manual configuration.
 
 #### Commitment metadata, and why `just ipfs-up` is worth one command
 
@@ -138,7 +138,7 @@ so the pinning has to happen first.
 
 ### Deploy
 
-Deployment scripts live in `script/` — one per subsystem (`DeployCommitmentManager`, `DeployVaultFactory`, `DeployAdaptersAndStrategies`, `DeployOperatorRegistry`, `DeployOperatorServiceRegistry`, `DeployMesh`, `DeployMutual`, `DeployRewardsCoordinator`, `DeployGovernance`), plus `DeploySepolia.s.sol` for a full testnet stack and `Simulate.s.sol` for the seeded local deployment. See the [deployment guide](docs/protocol/operations/deployment.md) for ordering, configuration, and environment variables.
+`script/DeploySepolia.s.sol` deploys a full testnet stack and `script/Simulate.s.sol` deploys and seeds the local stack. See the [deployment guide](docs/protocol/operations/deployment.md) for ordering, configuration, and environment variables.
 
 ## Formal verification
 
@@ -155,8 +155,8 @@ just fv-medusa 3600       # hour-long coverage-guided fuzz campaign
 | Standard | Usage |
 |----------|-------|
 | [ERC-4626](https://eips.ethereum.org/EIPS/eip-4626) | Yield-bearing vaults; canonical commitment backing via the ERC4626Adapter |
-| [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201) | Namespaced storage on every long-lived contract (slot layouts locked by tests) |
-| [EIP-1153](https://eips.ethereum.org/EIPS/eip-1153) | Transient-storage reentrancy guard on all state-mutating entry points |
+| [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201) | Namespaced storage on every long-lived contract (slot tests cover the manager, vault, operator registry and rewards contracts) |
+| [EIP-1153](https://eips.ethereum.org/EIPS/eip-1153) | Transient-storage reentrancy guard on the manager's ledger and lifecycle flows |
 | [ERC-1967](https://eips.ethereum.org/EIPS/eip-1967) / UUPS | Upgradeable singletons (manager, registries) and per-asset vault proxies |
 | [EIP-1167](https://eips.ethereum.org/EIPS/eip-1167) | Minimal proxy clones for mesh node deployment |
 | [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) | Agent identity registry for AI-agent bonds |
@@ -172,9 +172,9 @@ src/
   periphery/       Agents, arbiters, governance, and vault products
   shared/          Arbitration, factories, interfaces, registries, utilities
   vendor/          Byte-preserved third-party Solidity (ERC-8004 registry)
-test/              Foundry tests mirroring src/ + manager/conformance/ invariant suite
+test/              Foundry tests by subsystem; conformance suites in test/<subsystem>/conformance/
 verification/      Certora + Halmos + Medusa formal verification stack
-script/            Deploy scripts + Simulate.s.sol (full-stack anvil seeder)
+script/            DeploySepolia.s.sol, Simulate.s.sol (full-stack anvil seeder), and Node tooling
 docs/              Standards, current protocol docs, and design drafts
 frontend/          React + Vite + wagmi dapp (pnpm workspace)
 indexer/           Ponder indexer with GraphQL + REST endpoints

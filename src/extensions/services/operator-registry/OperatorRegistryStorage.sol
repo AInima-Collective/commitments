@@ -11,27 +11,6 @@ library OperatorRegistryStorage {
     /// @dev keccak256(abi.encode(uint256(keccak256("commitments.operator.registry.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant STORAGE_SLOT = 0x83d5bdd6649c092a3cc3f74173bd8a8b92b77fc20c5209255a250e7126463700;
 
-    /// @notice A single timestamped stake checkpoint for an operator.
-    /// @dev Packs into ONE storage slot: `timestamp` (64) + `stake` (192) = 256 bits.
-    ///      `stake` mirrors `Operator.totalDelegatedStake` at `timestamp`. `uint192` is a
-    ///      practical, non-truncating bound for stake denominated in a real ERC-20's raw
-    ///      units (max ≈ 6.3e57); `_pushStakeCheckpoint` reverts (`StakeCheckpointOverflow`)
-    ///      rather than silently truncate if that bound is ever exceeded.
-    struct StakeCheckpoint {
-        uint64 timestamp;
-        uint192 stake;
-    }
-
-    /// @notice Append-only, timestamp-keyed checkpoint trace for one operator.
-    /// @dev Mapping-backed (not a dynamic array) so each checkpoint has a stable index pointer
-    ///      and a same-block rewrite is a clean in-place overwrite of the tail slot. Checkpoints
-    ///      are strictly increasing in `timestamp` (same-block mutations collapse onto the tail),
-    ///      which makes `stakeAt`'s hint validation and binary-search fallback well-defined.
-    struct StakeTrace {
-        uint256 length;
-        mapping(uint256 => StakeCheckpoint) points;
-    }
-
     struct Layout {
         // =====================================================================
         // Operator registry
@@ -60,7 +39,7 @@ library OperatorRegistryStorage {
         // Configuration
         // =====================================================================
 
-        /// @dev Minimum vault shares required to register as an operator
+        /// @dev Minimum required-token units required to register as an operator
         uint256 minOperatorStake;
 
         /// @dev Maximum number of active delegations per operator
@@ -75,7 +54,7 @@ library OperatorRegistryStorage {
 
         /// @dev operator address -> OperatorMetadata sidecar record.
         ///      Kept separate from Operator so setOperatorMetadata does not touch
-        ///      the slots used by isOperator getOperatorStake getOperatorSet.
+        ///      the slots used by isOperator, getOperatorSet and getOperator.
         ///      Metadata persists across deregister (locked decision: historical record).
         mapping(address => IOperatorRegistry.OperatorMetadata) operatorMetadata;
 
@@ -84,8 +63,8 @@ library OperatorRegistryStorage {
         // =====================================================================
 
         /// @dev Required arbiter address. Commitments presented to register or
-        ///      delegate must have exactly this arbiter. Set at init (or via
-        ///      initializeV2 for upgrades). Immutable post-init by design — rotating
+        ///      delegate must have exactly this arbiter. Set at init.
+        ///      Immutable post-init by design — rotating
         ///      the arbiter is a trust transition that warrants a redeploy.
         address requiredArbiter;
 
@@ -141,9 +120,7 @@ library OperatorRegistryStorage {
         ///      increments; release/forfeit hooks and deregister's self-stake
         ///      cleanup decrement). Consulted by the manager's
         ///      `setOperatorRegistry` guard so re-pointing the single hook slot
-        ///      cannot silently orphan live delegations. NOTE: counts only
-        ///      commitments accepted after this field shipped — pre-upgrade
-        ///      routing entries are not retro-counted (decrements clamp at 0).
+        ///      cannot silently orphan live delegations.
         uint256 trackedCommitmentCount;
         // =====================================================================
         // EIP-712 signature-delegated register/delegate — append-only
@@ -174,26 +151,6 @@ library OperatorRegistryStorage {
         ///      allow-list non-draining strategies. Empty (the default) ⇒ the
         ///      original reject-all behavior. Append-only — safe.
         mapping(address => bool) allowedStrategies;
-        // =====================================================================
-        // Historical stake checkpoints (stakeAt) — append-only
-        // =====================================================================
-
-        /// @dev operator address -> timestamped checkpoint trace of its
-        ///      `totalDelegatedStake`. A checkpoint is pushed on EVERY stake
-        ///      mutation (register, delegate, onDelegationReleased,
-        ///      onDelegationForfeited) keyed by `block.timestamp`, so `stakeAt`
-        ///      can answer historically-correct past-stake queries on-chain
-        ///      (arbiters adjudicating an offense at time T, epoch/snapshot
-        ///      rewards, disputes where stake-at-offense ≠ stake-now).
-        ///
-        ///      This is a SEPARATE, timestamp-keyed path from TokenWeighting's
-        ///      OZ Checkpoints (block-number-keyed for governance votes) and
-        ///      from the per-commitment `registeredAmount` freeze — the latter
-        ///      snapshots ONE commitment's credited amount so release/forfeit
-        ///      hooks decrement the exact value they added, whereas this trace
-        ///      records the operator's AGGREGATE stake over time. The two are
-        ///      complementary and both remain live. Append-only — safe.
-        mapping(address => StakeTrace) operatorStakeTrace;
     }
 
     /// @notice Returns a storage reference to the Layout struct at STORAGE_SLOT.

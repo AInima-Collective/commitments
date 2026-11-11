@@ -1,9 +1,8 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
 
-import {
-  useReadClaimRouterClaimant,
-  useReadCommitmentManagerFreeBalance,
-} from '../generated'
+import { claimRouterAbi, commitmentManagerAbi } from '../generated'
+import { POLL } from './polling'
 
 export interface ClaimPayout {
   /** True when the mutual's beneficiary answers `claimant()` — i.e. it is a
@@ -51,7 +50,9 @@ export function useClaimPayout({
 }: UseClaimPayoutArgs): ClaimPayout {
   // Immutable on the router — no poll, no retry (an EOA/plain-contract
   // beneficiary fails this read permanently; retrying just burns RPC calls).
-  const claimantRead = useReadClaimRouterClaimant({
+  const claimantRead = useReadContract({
+    abi: claimRouterAbi,
+    functionName: 'claimant',
     address: beneficiary,
     query: {
       enabled: Boolean(beneficiary),
@@ -62,12 +63,14 @@ export function useClaimPayout({
   const claimant = claimantRead.data as Address | undefined
   const isRouter = claimantRead.isSuccess && claimant !== undefined
 
-  const collectableRead = useReadCommitmentManagerFreeBalance({
+  const collectableRead = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'freeBalance',
     address: managerAddress,
     args: token && beneficiary ? [token, beneficiary] : undefined,
     query: {
       enabled: Boolean(managerAddress && token && beneficiary && isRouter),
-      refetchInterval: 15_000,
+      refetchInterval: POLL.fast,
     },
   })
 

@@ -115,12 +115,6 @@ event VaultMetadataUpdated(string uri, bytes32 contentHash, uint64 timestamp);
 ```
 
 ## Errors
-### DepositsPaused
-
-```solidity
-error DepositsPaused();
-```
-
 ### ZeroAddress
 
 ```solidity

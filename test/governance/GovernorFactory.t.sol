@@ -86,24 +86,6 @@ contract GovernorFactoryTest is Test {
         TimelockControllerUpgradeable(payable(dao.timelock)).initialize(0, empty, empty, address(this));
     }
 
-    function test_deploymentCount_increments() public {
-        assertEq(factory.deploymentCount(), 0);
-        factory.deploy(_baseCfg());
-        assertEq(factory.deploymentCount(), 1);
-        factory.deploy(_baseCfg());
-        assertEq(factory.deploymentCount(), 2);
-    }
-
-    function test_governorsBySource_indexesMultipleDAOs() public {
-        GovernorFactory.DAODeployment memory a = factory.deploy(_baseCfg());
-        GovernorFactory.DAODeployment memory b = factory.deploy(_baseCfg());
-
-        address[] memory list = factory.governorsBySource(address(tw));
-        assertEq(list.length, 2);
-        assertEq(list[0], a.governor);
-        assertEq(list[1], b.governor);
-    }
-
     function test_deploy_zeroSourceReverts() public {
         GovernorFactory.DAOConfig memory cfg = _baseCfg();
         cfg.source = IVotingPowerSource(address(0));
@@ -134,19 +116,19 @@ contract GovernorFactoryTest is Test {
         factory.setCanonicalGovernor(dao2.governor);
     }
 
+    function test_setCanonicalGovernor_onlyDeployer() public {
+        assertEq(factory.deployer(), address(this));
+        GovernorFactory.DAODeployment memory dao = factory.deploy(_baseCfg());
+
+        // deploy() is permissionless, so a stranger can make a DAO but not claim the slot.
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(GovernorFactory.NotDeployer.selector);
+        factory.setCanonicalGovernor(dao.governor);
+        assertEq(factory.canonicalGovernor(), address(0));
+    }
+
     function test_setCanonicalGovernor_unknownReverts() public {
         vm.expectRevert(GovernorFactory.UnknownGovernor.selector);
         factory.setCanonicalGovernor(address(0xDEAD));
-    }
-
-    function test_getDeployment_returnsAllFields() public {
-        GovernorFactory.DAODeployment memory dao = factory.deploy(_baseCfg());
-        GovernorFactory.DAODeployment memory got = factory.getDeployment(dao.governor);
-        assertEq(got.governor, dao.governor);
-        assertEq(got.timelock, dao.timelock);
-        assertEq(got.shim, dao.shim);
-        assertEq(got.source, dao.source);
-        assertEq(got.name, dao.name);
-        assertEq(got.deployedAtBlock, block.number);
     }
 }

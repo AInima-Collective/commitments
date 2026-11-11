@@ -1,5 +1,3 @@
-import { type CommitmentStatus } from '../../utils/commitments'
-
 /**
  * Typed view over an ERC-8004 registration file (the agent's `agentURI`
  * JSON, mirrored by the indexer into `agent.metadataContent`). All fields
@@ -43,26 +41,4 @@ export function parseRegistration(content: Record<string, unknown> | null | unde
 /** Display name for an agent: registration `name`, else `agent #<id>`. */
 export function agentDisplayName(reg: AgentRegistration, agentId: bigint): string {
   return reg.name ?? `agent #${agentId.toString()}`
-}
-
-/**
- * Indexer wire status → the badge vocabulary (`CommitmentStatusBadge` takes
- * the UPPERCASE domain enum). Mirrors `STATUS_WIRE_TO_DOMAIN` in
- * useIndexedCommitment; unknown values fall back to EXPIRED-muted semantics.
- */
-export function bondStatusToDomain(wire: string): CommitmentStatus {
-  switch (wire) {
-    case 'active':
-      return 'ACTIVE'
-    case 'unbonding':
-      return 'UNBONDING'
-    case 'forfeitPending':
-      return 'FORFEIT_PENDING'
-    case 'forfeited':
-      return 'FORFEITED'
-    case 'released':
-      return 'RELEASED'
-    default:
-      return 'EXPIRED'
-  }
 }

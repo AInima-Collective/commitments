@@ -1,19 +1,8 @@
-import { useEffect, useState } from 'react'
-import { type Address, erc20Abi } from 'viem'
-import {
-  useReadContract,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi'
+import { type Address } from 'viem'
 import { commitmentManagerAbi } from '../generated'
+import { useApproveThenWrite } from './useApproveThenWrite'
 
-export type FundStrategyStep =
-  | 'idle'
-  | 'approving'
-  | 'approved'
-  | 'funding'
-  | 'complete'
-  | 'error'
+export type FundStrategyStep = 'idle' | 'approving' | 'approved' | 'funding' | 'complete' | 'error'
 
 export interface FundStrategyFlow {
   step: FundStrategyStep
@@ -49,88 +38,16 @@ export function useFundStrategy({
   userAddress,
   onSuccess,
 }: UseFundStrategyParams): FundStrategyFlow {
-  const [step, setStep] = useState<FundStrategyStep>('idle')
-  const [error, setError] = useState<Error | null>(null)
-
-  const readEnabled = !!token && !!userAddress && !!managerAddress
-
-  const { data: currentAllowance, refetch: refetchAllowance } = useReadContract({
-    abi: erc20Abi,
-    address: token,
-    functionName: 'allowance',
-    args: userAddress && managerAddress ? [userAddress, managerAddress] : undefined,
-    query: { enabled: readEnabled, refetchInterval: 15_000 },
+  const flow = useApproveThenWrite({
+    token,
+    spender: managerAddress,
+    owner: userAddress,
+    onSuccess: () => onSuccess?.(),
   })
-
-  const {
-    writeContract: writeApprove,
-    data: approveTxHash,
-    isError: approveIsError,
-    error: approveError,
-    reset: resetApprove,
-  } = useWriteContract()
-  const { isSuccess: approveSuccess, isError: approveReceiptError } =
-    useWaitForTransactionReceipt({ hash: approveTxHash })
-
-  const {
-    writeContract: writeFund,
-    data: fundTxHash,
-    isError: fundIsError,
-    error: fundError,
-    reset: resetFund,
-  } = useWriteContract()
-  const { isSuccess: fundSuccess, isError: fundReceiptError } =
-    useWaitForTransactionReceipt({ hash: fundTxHash })
-
-  useEffect(() => {
-    if (approveSuccess && step === 'approving') {
-      void refetchAllowance()
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setStep('approved')
-    }
-  }, [approveSuccess, step, refetchAllowance])
-
-  useEffect(() => {
-    if ((approveIsError || approveReceiptError) && step === 'approving') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setError(approveError ?? new Error('Approve transaction failed'))
-      setStep('error')
-    }
-  }, [approveIsError, approveReceiptError, approveError, step])
-
-  useEffect(() => {
-    if (fundSuccess && step === 'funding') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setStep('complete')
-      onSuccess?.()
-    }
-  }, [fundSuccess, step, onSuccess])
-
-  useEffect(() => {
-    if ((fundIsError || fundReceiptError) && step === 'funding') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- transaction state machine; see frontend/docs/eslint-disable-rationale.md §Pattern-1
-      setError(fundError ?? new Error('fundStrategy transaction failed'))
-      setStep('error')
-    }
-  }, [fundIsError, fundReceiptError, fundError, step])
-
-  function approve(amount: bigint) {
-    if (!token || !managerAddress) return
-    setError(null)
-    setStep('approving')
-    writeApprove({
-      abi: erc20Abi,
-      address: token,
-      functionName: 'approve',
-      args: [managerAddress, amount],
-    })
-  }
 
   function fund(amount: bigint) {
     if (!managerAddress || !strategy || !token) return
-    setError(null)
-    setStep('funding')
-    writeFund({
+    flow.write({
       abi: commitmentManagerAbi,
       address: managerAddress,
       functionName: 'fundStrategy',
@@ -138,19 +55,12 @@ export function useFundStrategy({
     })
   }
 
-  function reset() {
-    resetApprove()
-    resetFund()
-    setStep('idle')
-    setError(null)
-  }
-
   return {
-    step,
-    currentAllowance: currentAllowance as bigint | undefined,
-    approve,
+    step: flow.step === 'writing' ? 'funding' : flow.step,
+    currentAllowance: flow.allowance,
+    approve: flow.approve,
     fund,
-    reset,
-    error,
+    reset: flow.reset,
+    error: flow.error,
   }
 }

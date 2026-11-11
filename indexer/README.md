@@ -1,10 +1,10 @@
 # commitments-indexer
 
-[Ponder](https://ponder.sh) indexer that streams `CommitmentManager`, `CommitmentsVault`, `OperatorRegistry`, `OperatorServiceRegistry`, and mesh node events into a queryable database. Serves a Hono REST API and Ponder's built-in GraphQL for the `commitments/frontend/` graph visualization.
+[Ponder](https://ponder.sh) indexer that streams `CommitmentManager`, `CommitmentsVault`, `OperatorRegistry`, `OperatorServiceRegistry`, and mesh node events into a queryable database. Serves a Hono REST API and Ponder's built-in GraphQL to the `frontend/` app.
 
 ## Local dev
 
-Prereqs: the project's Foundry stack has been built (`forge build`) and a local Anvil node is running with the protocol deployed via `forge script script/Simulate.s.sol --broadcast`.
+Prereqs: a local Anvil node with the protocol deployed and seeded. `just dev-up` does both.
 
 ```bash
 # From the repo root:
@@ -16,16 +16,40 @@ just indexer-dev   # listens on :65422, uses pglite by default
 pnpm --filter @commitments/indexer dev
 ```
 
-Endpoints:
+Endpoints. Each group is a Hono router mounted in `src/api/index.ts`; the route
+docs live in the matching `src/api/<group>.ts`.
 
-- `GET /graph/entanglements?address=0x…` — nodes+edges for the commitments graph
-- `GET /graph/mesh` — mesh DAG nodes+edges
-- `GET /account/:address` — per-address dossier
-- `GET /account/:address/claimable-yield` — active commitments where the user is counterparty and `yieldClaimable > 0`
-- `GET /commitments/urgent?address=0x…&status=active&limit=100` — canonical urgency-ordered commitment list (see "Canonical sort orders" below)
+- `/graph` — `agreements` (nodes and edges for the commitments graph), `mesh`, `mesh-topology`, `mesh-security`
+- `/account/:address` — dossier, plus `claimable-yield`, `premium`, `balance-history`, `activity`
+- `/commitments` — `urgent` (canonical urgency-ordered list; see "Canonical sort orders" below), `/:id`, `/:id/contributions`, `/:id/arbitration`, `arbitration/activity`
+- `/agreements/:id/settlements`
+- `/mutuals` — list, `/:id/members`, `/:id/ledger`, `/:id/premium`, `/:id/history?days=7|30|90` (daily premium APR, capital, cover sold)
+- `/vaults/:vault` — `forfeit-ledger`, `donations`, `coverage`, `periodic?days=N` (hourly up to 7 days, daily beyond) and `periodic?latest=1` (newest snapshot; see "Vault snapshots" below)
+- `/services/:address/stake-summary`
+- `/protocol` — `stats`, `arbiters`, `cases`, `leaderboard`, `mechanism-activity`
+- `/governors` — list, `/:address`, `/:address/proposals`, `/:address/proposals/:id`, `/:address/proposals/:id/votes`
+- `/prices`
 - `POST /metadata/pin` — pin a metadata JSON object and return `{ cid, metadataURI, metadataHash }` (see "Metadata pinning" below)
 - `GET /graphql` — Ponder's auto-generated GraphQL over the full schema
 - `GET /sql/*` — Ponder's SQL-over-HTTP (used by `@ponder/client`)
+
+`/account/:address/claimable-yield` does not return an amount. It returns the
+strategy bindings on active commitments where the address is the counterparty,
+so the caller can read `manager.pending(commitmentId, strategy, claimData)`
+live, and the address's realized `DistributionPaid` rows.
+
+## Vault snapshots
+
+The `VaultSnapshot` block source in `ponder.config.ts` fires every 25 blocks
+on Sepolia and mainnet (~5 minutes) and every 15 blocks on the local chain
+(~30 seconds). Its handler, `src/vaultSnapshot.ts`, writes one `vaultSnapshot`
+row per indexed vault: `totalAssets`, `totalSupply` and the share price read
+at that block, that vault's commitment and encumbrance aggregates in its own
+share units, and the 7d and 30d APY against the oldest row in each window.
+APY is null until half the window of history exists. History is indexed like
+any other table: it backfills from the start block, follows reorgs, and is
+rebuilt on a re-index. On mainnet the chain reads at past blocks need an
+archive RPC.
 
 ## Metadata fetch network policy
 
@@ -66,7 +90,7 @@ Response:
   "cid": "bafkrei…",                 // null when using the dev data: fallback
   "metadataURI": "ipfs://bafkrei…",   // or "data:application/json;base64,…"
   "metadataHash": "0x…",              // keccak256 of the EXACT pinned bytes
-  "service": "pinata"                 // or "data-uri" (informational)
+  "service": "pinata"                 // or "kubo" or "data-uri" (informational)
 }
 ```
 
@@ -91,9 +115,10 @@ and posting.
 | Env | Backend | Behaviour |
 |-----|---------|-----------|
 | `PINATA_JWT` set | Pinata `pinFileToIPFS` | Raw bytes uploaded as a single file; returned `IpfsHash` is the CID of those bytes, so `ipfs://<cid>` resolves back to them. `cid` is the CIDv1. |
-| _(none)_ | dev `data:` fallback | Returns a self-contained `data:application/json;base64,<base64>` URI. The fetcher already resolves `data:` URIs, so the full pin→hash→verify round-trip works **offline** against `just dev-up` / `just indexer-dev` with no external credentials. `cid` is `null`. |
+| `IPFS_API_URL` set (no `PINATA_JWT`) | Kubo `/api/v0/add` | Raw bytes added with `cid-version=1&pin=true`; an unreachable node answers `502` rather than falling back. `cid` is the CIDv1. |
+| _(neither)_ | dev `data:` fallback | Returns a self-contained `data:application/json;base64,<base64>` URI. The fetcher already resolves `data:` URIs, so the full pin→hash→verify round-trip works **offline** against `just dev-up` / `just indexer-dev` with no external credentials. `cid` is `null`. |
 
-The `PINATA_JWT` is a Pinata "scoped" JWT with `pinFileToIPFS` permission, read
+`just ipfs-up` starts a local Kubo node. The `PINATA_JWT` is a Pinata "scoped" JWT with `pinFileToIPFS` permission, read
 **server-side only** from the environment. To use a different pinning service
 (web3.storage / Storacha), add a branch in `src/api/metadata.ts` alongside
 `pinToPinata`.
@@ -123,16 +148,17 @@ Frontends should reuse these sorts so different UI surfaces stay consistent.
 ```sql
 ORDER BY
   CASE status
-    WHEN 'slashPending' THEN 0
-    WHEN 'active'       THEN 1
-    ELSE 2
+    WHEN 'forfeitPending' THEN 0
+    WHEN 'unbonding'      THEN 1
+    WHEN 'active'         THEN 2
+    ELSE 3
   END,
-  COALESCE(slashChallengeEnd, 9000000000000000000) ASC,
+  COALESCE(forfeitChallengeEnd, 9000000000000000000) ASC,
   id DESC
 ```
 
-`slashPending` floats to the top; among equally-prioritised rows the imminent
-deadline wins; ties break by newest first.
+`forfeitPending` floats to the top, then `unbonding`, then `active`; among
+equally-prioritised rows the imminent deadline wins; ties break by newest first.
 
 ## Resolving arbiter / counterparty addresses to operator names (Indexer Improvements #5)
 
@@ -160,9 +186,11 @@ UI control caching/invalidation.
 
 ## Config
 
-`ponder.config.ts` resolves deployment addresses by parsing the latest
-`../broadcast/**/<chainId>/run-latest.json` Foundry run when `DEPLOYMENTS_JSON`
-is unset. To use an explicit deployment manifest instead:
+`ponder.config.ts` reads deployment addresses from a schema-v1 manifest. When
+`DEPLOYMENTS_JSON` is unset it reads `deployments.<chainId>.json` in this
+folder, which `script/write-frontend-env.mjs` writes from the seed's broadcast
+(`just dev-up` runs it); if that file is missing, startup stops and says to run
+`just dev-up`. To use an explicit deployment manifest instead:
 
 ```bash
 DEPLOYMENTS_JSON=/path/to/deployments.json pnpm --filter @commitments/indexer dev
@@ -170,7 +198,7 @@ DEPLOYMENTS_JSON=/path/to/deployments.json pnpm --filter @commitments/indexer de
 
 When set, `DEPLOYMENTS_JSON` is authoritative. An empty value, missing or
 unreadable path, malformed JSON, schema error, or chain mismatch stops startup
-immediately; the loader never falls back to local broadcast artifacts.
+immediately; the loader never falls back to the generated manifest.
 
 Schema v1 is a strict contract. A minimal manifest is checked in at
 [`fixtures/deployments.v1.example.json`](fixtures/deployments.v1.example.json):
@@ -198,18 +226,20 @@ and `meshFactory` are also required non-zero addresses. Vault instances are
 discovered from `VaultFactory.VaultDeployed`, so a vault address does not belong
 in this manifest.
 
-Optional subsystems are represented by `tokenWeighting`, `governorFactory`,
-`mutualRegistry`, `optimisticMutualArbiter`, `linkedMutualPolicy`,
-`skimmingStrategy`, and `vaultCoverConduit`. Each must be a non-zero address when
-present. `flatFeeStrategies` and `agentIdentityRegistries` are optional address
-arrays and default to `[]` when omitted.
+Optional subsystems are represented by `governorFactory`, `mutualRegistry`,
+`optimisticMutualArbiter`, `linkedMutualPolicy`, `skimmingStrategy`, and
+`vaultCoverConduit`. Each must be a non-zero address when present.
+`flatFeeStrategies`, `agentIdentityRegistries`, `optimisticInsuranceArbiters`,
+`twoTierArbiters` and `attestationArbiters` are optional address arrays and
+default to `[]` when omitted.
 
 Legacy `commitmentManager`, `operatorRegistry`, and `commitmentsVault` keys are
 not accepted in schema v1. Migrate the first two to their plural array forms and
 replace `commitmentsVault` with the actual `vaultFactory` address. Unknown fields
 are rejected so address-key typos cannot silently disable indexing.
 
-The example fixture is also suitable for config-only tooling from a clean tree:
+`ponder codegen` does not read the manifest, so a clean tree needs neither. For
+other config-only tooling, the example fixture stands in:
 
 ```bash
 DEPLOYMENTS_JSON=fixtures/deployments.v1.example.json \

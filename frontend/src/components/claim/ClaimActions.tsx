@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react'
-import { parseUnits, type Address } from 'viem'
-import {
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi'
+import { useState } from 'react'
+import { parseUnits, type Address, zeroHash } from 'viem'
 
-import { optimisticInsuranceArbiterAbi } from '../../abi/optimisticInsuranceArbiterAbi'
+import { optimisticInsuranceArbiterAbi } from '../../generated'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
+import { useWriteAction } from '../../hooks/useWriteAction'
 import type { OptimisticArbiterConfig, OptimisticClaim } from '../../hooks/useOptimisticClaim'
-import { Input, Notice, useToasts } from '../ui'
-import { formatTokenAmount } from '../../lib/format'
-import { ZERO_HASH } from '../../utils/metadataForm'
+import { Button, Input, Notice } from '../ui'
+import { formatDuration, formatTokenAmount } from '../../lib/format'
 
 interface ClaimActionsProps {
   arbiterAddress: Address
@@ -31,7 +27,7 @@ type WriteName =
  * State-aware action panel for /claims/:id.
  *
  * The buttons are gated on the claim state and the viewer's role. Each
- * write uses its own `useWriteContract` instance to keep tx state isolated.
+ * write uses its own `useWriteAction` instance to keep tx state isolated.
  *
  * Approval flow:
  *  - `disputeClaim` requires bond-token allowance to the arbiter. The
@@ -40,7 +36,8 @@ type WriteName =
  *    DISPUTE button after the receipt lands.
  *
  * Resolution is timeout-only: an undisputed claim finalizes after the answer
- * window; there is no fallback-arbitrator escalation step.
+ * window. A configured fallback arbitrator is described, but this panel has
+ * no action that escalates to it.
  */
 export function ClaimActions({
   arbiterAddress,
@@ -112,7 +109,7 @@ export function ClaimActions({
             label={
               answerElapsed
                 ? 'FINALIZE CLAIM (timeout)'
-                : `FINALIZE CLAIM (waits ${formatRemaining(claim.answerDeadline, now)})`
+                : `FINALIZE CLAIM (waits ${formatDuration(Number(claim.answerDeadline) - now)})`
             }
             description={
               answerElapsed
@@ -206,32 +203,10 @@ function DisputeAction({
   const [parsedBond, setParsedBond] = useState<bigint | undefined>(required)
   const [bondError, setBondError] = useState<string | null>(null)
 
-  const { push } = useToasts()
-  const { writeContract, data: hash, isPending, reset, error: writeError } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess, isError, error: receiptError } =
-    useWaitForTransactionReceipt({ hash })
-
-  useEffect(() => {
-    if (!isSuccess) return
-    push({ tone: 'success', title: 'CLAIM DISPUTED' })
-    onActed()
-    reset()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  useEffect(() => {
-    if (writeError || isError) {
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body:
-          (writeError as { shortMessage?: string } | undefined)?.shortMessage ??
-          (receiptError as { shortMessage?: string } | undefined)?.shortMessage ??
-          'Unknown error.',
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [writeError, isError])
+  const { write: writeContract, isPending, isConfirming } = useWriteAction({
+    successTitle: 'CLAIM DISPUTED',
+    onSuccess: () => onActed(),
+  })
 
   function parseBond(value: string) {
     if (!value) {
@@ -262,7 +237,7 @@ function DisputeAction({
       abi: optimisticInsuranceArbiterAbi,
       address: arbiterAddress,
       functionName: 'disputeClaim',
-      args: [claim.claimId, counter, ZERO_HASH, parsedBond],
+      args: [claim.claimId, counter, zeroHash, parsedBond],
     })
   }
 
@@ -305,9 +280,8 @@ function DisputeAction({
         />
         {bondError && <Notice tone="danger" size="sm">{bondError}</Notice>}
       </div>
-      <button
-        type="button"
-        className="ds-btn ds-btn--primary"
+      <Button
+        variant="primary"
         onClick={handleSubmit}
         disabled={
           disabled || isPendingAny || parsedBond === undefined || !!bondError
@@ -315,7 +289,7 @@ function DisputeAction({
         title={disabledReason}
       >
         {isPendingAny ? 'CONFIRMING…' : 'DISPUTE CLAIM'}
-      </button>
+      </Button>
       {disabledReason && disabled && (
         <Notice tone="neutral" size="sm">{disabledReason}</Notice>
       )}
@@ -351,32 +325,10 @@ function NoBondAction({
   claim,
   onActed,
 }: NoBondActionProps) {
-  const { push } = useToasts()
-  const { writeContract, data: hash, isPending, reset, error: writeError } = useWriteContract()
-  const { isLoading: isConfirming, isSuccess, isError, error: receiptError } =
-    useWaitForTransactionReceipt({ hash })
-
-  useEffect(() => {
-    if (!isSuccess) return
-    push({ tone: 'success', title: label.toUpperCase() })
-    onActed()
-    reset()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
-
-  useEffect(() => {
-    if (writeError || isError) {
-      push({
-        tone: 'danger',
-        title: 'TRANSACTION FAILED',
-        body:
-          (writeError as { shortMessage?: string } | undefined)?.shortMessage ??
-          (receiptError as { shortMessage?: string } | undefined)?.shortMessage ??
-          'Unknown error.',
-      })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [writeError, isError])
+  const { write: writeContract, isPending, isConfirming } = useWriteAction({
+    successTitle: label.toUpperCase(),
+    onSuccess: () => onActed(),
+  })
 
   function handleClick() {
     writeContract({
@@ -394,27 +346,13 @@ function NoBondAction({
       <Notice tone="neutral" size="sm" title={label}>
         {description}
       </Notice>
-      <button
-        type="button"
-        className="ds-btn"
-        onClick={handleClick}
-        disabled={disabled || isPendingAny}
-      >
+      <Button onClick={handleClick} disabled={disabled || isPendingAny}>
         {isPendingAny ? 'CONFIRMING…' : label}
-      </button>
+      </Button>
     </div>
   )
 }
 
 function maxBigint(a: bigint, b: bigint): bigint {
   return a > b ? a : b
-}
-
-function formatRemaining(deadline: bigint, now: number): string {
-  const remaining = Number(deadline) - now
-  if (remaining <= 0) return 'now'
-  if (remaining < 60) return `${remaining}s`
-  if (remaining < 3_600) return `${Math.round(remaining / 60)}m`
-  if (remaining < 86_400) return `${Math.round(remaining / 3_600)}h`
-  return `${Math.round(remaining / 86_400)}d`
 }

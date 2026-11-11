@@ -4,20 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "wagmi generate && vite",
+    "dev": "vite",
     "build": "wagmi generate && tsc -b && vite build",
     "generate": "wagmi generate",
     "lint": "eslint .",
     "lint:css": "stylelint \"src/**/*.css\"",
-    "lint:legacy": "node scripts/audit-legacy.mjs",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "screenshot:vault": "node scripts/screenshot-vault.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.6.0"
   },
   "dependencies": {
     "@react-sigma/core": "^5.0.4",
@@ -47,7 +45,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@playwright/test": "^1.59.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.12.2",

@@ -11,10 +11,10 @@ ReentrancyGuardTransient
 **Title:**
 ClaimRouter
 
-The beneficiary of a Mutual (a `Mutual`). Settled member units land
+The beneficiary of a Mutual. Settled member units land
 in this contract's FREE balance in the manager; the designated `claimant` (policyholder)
 collects them out. Settlement itself is permissionless — anyone (the claimant, a keeper,
-a bounty bot) can drive `settle` — so the O(N) physical movement of a claim can never
+a bounty bot) can call the manager's `settleMembers` — so the O(N) physical movement of a claim can never
 brick on a single uncooperative member (ERC-COMMITMENTS-MUTUALS).
 
 Default product is **basket settlement**: the claimant receives the members' raw collateral
@@ -22,7 +22,7 @@ tokens as-is. A swap to a single unit is an explicit, opt-in step the claimant p
 after collection — the router never swaps.
 
 
-## Constants
+## State Variables
 ### manager
 The custody root whose mutual settlements credit this router.
 
@@ -47,16 +47,6 @@ address public immutable claimant
 
 ```solidity
 constructor(address manager_, address claimant_) ;
-```
-
-### settle
-
-Permissionlessly settle a bounded batch of mutual members into this router. The
-expected claim path is the claimant or a protocol-funded keeper calling this.
-
-
-```solidity
-function settle(uint256[] calldata commitmentIds) external nonReentrant;
 ```
 
 ### collect

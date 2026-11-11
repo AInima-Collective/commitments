@@ -9,8 +9,8 @@ import {MockERC20} from "test/helpers/MockERC20.sol";
 import {HalmosBase} from "./HalmosBase.sol";
 
 /// @title CreatePathsSmokeTest — INV-10 (`commitmentId ≥ 1`; 0 is the non-attribution sentinel)
-///        extended to the remaining create paths: `createAndFund` and `batchCreateCommitments`.
-///        Each returned id is ≥ 1 and the paths encumber EXACTLY the summed amounts.
+///        extended to the remaining create path, `createAndFund`. The returned id is ≥ 1 and the
+///        path encumbers EXACTLY the requested amount.
 /// @dev The relayer path `createCommitmentFor` is intentionally NOT covered here — see the
 ///      NatSpec on `check_createCommitmentFor_INV10_signaturePathNote`.
 /// @dev Run: FOUNDRY_PROFILE=halmos halmos --solver z3 --contract CreatePathsSmokeTest
@@ -82,35 +82,6 @@ contract CreatePathsSmokeTest is HalmosBase {
         assert(manager.freeBalance(address(token), COMMITTER) == DEPOSIT - amount);
     }
 
-    /// @notice INV-10 for `batchCreateCommitments`: a concrete length-2 batch with SYMBOLIC
-    ///         amounts returns two ids that are each ≥ 1 and strictly increasing, and encumbers
-    ///         EXACTLY the sum (a1 + a2) from the committer's pre-funded free balance.
-    /// @dev Length fixed at 2 (concrete) per the harness plan; amounts symbolic. The committer
-    ///      is pre-funded with the full DEPOSIT in this check so the batch draws from free balance.
-    function check_batchCreate_INV10_idsNonZeroAndEncumberSum(uint256 a1, uint256 a2) public {
-        vm.assume(a1 >= 1);
-        vm.assume(a2 >= 1);
-        vm.assume(a1 <= DEPOSIT);
-        vm.assume(a2 <= DEPOSIT - a1); // a1 + a2 <= DEPOSIT, no overflow, batch fully funded
-
-        vm.prank(COMMITTER);
-        manager.deposit(address(token), DEPOSIT);
-
-        ICM.CommitmentParams[] memory ps = new ICM.CommitmentParams[](2);
-        ps[0] = _params(a1);
-        ps[1] = _params(a2);
-
-        vm.prank(COMMITTER);
-        uint256[] memory ids = manager.batchCreateCommitments(ps);
-
-        assert(ids.length == 2);
-        assert(ids[0] >= 1);
-        assert(ids[1] >= 1);
-        assert(ids[1] > ids[0]); // monotonically increasing ids
-        assert(manager.encumberedBalance(address(token), COMMITTER) == a1 + a2);
-        assert(manager.freeBalance(address(token), COMMITTER) == DEPOSIT - a1 - a2);
-    }
-
     /// @notice `createCommitmentFor` (relayer / EIP-712) is a documented GAP for this harness.
     /// @dev The path consumes an EIP-712 digest validated through OZ `SignatureChecker` inside
     ///      the CommitmentLifecycleLib delegatecall. Reproducing a VALID signature under Halmos
@@ -119,8 +90,8 @@ contract CreatePathsSmokeTest is HalmosBase {
     ///      the ecrecover would then be over a fully concrete digest, giving no symbolic coverage
     ///      of the create accounting beyond what `createCommitment` already proves. The nonce and
     ///      digest machinery are covered by the Foundry relayer tests; the shared create core
-    ///      (`_createCommitmentInternal` → `CommitmentLifecycleLib.createFull`) is exactly the
-    ///      code path `createCommitment` and `batchCreateCommitments` exercise symbolically here.
+    ///      (`CommitmentLifecycleLib._createCore`, behind `createForCore` and `createFull`) is exactly the
+    ///      code path `createCommitment` and `createAndFund` exercise symbolically.
     ///      Left as a no-op placeholder so the gap is visible in the harness surface.
     function check_createCommitmentFor_INV10_signaturePathNote() public pure {
         assert(true);

@@ -2,9 +2,8 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {
     IDistributionStrategy,
@@ -12,45 +11,18 @@ import {
     TokenMovement,
     MovementKind
 } from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {RecordingStrategy, RevertingStrategy, MOCK_DISTRIBUTE} from "./mocks/StrategyMocks.sol";
 
-contract AgreementTestBase is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
-
-    address internal admin = makeAddr("admin");
+contract AgreementTestBase is ManagerTestBase {
     address internal alice = makeAddr("alice"); // proposer
     address internal bob = makeAddr("bob"); // acceptor
     address internal carol = makeAddr("carol"); // shared arbiter
 
-    uint64 internal constant UNBONDING = 7 days;
-    uint64 internal constant WINDOW = 2 days;
-
-    function setUp() public virtual {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
-
-        token.mint(alice, 1_000e18);
-        token.mint(bob, 1_000e18);
-        vm.startPrank(alice);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
-        vm.startPrank(bob);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
+    function setUp() public virtual override {
+        super.setUp();
+        _fund(alice, 1_000e18);
+        _fund(bob, 1_000e18);
     }
 
     function _eparams() internal view returns (ICM.AgreementParams memory p) {
@@ -91,8 +63,8 @@ contract AgreementTestBase is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 }
 
@@ -344,14 +316,14 @@ contract AgreementForfeitReleaseTest is AgreementTestBase {
     }
 
     function test_agreementUnbond_symmetric() public {
-        (uint256 agreementId, uint256 cidA, uint256 cidB) = _proposeAndAccept();
+        (, uint256 cidA, uint256 cidB) = _proposeAndAccept();
 
         vm.prank(carol);
         vm.expectRevert(ICM.NotCommitter.selector);
-        manager.requestAgreementUnbond(agreementId);
+        manager.requestUnbond(cidB);
 
-        vm.prank(bob); // either committer may initiate
-        manager.requestAgreementUnbond(agreementId);
+        vm.prank(bob); // either committer may initiate; the partner leg follows
+        manager.requestUnbond(cidB);
         assertGt(manager.unbondInitiatedAt(cidA), 0);
         assertGt(manager.unbondInitiatedAt(cidB), 0);
 
@@ -419,6 +391,11 @@ contract SettlementTest is AgreementTestBase {
         manager.settleAgreement(agreementId, false, 20e18, bytes32(0));
         vm.expectRevert(abi.encodeWithSelector(ICM.SettlementCapExceeded.selector, 21e18, 20e18));
         manager.settleAgreement(agreementId, false, 1e18, bytes32(0));
+
+        // A request past uint128 reports saturated against the real cap, not a cap of zero.
+        uint256 tooBig = uint256(type(uint128).max) + 1;
+        vm.expectRevert(abi.encodeWithSelector(ICM.SettlementCapExceeded.selector, type(uint128).max, 50e18));
+        manager.settleAgreement(agreementId, true, tooBig, bytes32(0));
         vm.stopPrank();
     }
 
@@ -646,6 +623,33 @@ contract AgreementApiPolishTest is AgreementTestBase {
         _partitionHolds();
     }
 
+    /// @dev A second forfeit while both legs have live proposals writes nothing, so it must revert
+    ///      rather than emit `AgreementForfeited` over unchanged 10% proposals.
+    function test_forfeitAgreement_revertsWhenEveryLegAlreadyPending() public {
+        (uint256 agreementId, uint256 cidA, uint256 cidB) = _proposeAndAccept();
+
+        vm.prank(carol);
+        manager.forfeitAgreement(agreementId, 1000);
+
+        vm.prank(carol);
+        vm.expectRevert(ICM.ForfeitPending.selector);
+        manager.forfeitAgreement(agreementId, 5000);
+
+        assertEq(manager.getForfeitProposal(cidA).penaltyBps, 1000, "leg A unchanged");
+        assertEq(manager.getForfeitProposal(cidB).penaltyBps, 1000, "leg B unchanged");
+
+        // Escalating means cancelling each leg first; then the higher penalty lands.
+        vm.startPrank(carol);
+        manager.cancelForfeit(cidA);
+        vm.expectEmit(true, false, false, false);
+        emit ICM.AgreementForfeited(agreementId);
+        manager.forfeitAgreement(agreementId, 5000);
+        vm.stopPrank();
+
+        assertEq(manager.getForfeitProposal(cidA).penaltyBps, 5000, "leg A re-proposed");
+        assertEq(manager.getForfeitProposal(cidB).penaltyBps, 1000, "leg B still live at 10%");
+    }
+
     function test_forfeitAgreement_revertsWhenPenaltyExceedsMax() public {
         (uint256 agreementId,,) = _proposeAndAccept();
 
@@ -705,8 +709,8 @@ contract CrossTokenAgreementTest is AgreementTestBase {
     }
 
     function _partitionHoldsFor(MockERC20 t) internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(t));
-        assertEq(free + enc + esc, t.balanceOf(address(manager)), "INV-1 partition per token");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(t));
+        assertEq(free + enc + esc + mp, t.balanceOf(address(manager)), "INV-1 partition per token");
     }
 
     function test_crossToken_legsCarryIndependentTerms() public {

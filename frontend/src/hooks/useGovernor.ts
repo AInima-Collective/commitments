@@ -1,15 +1,15 @@
 /**
- * Hooks for a single Governor instance and its proposals.
+ * Hook for a single Governor instance.
  *
- * Reads /governors/:address and /governors/:address/proposals from the
- * indexer. State derivation already happens server-side; the frontend
+ * Reads /governors/:address from the indexer. State derivation already happens server-side; the frontend
  * just renders.
  */
 import { useQuery } from '@tanstack/react-query'
 import type { Hex } from 'viem'
 
-import { hasIndexer, indexerFetch } from '../config/indexer'
+import { hasIndexer, indexerJsonOrNull } from '../config/indexer'
 import type { GovernorRow } from './useGovernors'
+import { POLL } from './polling'
 
 export interface ProposalRow {
   id: string
@@ -48,47 +48,8 @@ export function useGovernor(address: Hex | undefined) {
     queryKey: ['governor', address?.toLowerCase()] as const,
     queryFn: async () => {
       if (!address) return null
-      const res = await indexerFetch(`/governors/${address}`)
-      if (res.status === 404) return null
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as GovernorDetailPayload
+      return indexerJsonOrNull<GovernorDetailPayload>(`/governors/${address}`)
     },
-    refetchInterval: 15_000,
-  })
-}
-
-export interface ProposalsPage {
-  rows: ProposalRow[]
-  hasNext: boolean
-  nextCursor: string | null
-}
-
-export interface ProposalsFilter {
-  state?: string
-  kind?: string
-  proposer?: Hex
-  limit?: number
-  cursor?: string
-}
-
-export function useProposals(governor: Hex | undefined, filter: ProposalsFilter = {}) {
-  return useQuery<ProposalsPage | null>({
-    enabled: hasIndexer && Boolean(governor),
-    queryKey: ['proposals', governor?.toLowerCase(), filter] as const,
-    queryFn: async () => {
-      if (!governor) return null
-      const params = new URLSearchParams()
-      if (filter.state) params.set('state', filter.state)
-      if (filter.kind) params.set('kind', filter.kind)
-      if (filter.proposer) params.set('proposer', filter.proposer)
-      if (filter.limit != null) params.set('limit', String(filter.limit))
-      if (filter.cursor) params.set('cursor', filter.cursor)
-      const qs = params.toString()
-      const path = `/governors/${governor}/proposals${qs ? `?${qs}` : ''}`
-      const res = await indexerFetch(path)
-      if (!res.ok) throw new Error(`Indexer error: ${res.status}`)
-      return (await res.json()) as ProposalsPage
-    },
-    refetchInterval: 15_000,
+    refetchInterval: POLL.fast,
   })
 }

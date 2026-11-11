@@ -1,20 +1,19 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { type Address, type Hex, type TransactionReceipt, encodeAbiParameters } from 'viem'
 import { useChainId } from 'wagmi'
 import { commitmentManagerAbi } from '../../../generated'
 import { getContractAddresses } from '../../../config/contracts'
-import { useDistributeYield } from '../../../hooks/useDistributeYield'
 import { type CommitmentYieldEntry } from '../../../hooks/useCommitmentYield'
 import {
   formatBps,
   type CommitmentWithStatus,
-} from '../../../utils/commitments'
+} from '../../../lib/commitments'
 import {
   type ResolveAction,
   type ResolveActionKind,
-} from '../../../utils/resolveActions'
-import { Input, TokenAmount } from '../../ui'
-import { useWriteAction } from './useWriteAction'
+} from '../../../lib/resolveActions'
+import { Button, Input, TokenAmount, type ButtonVariant } from '../../ui'
+import { useWriteAction } from '../../../hooks/useWriteAction'
 
 interface ResolveActionRowProps {
   action: ResolveAction
@@ -48,7 +47,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   release: {
     title: 'Release commitment',
     helper:
-      'Closes the commitment and frees the depositor’s shares. Arbiter only.',
+      'Closes the commitment and returns its backing to the committer’s free balance in the manager. Arbiter only.',
   },
   expire: {
     title: 'Expire commitment',
@@ -58,7 +57,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   'request-unbond': {
     title: 'Request unbond',
     helper:
-      'Starts the vault unbonding period. After it elapses anyone can finalize and the shares free up.',
+      'Starts this commitment’s unbonding period. After it elapses anyone can finalize, and the backing returns to the committer’s free balance.',
   },
   'finalize-unbond': {
     title: 'Finalize unbond',
@@ -92,7 +91,7 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   'claim-yield': {
     title: 'Claim yield',
     helper:
-      'Transfers accrued yield shares to the counterparty’s wallet.',
+      'Pays each bound strategy’s accrued yield for this commitment to the counterparty’s wallet.',
   },
   'reclaim-yield': {
     title: 'Reclaim abandoned yield',
@@ -121,15 +120,8 @@ const META: Record<ResolveActionKind, ActionMeta> = {
   },
 }
 
-export function ResolveActionRow({
-  action,
-  commitment,
-  managerAddress,
-  decimals,
-  symbol,
-  yieldEntries,
-  onActed,
-}: ResolveActionRowProps) {
+export function ResolveActionRow(props: ResolveActionRowProps) {
+  const { action } = props
   const meta = META[action.kind]
 
   return (
@@ -145,15 +137,7 @@ export function ResolveActionRow({
           <span className="ds-text-xs ds-muted">{action.reason}</span>
         )}
       </div>
-      <ActionBody
-        action={action}
-        commitment={commitment}
-        managerAddress={managerAddress}
-        decimals={decimals}
-        symbol={symbol}
-        yieldEntries={yieldEntries}
-        onActed={onActed}
-      />
+      <ActionBody {...props} />
     </div>
   )
 }
@@ -168,11 +152,11 @@ function ActionBody(props: ResolveActionRowProps) {
     case 'request-unbond':
       return <SimpleAction {...props} fnName="requestUnbond" idle="Request unbond" pending="Submitting…" success="Unbond requested" />
     case 'finalize-unbond':
-      return <SimpleAction {...props} fnName="finalizeUnbond" idle="Close commitment" pending="Closing…" success="Closed" primary />
+      return <SimpleAction {...props} fnName="finalizeUnbond" idle="Close commitment" pending="Closing…" success="Closed" variant="primary" />
     case 'cancel-unbond':
       return <SimpleAction {...props} fnName="cancelUnbond" idle="Cancel unbond" pending="Cancelling…" success="Cancelled" variant="ghost" />
     case 'execute-forfeit':
-      return <SimpleAction {...props} fnName="executeForfeit" idle="Execute forfeit" pending="Executing…" success="Executed" primary />
+      return <SimpleAction {...props} fnName="executeForfeit" idle="Execute forfeit" pending="Executing…" success="Executed" variant="primary" />
     case 'cancel-forfeit':
       return <SimpleAction {...props} fnName="cancelForfeit" idle="Cancel forfeit" pending="Cancelling…" success="Cancelled" variant="ghost" />
     case 'cancel-stale-forfeit':
@@ -190,7 +174,7 @@ function ActionBody(props: ResolveActionRowProps) {
     case 'request-mutual-exit':
       return <SimpleAction {...props} fnName="requestMutualExit" idle="Request exit" pending="Submitting…" success="Exit requested" />
     case 'release-mutual-member':
-      return <SimpleAction {...props} fnName="releaseMutualMember" idle="Release member" pending="Releasing…" success="Released" primary />
+      return <SimpleAction {...props} fnName="releaseMutualMember" idle="Release member" pending="Releasing…" success="Released" variant="primary" />
   }
 }
 
@@ -209,15 +193,14 @@ interface SimpleActionExtras {
   idle: string
   pending: string
   success: string
-  primary?: boolean
-  variant?: 'ghost'
+  variant?: ButtonVariant
 }
 
 /** Disabled placeholder for yield actions whose v2 UI is deferred. */
 function DeferredAction({ label, reason }: { label: string; reason: string }) {
   return (
     <ButtonRow
-      buttonClassName="ds-btn ds-btn--ghost"
+      variant="ghost"
       onClick={() => {}}
       disabled
       label={label}
@@ -235,7 +218,6 @@ function SimpleAction({
   idle,
   pending,
   success,
-  primary,
   variant,
   onActed,
 }: ResolveActionRowProps & SimpleActionExtras) {
@@ -254,17 +236,9 @@ function SimpleAction({
     })
   }
 
-  const cls = [
-    'ds-btn',
-    primary ? 'ds-btn--primary' : '',
-    variant === 'ghost' ? 'ds-btn--ghost' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-
   return (
     <ButtonRow
-      buttonClassName={cls}
+      variant={variant}
       onClick={handleClick}
       disabled={!action.enabled || isPendingAny}
       label={isPendingAny ? pending : idle}
@@ -329,7 +303,6 @@ function InitiateForfeitAction({
         </span>
       </div>
       <ButtonRow
-        buttonClassName="ds-btn"
         onClick={handleClick}
         disabled={!action.enabled || isPendingAny}
         label={isPendingAny ? 'Initiating…' : 'Initiate forfeit'}
@@ -469,7 +442,6 @@ function StrategyClaimButton({
 
   return (
     <ButtonRow
-      buttonClassName="ds-btn"
       onClick={handleClick}
       disabled={!enabled || isPendingAny}
       label={isPendingAny ? `${verb}ing…` : idleLabel}
@@ -486,22 +458,23 @@ function DistributeYieldAction({
 }: ResolveActionRowProps) {
   // v2 has no aggregate pending-yield read — distributeAll is permissionless and
   // idempotent, so we offer it whenever a strategy is bound (caller-gated). The
-  // per-strategy pending estimate is deferred (FUTURE_WORK §2).
-  const { distribute, isPending, isConfirming, isSuccess } = useDistributeYield({
-    managerAddress,
-    commitmentId: commitment.id,
-  })
+  // row shows no per-strategy pending estimate.
+  const { write, isPending, isConfirming, isSuccess } = useWriteAction({ onSuccess: onActed })
   const isPendingAny = isPending || isConfirming
 
-  useEffect(() => {
-    if (isSuccess) onActed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess])
+  function distribute() {
+    if (!managerAddress) return
+    write({
+      abi: commitmentManagerAbi,
+      address: managerAddress,
+      functionName: 'distributeAll',
+      args: [commitment.id],
+    })
+  }
 
   return (
     <div className="ds-stack ds-stack-2">
       <ButtonRow
-        buttonClassName="ds-btn"
         onClick={() => distribute()}
         disabled={!action.enabled || isPendingAny}
         label={isPendingAny ? 'Distributing…' : 'Distribute yield'}
@@ -553,7 +526,6 @@ function SettleMutualLossAction({
 
   return (
     <ButtonRow
-      buttonClassName="ds-btn"
       onClick={handleClick}
       disabled={!action.enabled || isPendingAny}
       label={isPendingAny ? 'Settling…' : idleLabel}
@@ -563,7 +535,7 @@ function SettleMutualLossAction({
 }
 
 interface ButtonRowProps {
-  buttonClassName: string
+  variant?: ButtonVariant
   onClick: () => void
   disabled: boolean
   label: ReactNode
@@ -572,7 +544,7 @@ interface ButtonRowProps {
 }
 
 function ButtonRow({
-  buttonClassName,
+  variant,
   onClick,
   disabled,
   label,
@@ -581,15 +553,9 @@ function ButtonRow({
 }: ButtonRowProps) {
   return (
     <div className="ds-row ds-row-2">
-      <button
-        type="button"
-        className={buttonClassName}
-        onClick={onClick}
-        disabled={disabled}
-        title={title}
-      >
+      <Button variant={variant} onClick={onClick} disabled={disabled} title={title}>
         {label}
-      </button>
+      </Button>
       {success && (
         <span className="ds-tx-success ds-text-xs">{success}</span>
       )}

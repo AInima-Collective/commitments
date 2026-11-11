@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
-import { getAbiItem } from 'viem'
-import { useAccount, useChainId, usePublicClient } from 'wagmi'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { type Address } from 'viem'
+import { useAccount, useChainId, useReadContracts } from 'wagmi'
 
-import { operatorRegistryAbi } from '../generated'
 import { getContractAddresses } from '../config/contracts'
-import { type CommitmentWithStatus } from '../utils/commitments'
-import { useCommitments } from './useCommitments'
-
-const delegationCreatedEvent = getAbiItem({
-  abi: operatorRegistryAbi,
-  name: 'DelegationCreated',
-})
+import { hasIndexer, indexerGraphqlData } from '../config/indexer'
+import { type CommitmentWithStatus } from '../lib/commitments'
+import { COMMITMENT_STRIDE, commitmentReadContracts, mapCommitmentWindow } from '../lib/commitmentReads'
+import { POLL } from './polling'
 
 export interface MyDelegationsResult {
   /** Lowercased operator addresses the connected account has an *active*
@@ -31,94 +28,76 @@ const EMPTY: MyDelegationsResult = {
   refetch: () => {},
 }
 
+// The indexer tags a delegation commitment with its operator on DelegationCreated.
+const DELEGATIONS_QUERY = /* GraphQL */ `
+  query MyDelegations($manager: String!, $staker: String!) {
+    commitments(
+      where: {
+        manager: $manager
+        committer: $staker
+        operatorBeneficiary_not: null
+        status_not_in: ["released", "forfeited"]
+      }
+      limit: 1000
+    ) {
+      items { id operatorBeneficiary }
+    }
+  }
+`
+
 /**
  * Resolves the connected account's delegations into a per-operator view.
  *
- * A delegation is a commitment (created by the staker) linked to an operator
- * via `OperatorRegistry.delegate`, surfaced on-chain by the
- * `DelegationCreated(staker indexed, operator indexed, commitmentId indexed, amount)`
- * event. We scan that event filtered by `staker = account` (one indexed RPC
- * call), build a commitmentId → operator map, then look the commitments up in
- * the account's own commitment set (`useCommitments`) so callers get the live
- * status (ACTIVE / UNBONDING / …) and a full object for the resolve modal.
- *
+ * The indexer lists the account's open delegation commitments with their
+ * operator; one multicall over just those ids supplies the live status
+ * (ACTIVE / UNBONDING / …) and a full object for the resolve modal.
  * Released/forfeited delegations are dropped — they're no longer actionable.
  */
 export function useMyDelegations(): MyDelegationsResult {
   const chainId = useChainId()
-  const client = usePublicClient()
   const { address: account } = useAccount()
-  const { commitmentManager, operatorRegistry } = getContractAddresses(chainId)
+  const { commitmentManager } = getContractAddresses(chainId)
 
-  // commitmentId(string) → operator(lowercased) from DelegationCreated logs.
-  const [operatorByCommitment, setOperatorByCommitment] = useState<Map<string, string>>(
-    new Map(),
-  )
-  const [isScanning, setIsScanning] = useState(true)
+  const listing = useQuery({
+    enabled: hasIndexer && !!commitmentManager && !!account,
+    queryKey: ['my-delegations', chainId, commitmentManager, account],
+    queryFn: async () => {
+      const { commitments } = await indexerGraphqlData<{
+        commitments: { items: { id: string; operatorBeneficiary: string }[] }
+      }>(DELEGATIONS_QUERY, { manager: commitmentManager!.toLowerCase(), staker: account!.toLowerCase() })
+      return commitments.items.map((c) => ({ id: BigInt(c.id), operator: c.operatorBeneficiary.toLowerCase() }))
+    },
+    refetchInterval: POLL.slow,
+    retry: false,
+  })
+  const rows = useMemo(() => listing.data ?? [], [listing.data])
 
-  useEffect(() => {
-    let cancelled = false
-    if (!client || !operatorRegistry || !account) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- external subscription (RPC log scan); see frontend/docs/eslint-disable-rationale.md §Pattern-3
-      setOperatorByCommitment(new Map())
-      setIsScanning(false)
-      return
-    }
-    setIsScanning(true)
-    client
-      .getLogs({
-        address: operatorRegistry,
-        event: delegationCreatedEvent,
-        args: { staker: account },
-        fromBlock: 0n,
-      })
-      .then((logs) => {
-        if (cancelled) return
-        const next = new Map<string, string>()
-        for (const l of logs) {
-          const id = l.args.commitmentId
-          const operator = l.args.operator
-          if (id === undefined || operator === undefined) continue
-          next.set(id.toString(), operator.toLowerCase())
-        }
-        setOperatorByCommitment(next)
-        setIsScanning(false)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setOperatorByCommitment(new Map())
-        setIsScanning(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [client, operatorRegistry, account])
-
-  const { commitments, isLoading: isLoadingCommitments, refetch } = useCommitments({
-    managerAddress: commitmentManager,
-    committerAddress: account,
+  const chain = useReadContracts({
+    contracts: rows.flatMap((r) => commitmentReadContracts(commitmentManager as Address, r.id)),
+    query: { enabled: rows.length > 0 && !!commitmentManager, refetchInterval: POLL.fast },
   })
 
-  const result = useMemo<MyDelegationsResult>(() => {
-    if (!account) return EMPTY
+  const grouped = useMemo(() => {
     const byOperator = new Map<string, CommitmentWithStatus[]>()
     const delegatedOperators = new Set<string>()
-    for (const c of commitments) {
-      const operator = operatorByCommitment.get(c.id.toString())
-      if (!operator) continue
-      if (c.status === 'RELEASED' || c.status === 'FORFEITED') continue
-      delegatedOperators.add(operator)
-      const list = byOperator.get(operator)
+    rows.forEach((r, i) => {
+      const c = chain.data ? mapCommitmentWindow(r.id, chain.data, i * COMMITMENT_STRIDE) : undefined
+      if (!c || c.status === 'RELEASED' || c.status === 'FORFEITED') return
+      delegatedOperators.add(r.operator)
+      const list = byOperator.get(r.operator)
       if (list) list.push(c)
-      else byOperator.set(operator, [c])
-    }
-    return {
-      delegatedOperators,
-      byOperator,
-      isLoading: isScanning || isLoadingCommitments,
-      refetch,
-    }
-  }, [account, commitments, operatorByCommitment, isScanning, isLoadingCommitments, refetch])
+      else byOperator.set(r.operator, [c])
+    })
+    return { delegatedOperators, byOperator }
+  }, [rows, chain.data])
 
-  return result
+  if (!account) return EMPTY
+  return {
+    ...grouped,
+    isLoading: listing.isLoading || (rows.length > 0 && chain.isLoading),
+    refetch: () => {
+      void listing.refetch()
+      void chain.refetch()
+    },
+  }
 }

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { AgentBadge, OperatorIdentity } from '../protocol'
 import { Card, Notice, TokenAmount } from '../ui'
 import { type IndexedAgent } from '../../hooks/useAgentsIndexed'
@@ -24,8 +25,8 @@ export function AgentCard({ agent, metaFor }: AgentCardProps) {
 
   return (
     <Card
-      as="a"
-      href={`/app/agents/${agent.agentId.toString()}`}
+      as={Link}
+      to={`/app/agents/${agent.agentId.toString()}`}
       className="ds-stack ds-stack-3"
       aria-label={`Agent ${name}`}
     >

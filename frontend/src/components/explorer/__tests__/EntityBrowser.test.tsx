@@ -21,7 +21,11 @@ vi.mock('../../../hooks/useProtocolEntityList', () => ({
 vi.mock('../../../hooks/useArbiterProfile', () => ({
   useArbiterProfile: (...args: unknown[]) => mocks.profile(...args),
 }))
-vi.mock('wagmi', () => ({ useChainId: () => 31337 }))
+// Partial: the protocol barrel reaches config/wagmi, which calls createConfig.
+vi.mock('wagmi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('wagmi')>()),
+  useChainId: () => 31337,
+}))
 vi.mock('../../../hooks/useOperatorNames', () => ({
   useOperatorNames: () => ({ get: () => undefined, isLoading: false }),
 }))
@@ -107,6 +111,19 @@ describe('EntityBrowser', () => {
     )
   })
 
+  it('filters commitments by address on the server, not over a capped first page', () => {
+    mocks.commitments.mockReturnValue({ rows: [], total: 0, isLoading: false, error: null })
+
+    render(
+      <MemoryRouter>
+        <EntityBrowser filterAddress={COUNTERPARTY} />
+      </MemoryRouter>,
+    )
+
+    expect(mocks.commitments).toHaveBeenCalledWith({ address: COUNTERPARTY })
+    expect(screen.getByText('This address is not the committer or counterparty of any commitment.')).toBeTruthy()
+  })
+
   it('paginates and address-filters the complete arbiter directory with direct profile links', () => {
     mocks.arbiters.mockImplementation((options: { offset: number }) => ({
       rows: [{
@@ -116,7 +133,8 @@ describe('EntityBrowser', () => {
         pendingManagerForfeits: 2,
         openMechanismCases: 1,
       }],
-      page: { limit: 50, offset: options.offset, total: 75, nextOffset: options.offset === 0 ? 50 : null },
+      // The server's nextOffset is offset + rows on the page.
+      page: { limit: 50, offset: options.offset, total: 75, nextOffset: options.offset + 1 },
       isLoading: false,
       error: null,
     }))
@@ -133,7 +151,7 @@ describe('EntityBrowser', () => {
     )
     expect(screen.getByText('4 active / 9 total')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    expect(mocks.arbiters).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 }))
+    expect(mocks.arbiters).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 1 }))
   })
 
   it('shows case provenance, a next action, and terminal outcome separately', () => {

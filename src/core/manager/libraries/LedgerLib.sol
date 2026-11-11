@@ -9,15 +9,48 @@ import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManag
 ///         arithmetic. Internal library — inlined into every caller (the manager and the
 ///         external delegatecall libraries) so there is exactly one implementation of the
 ///         ledger arithmetic and the aggregate-counter bookkeeping.
-/// @dev Every operation here conserves the manager's token balance exactly (no external
-///      transfers), so the partition invariant (INV-1) holds trivially across each. These
+/// @dev The ONLY writer of the ledger balances, the escrow and their per-token aggregates, so INV-1
+///      has one file to audit. Every operation conserves the manager's token balance exactly except
+///      the three custody-edge helpers (`creditFree`, `debitFree`, `creditEscrow`), whose callers
+///      move exactly `units` across the custody boundary in the same call. These
 ///      operations are NOT expressible as TokenMovements and are never available to strategies.
 library LedgerLib {
+    /// @dev Credit free[user] with units that just entered custody (measured deposit receipt). The
+    ///      caller has moved the tokens in; this keeps the aggregate in step.
+    function creditFree(CommitmentManagerStorage.Layout storage s, address token, address user, uint256 units)
+        internal
+    {
+        s.ledger[token][user].freeBalance += units;
+        s.totalFree[token] += units;
+    }
+
+    /// @dev Debit free[user] for units about to leave custody (withdraw). The caller transfers.
+    function debitFree(CommitmentManagerStorage.Layout storage s, address token, address user, uint256 units) internal {
+        CommitmentManagerStorage.TokenLedger storage l = s.ledger[token][user];
+        uint256 free = l.freeBalance;
+        if (units > free) revert ICM.InsufficientFreeBalance(units, free);
+        unchecked {
+            l.freeBalance = free - units;
+        }
+        s.totalFree[token] -= units;
+    }
+
+    /// @dev Credit escrow[strategy] with units that just entered custody (fundStrategy receipt).
+    function creditEscrow(CommitmentManagerStorage.Layout storage s, address strategy, address token, uint256 units)
+        internal
+    {
+        s.escrow[strategy][token] += units;
+        s.totalEscrow[token] += units;
+    }
+
     /// @dev Encumber: free[user] -> encumbered[user]. Emits EncumbranceIncreased.
     function encumber(CommitmentManagerStorage.Layout storage s, address token, address user, uint256 units) internal {
         CommitmentManagerStorage.TokenLedger storage l = s.ledger[token][user];
-        if (units > l.freeBalance) revert ICM.InsufficientFreeBalance(units, l.freeBalance);
-        l.freeBalance -= units;
+        uint256 bal = l.freeBalance;
+        if (units > bal) revert ICM.InsufficientFreeBalance(units, bal);
+        unchecked {
+            l.freeBalance = bal - units;
+        }
         l.encumberedBalance += units;
         s.totalFree[token] -= units;
         s.totalEncumbered[token] += units;
@@ -34,28 +67,15 @@ library LedgerLib {
         uint256 units
     ) internal {
         CommitmentManagerStorage.TokenLedger storage l = s.ledger[token][user];
-        if (units > l.encumberedBalance) revert ICM.InsufficientEncumberedBalance(units, l.encumberedBalance);
-        l.encumberedBalance -= units;
+        uint256 bal = l.encumberedBalance;
+        if (units > bal) revert ICM.InsufficientEncumberedBalance(units, bal);
+        unchecked {
+            l.encumberedBalance = bal - units;
+        }
         l.freeBalance += units;
         s.totalEncumbered[token] -= units;
         s.totalFree[token] += units;
         emit ICM.EncumbranceReleased(commitmentId, user, token, units);
-    }
-
-    /// @dev Transfer encumbered: encumbered[from] -> encumbered[to] (bilateral settlement).
-    ///      Emits EncumbranceTransferred.
-    function transferEncumbered(
-        CommitmentManagerStorage.Layout storage s,
-        address token,
-        address from,
-        address to,
-        uint256 units
-    ) internal {
-        CommitmentManagerStorage.TokenLedger storage lf = s.ledger[token][from];
-        if (units > lf.encumberedBalance) revert ICM.InsufficientEncumberedBalance(units, lf.encumberedBalance);
-        lf.encumberedBalance -= units;
-        s.ledger[token][to].encumberedBalance += units;
-        emit ICM.EncumbranceTransferred(from, to, token, units);
     }
 
     /// @dev Attribute encumbrance: free[contributor] -> encumbered[committer] (contributions).
@@ -68,8 +88,11 @@ library LedgerLib {
         uint256 units
     ) internal {
         CommitmentManagerStorage.TokenLedger storage lc = s.ledger[token][contributor];
-        if (units > lc.freeBalance) revert ICM.InsufficientFreeBalance(units, lc.freeBalance);
-        lc.freeBalance -= units;
+        uint256 bal = lc.freeBalance;
+        if (units > bal) revert ICM.InsufficientFreeBalance(units, bal);
+        unchecked {
+            lc.freeBalance = bal - units;
+        }
         s.ledger[token][committer].encumberedBalance += units;
         s.totalFree[token] -= units;
         s.totalEncumbered[token] += units;
@@ -85,8 +108,11 @@ library LedgerLib {
         uint256 units
     ) internal {
         CommitmentManagerStorage.TokenLedger storage lc = s.ledger[token][committer];
-        if (units > lc.encumberedBalance) revert ICM.InsufficientEncumberedBalance(units, lc.encumberedBalance);
-        lc.encumberedBalance -= units;
+        uint256 bal = lc.encumberedBalance;
+        if (units > bal) revert ICM.InsufficientEncumberedBalance(units, bal);
+        unchecked {
+            lc.encumberedBalance = bal - units;
+        }
         s.ledger[token][recipient].freeBalance += units;
         s.totalEncumbered[token] -= units;
         s.totalFree[token] += units;
@@ -103,8 +129,11 @@ library LedgerLib {
         uint256 units
     ) internal {
         CommitmentManagerStorage.TokenLedger storage lc = s.ledger[token][committer];
-        if (units > lc.encumberedBalance) revert ICM.InsufficientEncumberedBalance(units, lc.encumberedBalance);
-        lc.encumberedBalance -= units;
+        uint256 bal = lc.encumberedBalance;
+        if (units > bal) revert ICM.InsufficientEncumberedBalance(units, bal);
+        unchecked {
+            lc.encumberedBalance = bal - units;
+        }
         s.escrow[strategy][token] += units;
         s.totalEncumbered[token] -= units;
         s.totalEscrow[token] += units;
@@ -123,8 +152,11 @@ library LedgerLib {
         uint256 units
     ) internal {
         CommitmentManagerStorage.TokenLedger storage lc = s.ledger[token][committer];
-        if (units > lc.encumberedBalance) revert ICM.InsufficientEncumberedBalance(units, lc.encumberedBalance);
-        lc.encumberedBalance -= units;
+        uint256 bal = lc.encumberedBalance;
+        if (units > bal) revert ICM.InsufficientEncumberedBalance(units, bal);
+        unchecked {
+            lc.encumberedBalance = bal - units;
+        }
         s.totalEncumbered[token] -= units;
         emit ICM.EncumbrancePaidExternal(commitmentId, strategy, token, units);
     }
@@ -181,8 +213,11 @@ library LedgerLib {
         uint256 units
     ) internal {
         CommitmentManagerStorage.TokenLedger storage l = s.ledger[token][from];
-        if (units > l.freeBalance) revert ICM.InsufficientFreeBalance(units, l.freeBalance);
-        l.freeBalance -= units;
+        uint256 bal = l.freeBalance;
+        if (units > bal) revert ICM.InsufficientFreeBalance(units, bal);
+        unchecked {
+            l.freeBalance = bal - units;
+        }
         s.totalFree[token] -= units;
         s.mutualPremiumPool[mutualId] += units;
         s.totalMutualPremium[token] += units;
@@ -203,52 +238,6 @@ library LedgerLib {
         if (units > pool) revert ICM.InsufficientMutualPremium(units, pool);
         s.mutualPremiumPool[mutualId] = pool - units;
         s.totalMutualPremium[token] -= units;
-        s.ledger[token][to].freeBalance += units;
-        s.totalFree[token] += units;
-    }
-
-    // =========================================================================
-    // Junior shortfall absorber — the FIFTH partition compartment (heterogeneous mode)
-    //
-    // `mutualJuniorPool[mutualId]` is `funded − drawn` numeraire, tracked by the per-token
-    // `totalMutualJunior` aggregate. This helper pair is the ONLY path that mutates the pool, and
-    // each helper is balance-conserving (no external transfer), so the 5-compartment partition
-    // invariant (INV-P13) holds trivially across each. The pool never earns the premium index and
-    // is never part of `activeCover` / `totalShares`. Modelled on the premium helper pair above.
-    // =========================================================================
-
-    /// @dev Move free[from] -> mutualJuniorPool[mutualId] (junior funding split). Balance-conserving:
-    ///      totalFree decreases and totalMutualJunior increases by `units` (INV-P13 preserved).
-    function freeToMutualJunior(
-        CommitmentManagerStorage.Layout storage s,
-        address token,
-        address from,
-        uint256 mutualId,
-        uint256 units
-    ) internal {
-        CommitmentManagerStorage.TokenLedger storage l = s.ledger[token][from];
-        if (units > l.freeBalance) revert ICM.InsufficientFreeBalance(units, l.freeBalance);
-        l.freeBalance -= units;
-        s.totalFree[token] -= units;
-        s.mutualJuniorPool[mutualId] += units;
-        s.totalMutualJunior[token] += units;
-    }
-
-    /// @dev Move mutualJuniorPool[mutualId] -> free[to] (settle-time draw / terminal sweep — the ONLY
-    ///      junior debit path). Balance-conserving: totalMutualJunior decreases and totalFree increases
-    ///      by `units` (INV-P13 preserved). Reverts if the pool is short (the settle-time caller clamps
-    ///      `draw <= pool` so this never bites there; checked defensively against any future desync).
-    function mutualJuniorToFree(
-        CommitmentManagerStorage.Layout storage s,
-        address token,
-        address to,
-        uint256 mutualId,
-        uint256 units
-    ) internal {
-        uint256 pool = s.mutualJuniorPool[mutualId];
-        if (units > pool) revert ICM.InsufficientMutualJunior(units, pool);
-        s.mutualJuniorPool[mutualId] = pool - units;
-        s.totalMutualJunior[token] -= units;
         s.ledger[token][to].freeBalance += units;
         s.totalFree[token] += units;
     }

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type StatBlockTone = 'neutral' | 'positive' | 'negative' | 'accent'
+export type StatBlockTone = 'neutral' | 'success' | 'danger' | 'accent'
 
 export interface StatBlockProps {
   label: string
@@ -26,8 +26,8 @@ export interface StatBlockProps {
 export function StatBlock({ label, value, loading = false, meta, tone = 'neutral' }: StatBlockProps) {
   const displayValue = loading || value == null ? '---' : value
   const toneClass =
-    tone === 'positive' ? ' ds-stat--positive'
-    : tone === 'negative' ? ' ds-stat--negative'
+    tone === 'success' ? ' ds-stat--success'
+    : tone === 'danger' ? ' ds-stat--danger'
     : tone === 'accent' ? ' ds-stat--accent'
     : ''
 

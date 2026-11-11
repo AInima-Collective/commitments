@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import {IFlowQuery} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
 import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 
 /// @title ITokenWeighting
 /// @notice Interface for the TokenWeighting sink node — normalizes multi-asset stake into
 ///         unified governance-compatible voting power using configurable per-denom weights.
-///         Historical voting power is queryable at past block numbers via OZ Checkpoints.Trace256.
+///         Historical voting power is queryable at past block numbers via OZ Checkpoints.Trace208
+///         (block numbers as `uint48`, raw stake and weights as `uint208`).
 ///         Inherits IVotingPowerSource so consumers (service managers) can depend on
 ///         the narrow voting-power surface without pulling in the full mesh interface.
-interface ITokenWeighting is IFlowQuery, IVotingPowerSource {
+interface ITokenWeighting is IVotingPowerSource {
     // ============================================================
     // EVENTS
     // ============================================================
@@ -103,13 +103,13 @@ interface ITokenWeighting is IFlowQuery, IVotingPowerSource {
     ///      `weightBps = r * h / 1e18 * 10_000`. No price oracle is involved — the
     ///      factor is governance-set.
     /// @param denom The denom whose weight to update (registers new denom if first call)
-    /// @param weightBps Full-precision normalization factor (e.g., 1e16, 3.2e7)
+    /// @param weightBps Full-precision normalization factor (e.g., 1e16, 3.2e7); must fit `uint208`
     function updateWeight(bytes32 denom, uint256 weightBps) external;
 
     /// @notice Governance retires a denom so it stops contributing to voting power
     ///         and stops accepting new stake — the bounded-set counterpart to
-    ///         `updateWeight`, needed because the unbounded `_denoms` set drives the
-    ///         O(denoms) cost of the quorum-validation voting-power queries.
+    ///         `updateWeight`, needed because the `_denoms` set (capped at `MAX_DENOMS`, 64)
+    ///         drives the O(denoms) cost of the quorum-validation voting-power queries.
     /// @dev A denom that never accrued stake is purged from the iterated set outright
     ///      (it contributed zero at every block, so no historical query changes). A
     ///      denom with stake history is instead made inert via a weight-0 epoch: its

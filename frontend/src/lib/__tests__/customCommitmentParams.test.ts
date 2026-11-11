@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseUnits, type Address } from 'viem'
+import { parseUnits, type Address, zeroAddress, zeroHash } from 'viem'
 
 import { buildCustomParams, type CustomCommitInput } from '../customCommitmentParams'
-import { ZERO_HASH } from '../../utils/metadataForm'
 
 const CONNECTED = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Address
 const ARBITER = '0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97' as Address
 const COUNTERPARTY = '0x742d35Cc6634C0532925a3b844Bc454e4438f44e' as Address
-const ZERO = '0x0000000000000000000000000000000000000000' as Address
 
 const goodInput: CustomCommitInput = {
   connectedAddress: CONNECTED,
@@ -43,11 +41,15 @@ describe('buildCustomParams', () => {
     expect(out.params.arbiter).toBe(ARBITER)
   })
 
-  it('treats a blank counterparty as the zero address (one-sided)', () => {
-    const out = buildCustomParams({ ...goodInput, counterparty: '' })
-    expect(out.ok).toBe(true)
-    if (!out.ok) return
-    expect(out.params.counterparty).toBe(ZERO)
+  it('requires a counterparty: the manager rejects the zero address', () => {
+    expect(buildCustomParams({ ...goodInput, counterparty: '' })).toEqual({
+      ok: false,
+      error: 'COUNTERPARTY ADDRESS REQUIRED',
+    })
+    expect(buildCustomParams({ ...goodInput, counterparty: zeroAddress })).toEqual({
+      ok: false,
+      error: 'INVALID COUNTERPARTY ADDRESS',
+    })
   })
 
   it('rejects a malformed counterparty', () => {
@@ -98,7 +100,7 @@ describe('buildCustomParams', () => {
       challengeWindow: 86_400n,
       expiresAt: 0n,
       metadataURI: '',
-      metadataHash: ZERO_HASH,
+      metadataHash: zeroHash,
     })
   })
 

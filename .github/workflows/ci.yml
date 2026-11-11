@@ -33,10 +33,13 @@ jobs:
       - name: Setup Node for repository checks
         uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: 22
 
       - name: Check canonical unit constants
         run: node script/check-unit-constants.mjs
+
+      - name: Check documentation
+        run: node script/check-docs.mjs
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -51,8 +54,6 @@ jobs:
 
       - name: Test contracts
         run: forge test -vvv
-        env:
-          FOUNDRY_PROFILE: default
 
   workspace:
     name: Workspace codegen + typecheck + test
@@ -77,7 +78,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: 22
           cache: pnpm
 
       - name: Install workspace dependencies
@@ -103,6 +104,9 @@ jobs:
       - name: Test workspace
         run: pnpm test
 
+      - name: Build production frontend
+        run: pnpm build
+
   frontend-lint:
     name: Frontend ESLint + Stylelint
     runs-on: ubuntu-latest
@@ -117,7 +121,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: 22
           cache: pnpm
 
       - name: Install workspace dependencies
@@ -128,36 +132,3 @@ jobs:
 
       - name: Run frontend Stylelint
         run: pnpm --filter @commitments/frontend lint:css
-
-  frontend-build:
-    name: Frontend production build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout sources and pinned submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.19.0
-          cache: pnpm
-
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build Forge artifacts for ABI generation
-        run: forge build
-
-      - name: Build production frontend
-        run: pnpm build

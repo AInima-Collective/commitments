@@ -9,7 +9,7 @@ import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
 import {LedgerOpsLib} from "src/core/manager/libraries/LedgerOpsLib.sol";
 import {ExposureLib} from "src/core/manager/libraries/ExposureLib.sol";
 import {PauseLib} from "src/core/manager/libraries/PauseLib.sol";
-import {BPS_DENOMINATOR} from "src/shared/Constants.sol";
+import {BPS_DENOMINATOR, MAX_STRATEGIES, MAX_METADATA_URI_LENGTH, FORFEIT_PROPOSAL_TTL} from "src/shared/Constants.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
@@ -33,33 +33,56 @@ interface IOperatorRegistryHooks {
 /// @dev `msg.sender`, `address(this)`, and event sourcing are preserved under delegatecall, so
 ///      auth checks and registry calls behave exactly as if they lived on the manager.
 library CommitmentLifecycleLib {
+    /// @notice Canonical relayer typehash (ERC §C.8). `strategiesHash` is
+    ///         keccak256(abi.encode(params.strategies)).
+    bytes32 internal constant CREATE_COMMITMENT_TYPEHASH = keccak256(
+        "CreateCommitment(address committer,address arbiter,address counterparty,address token,"
+        "address adapter,uint256 amount,uint16 maxPenaltyBps,uint64 challengeWindow,uint64 expiresAt,"
+        "bytes32 strategiesHash,string metadataURI,bytes32 metadataHash,uint256 nonce,uint256 deadline)"
+    );
+
     // =========================================================================
     // Create (ERC §C.1)
     // =========================================================================
 
-    /// @notice Validate a relayer CreateCommitment authorization against `committer` (ERC §C.8).
-    /// @dev The EIP-712 digest assembly + signature validation live here (DELEGATECALL) so the
-    ///      manager — already at the EIP-170 ceiling — carries neither the struct-hash encoder nor
-    ///      the signature-checking glue. Validation goes through OZ `SignatureChecker`, which
-    ///      accepts both EOA ECDSA signatures and ERC-1271 smart-contract-wallet signatures (Safe /
-    ///      4337 / 8004 agent accounts) — a STATICCALL to `committer.isValidSignature` when it has
-    ///      code, so this function is `view` rather than `pure`. The manager passes its own domain
-    ///      separator and the canonical typehash; nonce consumption stays on the manager.
+    /// @notice Relayer create (ERC §C.8): deadline, then nonce consumption, then the EIP-712
+    ///         signature by `committer`, then the ordinary create path with `committer` as the
+    ///         committer. The manager passes its own domain separator.
+    function createForCore(
+        CommitmentManagerStorage.Layout storage s,
+        address committer,
+        ICM.CommitmentParams calldata params,
+        uint256 deadline,
+        uint256 nonce,
+        bytes calldata sig,
+        bytes32 domainSeparator
+    ) external returns (uint256 commitmentId) {
+        if (block.timestamp > deadline) revert ICM.SignatureExpired();
+        if (s.nonces[committer]++ != nonce) revert ICM.InvalidNonce();
+        if (!_isValidCreateSignature(domainSeparator, committer, params, nonce, deadline, sig)) {
+            revert ICM.InvalidSignature();
+        }
+        _validateCreateParams(s, params);
+        return _createCore(s, committer, params);
+    }
+
+    /// @dev EIP-712 digest assembly + validation through OZ `SignatureChecker`, which accepts both
+    ///      EOA ECDSA signatures and ERC-1271 smart-contract-wallet signatures (Safe / 4337 / 8004
+    ///      agent accounts) — a STATICCALL to `committer.isValidSignature` when it has code.
     /// @return valid True iff `sig` is a valid signature by `committer` over the create digest.
-    function isValidCreateSignature(
-        bytes32 typehash,
+    function _isValidCreateSignature(
         bytes32 domainSeparator,
         address committer,
         ICM.CommitmentParams calldata params,
         uint256 nonce,
         uint256 deadline,
         bytes calldata sig
-    ) external view returns (bool valid) {
+    ) private view returns (bool valid) {
         bytes32 strategiesHash = keccak256(abi.encode(params.strategies));
         bytes32 structHash = keccak256(
             bytes.concat(
                 abi.encode(
-                    typehash,
+                    CREATE_COMMITMENT_TYPEHASH,
                     committer,
                     params.arbiter,
                     params.counterparty,
@@ -84,166 +107,202 @@ library CommitmentLifecycleLib {
         );
     }
 
-    /// @notice Full creation core: validate, check exposure, encumber, store, bind strategies
-    ///         in array order and run each onCommitmentCreated (reverts abort creation — the
-    ///         v1 compatibility-refusal mechanism, NOT guarded).
-    function createFull(
-        CommitmentManagerStorage.Layout storage s,
-        address committer,
-        ICM.CommitmentParams calldata params,
-        uint64 minChallengeWindow,
-        uint256 maxStrategies,
-        uint256 maxURILength
-    ) external returns (uint256 commitmentId) {
-        _validateCreateParams(params, minChallengeWindow, maxStrategies, maxURILength);
-        return _createCore(s, committer, params);
+    /// @notice Full creation core for `msg.sender` as committer: validate, encumber, store, bind
+    ///         strategies in array order and run each onCommitmentCreated (reverts abort creation —
+    ///         the v1 compatibility-refusal mechanism, NOT guarded).
+    function createFull(CommitmentManagerStorage.Layout storage s, ICM.CommitmentParams calldata params)
+        external
+        returns (uint256 commitmentId)
+    {
+        _validateCreateParams(s, params);
+        return _createCore(s, msg.sender, params);
     }
 
     /// @notice Deposit-then-create in one call: validate FIRST (revert-before-pull), pull the
-    ///         measured deposit into `committer`'s free balance, then encumber `params.amount` from
+    ///         measured deposit into the caller's free balance, then encumber `params.amount` from
     ///         it via the shared create core (ERC §A.2/§C.1).
     /// @dev Validation runs before the token pull, so a rejected commitment never moves funds. The
-    ///      deposit reuses the audited `LedgerOpsLib.depositCore` (fee-on-transfer-safe measured
-    ///      delta; lib→lib call is a DELEGATECALL preserving `msg.sender`/`address(this)`), so it
-    ///      credits the caller's free balance exactly as a standalone `deposit` would. A zero
-    ///      `depositAmount` degenerates to a plain create against existing free balance (the pull is
-    ///      skipped rather than reverting `ZeroAmount`). Encumbrance then draws `params.amount` from
+    ///      deposit is `LedgerOpsLib.deposit` inlined (fee-on-transfer-safe measured delta), pulling
+    ///      from and crediting `msg.sender`, so it credits the caller's free balance exactly as a
+    ///      standalone `deposit` would. A zero `depositAmount` degenerates to a plain create against
+    ///      existing free balance (the pull is skipped rather than reverting `ZeroAmount`). Encumbrance then draws `params.amount` from
     ///      the funded balance: a surplus stays withdrawable; a shortfall succeeds only if prior free
     ///      balance covers it, else `LedgerLib.encumber` reverts `InsufficientFreeBalance`.
     function createAndFundCore(
         CommitmentManagerStorage.Layout storage s,
-        address committer,
         ICM.CommitmentParams calldata params,
-        uint256 depositAmount,
-        uint64 minChallengeWindow,
-        uint256 maxStrategies,
-        uint256 maxURILength
+        uint256 depositAmount
     ) external returns (uint256 commitmentId) {
-        _validateCreateParams(params, minChallengeWindow, maxStrategies, maxURILength);
-        if (depositAmount != 0) LedgerOpsLib.depositCore(s, params.token, depositAmount);
-        return _createCore(s, committer, params);
+        _validateCreateParams(s, params);
+        if (depositAmount != 0) LedgerOpsLib.deposit(s, params.token, depositAmount, msg.sender);
+        return _createCore(s, msg.sender, params);
     }
 
-    /// @notice Create core (post-validation): exposure check, encumber from free balance, exposure
-    ///         increment, store, bind strategies + run each `onCommitmentCreated` (reverts abort
-    ///         creation — the v1 compatibility-refusal mechanism, NOT guarded). Shared by the plain
-    ///         and deposit-then-create paths; internal so both inline it (no self-external-call).
+    /// @notice Create core (post-validation): encumber from free balance with the lien's exposure,
+    ///         store, bind strategies + run each `onCommitmentCreated` (reverts abort creation — the
+    ///         v1 compatibility-refusal mechanism, NOT guarded). Shared by the plain, relayer and
+    ///         deposit-then-create paths; internal so each inlines it (no self-external-call).
     function _createCore(
         CommitmentManagerStorage.Layout storage s,
         address committer,
         ICM.CommitmentParams calldata params
     ) internal returns (uint256 commitmentId) {
-        // --- Exposure allocation invariant, per (committer, token) (ERC §C.2 / INV-3) ---
-        uint256 exposure = ExposureLib.exposureOf(params.amount, params.maxPenaltyBps);
-        ICM.UserExposure storage mag = s.userExposures[committer][params.token];
-        if (mag.totalForfeitable + exposure > mag.totalEncumbered + params.amount) {
-            revert ICM.ExposureAllocationExceeded();
-        }
+        encumberLien(s, committer, params.token, params.amount, params.maxPenaltyBps);
+        commitmentId = _storeCreated(s, committer, params);
 
-        // --- Encumber from free balance (manager-internal ledger op, ERC §A.3) ---
-        LedgerLib.encumber(s, params.token, committer, params.amount);
-        ExposureLib.increment(s, committer, params.token, params.amount, exposure);
-
-        // --- Store ---
-        commitmentId = s.nextCommitmentId++;
-        _storeCommitment(s, commitmentId, committer, params);
-        s.userCommitmentIds[committer].push(commitmentId);
-
-        _bindStrategies(s, commitmentId, params);
-    }
-
-    /// @dev Bind strategies in array order (immutable post-create); binding params are NOT
-    ///      persisted — delivered via the creation context and the binding event only.
-    ///      Separate frame for stack headroom.
-    function _bindStrategies(
-        CommitmentManagerStorage.Layout storage s,
-        uint256 commitmentId,
-        ICM.CommitmentParams calldata params
-    ) private {
+        // Bind strategies in array order (immutable post-create); binding params are NOT
+        // persisted — delivered via the creation context and the binding event only.
         uint256 n = params.strategies.length;
         for (uint256 i; i < n; i++) {
-            address strategy = params.strategies[i].strategy;
-            if (strategy == address(0)) revert ICM.ZeroAddress();
-            if (s.isBoundStrategy[commitmentId][strategy]) revert ICM.DuplicateStrategy();
-            s.isBoundStrategy[commitmentId][strategy] = true;
-            s.commitmentStrategies[commitmentId].push(strategy);
-            emit ICM.CommitmentBoundToStrategy(commitmentId, strategy, params.strategies[i].params);
-
-            IDistributionStrategy(strategy)
-                .onCommitmentCreated(
-                    CreatedContext({
-                    base: MovementLib.baseContext(s, commitmentId),
-                    originalAmount: params.amount,
-                    maxPenaltyBps: params.maxPenaltyBps,
-                    challengeWindow: params.challengeWindow,
-                    strategyParams: params.strategies[i].params
-                })
-                );
+            bindStrategy(
+                s,
+                commitmentId,
+                params.strategies[i].strategy,
+                params.strategies[i].params,
+                params.amount,
+                params.maxPenaltyBps,
+                params.challengeWindow
+            );
         }
+    }
+
+    /// @notice Encumber `amount` of `token` from `user`'s free balance (manager-internal ledger op,
+    ///         ERC §A.3) and add the lien's forfeitable exposure. Shared by create, agreement
+    ///         propose and agreement accept.
+    /// @dev INV-3 (ERC §C.2) needs no check: the lien adds at most `amount` of exposure
+    ///      (bps <= 10_000).
+    function encumberLien(
+        CommitmentManagerStorage.Layout storage s,
+        address user,
+        address token,
+        uint256 amount,
+        uint16 maxPenaltyBps
+    ) internal {
+        LedgerLib.encumber(s, token, user, amount);
+        ExposureLib.increment(s, user, token, ExposureLib.exposureOf(amount, maxPenaltyBps));
+    }
+
+    /// @notice Bind one strategy to a new commitment (immutable post-create) and run its
+    ///         `onCommitmentCreated`; a revert aborts the creation. Shared with agreement accept,
+    ///         whose legs passed the zero and duplicate checks at propose already.
+    function bindStrategy(
+        CommitmentManagerStorage.Layout storage s,
+        uint256 commitmentId,
+        address strategy,
+        bytes memory strategyParams,
+        uint256 originalAmount,
+        uint16 maxPenaltyBps,
+        uint64 challengeWindow
+    ) internal {
+        if (strategy == address(0)) revert ICM.ZeroAddress();
+        if (s.isBoundStrategy[commitmentId][strategy]) revert ICM.DuplicateStrategy();
+        s.isBoundStrategy[commitmentId][strategy] = true;
+        s.commitmentStrategies[commitmentId].push(strategy);
+        emit ICM.CommitmentBoundToStrategy(commitmentId, strategy, strategyParams);
+
+        IDistributionStrategy(strategy)
+            .onCommitmentCreated(
+                CreatedContext({
+                    base: MovementLib.baseContext(s, commitmentId),
+                    originalAmount: originalAmount,
+                    maxPenaltyBps: maxPenaltyBps,
+                    challengeWindow: challengeWindow,
+                    strategyParams: strategyParams
+                })
+            );
     }
 
     /// @dev Input validation (ERC §C.1). Separate frame for stack headroom.
-    function _validateCreateParams(
-        ICM.CommitmentParams calldata params,
-        uint64 minChallengeWindow,
-        uint256 maxStrategies,
-        uint256 maxURILength
-    ) private view {
+    function _validateCreateParams(CommitmentManagerStorage.Layout storage s, ICM.CommitmentParams calldata params)
+        private
+        view
+    {
         if (params.arbiter == address(0)) revert ICM.ZeroArbiter();
         if (params.counterparty == address(0)) revert ICM.ZeroCounterparty();
         if (params.token == address(0) || params.adapter == address(0)) revert ICM.ZeroAddress();
         if (params.amount == 0) revert ICM.ZeroAmount();
         if (params.maxPenaltyBps > BPS_DENOMINATOR) revert ICM.PenaltyExceedsMax();
-        if (params.challengeWindow < minChallengeWindow) revert ICM.ChallengeWindowTooShort();
+        if (params.challengeWindow < s.minChallengeWindow) revert ICM.ChallengeWindowTooShort();
         if (params.expiresAt != 0 && params.expiresAt <= block.timestamp) revert ICM.InvalidExpiry();
-        if (params.strategies.length > maxStrategies) revert ICM.TooManyStrategies();
-        if (bytes(params.metadataURI).length > maxURILength) revert ICM.URITooLong();
+        if (params.strategies.length > MAX_STRATEGIES) revert ICM.TooManyStrategies();
+        if (bytes(params.metadataURI).length > MAX_METADATA_URI_LENGTH) revert ICM.URITooLong();
     }
 
-    /// @dev Field-by-field store + creation event. Separate frame for stack headroom.
-    function _storeCommitment(
+    /// @dev The create path's terms for `storeCommitment`. Separate frame for stack headroom.
+    function _storeCreated(
         CommitmentManagerStorage.Layout storage s,
-        uint256 commitmentId,
         address committer,
         ICM.CommitmentParams calldata params
-    ) private {
+    ) private returns (uint256) {
+        return storeCommitment(
+            s,
+            ICM.Commitment({
+                committer: committer,
+                maxPenaltyBps: params.maxPenaltyBps,
+                released: false,
+                forfeited: false,
+                closedAt: 0,
+                arbiter: params.arbiter,
+                challengeWindow: params.challengeWindow,
+                counterparty: params.counterparty,
+                createdAt: 0,
+                token: params.token,
+                expiresAt: params.expiresAt,
+                adapter: params.adapter,
+                unbondInitiatedAt: 0,
+                amount: params.amount,
+                metadataHash: params.metadataHash,
+                cumulativePausedAtStart: 0,
+                unbondCumulativePausedAtStart: 0
+            }),
+            params.metadataURI
+        );
+    }
+
+    /// @notice Take the next commitment id, store `t` under it field by field and emit
+    ///         `CommitmentCreated`. `createdAt` and the expiry pause snapshot are set here; the
+    ///         status flags and the close, unbond and pause-snapshot fields of `t` are ignored (a
+    ///         fresh id's slots are zero). Shared with agreement accept.
+    function storeCommitment(
+        CommitmentManagerStorage.Layout storage s,
+        ICM.Commitment memory t,
+        string memory metadataURI
+    ) internal returns (uint256 commitmentId) {
+        commitmentId = s.nextCommitmentId++;
         ICM.Commitment storage c = s.commitments[commitmentId];
-        c.committer = committer;
-        c.arbiter = params.arbiter;
-        c.counterparty = params.counterparty;
-        c.token = params.token;
-        c.adapter = params.adapter;
-        c.amount = params.amount;
-        c.maxPenaltyBps = params.maxPenaltyBps;
-        c.challengeWindow = params.challengeWindow;
+        c.committer = t.committer;
+        c.arbiter = t.arbiter;
+        c.counterparty = t.counterparty;
+        c.token = t.token;
+        c.adapter = t.adapter;
+        c.amount = t.amount;
+        c.maxPenaltyBps = t.maxPenaltyBps;
+        c.challengeWindow = t.challengeWindow;
         c.createdAt = uint64(block.timestamp);
-        c.expiresAt = params.expiresAt;
-        c.metadataURI = params.metadataURI;
-        c.metadataHash = params.metadataHash;
-        // Anchors the expiry clock-stop. Written only when an expiry exists: the field opens a
-        // fresh storage slot, and an expiry-less commitment (agreement legs included) never reads it.
-        if (params.expiresAt != 0) c.cumulativePausedAtStart = PauseLib.creditablePaused(s);
+        c.expiresAt = t.expiresAt;
+        c.metadataHash = t.metadataHash;
+        // Anchors the expiry clock-stop. Written only when an expiry exists and the snapshot is
+        // non-zero: the field's slot is otherwise left fresh (zero), and an expiry-less commitment
+        // (agreement legs included) never reads it.
+        if (t.expiresAt != 0) {
+            uint64 paused = PauseLib.creditablePaused(s);
+            if (paused != 0) c.cumulativePausedAtStart = paused;
+        }
 
         emit ICM.CommitmentCreated(
             commitmentId,
-            committer,
-            params.arbiter,
-            params.counterparty,
-            params.token,
-            params.adapter,
-            params.amount,
-            params.maxPenaltyBps,
-            params.challengeWindow,
-            params.expiresAt,
-            params.metadataURI,
-            params.metadataHash
+            t.committer,
+            t.arbiter,
+            t.counterparty,
+            t.token,
+            t.adapter,
+            t.amount,
+            t.maxPenaltyBps,
+            t.challengeWindow,
+            t.expiresAt,
+            metadataURI,
+            t.metadataHash
         );
-        // Companion discovery-axis event (indexed counterparty). Guarded on non-zero so the zero
-        // counterparty — which carries no queryable identity — is never indexed. createCommitment
-        // requires a non-zero counterparty (validation), so this always fires on the direct path.
-        if (params.counterparty != address(0)) {
-            emit ICM.CommitmentCounterparty(commitmentId, params.counterparty);
-        }
     }
 
     // =========================================================================
@@ -275,7 +334,7 @@ library CommitmentLifecycleLib {
         if (PauseLib.effectiveElapsed(s, c.createdAt, c.cumulativePausedAtStart) < c.expiresAt - c.createdAt) {
             revert ICM.CommitmentNotExpired();
         }
-        if (_forfeitActive(s, commitmentId)) revert ICM.ForfeitPending();
+        if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.ForfeitPending();
 
         uint256 amount = c.amount;
         _closeWithHooks(s, commitmentId);
@@ -283,7 +342,7 @@ library CommitmentLifecycleLib {
         _notifyRegistryRelease(s, commitmentId, amount);
     }
 
-    /// @notice Close with guarded release hooks — shared by release/expire/finalize/batch and
+    /// @notice Close with guarded release hooks — shared by release/expire/finalize and
     ///         the agreements extension. Silently no-ops on resolved commitments.
     function closeWithHooks(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         _closeWithHooks(s, commitmentId);
@@ -296,7 +355,7 @@ library CommitmentLifecycleLib {
         // INV-G8 / OBJ-5: a member commitment must never be terminally closed through the normal
         // path — it would use the bps-derived decrement and skip mutual accounting, leaving
         // `totalShares` stale and re-spending units the mutual still expects to draw as `E_i`. The
-        // gate lives HERE (the single convergence point of release/expire/finalize/batch/agreement)
+        // gate lives HERE (the single convergence point of release/expire/finalize/agreement)
         // rather than on the named cores, so every higher path inherits it. Member members exit
         // only via `requestMutualExit` → `releaseMutualMember` (MutualLib).
         if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
@@ -306,11 +365,10 @@ library CommitmentLifecycleLib {
         MovementLib._runGuardedHooks(s, commitmentId, HOOK_RELEASED);
 
         c.released = true;
-        if (s.unbondInitiatedAt[commitmentId] != 0) s.unbondInitiatedAt[commitmentId] = 0;
-        s.closedAt[commitmentId] = uint64(block.timestamp);
+        if (c.unbondInitiatedAt != 0) c.unbondInitiatedAt = 0;
+        c.closedAt = uint64(block.timestamp);
 
-        uint256 exposure = ExposureLib.exposureOf(c.amount, c.maxPenaltyBps);
-        ExposureLib.decrement(s, c.committer, c.token, c.amount, exposure);
+        ExposureLib.decrement(s, c.committer, c.token, ExposureLib.exposureOf(c.amount, c.maxPenaltyBps));
 
         if (c.amount > 0) LedgerLib.releaseEncumbrance(s, commitmentId, c.token, c.committer, c.amount);
         // Zero the live-amount tracker: nothing remains reserved under this commitment, and a
@@ -336,7 +394,7 @@ library CommitmentLifecycleLib {
         // never via the single-commitment two-phase path (that would double-spend its `E_i`).
         if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
         if (penaltyBps > c.maxPenaltyBps) revert ICM.PenaltyExceedsMax();
-        if (_forfeitActive(s, commitmentId)) revert ICM.ForfeitPending();
+        if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.ForfeitPending();
 
         writeForfeitProposal(s, commitmentId, penaltyBps, c.challengeWindow);
     }
@@ -388,7 +446,7 @@ library CommitmentLifecycleLib {
         ICM.Commitment storage c = s.commitments[commitmentId];
         ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
 
-        if (p.initiatedAt == 0 || p.executed || p.cancelled) revert ICM.NoActiveForfeitProposal();
+        if (!MovementLib.forfeitLive(p)) revert ICM.NoActiveForfeitProposal();
         // Clock-stop (ERC §A.6 erratum): the challenge window elapses in effective time, so a
         // pause cannot burn down the committer's contest time while contesting-by-unbond and the
         // execute below are both inoperable.
@@ -406,12 +464,12 @@ library CommitmentLifecycleLib {
         // --- Effects (CEI) ---
         p.executed = true;
         c.forfeited = true;
-        if (s.unbondInitiatedAt[commitmentId] != 0) s.unbondInitiatedAt[commitmentId] = 0;
-        s.closedAt[commitmentId] = uint64(block.timestamp);
+        if (c.unbondInitiatedAt != 0) c.unbondInitiatedAt = 0;
+        c.closedAt = uint64(block.timestamp);
         s.forfeitedUnits[commitmentId] = unitsToForfeit;
 
         // Full exposure decrement (§C.3 step 1).
-        ExposureLib.decrement(s, c.committer, c.token, fullAmount, exposure);
+        ExposureLib.decrement(s, c.committer, c.token, exposure);
 
         // Unconditional forfeit transfer — pure ledger arithmetic, pull-payment (§C.3 step 2).
         if (unitsToForfeit > 0) LedgerLib.forfeitTransfer(s, c.token, c.committer, counterparty, unitsToForfeit);
@@ -424,20 +482,23 @@ library CommitmentLifecycleLib {
         ICM.Commitment storage c = s.commitments[commitmentId];
         ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
         if (msg.sender != c.arbiter) revert ICM.NotArbiter();
-        if (p.initiatedAt == 0 || p.executed || p.cancelled) revert ICM.NoActiveForfeitProposal();
+        if (!MovementLib.forfeitLive(p)) revert ICM.NoActiveForfeitProposal();
 
         p.cancelled = true;
         emit ICM.ForfeitCancelled(commitmentId);
     }
 
     /// @notice Permissionless force-cancel after the TTL (ERC §C.4).
-    function cancelStaleCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint64 ttl) external {
+    function cancelStaleCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         ICM.Commitment storage c = s.commitments[commitmentId];
         ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-        if (p.initiatedAt == 0 || p.executed || p.cancelled) revert ICM.NoActiveForfeitProposal();
+        if (!MovementLib.forfeitLive(p)) revert ICM.NoActiveForfeitProposal();
         // ANTI-PIN (ERC §A.6 erratum): see PauseLib.staleAt — a pause spanning any horizon still
         // frees a pinned committer within the budget-bounded stale horizon.
-        if (block.timestamp < PauseLib.staleAt(s, p.initiatedAt, c.challengeWindow, p.cumulativePausedAtStart, ttl)) {
+        if (
+            block.timestamp
+                < PauseLib.staleAt(s, p.initiatedAt, c.challengeWindow, p.cumulativePausedAtStart, FORFEIT_PROPOSAL_TTL)
+        ) {
             revert ICM.ChallengeWindowActive();
         }
 
@@ -454,7 +515,7 @@ library CommitmentLifecycleLib {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
-        if (s.unbondInitiatedAt[commitmentId] != 0) revert ICM.UnbondAlreadyRequested();
+        if (c.unbondInitiatedAt != 0) revert ICM.UnbondAlreadyRequested();
         // Member members exit via requestMutualExit (deallocation window), not the normal unbond.
         if (s.membership[commitmentId].mutualId != 0) revert ICM.CommitmentInMutual();
 
@@ -466,7 +527,7 @@ library CommitmentLifecycleLib {
     /// @notice Permissionless finalize after maturity; blocked by an active forfeit proposal.
     function finalizeUnbondCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         ICM.Commitment storage c = s.commitments[commitmentId];
-        uint64 initiatedAt = s.unbondInitiatedAt[commitmentId];
+        uint64 initiatedAt = c.unbondInitiatedAt;
         if (initiatedAt == 0) revert ICM.NoUnbondPending();
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
 
@@ -474,10 +535,10 @@ library CommitmentLifecycleLib {
         // committer cannot wait out its exit delay during a pause in which the losses the delay
         // exists to absorb are inoperable. `maturesAt` reports the current best-known maturity
         // (it moves out if further pause episodes accrue credit).
-        uint64 maturesAt = initiatedAt + s.unbondingPeriod
-            + uint64(PauseLib.pauseCreditSince(s, s.unbondCumulativePausedAtStart[commitmentId]));
+        uint64 maturesAt =
+            initiatedAt + s.unbondingPeriod + uint64(PauseLib.pauseCreditSince(s, c.unbondCumulativePausedAtStart));
         if (block.timestamp < maturesAt) revert ICM.UnbondNotElapsed(maturesAt);
-        if (_forfeitActive(s, commitmentId)) revert ICM.UnbondBlockedByForfeit();
+        if (MovementLib.forfeitLive(s.forfeitProposals[commitmentId])) revert ICM.UnbondBlockedByForfeit();
 
         uint256 amount = c.amount;
         _closeWithHooks(s, commitmentId);
@@ -489,28 +550,28 @@ library CommitmentLifecycleLib {
     function cancelUnbondCore(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) external {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (msg.sender != c.committer) revert ICM.NotCommitter();
-        if (s.unbondInitiatedAt[commitmentId] == 0) revert ICM.NoUnbondPending();
+        if (c.unbondInitiatedAt == 0) revert ICM.NoUnbondPending();
         if (c.released || c.forfeited) revert ICM.CommitmentInactive();
 
-        s.unbondInitiatedAt[commitmentId] = 0;
+        c.unbondInitiatedAt = 0;
         emit ICM.CommitmentUnbondCancelled(commitmentId);
 
         (bool agreed, uint256 partnerId) = _partnerCommitmentId(s, commitmentId);
-        if (agreed && s.unbondInitiatedAt[partnerId] != 0) {
-            s.unbondInitiatedAt[partnerId] = 0;
+        ICM.Commitment storage partner = s.commitments[partnerId];
+        if (agreed && partner.unbondInitiatedAt != 0) {
+            partner.unbondInitiatedAt = 0;
             emit ICM.CommitmentUnbondCancelled(partnerId);
         }
     }
 
     /// @notice Idempotent unbond start: skips resolved or already-unbonding commitments.
-    /// @dev Internal so the agreements library shares the single implementation.
-    function initiateUnbondIdempotent(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) internal {
+    function initiateUnbondIdempotent(CommitmentManagerStorage.Layout storage s, uint256 commitmentId) private {
         ICM.Commitment storage c = s.commitments[commitmentId];
         if (c.released || c.forfeited) return;
-        if (s.unbondInitiatedAt[commitmentId] != 0) return;
+        if (c.unbondInitiatedAt != 0) return;
 
-        s.unbondInitiatedAt[commitmentId] = uint64(block.timestamp);
-        s.unbondCumulativePausedAtStart[commitmentId] = PauseLib.creditablePaused(s);
+        c.unbondInitiatedAt = uint64(block.timestamp);
+        c.unbondCumulativePausedAtStart = PauseLib.creditablePaused(s);
         // The emitted maturity is the no-further-pause estimate; clock-stop can move it out.
         emit ICM.CommitmentUnbondRequested(commitmentId, c.committer, uint64(block.timestamp) + s.unbondingPeriod);
     }
@@ -518,15 +579,6 @@ library CommitmentLifecycleLib {
     // =========================================================================
     // Shared internals
     // =========================================================================
-
-    function _forfeitActive(CommitmentManagerStorage.Layout storage s, uint256 commitmentId)
-        private
-        view
-        returns (bool)
-    {
-        ICM.ForfeitProposal storage p = s.forfeitProposals[commitmentId];
-        return p.initiatedAt != 0 && !p.cancelled && !p.executed;
-    }
 
     /// @dev Agreement ids are 1-indexed; 0 in `commitmentToAgreement` = not agreed.
     function _partnerCommitmentId(CommitmentManagerStorage.Layout storage s, uint256 commitmentId)
@@ -541,18 +593,20 @@ library CommitmentLifecycleLib {
         agreed = true;
     }
 
-    /// @dev Swallowed hook failures emit RegistryHookFailed so indexers can detect
-    ///      partial corruption instead of silently diverging. The call is gas-capped and
-    ///      min-gas-guarded exactly like the strategy hooks (MovementLib §D.6 rule 3): a buggy or
-    ///      malicious registry cannot burn unbounded gas to grief the lifecycle transition, and a
-    ///      caller cannot hand-tune gas so the notification silently parks (a swallowed out-of-gas)
-    ///      while the release/forfeit still lands.
+    /// @dev A swallowed hook failure emits RegistryHookFailed; the registry's stake for that
+    ///      commitment is then stale until `OperatorRegistry.reconcile` repairs it. The call is
+    ///      gas-capped and min-gas-guarded exactly like the strategy hooks (`MovementLib.hookGas`,
+    ///      §D.6 rule 3): a buggy or malicious registry cannot burn unbounded gas to grief the lifecycle
+    ///      transition, and a caller cannot hand-tune gas so the notification silently parks (a
+    ///      swallowed out-of-gas) while the release/forfeit still lands. Only a commitment whose
+    ///      counterparty is the registry is notified: the registry tracks no other kind, and the
+    ///      skip spares every other close the external call and its gas floor.
     function _notifyRegistryRelease(CommitmentManagerStorage.Layout storage s, uint256 commitmentId, uint256 amount)
         private
     {
         address reg = s.operatorRegistry;
-        if (reg == address(0)) return;
-        uint256 cap = _registryHookCap(s);
+        if (reg == address(0) || s.commitments[commitmentId].counterparty != reg) return;
+        uint256 cap = MovementLib.hookGas(s);
         try IOperatorRegistryHooks(reg).onDelegationReleased{gas: cap}(commitmentId, amount) {}
         catch {
             emit ICM.RegistryHookFailed(commitmentId, IOperatorRegistryHooks.onDelegationReleased.selector);
@@ -566,22 +620,11 @@ library CommitmentLifecycleLib {
         uint256 fullAmount
     ) private {
         address reg = s.operatorRegistry;
-        if (reg == address(0)) return;
-        uint256 cap = _registryHookCap(s);
+        if (reg == address(0) || s.commitments[commitmentId].counterparty != reg) return;
+        uint256 cap = MovementLib.hookGas(s);
         try IOperatorRegistryHooks(reg).onDelegationForfeited{gas: cap}(commitmentId, forfeitedAmount, fullAmount) {}
         catch {
             emit ICM.RegistryHookFailed(commitmentId, IOperatorRegistryHooks.onDelegationForfeited.selector);
         }
-    }
-
-    /// @dev Resolve the per-hook gas cap (shared config with the strategy hooks; lazy default
-    ///      MovementLib.HOOK_GAS_CAP_FLOOR when unset) and apply the §D.6 rule-3 min-gas guard.
-    ///      Under EIP-150 the callee receives at most 63/64 of gasleft, so if the frame cannot
-    ///      genuinely receive the full cap the WHOLE transaction reverts — the notification is
-    ///      never silently starved while the lifecycle transition commits.
-    function _registryHookCap(CommitmentManagerStorage.Layout storage s) private view returns (uint256 cap) {
-        uint64 stored = s.hookGasCap;
-        cap = stored == 0 ? MovementLib.HOOK_GAS_CAP_FLOOR : stored;
-        if (gasleft() < cap + cap / 63 + MovementLib.HOOK_GAS_RESERVE) revert ICM.InsufficientGasForHook();
     }
 }

@@ -6,26 +6,13 @@ generated: true
 ---
 # FanInNode
 **Inherits:**
-[IFanIn](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFanIn), [IFlowQueryPath](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFlowQueryPath), [IEntity](/docs/protocol/reference/contracts/shared/interfaces/IEntity), ReentrancyGuard
+[IFanIn](/docs/protocol/reference/contracts/extensions/mesh/interfaces/IFanIn), [IEntity](/docs/protocol/reference/contracts/shared/interfaces/IEntity)
 
 **Title:**
 FanInNode
 
 Aggregates stake from multiple providers with different denoms into a single consumer.
 Prevents denom collision when two providers supply the same token string.
-Implements IFlowQuery for topology discovery and IFlowQueryPath for
-single-call provenance walks.
-
-
-## Constants
-### FACTORY_TYPE_ID
-`IEntity` type id: `keccak256("commitments.mesh.fan_in")`. Self-verifies this
-implementation when `MeshFactory` whitelists it.
-
-
-```solidity
-bytes32 internal constant FACTORY_TYPE_ID = keccak256("commitments.mesh.fan_in")
-```
 
 
 ## State Variables
@@ -48,7 +35,7 @@ address public manager
 
 
 ### consumer
-Single consumer — can release stake and distribute rewards
+Single consumer — can release stake
 
 
 ```solidity
@@ -92,37 +79,12 @@ mapping(bytes32 => SecurityLevel) public security
 ```
 
 
-### _providers
-Ordered list of registered provider addresses (for enumeration)
-
-
-```solidity
-address[] internal _providers
-```
-
-
-### _isKnownProvider
-Whether an address is already a known provider
-
-
-```solidity
-mapping(address => bool) internal _isKnownProvider
-```
-
-
-### _denomOuts
-Ordered list of registered denomOut values (for enumeration)
-
-
-```solidity
-bytes32[] internal _denomOuts
-```
-
-
 ## Functions
 ### factoryTypeId
 
 A stable, unique identifier for this contract's type.
+
+`FAN_IN_TYPE_ID`; self-verifies this implementation when `MeshFactory` whitelists it.
 
 
 ```solidity
@@ -138,8 +100,8 @@ function factoryTypeId() external pure returns (bytes32);
 ### constructor
 
 lock the implementation contract so it cannot be
-initialized directly. Production deployments use `MeshFactory`
-which clones via; the clone reads zeroed storage and
+initialized directly. Production deployments use `MeshFactory`,
+which clones via EIP-1167; the clone reads zeroed storage and
 can call `initialize`. This guard prevents an indexer-confusion
 scenario where an attacker initializes the impl with rogue
 consumer/manager and emits events that look authentic.
@@ -217,7 +179,7 @@ above real, manager-verified encumbrance.
 
 
 ```solidity
-function stake(address provider, bytes32 denomIn, uint256 amount) external nonReentrant onlyManager;
+function stake(address provider, bytes32 denomIn, uint256 amount) external onlyManager;
 ```
 **Parameters**
 
@@ -241,7 +203,7 @@ arbitrary provider address.
 
 
 ```solidity
-function releaseStake(bytes32 denomOut, uint256 amount) external nonReentrant;
+function releaseStake(bytes32 denomOut, uint256 amount) external;
 ```
 **Parameters**
 
@@ -249,115 +211,6 @@ function releaseStake(bytes32 denomOut, uint256 amount) external nonReentrant;
 |----|----|-----------|
 |`denomOut`|`bytes32`|The local denom to release|
 |`amount`|`uint256`|The amount to release|
-
-
-### nodeType
-
-Reserved nodeType constants. Implementations of additional node types
-SHOULD reserve their own bytes32 constants.
-
-
-```solidity
-function nodeType() external pure returns (bytes32);
-```
-
-### nodeTypeName
-
-
-```solidity
-function nodeTypeName() external pure returns (string memory);
-```
-
-### providers
-
-Returns all registered providers with their current stake info
-
-
-```solidity
-function providers() external view returns (ProviderInfo[] memory);
-```
-
-### consumers
-
-Returns the single consumer with all aggregated stake info
-
-
-```solidity
-function consumers() external view returns (ConsumerInfo[] memory);
-```
-
-### availableDenoms
-
-Returns all available denominations with source provider info
-
-
-```solidity
-function availableDenoms() external view returns (AvailableDenom[] memory);
-```
-
-### providersPaged
-
-Paginated providers — `offset` may exceed length (returns empty array).
-
-
-```solidity
-function providersPaged(uint256 offset, uint256 limit) external view returns (ProviderInfo[] memory);
-```
-
-### consumersPaged
-
-FanIn has a single consumer; pagination just collapses to "the one consumer"
-when offset == 0, else empty. Kept for interface uniformity.
-
-
-```solidity
-function consumersPaged(uint256 offset, uint256 limit) external view returns (ConsumerInfo[] memory);
-```
-
-### availableDenomsPaged
-
-
-```solidity
-function availableDenomsPaged(uint256 offset, uint256 limit) external view returns (AvailableDenom[] memory);
-```
-
-### MAX_PATH_DEPTH
-
-Maximum depth this implementation supports for `denomPath`.
-
-SHOULD be 64 unless the implementation has a documented reason
-for a tighter bound. Reading this lets callers size requests
-without trial-and-error reverts.
-
-
-```solidity
-function MAX_PATH_DEPTH() external pure returns (uint16);
-```
-
-### denomPath
-
-Walk the denom-provenance chain upstream from a local denom.
-
-MUST NOT revert on cycles, non-mesh providers, or natural termini —
-these are reported by the returned path's terminal entry. MUST
-revert with `InvalidDepth` only on out-of-range `maxDepth`.
-
-
-```solidity
-function denomPath(bytes32 local, uint16 maxDepth) external view returns (DenomLink[] memory);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`local`|`bytes32`|The local denom on this node to trace.|
-|`maxDepth`|`uint16`|Maximum chain length to traverse; MUST satisfy `1 <= maxDepth <= MAX_PATH_DEPTH()`.|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`<none>`|`DenomLink[]`|path The walked path in source-walked order. Length <= maxDepth. The last entry's `provider == address(0)` indicates vault-rooted termination. Otherwise the chain was truncated by a non-mesh provider, a cycle, or the depth limit; callers distinguish by inspecting the path itself.|
 
 
 ## Events

@@ -16,6 +16,7 @@
 
 import { type UnifiedRow } from '../hooks/useUnifiedRows'
 import { asString, asStringArray } from './metadata'
+import { zeroHash } from 'viem'
 
 /** Indexer classification of the fetch + hash check. */
 export type MetadataStatus = 'empty' | 'ok' | 'mismatch' | 'unreachable'
@@ -40,13 +41,12 @@ export type MetadataStatus = 'empty' | 'ok' | 'mismatch' | 'unreachable'
  */
 export type MetadataTrust = 'attested' | 'unattested' | 'mismatch' | 'unreachable' | 'none'
 
-const ZERO_HASH = `0x${'0'.repeat(64)}`
 
 /** True when the row is a commitment carrying a non-zero on-chain hash attestation. */
 function hasHashAttestation(row: UnifiedRow): boolean {
   if (row.kind !== 'commitment') return false
   const hash = row.commitment.metadataHash
-  return !!hash && hash.toLowerCase() !== ZERO_HASH
+  return !!hash && hash.toLowerCase() !== zeroHash
 }
 
 /**

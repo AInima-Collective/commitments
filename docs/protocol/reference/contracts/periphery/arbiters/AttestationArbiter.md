@@ -6,7 +6,7 @@ generated: true
 ---
 # AttestationArbiter
 **Inherits:**
-[IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter), `ServiceEnvelopeVerifier`
+[ArbiterBase](/docs/protocol/reference/contracts/shared/arbitration/ArbiterBase), `ServiceEnvelopeVerifier`
 
 **Title:**
 AttestationArbiter
@@ -36,16 +36,6 @@ landing against a later proposal #2 on the same commitment) is blocked
 by the strict per-`id` ordering sequence: every dispatched action bumps
 the target's sequence, invalidating every envelope signed at an earlier
 sequence value.
-
-
-## Constants
-### manager
-CommitmentManager this arbiter dispatches to. Immutable.
-
-
-```solidity
-ICommitmentManager public immutable manager
-```
 
 
 ## State Variables
@@ -96,19 +86,9 @@ mapping(uint256 mutualId => uint96) private _mutualOrdering
 
 
 ```solidity
-constructor(address manager_, address serviceManager_) ServiceEnvelopeVerifier(IServiceManager(serviceManager_));
-```
-
-### commitmentManager
-
-Returns the CommitmentManager this arbiter dispatches to.
-
-Implementations should make this immutable to preserve the trust
-model commitments opt into when naming this contract as arbiter.
-
-
-```solidity
-function commitmentManager() external view returns (address);
+constructor(address manager_, address serviceManager_)
+    ArbiterBase(manager_)
+    ServiceEnvelopeVerifier(IServiceManager(serviceManager_));
 ```
 
 ### arbiterCapabilities
@@ -137,19 +117,6 @@ contract, so no static metadata pointer is published.
 
 ```solidity
 function arbiterMetadataURI() external pure returns (string memory);
-```
-
-### supportsInterface
-
-Returns true if this contract implements the interface defined by
-`interfaceId`. See the corresponding
-https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section]
-to learn more about how these ids are created.
-This function call must use less than 30 000 gas.
-
-
-```solidity
-function supportsInterface(bytes4 interfaceId) external pure returns (bool);
 ```
 
 ### commitmentOrdering
@@ -189,13 +156,16 @@ function mutualOrdering(uint256 mutualId) external view returns (uint96);
 
 Submit a signed envelope to dispatch an arbiter action.
 
-envelope.payload MUST be `abi.encode(address(this), uint256 id,
-uint8 action, uint16 penaltyBps, uint256 deadline)` and
+envelope.payload MUST be the nine-field `Attestation`,
+`abi.encode(address(this), uint256 id, uint8 action,
+uint16 penaltyBps, uint256 deadline, bool fromProposer,
+uint256 units, uint256 numeraire, bytes32 evidenceHash)`, and
 envelope.ordering MUST be the uint96 big-endian encoding of the
 current per-`id` sequence (`commitmentOrdering(id)` for
 commitment-scoped actions, `agreementOrdering(id)` for
-agreement-scoped actions). Any field mismatch, stale ordering, or
-failure to meet signature quorum reverts.
+agreement-scoped actions, `mutualOrdering(id)` for mutual-scoped
+actions). Any field mismatch, stale ordering, or failure to meet
+signature quorum reverts.
 Strict ordering means every dispatched action invalidates ALL
 still-unconsumed envelopes signed at an earlier sequence for the
 same target, binding each envelope to the exact state instance the

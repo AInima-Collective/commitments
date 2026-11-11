@@ -24,7 +24,7 @@ orchestration, events, and registry hooks live in external delegatecall librarie
 preserve `msg.sender`, `address(this)`, and event sourcing.
 
 
-## Constants
+## State Variables
 ### PAUSER_ROLE
 
 ```solidity
@@ -40,28 +40,12 @@ bytes32 public constant UNPAUSER_ROLE = keccak256("UNPAUSER_ROLE")
 
 
 ### DEFAULT_MIN_CHALLENGE_WINDOW
-ERC §0.3 — MUST-level floor on challenge windows. Lazy default when storage is 0;
-`setMinChallengeWindow` may raise this floor but can never lower it.
+ERC §0.3 — MUST-level floor on challenge windows. `initialize` sets the minimum to it;
+`setMinChallengeWindow` may raise the minimum but can never lower it below this.
 
 
 ```solidity
 uint64 internal constant DEFAULT_MIN_CHALLENGE_WINDOW = 86_400
-```
-
-
-### MAX_STRATEGIES
-ERC §0.3 — MUST-level cap on bound strategies per commitment.
-
-
-```solidity
-uint256 public constant MAX_STRATEGIES = 8
-```
-
-
-### MAX_PROPOSAL_DURATION
-
-```solidity
-uint64 public constant MAX_PROPOSAL_DURATION = 30 days
 ```
 
 
@@ -71,34 +55,7 @@ Stale forfeit proposals can be force-cancelled by anyone after
 
 
 ```solidity
-uint64 public constant FORFEIT_PROPOSAL_TTL = 14 days
-```
-
-
-### MAX_METADATA_URI_LENGTH
-
-```solidity
-uint256 public constant MAX_METADATA_URI_LENGTH = 512
-```
-
-
-### HOOK_GAS_CAP_FLOOR
-ERC §0.3 — SHOULD-level floor on the per-hook gas cap (§D.6). Admin may raise,
-never lower below this.
-
-
-```solidity
-uint64 public constant HOOK_GAS_CAP_FLOOR = 500_000
-```
-
-
-### HOOK_GAS_RESERVE
-Gas the manager reserves for its own post-hook bookkeeping when sizing the
-min-gas guard (§D.6 rule 3).
-
-
-```solidity
-uint64 internal constant HOOK_GAS_RESERVE = 50_000
+uint64 public constant FORFEIT_PROPOSAL_TTL = FORFEIT_TTL
 ```
 
 
@@ -108,11 +65,7 @@ keccak256(abi.encode(params.strategies)).
 
 
 ```solidity
-bytes32 public constant CREATE_COMMITMENT_TYPEHASH = keccak256(
-    "CreateCommitment(address committer,address arbiter,address counterparty,address token,"
-    "address adapter,uint256 amount,uint16 maxPenaltyBps,uint64 challengeWindow,uint64 expiresAt,"
-    "bytes32 strategiesHash,string metadataURI,bytes32 metadataHash,uint256 nonce,uint256 deadline)"
-)
+bytes32 public constant CREATE_COMMITMENT_TYPEHASH = CommitmentLifecycleLib.CREATE_COMMITMENT_TYPEHASH
 ```
 
 
@@ -249,19 +202,6 @@ function createAndFund(uint256 depositAmount, ICM.CommitmentParams calldata para
 |`commitmentId`|`uint256`|The new commitment's id (always ≥ 1, INV-10).|
 
 
-### _createCommitmentInternal
-
-All creation logic — validation, exposure, encumber, store, strategy binding and
-creation hooks — lives in CommitmentLifecycleLib.createFull (DELEGATECALL). Callers
-(createCommitment, batch, relayer) hold the reentrancy guard.
-
-
-```solidity
-function _createCommitmentInternal(address committer, ICM.CommitmentParams calldata params)
-    internal
-    returns (uint256 commitmentId);
-```
-
 ### releaseCommitment
 
 Arbiter-immediate release. Release hooks run guarded BEFORE the committer's
@@ -385,24 +325,6 @@ is the strategy's job (the context carries `caller`).
 function claim(uint256 commitmentId, address strategy, bytes calldata claimData) external nonReentrant;
 ```
 
-### distributeAndClaim
-
-Advance one strategy's accrual, then claim, atomically under one reentrancy guard.
-
-Fixes the distribute-then-claim ordering footgun: `pending()` reflects LIVE accrual but
-`claim()` only pays BANKED accrual, so a caller who claims without distributing first can
-see `pending() > 0` yet receive 0. Bundling the two makes the claim pay the just-distributed
-amount (mirrors `settleAndClaim`). Requires the commitment active and un-forfeited — the
-`distribute` leg does. After close, no new accrual is possible; use `claim` directly to
-recover parked accrual. Body in MovementLib (DELEGATECALL) to keep the manager under EIP-170.
-
-
-```solidity
-function distributeAndClaim(uint256 commitmentId, address strategy, bytes calldata claimData)
-    external
-    nonReentrant;
-```
-
 ### pending
 
 Pending amount claimable via `claim` for the caller-implied recipient.
@@ -498,15 +420,6 @@ its guarded release hooks before its encumbrance frees.
 function releaseAgreement(uint256 agreementId) external nonReentrant;
 ```
 
-### requestAgreementUnbond
-
-Symmetric unbond start for both legs; either committer may call.
-
-
-```solidity
-function requestAgreementUnbond(uint256 agreementId) external nonReentrant;
-```
-
 ### settleAgreement
 
 Arbiter-instructed bilateral value flow, bounded by per-direction lifetime caps.
@@ -581,43 +494,23 @@ function createMutual(ICM.MutualParams calldata params) external nonReentrant re
 
 ### activateMutual
 
-Arbiter activates a mutual once capacity is filled.
+Arbiter activates a mutual; members can only join an active one.
 
 
 ```solidity
 function activateMutual(uint256 mutualId) external nonReentrant;
 ```
 
-### configureHeterogeneous
-
-Configure heterogeneous mode (valuationAuthority-only, pre-activation, immutable). See lib.
-
-
-```solidity
-function configureHeterogeneous(uint256 mutualId, ICM.HeteroConfig calldata config) external nonReentrant;
-```
-
-### remark
-
-Permissionless down-only re-mark of a member's premium weight (heterogeneous only). See lib.
-
-
-```solidity
-function remark(uint256 mutualId, uint256 commitmentId) external nonReentrant;
-```
-
 ### joinMutual
 
-Create a fresh commitment and join it to `mutualId`, freezing the capacity weight.
+Create a fresh commitment and join it to `mutualId`, freezing its weight (`E_i`).
 
 
 ```solidity
-function joinMutual(
-    uint256 mutualId,
-    ICM.CommitmentParams calldata params,
-    uint128 creditedValue,
-    bytes calldata attestation
-) external nonReentrant returns (uint256 commitmentId);
+function joinMutual(uint256 mutualId, ICM.CommitmentParams calldata params)
+    external
+    nonReentrant
+    returns (uint256 commitmentId);
 ```
 
 ### initiateMutualLoss
@@ -667,7 +560,7 @@ function settleMemberLoss(uint256 commitmentId) external nonReentrant;
 
 ### settleMembers
 
-Bounded batch settle convenience.
+Batch settle convenience. Unbounded: the caller sizes the batch to fit the block.
 
 
 ```solidity
@@ -711,15 +604,6 @@ Permissionless bank-and-pay of a member's accrued premium to its committer.
 function claimMemberPremium(uint256 commitmentId) external nonReentrant;
 ```
 
-### claimMembersPremium
-
-Bounded batch claim convenience.
-
-
-```solidity
-function claimMembersPremium(uint256[] calldata commitmentIds) external nonReentrant;
-```
-
 ### reclaimPremium
 
 Policyholder-of-record reclaim of the unstreamed premium remainder.
@@ -727,15 +611,6 @@ Policyholder-of-record reclaim of the unstreamed premium remainder.
 
 ```solidity
 function reclaimPremium(uint256 mutualId) external nonReentrant;
-```
-
-### settleAndClaim
-
-Settle a member's loss then claim its premium under one reentrancy guard (pure dispatch).
-
-
-```solidity
-function settleAndClaim(uint256 commitmentId) external nonReentrant;
 ```
 
 ### getMutual
@@ -799,15 +674,6 @@ Premium currently claimable by `commitmentId` if claimed now (banked + simulated
 function pendingMemberPremium(uint256 commitmentId) external view returns (uint256 claimable);
 ```
 
-### getMutualJuniorPool
-
-Junior shortfall absorber reserve (`funded − drawn`) for a mutual, in its numeraire.
-
-
-```solidity
-function getMutualJuniorPool(uint256 mutualId) external view returns (uint256 juniorPool);
-```
-
 ### createCommitmentFor
 
 Create a commitment on behalf of `committer` using an EIP-712 signature over the
@@ -823,27 +689,6 @@ function createCommitmentFor(
     uint256 nonce,
     bytes calldata sig
 ) external nonReentrant returns (uint256 commitmentId);
-```
-
-### batchCreateCommitments
-
-Create multiple commitments atomically for the caller.
-
-
-```solidity
-function batchCreateCommitments(ICM.CommitmentParams[] calldata params)
-    external
-    nonReentrant
-    returns (uint256[] memory commitmentIds);
-```
-
-### batchReleaseCommitments
-
-Release multiple commitments atomically; caller must be arbiter for all.
-
-
-```solidity
-function batchReleaseCommitments(uint256[] calldata commitmentIds) external nonReentrant;
 ```
 
 ### nonces
@@ -902,15 +747,6 @@ an upgrade has `pausedAt == 0` and accrues nothing.
 function unpauseForfeiture() external onlyRole(UNPAUSER_ROLE);
 ```
 
-### forfeiturePaused
-
-Whether forfeit execution is paused.
-
-
-```solidity
-function forfeiturePaused() external view returns (bool);
-```
-
 ### pauseState
 
 
@@ -951,24 +787,23 @@ function escrowOf(address token, address strategy) external view returns (uint25
 
 ### ledgerTotals
 
-Per-token aggregate counters for the base O(1) partition check (ERC §A.5). The full
-partition closes over five compartments — `free + encumbered + escrow +
-mutualPremium + mutualJunior == IERC20(token).balanceOf(manager)` (INV-P13); this
-getter exposes the base three. The two mutual compartments are read via
-`totalMutualPremium` / `totalMutualJunior`.
+Per-token aggregate counters for the O(1) partition check (ERC §A.5, INV-P1):
+`totalFree + totalEncumbered + totalEscrow + totalMutualPremium ==
+IERC20(token).balanceOf(manager)`. `totalMutualPremium` is the mutual premium
+reserve (ERC-COMMITMENTS-MUTUALS); it is 0 for a token no mutual uses as numeraire.
 
 
 ```solidity
 function ledgerTotals(address token)
     external
     view
-    returns (uint256 totalFree, uint256 totalEncumbered, uint256 totalEscrow);
+    returns (uint256 totalFree, uint256 totalEncumbered, uint256 totalEscrow, uint256 totalMutualPremium);
 ```
 
 ### getCommitment
 
-Full Commitment struct. After a forfeit, `amount` reflects the post-forfeit residual
-retained through the close (historical pre-forfeit amount is in the event stream).
+Full Commitment struct. `amount` is zeroed when the commitment closes (release,
+expire, finalize or forfeit); the historical amounts are in the event stream.
 
 
 ```solidity
@@ -986,8 +821,8 @@ function getForfeitProposal(uint256 commitmentId) external view returns (ICM.For
 
 ### getUserExposure
 
-Exposure tracking for `(token, user)` (INV-3). Arg order is token-first to match
-the rest of the view surface.
+Exposure for `(token, user)` (INV-3): the ledger's encumbered balance beside the
+stored forfeitable total. Arg order is token-first to match the rest of the view surface.
 
 
 ```solidity
@@ -1031,15 +866,6 @@ Units forfeited at `executeForfeit` (0 = never forfeited).
 function forfeitedUnitsOf(uint256 commitmentId) external view returns (uint256);
 ```
 
-### acceptsContributions
-
-Whether the commitment accepts third-party `contributeEncumbered` calls (ERC §C.6).
-
-
-```solidity
-function acceptsContributions(uint256 commitmentId) external view returns (bool);
-```
-
 ### failedHook
 
 Selector of a failed guarded hook awaiting `sweepFailedHook` (0 = none).
@@ -1047,15 +873,6 @@ Selector of a failed guarded hook awaiting `sweepFailedHook` (0 = none).
 
 ```solidity
 function failedHook(uint256 commitmentId, address strategy) external view returns (bytes4);
-```
-
-### getUserCommitmentIds
-
-All commitment ids ever created for `user` (append-only).
-
-
-```solidity
-function getUserCommitmentIds(address user) external view returns (uint256[] memory);
 ```
 
 ### unbondingPeriod
@@ -1069,20 +886,20 @@ function unbondingPeriod() public view returns (uint64);
 
 ### MIN_CHALLENGE_WINDOW
 
-Active minimum challenge window (seconds). Lazy default: 1 day.
+Active minimum challenge window (seconds). `initialize` sets it to 1 day.
 
 
 ```solidity
-function MIN_CHALLENGE_WINDOW() public view returns (uint64);
+function MIN_CHALLENGE_WINDOW() external view returns (uint64);
 ```
 
 ### hookGasCap
 
-Per-hook gas cap for guarded lifecycle hooks (ERC §D.6). Lazy default: 500k.
+Per-hook gas cap for guarded lifecycle hooks (ERC §D.6). `initialize` sets it to 500k.
 
 
 ```solidity
-function hookGasCap() public view returns (uint64);
+function hookGasCap() external view returns (uint64);
 ```
 
 ### setUnbondingPeriod
@@ -1096,8 +913,8 @@ function setUnbondingPeriod(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROL
 
 ### setMinChallengeWindow
 
-Update the minimum challenge window. Passing 0 restores the 1-day default;
-non-zero values must be at least one day.
+Update the minimum challenge window. Values below one day (zero included) revert
+`MinChallengeWindowBelowFloor`.
 
 
 ```solidity
@@ -1106,8 +923,8 @@ function setMinChallengeWindow(uint64 newValue) external onlyRole(DEFAULT_ADMIN_
 
 ### setHookGasCap
 
-Raise (never lower) the per-hook gas cap. Passing 0 restores the 500k default;
-non-zero values below the floor are rejected (ERC §0.3).
+Set the per-hook gas cap to any value at or above the 500k floor (ERC §0.3). A value
+below the floor (zero included) reverts `ZeroAmount`.
 
 
 ```solidity
@@ -1116,7 +933,8 @@ function setHookGasCap(uint64 newValue) external onlyRole(DEFAULT_ADMIN_ROLE);
 
 ### setOperatorRegistry
 
-Set or clear the operator registry for delegation hooks (mesh extension).
+Set or clear the operator registry for delegation hooks (mesh extension). The
+manager notifies the registry only for commitments whose counterparty is the registry.
 
 The manager notifies exactly ONE registry on release/forfeit; re-pointing (or
 clearing) the slot while the outgoing registry still tracks live registration/
@@ -1138,10 +956,22 @@ Force-set or clear the operator registry, bypassing the tracked-commitments
 guard. Any commitments still tracked by the outgoing registry are orphaned:
 their release/forfeit hooks will be silently dropped. Escape hatch for
 registry migrations and for outgoing registries that cannot report a count.
+The manager notifies the registry only for commitments whose counterparty is the
+registry.
 
 
 ```solidity
 function forceSetOperatorRegistry(address operatorRegistry_) external onlyRole(DEFAULT_ADMIN_ROLE);
+```
+
+### _setOperatorRegistry
+
+Shared tail of the two registry setters. Without `force`, an outgoing registry that
+still tracks commitments, or cannot report a count, blocks the swap (fail-closed).
+
+
+```solidity
+function _setOperatorRegistry(address operatorRegistry_, bool force) private;
 ```
 
 ### operatorRegistry

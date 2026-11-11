@@ -1,11 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useNowSeconds } from '../../hooks/useNow'
-import { MediaRow } from '../ui'
+import { useNowSelect } from '../../hooks/useNow'
+import { Button, MediaRow } from '../ui'
 
 export type ActivityEventType =
   | 'deposit'
-  | 'withdrawal-requested'
-  | 'withdrawal-claimed'
+  | 'withdrawal'
   | 'commitment-created'
   | 'commitment-released'
   | 'forfeit-proposed'
@@ -70,8 +69,7 @@ export interface ActivityFeedProps {
 
 const DEFAULT_TONE_BY_TYPE: Record<ActivityEventType, ActivityEventTone> = {
   deposit: 'success',
-  'withdrawal-requested': 'info',
-  'withdrawal-claimed': 'success',
+  withdrawal: 'success',
   'commitment-created': 'info',
   'commitment-released': 'success',
   'forfeit-proposed': 'warn',
@@ -92,8 +90,7 @@ const DEFAULT_TONE_BY_TYPE: Record<ActivityEventType, ActivityEventTone> = {
 
 const GLYPH_BY_TYPE: Record<ActivityEventType, string> = {
   deposit: '↓',
-  'withdrawal-requested': '⏳',
-  'withdrawal-claimed': '↑',
+  withdrawal: '↑',
   'commitment-created': '+',
   'commitment-released': '✓',
   'forfeit-proposed': '!',
@@ -140,9 +137,8 @@ function formatTimeStamp(unixSecs: number): string {
  * The taxonomy of event types is fixed (see ActivityEventType); call sites
  * provide pre-rendered title/meta/trailing nodes since copy is feature-specific.
  *
- * Per § 4 of frontend/docs/restructure-plan.md, this is the rendering surface
- * for the Dashboard activity stream and any other "what happened" panels
- * (e.g. per-vault activity, per-operator history).
+ * This is the rendering surface for the Dashboard activity stream and any
+ * other "what happened" panel (per-vault activity, per-operator history).
  */
 export function ActivityFeed({
   events,
@@ -154,7 +150,12 @@ export function ActivityFeed({
   className,
 }: ActivityFeedProps) {
   const [shown, setShown] = useState(pageSize)
-  const now = Number(useNowSeconds())
+  // Headings read only the local day, so re-render when the day turns, not
+  // every second.
+  const today = useNowSelect((now) => {
+    const d = new Date(Number(now) * 1000)
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000
+  })
 
   const visibleEvents = useMemo(
     () => (onLoadMore ? events : events.slice(0, shown)),
@@ -171,7 +172,7 @@ export function ActivityFeed({
   if (groupBy === 'date') {
     const byHeading = new Map<string, ActivityEvent[]>()
     for (const ev of visibleEvents) {
-      const heading = formatDateHeading(ev.timestamp, now)
+      const heading = formatDateHeading(ev.timestamp, today)
       const list = byHeading.get(heading) ?? []
       list.push(ev)
       byHeading.set(heading, list)
@@ -248,16 +249,16 @@ export function ActivityFeed({
 
       {hasMore && (
         <div className="ds-row" style={{ justifyContent: 'center' }}>
-          <button
-            type="button"
-            className="ds-btn ds-btn--sm ds-btn--ghost"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               if (onLoadMore) onLoadMore()
               else setShown((s) => s + pageSize)
             }}
           >
             Show more
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ generated: true
 ---
 # OptimisticMutualArbiter
 **Inherits:**
-[IArbiter](/docs/protocol/reference/contracts/shared/arbitration/interfaces/IArbiter), Ownable2Step, ReentrancyGuardTransient
+[ArbiterBase](/docs/protocol/reference/contracts/shared/arbitration/ArbiterBase), Ownable2Step, ReentrancyGuardTransient
 
 **Title:**
 OptimisticMutualArbiter
@@ -22,18 +22,12 @@ per-commitment path).
 Flow: a proposer posts an ERC-20 `bond` and declares a loss; the manager's mutual challenge
 window opens. A dispute committee (the `owner`) may VETO during the window — that cancels
 the declaration in the manager and slashes the bond to `treasury`. If undisputed, anyone
-calls `manager.executeMutualLoss` directly once the window elapses, and the honest
-proposer reclaims the bond here. One active claim per mutual (mirrors the manager's INV-7).
+calls `manager.executeMutualLoss` directly once the window elapses, and anyone reclaims the
+bond to the proposer here (or the next `proposeLoss` does it). One active claim per mutual
+(mirrors the manager's INV-7).
 
 
-## Constants
-### manager
-
-```solidity
-ICommitmentManager public immutable manager
-```
-
-
+## State Variables
 ### bondToken
 
 ```solidity
@@ -48,7 +42,6 @@ uint256 public immutable minBond
 ```
 
 
-## State Variables
 ### treasury
 
 ```solidity
@@ -82,19 +75,8 @@ mapping(uint256 => Claim) public claims
 
 ```solidity
 constructor(address manager_, address bondToken_, uint256 minBond_, address treasury_, address owner_)
-    Ownable(owner_);
-```
-
-### commitmentManager
-
-Returns the CommitmentManager this arbiter dispatches to.
-
-Implementations should make this immutable to preserve the trust
-model commitments opt into when naming this contract as arbiter.
-
-
-```solidity
-function commitmentManager() external view returns (address);
+    Ownable(owner_)
+    ArbiterBase(manager_);
 ```
 
 ### arbiterCapabilities
@@ -123,19 +105,6 @@ pointer is published.
 function arbiterMetadataURI() external pure returns (string memory);
 ```
 
-### supportsInterface
-
-Returns true if this contract implements the interface defined by
-`interfaceId`. See the corresponding
-https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section]
-to learn more about how these ids are created.
-This function call must use less than 30 000 gas.
-
-
-```solidity
-function supportsInterface(bytes4 interfaceId) external pure returns (bool);
-```
-
 ### setTreasury
 
 
@@ -155,8 +124,9 @@ function setCoverPolicy(address coverPolicy_) external onlyOwner;
 
 ### activate
 
-Activate a mutual whose arbiter is this contract (owner-gated — the assembler/committee
-flips it once target capacity is filled).
+Activate a mutual whose arbiter is this contract (owner-gated). Members can only join
+an active mutual, so activation means the committee accepts the mutual; it does not
+wait for target capacity.
 
 
 ```solidity
@@ -166,7 +136,7 @@ function activate(uint256 mutualId) external onlyOwner;
 ### proposeLoss
 
 Post a bond and declare a mutual loss, opening the manager's mutual challenge window.
-No cover binding is referenced (the snapshot fields stay zero).
+No cover binding is referenced.
 
 
 ```solidity
@@ -179,8 +149,8 @@ function proposeLoss(uint256 mutualId, uint256 lossNumeraire, bytes32 evidenceHa
 
 Post a bond and declare a mutual loss, snapshotting a cover binding into the claim for
 AUDITABILITY ONLY. Reads `{notional, expiry, policyholder}` from the LinkedMutual-
-Policy and records it on the `Claim`; the snapshot gates NOTHING — the core settles
-whatever is validated regardless of whether a funded policy exists (plan Risk #2,
+Policy and emits it in `CoverBindingSnapshotted`; the snapshot gates NOTHING — the core
+settles whatever is validated regardless of whether a funded policy exists (plan Risk #2,
 premium-without-cover is accepted arbiter/social trust). Otherwise identical to
 `proposeLoss`. The binding must belong to `mutualId`.
 
@@ -197,21 +167,13 @@ function proposeLossFor(
 
 ### _proposeLoss
 
-Shared propose body. Bond custody + claim recording + manager initiation; the snapshot
-args are advisory-only (zero for the plain path).
+Shared propose body. Bond custody + claim recording + manager initiation. A prior
+unresolved claim whose manager proposal has executed or been cancelled is refunded to
+its proposer first; only a claim still pending in the manager reverts `ClaimActive`.
 
 
 ```solidity
-function _proposeLoss(
-    uint256 mutualId,
-    uint256 lossNumeraire,
-    bytes32 evidenceHash,
-    uint256 bond,
-    uint256 coverBindingId,
-    uint256 snapshotNotional,
-    uint64 snapshotExpiry,
-    address snapshotPolicyholder
-) internal;
+function _proposeLoss(uint256 mutualId, uint256 lossNumeraire, bytes32 evidenceHash, uint256 bond) internal;
 ```
 
 ### veto
@@ -228,8 +190,9 @@ function veto(uint256 mutualId) external onlyOwner nonReentrant;
 
 ### reclaimBond
 
-After an UNDISPUTED loss has executed in the manager, the honest proposer reclaims
-the bond. Reverts until the manager has marked the proposal executed.
+After an UNDISPUTED loss has executed in the manager, return the bond to the
+proposer. Permissionless: the refund always goes to `proposer`. Reverts until the
+manager has marked the proposal executed.
 
 
 ```solidity
@@ -249,6 +212,15 @@ the `veto` path is the one that slashes).
 
 ```solidity
 function reclaimOnCancelled(uint256 mutualId) external nonReentrant;
+```
+
+### _refund
+
+Mark the claim resolved and return its bond to the proposer.
+
+
+```solidity
+function _refund(uint256 mutualId, Claim storage c) private;
 ```
 
 ## Events
@@ -291,12 +263,6 @@ event CoverBindingSnapshotted(
 ```
 
 ## Errors
-### ZeroAddress
-
-```solidity
-error ZeroAddress();
-```
-
 ### BondTooLow
 
 ```solidity
@@ -319,12 +285,6 @@ error NoClaim();
 
 ```solidity
 error AlreadyResolved();
-```
-
-### NotProposer
-
-```solidity
-error NotProposer();
 ```
 
 ### LossNotExecuted
@@ -359,21 +319,15 @@ error BindingMutualMismatch();
 
 ## Structs
 ### Claim
+The cover-binding snapshot `proposeLossFor` takes is emitted in `CoverBindingSnapshotted`,
+not stored: nothing on chain reads it.
+
 
 ```solidity
 struct Claim {
     address proposer;
-    uint256 bond;
     uint64 proposedAt;
-    bool vetoed;
     bool resolved; // bond reclaimed or slashed
-    // ---- Cover-binding snapshot (auditability ONLY; NEVER a settlement gate) ----
-    // Captured from the LinkedMutualPolicy at propose time so periphery/indexer can surface
-    // "this loss does / does not match an active, funded policy". The core settles regardless;
-    // a plain `proposeLoss` (no binding) leaves all four fields zero. (ERC §6 / plan Risk #2.)
-    uint256 coverBindingId; // 0 == no binding referenced
-    uint256 snapshotNotional;
-    uint64 snapshotExpiry;
-    address snapshotPolicyholder;
+    uint256 bond;
 }
 ```

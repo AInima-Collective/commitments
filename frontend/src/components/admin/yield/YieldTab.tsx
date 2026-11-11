@@ -1,25 +1,22 @@
 import { useState } from 'react'
-import { useChainId, useReadContracts } from 'wagmi'
-import { type Address, type Hex, encodeAbiParameters, erc20Abi, parseUnits } from 'viem'
+import { useChainId, useReadContract, useReadContracts } from 'wagmi'
+import { type Address, type Hex, encodeAbiParameters, erc20Abi, isAddressEqual, parseUnits } from 'viem'
 import { AddressDisplay, Button, Card, Input, Notice, Select, Skeleton, TokenAmount } from '../../ui'
-import {
-  commitmentManagerAbi,
-  commitmentsVaultAbi,
-  useReadCommitmentManagerGetCommitment,
-  useReadCommitmentManagerStrategiesOf,
-} from '../../../generated'
+import { commitmentManagerAbi, commitmentsVaultAbi } from '../../../generated'
 import {
   getContractAddresses,
   getDefaultBacking,
-  getVaultRegistry,
 } from '../../../config/contracts'
 import { useTokenMeta } from '../../../hooks/useTokenMeta'
+import { useVaults } from '../../../hooks/useVaults'
+import { POLL } from '../../../hooks/polling'
 import {
   type SimulateYieldStep,
   useSimulateYieldToApy,
 } from '../../../hooks/useSimulateYieldToApy'
 import { AdminActionPanel } from '../AdminActionPanel'
-import { useAdminAction } from '../useAdminAction'
+import { useAdminAction } from '../../../hooks/useAdminAction'
+import { MOCK_ERC20_MINT_ABI } from '../../../lib/mockErc20Abi'
 
 /**
  * Best-effort decimals for a vault's underlying, keyed by asset symbol. The
@@ -42,22 +39,8 @@ const EMPTY_CLAIM_DATA = '0x' as Hex
 /** Committer abandonment-reclaim flag for IndexAppreciationYield: `abi.encode(true)`. */
 const RECLAIM_CLAIM_DATA = encodeAbiParameters([{ type: 'bool' }], [true])
 
-/** MockERC20 mint — anvil-only convenience to top up the donor before donate(). */
-const MOCK_ERC20_MINT_ABI = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-] as const
-
 /**
- * YieldTab — v2 strategy-aware yield admin surface (rebuilt per FUTURE_WORK §2).
+ * YieldTab — v2 strategy-aware yield admin surface.
  *
  * v1's per-commitment accumulator (`pendingYieldIncentive`/`distribute`/
  * `claimYieldIncentive`) is gone. v2 routes every value flow through pluggable
@@ -82,8 +65,8 @@ export function YieldTab() {
 
   return (
     <div className="ds-stack ds-stack-4">
-      <SimulateYieldToApyPanel chainId={chainId} />
-      <DonateNavPanel chainId={chainId} />
+      <SimulateYieldToApyPanel />
+      <DonateNavPanel />
       <InspectYieldPanel manager={commitmentManager} />
       <DistributeAllPanel manager={commitmentManager} />
       <FundStrategyPanel
@@ -98,7 +81,7 @@ export function YieldTab() {
 
 /* -------------------------------------------------------------------------- */
 /* Simulate yield → APY — one orchestrated control that closes the loop with    */
-/* REAL donate(): baseline snapshot → donate → warp +4d → snapshot → refetch.   */
+/* REAL donate(): read baseline → donate → warp +4d → await snapshot → refetch. */
 /* -------------------------------------------------------------------------- */
 
 const SIMULATE_STEP_LABEL: Record<SimulateYieldStep, string> = {
@@ -110,14 +93,14 @@ const SIMULATE_STEP_LABEL: Record<SimulateYieldStep, string> = {
   done: 'Done — the vault APY now reflects real share-price movement.',
 }
 
-function SimulateYieldToApyPanel({ chainId }: { chainId: number }) {
+function SimulateYieldToApyPanel() {
   const { run, isPending, step, error, lastResult } = useSimulateYieldToApy()
-  const vaults = getVaultRegistry(chainId)
+  const { vaults } = useVaults()
 
   const [vault, setVault] = useState<string>(vaults[0]?.address ?? '')
   const [amount, setAmount] = useState('1000')
 
-  const selected = vaults.find((v) => v.address === vault) ?? vaults[0]
+  const selected = vaults.find((v) => !!vault && isAddressEqual(v.address, vault as Address)) ?? vaults[0]
   const decimals = selected ? decimalsForSymbol(selected.assetSymbol) : 18
 
   const options = vaults.map((v) => ({
@@ -148,9 +131,10 @@ function SimulateYieldToApyPanel({ chainId }: { chainId: number }) {
       <header className="ds-stack ds-stack-1">
         <h3 className="ds-text-lg">Simulate yield → APY</h3>
         <p className="ds-text-sm ds-muted">
-          One-click end-to-end demo. Takes a baseline snapshot, donates real backing to the vault
-          (mints the MockERC20 underlying if you&apos;re short, then approves + donates — no yield
-          strategy required), advances anvil chain time by 4 days, then snapshots again so{' '}
+          One-click end-to-end demo. Reads the indexer&apos;s newest vault snapshot as the
+          baseline, donates real backing to the vault (mints the MockERC20 underlying if you&apos;re
+          short, then approves + donates — no yield strategy required), advances anvil chain time
+          by 4 days, then waits for the indexer&apos;s first snapshot after the warp so{' '}
           <code>apy7d</code> computes a genuine positive delta from the raised share price. The
           Vaults APY chart refetches automatically.
         </p>
@@ -160,7 +144,7 @@ function SimulateYieldToApyPanel({ chainId }: { chainId: number }) {
         <Select
           aria-label="vault"
           options={options}
-          value={vault}
+          value={selected?.address}
           onChange={(e) => setVault(e.target.value)}
           style={{ minWidth: 220 }}
         />
@@ -221,9 +205,9 @@ function SimulateYieldToApyPanel({ chainId }: { chainId: number }) {
 /* accrue (the source of claimable yield)                                       */
 /* -------------------------------------------------------------------------- */
 
-function DonateNavPanel({ chainId }: { chainId: number }) {
+function DonateNavPanel() {
   const action = useAdminAction()
-  const vaults = getVaultRegistry(chainId)
+  const { vaults } = useVaults()
 
   const [vault, setVault] = useState<string>(vaults[0]?.address ?? '')
   const [amount, setAmount] = useState('100')
@@ -353,17 +337,21 @@ function InspectYieldPanel({ manager }: { manager: Address }) {
 
   const enabled = id !== undefined
 
-  const { data: commitment } = useReadCommitmentManagerGetCommitment({
+  const { data: commitment } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getCommitment',
     address: manager,
     args: id !== undefined ? [id] : undefined,
-    query: { enabled, refetchInterval: 15_000 },
+    query: { enabled, refetchInterval: POLL.fast },
   })
 
   const { data: strategiesData, isLoading: strategiesLoading } =
-    useReadCommitmentManagerStrategiesOf({
+    useReadContract({
+      abi: commitmentManagerAbi,
+      functionName: 'strategiesOf',
       address: manager,
       args: id !== undefined ? [id] : undefined,
-      query: { enabled, refetchInterval: 15_000 },
+      query: { enabled, refetchInterval: POLL.fast },
     })
 
   const strategies = (strategiesData as readonly Address[] | undefined)?.slice() ?? []
@@ -378,7 +366,7 @@ function InspectYieldPanel({ manager }: { manager: Address }) {
       functionName: 'pending' as const,
       args: [id as bigint, strategy, EMPTY_CLAIM_DATA] as const,
     })),
-    query: { enabled: enabled && strategies.length > 0, refetchInterval: 15_000 },
+    query: { enabled: enabled && strategies.length > 0, refetchInterval: POLL.fast },
   })
 
   // escrowOf(token, strategy) — units currently held in each strategy's escrow.
@@ -389,7 +377,7 @@ function InspectYieldPanel({ manager }: { manager: Address }) {
       functionName: 'escrowOf' as const,
       args: [token as Address, strategy] as const,
     })),
-    query: { enabled: enabled && strategies.length > 0 && !!token, refetchInterval: 15_000 },
+    query: { enabled: enabled && strategies.length > 0 && !!token, refetchInterval: POLL.fast },
   })
 
   const isLoading = strategiesLoading || pendingLoading
@@ -529,7 +517,8 @@ function FundStrategyPanel({
   chainId: number
 }) {
   const action = useAdminAction()
-  const backing = getDefaultBacking(chainId)
+  const { vaults } = useVaults()
+  const backing = getDefaultBacking(chainId, vaults)
 
   const [strategy, setStrategy] = useState<string>(defaultStrategy ?? '')
   const [token, setToken] = useState<string>(backing?.token ?? '')

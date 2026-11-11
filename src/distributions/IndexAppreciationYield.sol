@@ -14,6 +14,7 @@ import {
     ForfeitContext
 } from "src/core/interfaces/IDistributionStrategy.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
 import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 
 /// @title IndexAppreciationYield
@@ -28,7 +29,7 @@ import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 ///        yieldAccrued      = currentEncumbered × (nowIndex − lastIndex) / 1e18
 ///        counterpartyYield = yieldAccrued × yieldShareBps / 10_000
 ///        yieldUnits        = counterpartyYield × 1e18 / nowIndex, clamped to currentEncumbered
-contract IndexAppreciationYield is IDistributionStrategy {
+contract IndexAppreciationYield is StrategyBase {
     /// @notice Counterparty abandonment TTL: after this long past commitment close, the
     ///         committer may reclaim unclaimed accrual (strategy-internal policy, ERC taxonomy).
     uint64 public constant RECLAIM_WINDOW = 90 days;
@@ -40,25 +41,12 @@ contract IndexAppreciationYield is IDistributionStrategy {
         uint256 owed; // escrowed backing units claimable by the counterparty
     }
 
-    address public immutable manager;
     mapping(uint256 commitmentId => Position) internal _positions;
 
-    error OnlyManager();
     error YieldBpsExceedsMax();
-    error AlreadyBound();
-    error NotBound();
-    error NothingToClaim();
-    error NotAuthorized();
     error ReclaimWindowActive();
 
-    constructor(address manager_) {
-        manager = manager_;
-    }
-
-    modifier onlyManager() {
-        if (msg.sender != manager) revert OnlyManager();
-        _;
-    }
+    constructor(address manager_) StrategyBase(manager_) {}
 
     /// @notice Per-commitment premium state.
     function positionOf(uint256 commitmentId)
@@ -83,7 +71,6 @@ contract IndexAppreciationYield is IDistributionStrategy {
         if (yieldShareBps > BPS_DENOMINATOR) revert YieldBpsExceedsMax();
 
         Position storage pos = _positions[ctx.base.commitmentId];
-        if (pos.bound) revert AlreadyBound();
         pos.bound = true;
         pos.yieldShareBps = yieldShareBps;
         // Reverts here if the adapter cannot price the token — refusing the binding.
@@ -91,7 +78,7 @@ contract IndexAppreciationYield is IDistributionStrategy {
     }
 
     /// @inheritdoc IDistributionStrategy
-    function distribute(DistributeContext calldata ctx) external onlyManager returns (TokenMovement[] memory) {
+    function distribute(DistributeContext calldata ctx) external override onlyManager returns (TokenMovement[] memory) {
         return _accrue(
             ctx.base.commitmentId, ctx.base.adapter, ctx.base.token, ctx.base.committer, ctx.base.currentEncumbered
         );
@@ -100,7 +87,12 @@ contract IndexAppreciationYield is IDistributionStrategy {
     /// @inheritdoc IDistributionStrategy
     /// @dev One final accrual sweep — the manager runs release hooks BEFORE freeing the
     ///      encumbrance (ERC §C.1), so the sweep still has an encumbered source.
-    function onCommitmentReleased(LifecycleContext calldata ctx) external onlyManager returns (TokenMovement[] memory) {
+    function onCommitmentReleased(LifecycleContext calldata ctx)
+        external
+        override
+        onlyManager
+        returns (TokenMovement[] memory)
+    {
         return _accrue(
             ctx.base.commitmentId, ctx.base.adapter, ctx.base.token, ctx.base.committer, ctx.base.currentEncumbered
         );
@@ -110,7 +102,12 @@ contract IndexAppreciationYield is IDistributionStrategy {
     /// @dev Previously-escrowed accrual stays claimable. A final sweep runs against the
     ///      post-forfeit residual, capped so the counterparty's total (forfeit payout + premium)
     ///      never exceeds the commitment's pre-forfeit amount (ERC taxonomy SHOULD).
-    function onCommitmentForfeited(ForfeitContext calldata ctx) external onlyManager returns (TokenMovement[] memory) {
+    function onCommitmentForfeited(ForfeitContext calldata ctx)
+        external
+        override
+        onlyManager
+        returns (TokenMovement[] memory)
+    {
         uint256 commitmentId = ctx.base.commitmentId;
         uint256 residual = ctx.base.currentEncumbered;
 
@@ -149,7 +146,7 @@ contract IndexAppreciationYield is IDistributionStrategy {
 
         if (reclaim) {
             if (ctx.caller != ctx.base.committer) revert NotAuthorized();
-            if (ctx.closedAt == 0 || block.timestamp < uint256(ctx.closedAt) + RECLAIM_WINDOW) {
+            if (ctx.closedAt == 0 || ctx.base.timestamp < uint256(ctx.closedAt) + RECLAIM_WINDOW) {
                 revert ReclaimWindowActive();
             }
             pos.owed = 0;

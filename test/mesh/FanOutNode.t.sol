@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {FanOutNode} from "src/extensions/mesh/FanOutNode.sol";
 import {IFanOut, UserInfo, Outflow, FanOutLien} from "src/extensions/mesh/interfaces/IFanOut.sol";
-import {IFlowQuery, ProviderInfo, ConsumerInfo, AvailableDenom} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 
 contract FanOutNodeTest is Test {
@@ -38,9 +37,9 @@ contract FanOutNodeTest is Test {
     // INITIALIZE TESTS
     // ============================================================
 
-    function test_initialize_setsProviderAndManager() public view {
+    function test_initialize_setsProvider() public view {
         assertEq(fanOut.provider(), provider);
-        assertEq(fanOut.manager(), manager);
+        assertEq(fanOut.inputMaxPenaltyBps(), MAX_PENALTY);
     }
 
     function test_initialize_onlyOnce() public {
@@ -367,48 +366,6 @@ contract FanOutNodeTest is Test {
         vm.prank(provider);
         fanOut.claimRewards(DENOM, address(rewardToken));
         assertEq(rewardToken.balanceOf(provider), 0);
-    }
-
-    // ============================================================
-    // IFLOWQUERY TESTS
-    // ============================================================
-
-    function test_flowQuery_nodeType() public view {
-        // Phase 21.2: nodeType() is bytes32; nodeTypeName() is the string.
-        assertEq(fanOut.nodeTypeName(), "fan_out");
-    }
-
-    function test_flowQuery_providers() public {
-        vm.prank(provider);
-        fanOut.stake(DENOM, 500e18);
-
-        ProviderInfo[] memory provInfos = fanOut.providers();
-        assertEq(provInfos.length, 1);
-        assertEq(provInfos[0].provider, provider);
-        assertEq(provInfos[0].stakes.length, 1);
-        assertEq(provInfos[0].stakes[0].amount, 500e18);
-    }
-
-    function test_flowQuery_consumers() public {
-        vm.prank(provider);
-        fanOut.stake(DENOM, 1000e18);
-
-        Outflow[] memory outflows = _makeOutflows(consumer1, 6000, consumer2, 4000);
-        vm.prank(provider);
-        fanOut.setOutflows(DENOM, outflows);
-
-        ConsumerInfo[] memory consInfos = fanOut.consumers();
-        assertEq(consInfos.length, 2);
-    }
-
-    function test_flowQuery_availableDenoms() public {
-        vm.prank(provider);
-        fanOut.stake(DENOM, 100e18);
-
-        AvailableDenom[] memory denoms = fanOut.availableDenoms();
-        assertEq(denoms.length, 1);
-        assertEq(denoms[0].local, DENOM);
-        assertEq(denoms[0].sourceProvider, provider);
     }
 
     // ============================================================

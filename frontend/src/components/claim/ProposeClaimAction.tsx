@@ -1,20 +1,17 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { parseUnits, type Address, type Hex } from 'viem'
-import { useAccount } from 'wagmi'
+import { parseUnits, type Address, type Hex, zeroHash } from 'viem'
+import { useAccount, useReadContract } from 'wagmi'
 
-import {
-  useReadOptimisticInsuranceArbiterActiveClaimOf,
-  useReadOptimisticInsuranceArbiterAnswerTimeout,
-  useReadOptimisticInsuranceArbiterBondFloor,
-  useReadOptimisticInsuranceArbiterBondToken,
-} from '../../generated'
+import { optimisticInsuranceArbiterAbi } from '../../generated'
+import { POLL } from '../../hooks/polling'
 import { useProposeClaimFlow } from '../../hooks/useProposeClaimFlow'
 import { useTokenMeta } from '../../hooks/useTokenMeta'
 import { formatTokenAmount } from '../../lib/format'
-import { formatBps } from '../../utils/commitments'
-import { ZERO_HASH, computeHashFromJsonText } from '../../utils/metadataForm'
-import { Input, Modal, Notice, TokenAmount, useToasts } from '../ui'
+import { formatBps } from '../../lib/commitments'
+import { computeHashFromJsonText } from '../../lib/metadataForm'
+import { Button, Input, Modal, Notice, TokenAmount, useToasts } from '../ui'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 /** Claim-size presets as a fraction of the commitment's maxPenaltyBps. */
 const CLAIM_PRESETS = [
@@ -64,9 +61,9 @@ export function ProposeClaimAction({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button type="button" className="ds-btn" onClick={() => setOpen(true)}>
+      <Button onClick={() => setOpen(true)}>
         Propose claim
-      </button>
+      </Button>
       <Modal
         open={open}
         onClose={() => setOpen(false)}
@@ -114,22 +111,30 @@ function ProposeClaimBody({
 
   // ── Evidence ──────────────────────────────────────────────────────────────
   const [evidenceText, setEvidenceText] = useState('')
-  const evidenceHash: Hex = evidenceText.length > 0 ? computeHashFromJsonText(evidenceText) : ZERO_HASH
+  const evidenceHash: Hex = evidenceText.length > 0 ? computeHashFromJsonText(evidenceText) : zeroHash
 
   // ── Arbiter reads ─────────────────────────────────────────────────────────
-  const { data: activeClaimId } = useReadOptimisticInsuranceArbiterActiveClaimOf({
+  const { data: activeClaimId } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'activeClaimOf',
     address: arbiterAddress,
     args: [commitmentId],
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: POLL.fast },
   })
-  const { data: answerTimeout } = useReadOptimisticInsuranceArbiterAnswerTimeout({
+  const { data: answerTimeout } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'answerTimeout',
     address: arbiterAddress,
   })
-  const { data: bondToken } = useReadOptimisticInsuranceArbiterBondToken({
+  const { data: bondToken } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'bondToken',
     address: arbiterAddress,
   })
   const validBps = amountBps >= 1 && amountBps <= maxPenaltyBps
-  const { data: bondFloor } = useReadOptimisticInsuranceArbiterBondFloor({
+  const { data: bondFloor } = useReadContract({
+    abi: optimisticInsuranceArbiterAbi,
+    functionName: 'bondFloor',
     address: arbiterAddress,
     args: [commitmentId, amountBps],
     query: { enabled: validBps },
@@ -309,7 +314,7 @@ function ProposeClaimBody({
         <Notice tone="info" size="sm">
           Only the keccak256 hash goes on-chain:{' '}
           <span title={evidenceHash}>
-            {evidenceHash === ZERO_HASH ? 'no evidence (zero hash)' : `${evidenceHash.slice(0, 10)}…${evidenceHash.slice(-6)}`}
+            {evidenceHash === zeroHash ? 'no evidence (zero hash)' : `${evidenceHash.slice(0, 10)}…${evidenceHash.slice(-6)}`}
           </span>
           . Keep the full text — disputers and the counterparty will ask for it.
         </Notice>
@@ -350,17 +355,16 @@ function ProposeClaimBody({
 
       {flow.error && (
         <Notice tone="danger" size="sm" title="TRANSACTION FAILED">
-          {(flow.error as { shortMessage?: string }).shortMessage ?? flow.error.message}
+          {legibleWriteError(flow.error)}
         </Notice>
       )}
 
       <div className="ds-row ds-row-2" style={{ justifyContent: 'flex-end' /* layout only */ }}>
-        <button type="button" className="ds-btn" onClick={onClose} disabled={isPending}>
+        <Button onClick={onClose} disabled={isPending}>
           CANCEL
-        </button>
-        <button
-          type="button"
-          className="ds-btn ds-btn--primary"
+        </Button>
+        <Button
+          variant="primary"
           onClick={handleSubmit}
           disabled={!canSubmit}
           title={disabledReason}
@@ -372,7 +376,7 @@ function ProposeClaimBody({
               : needsApproval
                 ? `APPROVE ${bondSymbol} BOND`
                 : 'PROPOSE CLAIM'}
-        </button>
+        </Button>
       </div>
 
       <Notice tone="neutral" size="sm" title="WHAT HAPPENS NEXT">

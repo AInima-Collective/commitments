@@ -6,7 +6,7 @@ generated: true
 ---
 # CommitmentsGovernor
 **Inherits:**
-Initializable, GovernorUpgradeable, GovernorSettingsUpgradeable, GovernorCountingSimpleUpgradeable, GovernorVotesUpgradeable, GovernorVotesQuorumFractionUpgradeable, GovernorPreventLateQuorumUpgradeable, GovernorTimelockControlUpgradeable, GovernorStorageUpgradeable, UUPSUpgradeable
+Initializable, GovernorUpgradeable, GovernorSettingsUpgradeable, GovernorCountingSimpleUpgradeable, GovernorVotesUpgradeable, GovernorVotesQuorumFractionUpgradeable, GovernorPreventLateQuorumUpgradeable, GovernorTimelockControlUpgradeable, UUPSUpgradeable
 
 **Title:**
 CommitmentsGovernor
@@ -22,8 +22,6 @@ Module composition:
 - GovernorVotesQuorumFraction: quorum = numerator/denominator of past total supply
 - GovernorPreventLateQuorum: extends voting deadline if quorum reaches at the wire
 - GovernorTimelockControl: queue + execute via TimelockController
-- GovernorStorage: on-chain proposal enumeration (so the indexer can read
-proposal data without parsing every event log)
 Hash-based proposal IDs (Tally-compatible). UUPS upgradeable; the
 _authorizeUpgrade is gated onlyGovernance, so the DAO can only upgrade
 itself via a successful, queued, timelock-delayed self-proposal.
@@ -133,19 +131,6 @@ function proposalDeadline(uint256 proposalId)
 function _tallyUpdated(uint256 proposalId)
     internal
     override(GovernorUpgradeable, GovernorPreventLateQuorumUpgradeable);
-```
-
-### _propose
-
-
-```solidity
-function _propose(
-    address[] memory targets,
-    uint256[] memory values,
-    bytes[] memory calldatas,
-    string memory description,
-    address proposer
-) internal override(GovernorUpgradeable, GovernorStorageUpgradeable) returns (uint256);
 ```
 
 ### _queueOperations

@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {CommitmentsVault} from "src/periphery/vaults/CommitmentsVault.sol";
@@ -16,7 +17,7 @@ import {PremiumScheduler} from "src/extensions/mutuals/PremiumScheduler.sol";
 import {LinkedMutualPolicy} from "src/extensions/mutuals/LinkedMutualPolicy.sol";
 import {OptimisticMutualArbiter} from "src/extensions/mutuals/OptimisticMutualArbiter.sol";
 import {MockERC20} from "../../helpers/MockERC20.sol";
-import {SkimmingMockStrategy} from "../../helpers/SkimmingMockStrategy.sol";
+import {SkimmingMockStrategy} from "src/periphery/vaults/strategies/SkimmingMockStrategy.sol";
 
 /// @title AgentVaultUnderwritingTest
 /// @notice End-to-end walk of the underwritten-vault pattern (the coverage-market successor to
@@ -74,14 +75,7 @@ contract AgentVaultUnderwritingTest is Test {
     uint256 internal lossShares;
 
     function setUp() public {
-        CommitmentManager cmImpl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(cmImpl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days))
-                )
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         dai = new MockERC20("Dai Stablecoin", "DAI", 18);
         CommitmentsVault vaultImpl = new CommitmentsVault();
         vault = CommitmentsVault(
@@ -115,7 +109,6 @@ contract AgentVaultUnderwritingTest is Test {
                 arbiter: address(arbiter),
                 numeraire: address(vault),
                 beneficiary: address(beneficiary),
-                valuationAuthority: address(0),
                 challengeWindow: MUTUAL_WINDOW,
                 deallocationWindow: MUTUAL_WINDOW
             })
@@ -165,18 +158,16 @@ contract AgentVaultUnderwritingTest is Test {
         p.maxPenaltyBps = 10_000;
         p.challengeWindow = 1 days;
         p.strategies = new StrategyBinding[](0);
-        cid = manager.joinMutual(mutualId, p, 0, "");
+        cid = manager.joinMutual(mutualId, p);
         vm.stopPrank();
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(vault));
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(vault));
         (,,,,,,,, uint256 premiumPool) = manager.getMutualPremiumState(mutualId);
-        uint256 juniorPool = manager.getMutualJuniorPool(mutualId);
-        // INV-1 extended by the mutual pools: the share token's whole partition.
-        assertEq(
-            free + enc + esc + premiumPool + juniorPool, vault.balanceOf(address(manager)), "INV-1 for the share token"
-        );
+        assertEq(mp, premiumPool, "one mutual: aggregate == its pool");
+        // INV-1 extended by the mutual premium pool: the share token's whole partition.
+        assertEq(free + enc + esc + mp, vault.balanceOf(address(manager)), "INV-1 for the share token");
     }
 
     function _premiumState() internal view returns (uint128 activeCover, uint128 rate, uint64 finish) {

@@ -124,9 +124,8 @@ const strategies = [{ strategy: flatFeeAtCreateAddress, params }]
 // …pass `strategies` in CommitmentParams; only the counterparty may claim the fee.
 ```
 
-Read with `feeOf(commitmentId) → (fee, token, collected)`, `allocated(token)`
-(per-token uncollected total), and `creditOf(committer, token)` (unconsumed
-prefund). Only the counterparty may claim, and the fee pays to the counterparty's
+Read with `feeOf(commitmentId) → (fee, token, collected, bound)` and
+`creditOf(committer, token)` (unconsumed prefund). Only the counterparty may claim, and the fee pays to the counterparty's
 **wallet** straight from the strategy's balance (it emits `DistributionPaid`
 itself) — verify with `token.balanceOf`, not `freeBalance`.
 

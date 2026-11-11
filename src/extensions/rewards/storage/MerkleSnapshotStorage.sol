@@ -71,13 +71,9 @@ library MerkleSnapshotStorage {
         // Root storage
         // ---------------------------------------------------------------------
 
-        /// @dev rootId → metadata. `rootId == merkleRoot` per A.2.
+        /// @dev rootId → metadata. `rootId == merkleRoot` per A.2; the key is
+        ///      the only copy of the root. Submission order is in `RootSubmitted`.
         mapping(bytes32 => IMerkleSnapshot.RewardsRoot) roots;
-
-        /// @dev Submission-order list of every rootId ever installed. Backs the
-        ///      `rootAt(index)`/`rootCount()` enumeration; all roots are kept —
-        ///      there is no prune path.
-        bytes32[] rootHistory;
     }
 
     /// @notice Returns a storage reference to the Layout struct at STORAGE_SLOT.

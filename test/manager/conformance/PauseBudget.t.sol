@@ -2,9 +2,9 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
@@ -58,14 +58,7 @@ contract PauseBudgetTest is Test {
 
     /// @dev Fresh manager with an explicit budget (so the maxPauseDuration==0 test can redeploy).
     function _deploy(uint64 budget) internal {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, budget))
-                )
-            )
-        );
+        manager = deployManager(admin, UNBONDING, budget);
         // PAUSER/UNPAUSER are separate roles (a single compromised key cannot both pause and refuse
         // to unpause); grant both to the same test `pauser` since we drive both sides.
         vm.startPrank(admin);
@@ -135,7 +128,6 @@ contract PauseBudgetTest is Test {
             arbiter: arbiter,
             numeraire: address(token),
             beneficiary: bob,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -148,7 +140,7 @@ contract PauseBudgetTest is Test {
         ICM.CommitmentParams memory p = _params(amount, 10_000, 0);
         p.counterparty = bob; // == beneficiary
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     // =========================================================================
@@ -565,14 +557,14 @@ contract PauseBudgetTest is Test {
         vm.warp(initiatedAt + MUTUAL_WINDOW + MUTUAL_TTL);
         manager.cancelStaleMutualLoss(gid);
 
-        // Now pause. The re-init interval (anchored at lastInitiatedAt via the resolved proposal's
+        // Now pause. The re-init interval (anchored at the resolved proposal's initiatedAt and
         // snapshot) must elapse in EFFECTIVE time. Pause for 1 hour: it should NOT count.
         _pause();
         vm.warp(block.timestamp + REINIT); // one paused hour
-        // Effective elapsed since lastInitiatedAt is (wall − pauseCredit). The paused hour is
+        // Effective elapsed since the prior initiatedAt is (wall − pauseCredit). The paused hour is
         // credited, so effective interval < REINIT ⇒ re-init too soon.
-        // But wall elapsed since lastInitiatedAt already includes the pre-pause TTL span... the
-        // re-init anchor is lastInitiatedAt (== initiatedAt), so effective elapsed = wall − credit.
+        // But wall elapsed since initiatedAt already includes the pre-pause TTL span, so
+        // effective elapsed = wall − credit.
         // wall since initiatedAt = MUTUAL_WINDOW + MUTUAL_TTL + REINIT; credit = REINIT (the paused
         // hour). effective = MUTUAL_WINDOW + MUTUAL_TTL, which is >> REINIT ⇒ re-init IS allowed.
         // To isolate the clock-stop, re-anchor: cancel-stale already reset nothing; instead assert
@@ -601,7 +593,7 @@ contract PauseBudgetTest is Test {
         vm.warp(block.timestamp + REINIT);
         vm.prank(arbiter);
         manager.initiateMutualLoss(gid, 50e18, bytes32("ev4"));
-        assertGt(manager.getMutual(gid).lastInitiatedAt, secondAt, "re-init allowed one effective hour later");
+        assertGt(manager.getMutualLossProposal(gid).initiatedAt, secondAt, "re-init allowed one effective hour later");
     }
 
     // =========================================================================

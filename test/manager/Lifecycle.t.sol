@@ -2,12 +2,11 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
-import {ERC20StaticAdapter} from "src/backing/ERC20StaticAdapter.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 import {NoopStrategy} from "./mocks/StrategyMocks.sol";
 
@@ -81,53 +80,20 @@ contract MockERC1271Wallet {
     }
 }
 
-contract LifecycleTestBase is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-    ERC20StaticAdapter internal adapter;
-
-    address internal admin = makeAddr("admin");
+contract LifecycleTestBase is ManagerTestBase {
     address internal alice; // committer (has a known private key for relayer tests)
     uint256 internal aliceKey;
     address internal arbiter = makeAddr("arbiter");
     address internal bob = makeAddr("bob"); // counterparty
 
-    uint64 internal constant UNBONDING = 7 days;
-    uint64 internal constant WINDOW = 2 days;
-
-    function setUp() public virtual {
+    function setUp() public virtual override {
         (alice, aliceKey) = makeAddrAndKey("alice");
-
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
-        adapter = new ERC20StaticAdapter();
-
-        token.mint(alice, 1_000e18);
-        vm.startPrank(alice);
-        token.approve(address(manager), type(uint256).max);
-        manager.deposit(address(token), 1_000e18);
-        vm.stopPrank();
+        super.setUp();
+        _fund(alice, 1_000e18);
     }
 
-    function _params(uint256 amount, uint16 maxPenaltyBps) internal view returns (ICM.CommitmentParams memory p) {
-        p.arbiter = arbiter;
-        p.counterparty = bob;
-        p.token = address(token);
-        p.adapter = address(adapter);
-        p.amount = amount;
-        p.maxPenaltyBps = maxPenaltyBps;
-        p.challengeWindow = WINDOW;
-        p.expiresAt = 0;
-        p.strategies = new StrategyBinding[](0);
-        p.metadataURI = "";
-        p.metadataHash = bytes32(0);
+    function _params(uint256 amount, uint16 maxPenaltyBps) internal view returns (ICM.CommitmentParams memory) {
+        return _baseParams(arbiter, bob, amount, maxPenaltyBps);
     }
 
     function _create(uint256 amount, uint16 maxPenaltyBps) internal returns (uint256 id) {
@@ -136,8 +102,8 @@ contract LifecycleTestBase is Test {
     }
 
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 }
 
@@ -165,17 +131,6 @@ contract CreateCommitmentTest is LifecycleTestBase {
         assertFalse(c.released);
         assertFalse(c.forfeited);
         _partitionHolds();
-    }
-
-    /// @dev The companion CommitmentCounterparty event fires with (commitmentId, counterparty) as
-    ///      its two indexed topics. The zero-counterparty guard is unreachable via the direct create
-    ///      path (validation reverts ZeroCounterparty first), so only the positive case is testable
-    ///      through the public API; the guard is defensive for future emitters.
-    function test_create_emitsCommitmentCounterparty() public {
-        vm.expectEmit(true, true, false, true, address(manager));
-        emit ICM.CommitmentCounterparty(1, bob);
-        vm.prank(alice);
-        manager.createCommitment(_params(100e18, 5000));
     }
 
     function test_create_insufficientFreeBalanceReverts() public {
@@ -774,30 +729,6 @@ contract RelayerBatchTest is LifecycleTestBase {
         manager.createCommitmentFor(address(wallet), p, deadline, 0, "");
     }
 
-    function test_batchCreate_and_batchRelease() public {
-        ICM.CommitmentParams[] memory ps = new ICM.CommitmentParams[](2);
-        ps[0] = _params(100e18, 5000);
-        ps[1] = _params(200e18, 1000);
-
-        vm.prank(alice);
-        uint256[] memory ids = manager.batchCreateCommitments(ps);
-        assertEq(ids.length, 2);
-        assertEq(manager.encumberedBalance(address(token), alice), 300e18);
-
-        vm.prank(arbiter);
-        manager.batchReleaseCommitments(ids);
-        assertEq(manager.encumberedBalance(address(token), alice), 0);
-    }
-
-    function test_batch_emptyReverts() public {
-        vm.prank(alice);
-        vm.expectRevert(ICM.EmptyBatch.selector);
-        manager.batchCreateCommitments(new ICM.CommitmentParams[](0));
-        vm.prank(arbiter);
-        vm.expectRevert(ICM.EmptyBatch.selector);
-        manager.batchReleaseCommitments(new uint256[](0));
-    }
-
     // ---- Signature revocation (#60) ----
 
     function test_invalidateCreateAuthorization_revokesOutstandingSignature() public {
@@ -848,8 +779,16 @@ contract RegistryHookTest is LifecycleTestBase {
         manager.setOperatorRegistry(address(registry));
     }
 
+    /// @dev A commitment naming the registry as counterparty: the only kind it tracks.
+    function _createForRegistry(uint256 amount, uint16 maxPenaltyBps) internal returns (uint256 id) {
+        ICM.CommitmentParams memory p = _params(amount, maxPenaltyBps);
+        p.counterparty = address(registry);
+        vm.prank(alice);
+        id = manager.createCommitment(p);
+    }
+
     function test_releaseNotifiesRegistry() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
         vm.prank(arbiter);
         manager.releaseCommitment(id);
         assertEq(registry.releasedCount(), 1);
@@ -857,7 +796,7 @@ contract RegistryHookTest is LifecycleTestBase {
     }
 
     function test_forfeitNotifiesRegistry() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
         vm.prank(arbiter);
         manager.initiateForfeit(id, 3000);
         vm.warp(block.timestamp + WINDOW);
@@ -868,7 +807,7 @@ contract RegistryHookTest is LifecycleTestBase {
     }
 
     function test_registryFailure_doesNotBlock_emitsEvent() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
         registry.setRevert(true);
 
         vm.expectEmit(true, true, false, false);
@@ -884,7 +823,7 @@ contract RegistryHookTest is LifecycleTestBase {
     ///         out-of-gas) while the release still lands: the §D.6 rule-3 min-gas guard reverts the
     ///         WHOLE transaction when the frame cannot genuinely receive the full cap.
     function test_registryHook_gasStarvation_revertsWholeTransaction() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForRegistry(100e18, 5000);
 
         // 400k < cap (500k) + cap/63 + reserve (50k): not enough for the hook frame to receive
         // its full cap, so the guard must revert the entire release.
@@ -902,6 +841,28 @@ contract RegistryHookTest is LifecycleTestBase {
         assertTrue(manager.getCommitment(id).released);
         assertEq(registry.releasedCount(), 1);
     }
+
+    /// @notice A commitment whose counterparty is not the registry is never notified, so its
+    ///         close needs no hook-cap headroom: release and forfeit land with less gas than the cap.
+    function test_nonRegistryCounterparty_closesBelowHookCap() public {
+        uint256 cap = manager.hookGasCap();
+        uint256 id = _create(100e18, 5000); // counterparty bob
+        vm.prank(arbiter);
+        (bool ok,) = address(manager).call{gas: cap}(abi.encodeCall(CommitmentManager.releaseCommitment, (id)));
+        assertTrue(ok, "release lands below the hook cap");
+        assertTrue(manager.getCommitment(id).released);
+
+        uint256 id2 = _create(100e18, 5000);
+        vm.prank(arbiter);
+        manager.initiateForfeit(id2, 3000);
+        vm.warp(block.timestamp + WINDOW);
+        (ok,) = address(manager).call{gas: cap}(abi.encodeCall(CommitmentManager.executeForfeit, (id2)));
+        assertTrue(ok, "forfeit lands below the hook cap");
+        assertTrue(manager.getCommitment(id2).forfeited);
+
+        assertEq(registry.releasedCount(), 0, "registry not notified");
+        assertEq(registry.forfeitedCount(), 0, "registry not notified");
+    }
 }
 
 /// @notice The delegation hook is gas-capped exactly like the strategy hooks (§D.6): even with a
@@ -917,8 +878,15 @@ contract RegistryHookGasCapTest is LifecycleTestBase {
         manager.setOperatorRegistry(address(probe));
     }
 
+    function _createForProbe() internal returns (uint256 id) {
+        ICM.CommitmentParams memory p = _params(100e18, 5000);
+        p.counterparty = address(probe);
+        vm.prank(alice);
+        id = manager.createCommitment(p);
+    }
+
     function test_registryHook_receivesAtMostTheCap() public {
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForProbe();
         vm.prank(arbiter);
         manager.releaseCommitment{gas: 10_000_000}(id); // abundant gas at the top of the call
 
@@ -932,7 +900,7 @@ contract RegistryHookGasCapTest is LifecycleTestBase {
     ///         release still lands — the cap turns an unbounded burn into a bounded, parked failure.
     function test_registryHook_burnAll_isCappedAndParked() public {
         probe.setBurn(true);
-        uint256 id = _create(100e18, 5000);
+        uint256 id = _createForProbe();
 
         vm.expectEmit(true, true, false, false);
         emit ICM.RegistryHookFailed(id, GasProbeRegistry.onDelegationReleased.selector);
@@ -980,15 +948,5 @@ contract MissingViewsTest is LifecycleTestBase {
         manager.executeForfeit(id);
         // getCommitment().amount is now the residual; forfeitedUnitsOf is the only surviving magnitude.
         assertEq(manager.forfeitedUnitsOf(id), 30e18, "forfeited units persisted post-close");
-    }
-
-    function test_acceptsContributions_falseByDefault_trueAfterCommitterOptIn() public {
-        uint256 id = _create(100e18, 5000);
-        assertFalse(manager.acceptsContributions(id), "contributions disabled by default");
-
-        // The committer's own first contribution flips the opt-in flag (AgreementLib.contributeCore).
-        vm.prank(alice);
-        manager.contributeEncumbered(id, 10e18);
-        assertTrue(manager.acceptsContributions(id), "committer opt-in enables contributions");
     }
 }

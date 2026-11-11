@@ -13,7 +13,7 @@
  * `state = 'pending'` on ProposalCreated and let endpoints/handlers refine
  * it as later events fire (see `decideTallyState` in api/governance.ts).
  */
-import { ponder as typedPonder } from 'ponder:registry'
+import { ponder } from 'ponder:registry'
 import {
   governor as governorTable,
   meshNode,
@@ -21,14 +21,10 @@ import {
   proposalAction as proposalActionTable,
   vote as voteTable,
 } from 'ponder:schema'
+import { keccak256, toHex } from 'viem'
 
 import { decodeProposalAction, rollupProposalKind, type RawAction } from './decode/governanceActions'
-
-// Governance contracts are configured only when a deployment is present.
-// Keep registration permissive across configs with and without governance;
-// Ponder validates event names against the live config at runtime.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ponder = typedPonder as unknown as { on: (name: string, fn: (ctx: any) => Promise<void> | void) => void }
+import { commitmentsGovernorAbi, commitmentsTimelockAbi } from './abis'
 
 const proposalRowId = (governor: `0x${string}`, proposalId: bigint): string =>
   `${governor.toLowerCase()}-${proposalId.toString(16)}`
@@ -50,16 +46,18 @@ ponder.on('GovernorFactory:GovernorDeployed', async ({ event, context }) => {
   // needs without per-page chain reads. These are immutable except via
   // self-proposals through the same Governor — refresh-on-update is a
   // future-self problem we'll handle when GovernorSettings events fire.
-  const govAddr = governor as `0x${string}`
-  const cfg = await readGovernorConfig(context, govAddr)
-  const tlAddr = timelock as `0x${string}`
-  const tlMinDelay = await safeReadBigInt(context, tlAddr, 'getMinDelay', [], 0n)
+  const cfg = await readGovernorConfig(context, governor)
+  const tlMinDelay = await context.client.readContract({
+    abi: commitmentsTimelockAbi,
+    address: timelock,
+    functionName: 'getMinDelay',
+  })
 
   await context.db.insert(governorTable).values({
-    address: govAddr,
-    timelock: tlAddr,
-    shim: shim as `0x${string}`,
-    votingPowerSource: source as `0x${string}`,
+    address: governor,
+    timelock,
+    shim,
+    votingPowerSource: source,
     name,
     isCanonical: false,
     factory: event.log.address,
@@ -70,14 +68,14 @@ ponder.on('GovernorFactory:GovernorDeployed', async ({ event, context }) => {
     votingPeriod: cfg.votingPeriod,
     proposalThreshold: cfg.proposalThreshold,
     quorumNumerator: cfg.quorumNumerator,
-    quorumDenominator: 100n, // OZ default; overridable per Governor.quorumDenominator()
+    quorumDenominator: cfg.quorumDenominator,
     timelockMinDelay: tlMinDelay,
   })
 })
 
 ponder.on('GovernorFactory:CanonicalGovernorSet', async ({ event, context }) => {
   await context.db
-    .update(governorTable, { address: event.args.governor as `0x${string}` })
+    .update(governorTable, { address: event.args.governor })
     .set({ isCanonical: true })
 })
 
@@ -91,34 +89,39 @@ ponder.on('CommitmentsGovernor:ProposalCreated', async ({ event, context }) => {
     event.args
 
   // Decode each action.
-  const rawActions: RawAction[] = (targets as readonly `0x${string}`[]).map((t, i) => ({
-    target: t,
-    value: (values as readonly bigint[])[i],
-    calldata: (calldatas as readonly `0x${string}`[])[i],
+  const rawActions: RawAction[] = targets.map((target, i) => ({
+    target,
+    value: values[i],
+    calldata: calldatas[i],
   }))
   const decoded = rawActions.map(decodeProposalAction)
   const kind = rollupProposalKind(decoded)
   const descriptionHash = hashDescription(description)
 
-  // Snapshot the quorum requirement at voteStart (best effort — read live;
-  // OK to be approximate, the frontend uses it as a target indicator).
-  const quorum = await safeReadBigInt(
-    context,
-    governorAddr,
-    'quorum',
-    [voteStart as bigint],
-    0n,
-  )
+  // Snapshot the quorum requirement at voteStart. The frontend uses it as a
+  // target indicator. voteStart is in the future at this block, and a voting
+  // source that rejects future lookups (an ERC-5805 token reverts with
+  // ERC5805FutureLookup) makes `quorum` revert. That revert is expected, so it
+  // stores 0; the in-repo TokenWeighting source answers with its latest total.
+  let quorum = 0n
+  try {
+    quorum = await context.client.readContract({
+      abi: commitmentsGovernorAbi,
+      address: governorAddr,
+      functionName: 'quorum',
+      args: [voteStart],
+    })
+  } catch {}
 
   await context.db.insert(proposalTable).values({
-    id: proposalRowId(governorAddr, proposalId as bigint),
+    id: proposalRowId(governorAddr, proposalId),
     governor: governorAddr,
-    proposalId: proposalId as bigint,
-    proposer: proposer as `0x${string}`,
+    proposalId,
+    proposer,
     description,
     descriptionHash,
-    voteStart: voteStart as bigint,
-    voteEnd: voteEnd as bigint,
+    voteStart,
+    voteEnd,
     eta: null,
     forVotes: 0n,
     againstVotes: 0n,
@@ -139,9 +142,9 @@ ponder.on('CommitmentsGovernor:ProposalCreated', async ({ event, context }) => {
   for (let i = 0; i < decoded.length; i++) {
     const a = decoded[i]
     await context.db.insert(proposalActionTable).values({
-      id: proposalActionRowId(governorAddr, proposalId as bigint, i),
+      id: proposalActionRowId(governorAddr, proposalId, i),
       governor: governorAddr,
-      proposalId: proposalId as bigint,
+      proposalId,
       actionIndex: i,
       target: rawActions[i].target,
       value: rawActions[i].value,
@@ -156,7 +159,7 @@ ponder.on('CommitmentsGovernor:ProposalCreated', async ({ event, context }) => {
 ponder.on('CommitmentsGovernor:ProposalCanceled', async ({ event, context }) => {
   const governorAddr = event.log.address
   await context.db
-    .update(proposalTable, { id: proposalRowId(governorAddr, event.args.proposalId as bigint) })
+    .update(proposalTable, { id: proposalRowId(governorAddr, event.args.proposalId) })
     .set({
       state: 'canceled',
       canceledBlock: event.block.number,
@@ -167,10 +170,10 @@ ponder.on('CommitmentsGovernor:ProposalCanceled', async ({ event, context }) => 
 ponder.on('CommitmentsGovernor:ProposalQueued', async ({ event, context }) => {
   const governorAddr = event.log.address
   await context.db
-    .update(proposalTable, { id: proposalRowId(governorAddr, event.args.proposalId as bigint) })
+    .update(proposalTable, { id: proposalRowId(governorAddr, event.args.proposalId) })
     .set({
       state: 'queued',
-      eta: event.args.etaSeconds as bigint,
+      eta: event.args.etaSeconds,
       queuedBlock: event.block.number,
       queuedTx: event.transaction.hash,
     })
@@ -178,7 +181,7 @@ ponder.on('CommitmentsGovernor:ProposalQueued', async ({ event, context }) => {
 
 ponder.on('CommitmentsGovernor:ProposalExecuted', async ({ event, context }) => {
   const governorAddr = event.log.address
-  const proposalId = event.args.proposalId as bigint
+  const proposalId = event.args.proposalId
   await context.db
     .update(proposalTable, { id: proposalRowId(governorAddr, proposalId) })
     .set({
@@ -192,7 +195,7 @@ ponder.on('CommitmentsGovernor:ProposalExecuted', async ({ event, context }) => 
   const actions = await fetchProposalActions(context, governorAddr, proposalId)
   for (const a of actions) {
     if (a.kind === 'weight_update') {
-      const tw = a.target as `0x${string}`
+      const tw = a.target
       try {
         await context.db.update(meshNode, { address: tw }).set({ governor: governorAddr })
       } catch {
@@ -204,11 +207,11 @@ ponder.on('CommitmentsGovernor:ProposalExecuted', async ({ event, context }) => 
 })
 
 ponder.on('CommitmentsGovernor:VoteCast', async ({ event, context }) => {
-  await persistVote(context, event, event.args, '')
+  await persistVote(context, event, event.args)
 })
 
 ponder.on('CommitmentsGovernor:VoteCastWithParams', async ({ event, context }) => {
-  await persistVote(context, event, event.args, event.args.params as `0x${string}`)
+  await persistVote(context, event, event.args)
 })
 
 // ============================================================
@@ -221,7 +224,6 @@ interface VoteCastArgs {
   support: number
   weight: bigint
   reason: string
-  params?: `0x${string}`
 }
 
 async function persistVote(
@@ -230,7 +232,6 @@ async function persistVote(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   event: any,
   args: VoteCastArgs,
-  _params: string,
 ): Promise<void> {
   const governorAddr = event.log.address
   const proposalId = args.proposalId
@@ -270,10 +271,6 @@ async function persistVote(
 function hashDescription(description: string): `0x${string}` {
   // OZ Governor uses keccak256(bytes(description)) as descriptionHash for
   // hashProposal. Compute via viem so the indexer's stored value matches.
-  // viem's `keccak256` works on either a Hex or a string-as-bytes.
-  // We use stringToHex to avoid a dynamic require on viem's keccak helper.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { keccak256, toHex } = require('viem') as typeof import('viem')
   return keccak256(toHex(description))
 }
 
@@ -282,6 +279,7 @@ interface GovernorConfig {
   votingPeriod: bigint
   proposalThreshold: bigint
   quorumNumerator: bigint
+  quorumDenominator: bigint
 }
 
 async function readGovernorConfig(
@@ -289,40 +287,17 @@ async function readGovernorConfig(
   context: any,
   governorAddr: `0x${string}`,
 ): Promise<GovernorConfig> {
-  const [votingDelay, votingPeriod, proposalThreshold, quorumNumerator] = await Promise.all([
-    safeReadBigInt(context, governorAddr, 'votingDelay', [], 0n),
-    safeReadBigInt(context, governorAddr, 'votingPeriod', [], 0n),
-    safeReadBigInt(context, governorAddr, 'proposalThreshold', [], 0n),
-    safeReadBigInt(context, governorAddr, 'quorumNumerator', [], 0n),
-  ])
-  return { votingDelay, votingPeriod, proposalThreshold, quorumNumerator }
-}
-
-async function safeReadBigInt(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  address: `0x${string}`,
-  functionName: string,
-  args: unknown[],
-  fallback: bigint,
-): Promise<bigint> {
-  try {
-    const result = (await context.client.readContract({
-      address,
-      // The Governor + Timelock ABIs are loaded into the runtime via
-      // ponder.config.ts; readContract auto-resolves by address+function.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      abi: (context.contracts as any).CommitmentsGovernor?.abi
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ?? (context.contracts as any).GovernorFactory?.abi
-        ?? [],
-      functionName,
-      args,
-    })) as bigint | number
-    return typeof result === 'bigint' ? result : BigInt(result)
-  } catch {
-    return fallback
-  }
+  const read = (functionName: string): Promise<bigint> =>
+    context.client.readContract({ abi: commitmentsGovernorAbi, address: governorAddr, functionName })
+  const [votingDelay, votingPeriod, proposalThreshold, quorumNumerator, quorumDenominator] =
+    await Promise.all([
+      read('votingDelay'),
+      read('votingPeriod'),
+      read('proposalThreshold'),
+      read('quorumNumerator'),
+      read('quorumDenominator'),
+    ])
+  return { votingDelay, votingPeriod, proposalThreshold, quorumNumerator, quorumDenominator }
 }
 
 async function fetchProposalActions(

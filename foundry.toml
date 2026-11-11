@@ -82,10 +82,11 @@ line_length = 120
 # src/vendor/erc8004/README.md) — formatting them would break provenance checks.
 ignore = ["src/vendor/erc8004/*.sol"]
 
-# `forge doc` emits an mdBook-style tree under `out` (out/src/SUMMARY.md +
-# out/src/<path>/<Contract>.sol/contract.<Name>.md). The frontend doc loader
-# walks the same tree; script/forge-doc-flatten.mjs prunes/rewrites it so the
-# pages live under docs/protocol/reference/contracts/<Name>.md.
+# `forge doc` emits an mdBook-style tree under `out` below
+# (_book/src/src/<path>/<Contract>.sol/contract.<Name>.md).
+# script/forge-doc-flatten.mjs rewrites it to
+# docs/protocol/reference/contracts/<source-path>/<Declaration>.md and deletes
+# _book. The frontend docs viewer reads the flattened pages.
 [doc]
 out = "docs/protocol/reference/contracts/_book"
 title = "Commitments Contracts"

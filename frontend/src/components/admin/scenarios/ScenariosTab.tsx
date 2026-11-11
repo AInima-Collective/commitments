@@ -58,12 +58,10 @@ export function ScenariosTab() {
     const defaults = Object.fromEntries(
       (scenario.inputs ?? []).map((i) => [i.key, i.defaultValue]),
     )
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing form state to selected scenario; see frontend/docs/eslint-disable-rationale.md §Pattern-1
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the inputs when the selected scenario changes
     setInputValues(defaults)
     runner.preview(scenario, defaults)
-    // runner.preview is stable (useCallback with []), but we keep it out of deps
-    // to avoid any chance of a preview→state→preview loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runner is left out so a preview's state update cannot re-run the preview
   }, [scenario])
 
   if (!SCENARIOS.length) {

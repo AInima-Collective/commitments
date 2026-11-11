@@ -62,9 +62,6 @@ contract PremiumScheduler is Ownable2Step {
     error PolicyUnset();
     error InvalidCurve();
     error LeverageCapExceeded(uint256 wouldBeSold, uint256 cap);
-    /// @notice The pricing authority (owner) coincides with the mutual's arbiter or beneficiary — it
-    ///         is the funding party and could underprice itself, so binding through it is refused.
-    error PricingAuthorityCaptured();
 
     constructor(address manager_, address owner_) Ownable(owner_) {
         if (manager_ == address(0) || owner_ == address(0)) revert ZeroAddress();
@@ -104,26 +101,6 @@ contract PremiumScheduler is Ownable2Step {
         _validateCurve(kink, maxLeverageBps);
         _mutualCurve[mutualId] = CurveParams(base, slope1, slope2, kink, maxLeverageBps, true);
         emit MutualCurveSet(mutualId, base, slope1, slope2, kink, maxLeverageBps);
-    }
-
-    // ---------------------------------------------------------------------
-    // Capture resistance
-    // ---------------------------------------------------------------------
-
-    /// @notice Revert if the pricing authority (owner) is the mutual's arbiter or beneficiary. Called
-    ///         by LinkedMutualPolicy at bind time so the funding party can never underprice its
-    ///         own cover (capture defense, plan OBJ-2 line 2).
-    function assertNotCaptured(uint256 mutualId) public view {
-        ICommitmentManager.Mutual memory g = manager.getMutual(mutualId);
-        address authority = owner();
-        if (authority == g.arbiter || authority == g.beneficiary) revert PricingAuthorityCaptured();
-    }
-
-    /// @notice True iff the pricing authority is independent of the mutual's arbiter and beneficiary.
-    function isPricingAuthorityIndependent(uint256 mutualId) external view returns (bool) {
-        ICommitmentManager.Mutual memory g = manager.getMutual(mutualId);
-        address authority = owner();
-        return authority != g.arbiter && authority != g.beneficiary;
     }
 
     // ---------------------------------------------------------------------
@@ -200,7 +177,7 @@ contract PremiumScheduler is Ownable2Step {
         return Math.mulDiv(perYear, duration, SECONDS_PER_YEAR);
     }
 
-    /// @dev Read the utilization numerator, treating an unset policy as zero notional sold.
+    /// @dev Read the utilization numerator. Reverts `PolicyUnset` until `setPolicy` has run.
     function _activeNotionalSold(uint256 mutualId) internal view returns (uint256) {
         ILinkedMutualPolicy p = policy;
         if (address(p) == address(0)) revert PolicyUnset();

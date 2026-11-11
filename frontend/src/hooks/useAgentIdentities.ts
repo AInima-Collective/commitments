@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { erc721Abi, type Address } from 'viem'
 import { useChainId, useReadContracts } from 'wagmi'
-import { hasIndexer, indexerGraphql } from '../config/indexer'
+import { hasIndexer, indexerGraphqlData } from '../config/indexer'
 import { getContractAddresses } from '../config/contracts'
+import { createAddressBatcher, useBatchedByAddress } from './addressBatch'
 
 /**
  * ERC-8004 agent identity resolution (issue #33).
@@ -14,12 +15,11 @@ import { getContractAddresses } from '../config/contracts'
  * round-trip resolves every address on a page to "is this an agent, and what
  * is it called".
  *
- * Follows the `useOperatorNames` bulk-resolution pattern exactly: unknown
- * addresses are queued into a module-level pending set, flushed as ONE
- * batched `agents(where: { owner_in: [...] })` query per microtask, and
- * cached process-lifetime (keys are `${chainId}:${lcAddress}` so a network
- * switch never serves stale identities). Callers pass the page's full
- * address list once — never per row.
+ * Shares `useOperatorNames`' batcher (`hooks/addressBatch.ts`): addresses
+ * asked for in the same tick go out as ONE
+ * `agents(where: { owner_in: [...] })` query, and answers live in the query
+ * cache for the session, keyed by chain. Callers pass the page's full
+ * address list once, never per row.
  *
  * On-chain fallback: when the indexer is NOT configured at all
  * (`!hasIndexer`) and `VITE_AGENT_IDENTITY_REGISTRY_ADDRESS` is set, we fall
@@ -44,21 +44,7 @@ export interface AgentIdentity {
   metadataStatus?: string
 }
 
-type AgentResolution = AgentIdentity | null // null = looked up, not an agent
-
-/** Cache/pending key — namespaces a lowercase address by its chain id. */
-function cacheKey(chainId: number, lcAddress: string): string {
-  return `${chainId}:${lcAddress}`
-}
-
-/** Recover the bare address from a `${chainId}:${address}` key. */
-function addressOf(key: string): string {
-  return key.slice(key.indexOf(':') + 1)
-}
-
-const cache = new Map<string, AgentResolution>()
-let inFlight: Promise<void> | null = null
-const pending = new Set<string>()
+const NOT_AN_AGENT: AgentIdentity = { isAgent: false }
 
 interface RawAgentRow {
   agentId: string
@@ -102,51 +88,12 @@ function toIdentity(row: RawAgentRow): AgentIdentity {
   }
 }
 
-async function flushPending(): Promise<void> {
-  if (!hasIndexer || pending.size === 0) return
-  const keys = Array.from(pending)
-  pending.clear()
-  // The GraphQL filter is owner-keyed; chain namespacing lives only in the
-  // cache key, so collapse to the distinct bare addresses for the round-trip.
-  const owners = Array.from(new Set(keys.map(addressOf)))
-  try {
-    const res = await indexerGraphql<{ agents: { items: RawAgentRow[] } }>(AGENTS_QUERY, {
-      owners,
-    })
-    if (res.errors && res.errors.length > 0) {
-      // Cache lookup-failure as "not an agent" so we don't tight-loop retries.
-      for (const k of keys) cache.set(k, null)
-      return
-    }
-    const found = new Map<string, RawAgentRow>()
-    for (const item of res.data?.agents.items ?? []) {
-      found.set(item.owner.toLowerCase(), item)
-    }
-    for (const key of keys) {
-      const row = found.get(addressOf(key))
-      cache.set(key, row ? toIdentity(row) : null)
-    }
-  } catch {
-    for (const k of keys) cache.set(k, null)
-  }
-}
-
-function scheduleFetch(): Promise<void> {
-  if (inFlight) return inFlight
-  // Defer one tick so multiple components mounting in the same render flush
-  // their address sets together — turns N parallel hooks into one HTTP request.
-  inFlight = new Promise<void>((resolve) => {
-    queueMicrotask(async () => {
-      try {
-        await flushPending()
-      } finally {
-        inFlight = null
-        resolve()
-      }
-    })
-  })
-  return inFlight
-}
+const loadAgentIdentity = createAddressBatcher<AgentIdentity>(async (owners) => {
+  const data = await indexerGraphqlData<{ agents: { items: RawAgentRow[] } }>(AGENTS_QUERY, { owners })
+  const found = new Map<string, AgentIdentity>()
+  for (const row of data.agents.items) found.set(row.owner.toLowerCase(), toIdentity(row))
+  return found
+})
 
 export interface AgentIdentityMap {
   /** Resolved identity for an address, or undefined while loading / when no
@@ -159,48 +106,18 @@ export interface AgentIdentityMap {
 /**
  * Resolve an address list to ERC-8004 agent identities. Unknown addresses are
  * queued and fetched in one batched GraphQL call; known addresses return
- * synchronously from the module cache.
+ * synchronously from the query cache.
  *
- * Pass the **same array reference** across renders or memoize via `useMemo` —
- * like `useOperatorNames`, the hook keys its effect on the joined address
- * list, not deep equality per render.
+ * Pass the **same array reference** across renders or memoize via `useMemo`.
+ * The return keeps its identity until an answer arrives.
  */
 export function useAgentIdentities(
   addresses: ReadonlyArray<Address | string | undefined>,
 ): AgentIdentityMap {
   const chainId = useChainId()
   const registry = getContractAddresses(chainId).agentIdentityRegistry
-  // Normalise to lowercase + dedupe + drop falsy entries.
-  const lc = useMemo(() => {
-    const out = new Set<string>()
-    for (const a of addresses) {
-      if (!a) continue
-      out.add(a.toLowerCase())
-    }
-    return Array.from(out).sort()
-  }, [addresses])
-  const [, setTick] = useState(0)
-  const lastKeyRef = useRef('')
-
-  useEffect(() => {
-    if (!hasIndexer || lc.length === 0) return
-    // Re-run when the chain changes too — cache keys are chain-namespaced.
-    const key = `${chainId}|${lc.join(',')}`
-    if (key === lastKeyRef.current) return
-    lastKeyRef.current = key
-    let added = false
-    for (const addr of lc) {
-      const ck = cacheKey(chainId, addr)
-      if (cache.has(ck)) continue
-      pending.add(ck)
-      added = true
-    }
-    if (!added) return
-    void scheduleFetch().then(() => {
-      // Bump local state to re-render with cache entries the batch just filled.
-      setTick((n) => n + 1)
-    })
-  }, [lc, chainId])
+  const indexed = useBatchedByAddress('agent-identity', addresses, loadAgentIdentity)
+  const lc = indexed.lc
 
   // ── On-chain fallback ────────────────────────────────────────────────────
   // Only when the indexer is entirely unconfigured: one multicall batch of
@@ -230,18 +147,20 @@ export function useAgentIdentities(
     return m
   }, [fallbackActive, fallbackReads.data, lc])
 
-  const indexerLoading = hasIndexer && lc.some((a) => !cache.has(cacheKey(chainId, a)))
-  const isLoading = indexerLoading || (fallbackActive && fallbackReads.isLoading)
+  const isLoading = indexed.isLoading || (fallbackActive && fallbackReads.isLoading)
 
-  function get(address: string | undefined | null): AgentIdentity | undefined {
-    if (!address) return undefined
-    const lower = address.toLowerCase()
-    const entry = cache.get(cacheKey(chainId, lower))
-    if (entry !== undefined) return entry ?? { isAgent: false }
-    return fallbackByAddress.get(lower)
-  }
-
-  return { get, isLoading }
+  return useMemo(
+    () => ({
+      get: (address) => {
+        if (!address) return undefined
+        const entry = indexed.get(address)
+        if (entry !== undefined) return entry ?? NOT_AN_AGENT
+        return fallbackByAddress.get(address.toLowerCase())
+      },
+      isLoading,
+    }),
+    [indexed, fallbackByAddress, isLoading],
+  )
 }
 
 /**
@@ -256,11 +175,4 @@ export function useAgentIdentity(address: Address | string | undefined): {
   const list = useMemo(() => [address], [address])
   const map = useAgentIdentities(list)
   return { identity: map.get(address), isLoading: map.isLoading }
-}
-
-/** Test/dev helper — wipe the cache (e.g. when switching networks). */
-export function __resetAgentIdentitiesCache(): void {
-  cache.clear()
-  pending.clear()
-  inFlight = null
 }

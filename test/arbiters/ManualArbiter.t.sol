@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {ManualArbiter} from "src/periphery/arbiters/ManualArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
 import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
@@ -46,8 +47,8 @@ contract ManualArbiterTest is ManagerTestBase {
     function _entParams() internal view returns (ICM.AgreementParams memory p) {
         p.arbiter = address(arbiter);
         p.acceptor = acceptor;
-        p.proposerLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
-        p.acceptorLeg = ICM.LegTerms(address(token), address(staticAdapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.proposerLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
+        p.acceptorLeg = ICM.LegTerms(address(token), address(adapter), AMOUNT, 5000, new StrategyBinding[](0));
         p.challengeWindow = WINDOW;
         p.proposalDuration = 1 days;
         p.metadataURI = "";
@@ -81,6 +82,11 @@ contract ManualArbiterTest is ManagerTestBase {
     // Owner actions
     // =========================================================================
 
+    function testConstructor_rejectsZeroManager() public {
+        vm.expectRevert(ArbiterBase.ZeroAddress.selector);
+        new ManualArbiter(owner, address(0));
+    }
+
     function testOwner_canInitiateAndExecuteForfeit() public {
         uint256 cid = _createCommitment(committer, AMOUNT);
 
@@ -90,7 +96,7 @@ contract ManualArbiterTest is ManagerTestBase {
         // Ownerless execute after challenge window
         vm.warp(block.timestamp + WINDOW + 1);
         vm.prank(nonOwner);
-        arbiter.executeForfeit(cid);
+        manager.executeForfeit(cid);
 
         ICM.Commitment memory c = manager.getCommitment(cid);
         assertTrue(c.forfeited, "commitment should be forfeited");
@@ -224,7 +230,7 @@ contract ManualArbiterTest is ManagerTestBase {
 
         // Non-owner finalizes — allowed by design.
         vm.prank(nonOwner);
-        arbiter.executeForfeit(cid);
+        manager.executeForfeit(cid);
 
         ICM.Commitment memory c = manager.getCommitment(cid);
         assertTrue(c.forfeited);
@@ -286,7 +292,6 @@ contract ManualArbiterTest is ManagerTestBase {
             arbiter: address(arbiter),
             numeraire: address(token),
             beneficiary: mutualBeneficiary,
-            valuationAuthority: address(0), // homogeneous
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -302,13 +307,13 @@ contract ManualArbiterTest is ManagerTestBase {
         p.arbiter = address(arbiter);
         p.counterparty = mutualBeneficiary;
         p.token = address(token);
-        p.adapter = address(staticAdapter);
+        p.adapter = address(adapter);
         p.amount = amount;
         p.maxPenaltyBps = MAX_PENALTY_BPS;
         p.challengeWindow = WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     function testOwner_canActivateInitiateAndExecuteMutualLoss() public {
@@ -321,12 +326,11 @@ contract ManualArbiterTest is ManagerTestBase {
 
         ICM.MutualLossProposal memory prop = manager.getMutualLossProposal(gid);
         assertEq(prop.lossNumeraire, 40e18, "loss declared");
-        assertEq(prop.proposer, address(arbiter), "arbiter is the proposer");
         assertGt(prop.initiatedAt, 0, "proposal open");
 
         vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
         vm.prank(nonOwner); // ownerless
-        arbiter.executeMutualLoss(gid);
+        manager.executeMutualLoss(gid);
 
         assertTrue(manager.getMutualLossProposal(gid).executed, "loss executed");
     }
@@ -363,7 +367,6 @@ contract ManualArbiterTest is ManagerTestBase {
             arbiter: address(arbiter),
             numeraire: address(token),
             beneficiary: mutualBeneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });

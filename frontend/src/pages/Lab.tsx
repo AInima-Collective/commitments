@@ -323,7 +323,7 @@ export default function Lab() {
               <div className="ds-stat-grid" data-cols="3">
                 <StatBlock label="Encumbered" value="1,240.0000" meta="WETH" />
                 <StatBlock label="Free" value="310.5521" meta="WETH" />
-                <StatBlock label="Forfeitable" value="620.0000" meta="WETH" tone="negative" />
+                <StatBlock label="Forfeitable" value="620.0000" meta="WETH" tone="danger" />
               </div>
 
               <Notice tone="warn" title="Forfeit proposed">

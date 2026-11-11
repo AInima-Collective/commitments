@@ -1,6 +1,9 @@
 import { useMemo } from 'react'
+import { useQueries } from '@tanstack/react-query'
 import { type Address, erc20Abi } from 'viem'
-import { useReadContracts } from 'wagmi'
+import { useChainId, useConfig } from 'wagmi'
+import { readContractsQueryOptions } from 'wagmi/query'
+import { IMMUTABLE } from './polling'
 
 /** Resolved ERC-20 display metadata for a backing token. */
 export interface TokenMeta {
@@ -17,14 +20,16 @@ const FALLBACK: TokenMeta = { decimals: 18, symbol: 'TOKEN' }
 interface UseTokenMetaMapReturn {
   /** Resolve metadata for one token; returns the fallback if unknown/pending. */
   metaFor: (token?: Address) => TokenMeta
-  /** Lookup keyed by lowercased address. */
+  /** Lookup keyed by lowercased address; a token appears once its decimals are read. */
   byAddress: Record<string, TokenMeta>
   isLoading: boolean
 }
 
 /**
- * Resolve ERC-20 `decimals` + `symbol` for a set of token addresses in a single
- * batched multicall.
+ * Resolve ERC-20 `decimals` + `symbol` for a set of token addresses. One
+ * query per token, cached for the session (both values are immutable), so the
+ * same token is read once however many lists it appears in. Concurrent
+ * per-token reads still share a multicall at the transport.
  *
  * v2 commitments are custodied per-(token, user): every commitment and
  * agreement carries its OWN backing token (a raw ERC-20 or an ERC-4626 vault
@@ -59,23 +64,35 @@ export function useTokenMetaMap(tokens: ReadonlyArray<Address | undefined>): Use
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the stable projection of `tokens`
   }, [key])
 
-  const { data, isLoading } = useReadContracts({
-    contracts: unique.flatMap((token) => [
-      { abi: erc20Abi, address: token, functionName: 'decimals' as const },
-      { abi: erc20Abi, address: token, functionName: 'symbol' as const },
-    ]),
-    query: { enabled: unique.length > 0 },
+  const config = useConfig()
+  const chainId = useChainId()
+  const results = useQueries({
+    queries: unique.map((token) => ({
+      ...readContractsQueryOptions(config, {
+        chainId,
+        contracts: [
+          { abi: erc20Abi, address: token, functionName: 'decimals' },
+          { abi: erc20Abi, address: token, functionName: 'symbol' },
+        ],
+      }),
+      ...IMMUTABLE,
+    })),
   })
+  const isLoading = results.some((r) => r.isLoading)
 
+  // `results` is a fresh array each render; key the memo on the data refs.
+  const dataKey = results.map((r) => r.dataUpdatedAt).join(',')
   const byAddress = useMemo<Record<string, TokenMeta>>(() => {
     const map: Record<string, TokenMeta> = {}
     unique.forEach((token, i) => {
-      const decimals = (data?.[i * 2]?.result as number | undefined) ?? FALLBACK.decimals
-      const symbol = (data?.[i * 2 + 1]?.result as string | undefined) ?? FALLBACK.symbol
-      map[token.toLowerCase()] = { decimals, symbol }
+      const data = results[i]?.data
+      const decimals = data?.[0]?.result as number | undefined
+      const symbol = (data?.[1]?.result as string | undefined) ?? FALLBACK.symbol
+      if (decimals !== undefined) map[token.toLowerCase()] = { decimals, symbol }
     })
     return map
-  }, [unique, data])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `dataKey` is the stable projection of `results`
+  }, [unique, dataKey])
 
   const metaFor = useMemo(
     () =>

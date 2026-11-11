@@ -7,6 +7,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManagerStorage.sol";
+import {LedgerLib} from "src/core/manager/libraries/LedgerLib.sol";
+import {MeasuredPull} from "src/shared/utilities/MeasuredPull.sol";
 
 /// @title LedgerOpsLib
 /// @notice External delegatecall library hosting the Part A custody perimeter — deposit, withdraw,
@@ -14,20 +16,15 @@ import {CommitmentManagerStorage} from "src/core/manager/storage/CommitmentManag
 ///         measured-balance rule (ERC §A.2/§A.4). The manager keeps only `nonReentrant` dispatch
 ///         wrappers; this split keeps it under the 24,576-byte bytecode limit.
 /// @dev `msg.sender`, `address(this)`, and event sourcing are preserved under delegatecall, so the
-///      ledger writes, token transfers, and events behave exactly as if they lived on the manager.
+///      token transfers and events behave exactly as if they lived on the manager. Every balance
+///      write goes through LedgerLib.
 library LedgerOpsLib {
     using SafeERC20 for IERC20;
 
     /// @notice Deposit `amount` of `token` into `msg.sender`'s free balance, crediting the MEASURED
     ///         balance delta (fee-on-transfer defense). Rebasing tokens are structurally unsupported.
     function depositCore(CommitmentManagerStorage.Layout storage s, address token, uint256 amount) external {
-        if (amount == 0) revert ICM.ZeroAmount();
-        uint256 received = _pullMeasured(token, amount);
-
-        s.ledger[token][msg.sender].freeBalance += received;
-        s.totalFree[token] += received;
-
-        emit ICM.Deposited(msg.sender, token, received);
+        deposit(s, token, amount, msg.sender);
     }
 
     /// @notice Deposit `amount` of `token` pulled from `msg.sender` into `onBehalfOf`'s free balance,
@@ -41,13 +38,7 @@ library LedgerOpsLib {
         address onBehalfOf
     ) external {
         if (onBehalfOf == address(0)) revert ICM.ZeroAddress();
-        if (amount == 0) revert ICM.ZeroAmount();
-        uint256 received = _pullMeasured(token, amount);
-
-        s.ledger[token][onBehalfOf].freeBalance += received;
-        s.totalFree[token] += received;
-
-        emit ICM.Deposited(onBehalfOf, token, received);
+        deposit(s, token, amount, onBehalfOf);
     }
 
     /// @notice Deposit via an ERC-2612 permit: consume the caller's signed allowance, then deposit
@@ -67,28 +58,26 @@ library LedgerOpsLib {
         bytes32 r,
         bytes32 sig
     ) external {
-        if (amount == 0) revert ICM.ZeroAmount();
         try IERC20Permit(token).permit(msg.sender, address(this), amount, deadline, v, r, sig) {} catch {}
-        uint256 received = _pullMeasured(token, amount);
+        deposit(s, token, amount, msg.sender);
+    }
 
-        s.ledger[token][msg.sender].freeBalance += received;
-        s.totalFree[token] += received;
-
-        emit ICM.Deposited(msg.sender, token, received);
+    /// @notice The one deposit body: pull `amount` of `token` from `msg.sender` and credit the
+    ///         measured receipt to `to`'s free balance. Internal so the deposit-then-create path
+    ///         inlines it, crediting the caller it pulled from.
+    function deposit(CommitmentManagerStorage.Layout storage s, address token, uint256 amount, address to) internal {
+        if (amount == 0) revert ICM.ZeroAmount();
+        uint256 received = MeasuredPull.pull(token, amount);
+        if (received == 0) revert ICM.ZeroAmount();
+        LedgerLib.creditFree(s, token, to, received);
+        emit ICM.Deposited(to, token, received);
     }
 
     /// @notice Withdraw `amount` of `token` from `msg.sender`'s free balance. Instant — free balance
     ///         backs nothing and is never subject to an unbonding delay (ERC §A.2). CEI ordering.
     function withdrawCore(CommitmentManagerStorage.Layout storage s, address token, uint256 amount) external {
         if (amount == 0) revert ICM.ZeroAmount();
-
-        uint256 free = s.ledger[token][msg.sender].freeBalance;
-        if (amount > free) revert ICM.InsufficientFreeBalance(amount, free);
-
-        // Effects before interaction (CEI).
-        s.ledger[token][msg.sender].freeBalance = free - amount;
-        s.totalFree[token] -= amount;
-
+        LedgerLib.debitFree(s, token, msg.sender, amount); // effects before interaction (CEI)
         IERC20(token).safeTransfer(msg.sender, amount);
         emit ICM.Withdrawn(msg.sender, token, amount);
     }
@@ -103,19 +92,9 @@ library LedgerOpsLib {
     ) external {
         if (strategy == address(0)) revert ICM.ZeroAddress();
         if (amount == 0) revert ICM.ZeroAmount();
-        uint256 received = _pullMeasured(token, amount);
-
-        s.escrow[strategy][token] += received;
-        s.totalEscrow[token] += received;
-
-        emit ICM.StrategyFunded(msg.sender, strategy, token, received);
-    }
-
-    /// @dev Pull `amount` of `token` from `msg.sender` and return the measured balance delta.
-    function _pullMeasured(address token, uint256 amount) private returns (uint256 received) {
-        uint256 before = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        received = IERC20(token).balanceOf(address(this)) - before;
+        uint256 received = MeasuredPull.pull(token, amount);
         if (received == 0) revert ICM.ZeroAmount();
+        LedgerLib.creditEscrow(s, strategy, token, received);
+        emit ICM.StrategyFunded(msg.sender, strategy, token, received);
     }
 }

@@ -14,21 +14,17 @@ import {HalmosBase} from "./HalmosBase.sol";
 ///         Synthetix-style premium index Π (`premiumPerShareStored`), and the per-member settlement
 ///         accounting. Owns the Halmos column of PROPERTIES.md rows INV-G2, INV-G3, INV-G6, P2-MONO.
 ///
-///         Scene (built concretely in setUp): ONE homogeneous (oracle-free, `valuationAuthority == 0`)
-///         mutual with TWO members, both denominated in a single token. Symbolic inputs are the
+///         Scene (built concretely in setUp): ONE (oracle-free) mutual with TWO members, both denominated in a single token. Symbolic inputs are the
 ///         declared loss, the premium funding amount/duration, and (where relevant) the settle timing;
 ///         all are `vm.assume`-bounded to `<= 1_000e18` (well under the uint128 denominator cap) so the
 ///         nonlinear `Math.mulDiv` on the index denominators stays tractable for z3.
 ///
 /// @dev Run: FOUNDRY_PROFILE=halmos halmos --contract MutualMathSmokeTest --solver z3
 ///
-///      HOMOGENEOUS-MODE JUSTIFICATION: homogeneous mutuals (`bandAdapter == 0`, `valuationAuthority ==
-///      0`) are the oracle-free subset where `premiumWeight == creditedValue == E_i` exactly; the
-///      heterogeneous band/haircut/junior machinery is entirely skipped (see MutualLib `_effCover`,
-///      `_bandHaircutWeight`). This keeps every property's loss-side denominator (`totalShares`) and
-///      premium-side denominator (`activeCover`) linear in the member weights, so a proof here covers
-///      the arithmetic core; the adapter-priced weight derivation is a periphery concern owned by
-///      Fuzz/Medusa (it never touches the loss index — MutualLib INV-P11/P12/P14).
+///      Every mutual is oracle-free: each member posts the numeraire and its weight is
+///      `creditedValue == E_i` exactly (see MutualLib `_effCover`). This keeps every property's
+///      loss-side denominator (`totalShares`) and premium-side denominator (`activeCover`) linear in
+///      the member weights, so a proof here covers the arithmetic core.
 contract MutualMathSmokeTest is HalmosBase {
     CommitmentManager internal manager;
     MockERC20 internal token;
@@ -44,7 +40,7 @@ contract MutualMathSmokeTest is HalmosBase {
     uint256 internal constant DEPOSIT = 1_000e18;
     uint256 internal constant MEMBER_AMOUNT = 400e18;
     uint16 internal constant MEMBER_PENALTY_BPS = 5_000; // E_i = 200e18 per member
-    uint256 internal constant MEMBER_EI = 200e18; // exposure per member (== creditedValue, homogeneous)
+    uint256 internal constant MEMBER_EI = 200e18; // exposure per member (== creditedValue)
 
     uint64 internal constant MUTUAL_WINDOW = 2 days; // == MUTUAL_MIN_CHALLENGE_WINDOW
     uint64 internal constant COMMIT_WINDOW = 86_400; // per-commitment DEFAULT_MIN_CHALLENGE_WINDOW
@@ -76,12 +72,11 @@ contract MutualMathSmokeTest is HalmosBase {
         vm.prank(FUNDER);
         token.approve(address(manager), type(uint256).max);
 
-        // Homogeneous (oracle-free) mutual: valuationAuthority == 0 ⇒ creditedValue == E_i, no adapter.
+        // Oracle-free mutual: creditedValue == E_i; the adapter address is never consulted.
         ICM.MutualParams memory mp = ICM.MutualParams({
             arbiter: ARBITER,
             numeraire: address(token),
             beneficiary: BENEFICIARY,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -112,7 +107,7 @@ contract MutualMathSmokeTest is HalmosBase {
         p.challengeWindow = COMMIT_WINDOW;
         p.strategies = new StrategyBinding[](0); // members bind no strategies (OBJ-7)
         vm.prank(who);
-        cid = manager.joinMutual(mutualId, p, 0, "");
+        cid = manager.joinMutual(mutualId, p);
     }
 
     /// @dev Initiate a symbolic loss, warp past the mutual challenge window, and execute it. Returns
@@ -158,8 +153,8 @@ contract MutualMathSmokeTest is HalmosBase {
     ///         member's cumulative `settledUnits` never exceeds its frozen `forfeitableUnits` (E_i).
     ///         The settle path draws `owed = min(E_i*(Λ−snap)/1e18, E_i−settled, c.amount)`, so the
     ///         Belt-1 clamp `owed <= E_i − settledUnits` is the load-bearing bound under test.
-    /// @dev BOUND: `declared <= 1_000e18`. Uses the batch `settleMembers` entrypoint (matches the
-    ///      conformance driver) over the single member A.
+    /// @dev BOUND: `declared <= 1_000e18`. Uses the batch `settleMembers` entrypoint over the single
+    ///      member A.
     function check_INVG6_settledNeverExceedsForfeitable(uint256 declared) public {
         vm.assume(declared >= 1 && declared <= 1_000e18);
 
@@ -179,7 +174,7 @@ contract MutualMathSmokeTest is HalmosBase {
     // =========================================================================
 
     /// @notice INV-G3 (delta form): a `joinMutual` credits `totalShares` by EXACTLY the value it adds
-    ///         (`creditedValue == E_i` in homogeneous mode), and the membership row records that same
+    ///         (`creditedValue == E_i`), and the membership row records that same
     ///         value. Verified as the per-operation delta rather than the full running sum: a third
     ///         member C joins with a SYMBOLIC lien `amount`, and we assert
     ///         `totalShares' − totalShares == creditedValue_C == E_i(amount, bps)`.
@@ -207,14 +202,14 @@ contract MutualMathSmokeTest is HalmosBase {
         p.challengeWindow = COMMIT_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(memberC);
-        uint256 cidC = manager.joinMutual(mutualId, p, 0, "");
+        uint256 cidC = manager.joinMutual(mutualId, p);
 
         uint256 sharesPost = manager.getMutual(mutualId).totalShares;
-        uint256 expectedEi = (amount * 5_000) / 10_000; // == creditedValue in homogeneous mode
+        uint256 expectedEi = (amount * 5_000) / 10_000; // the member's totalShares weight
 
         ICM.Membership memory mc = manager.getMembership(cidC);
-        assert(mc.creditedValue == expectedEi); // membership records the exact credited value
-        assert(sharesPost - sharesPre == uint256(mc.creditedValue)); // INV-G3 delta: shares grew by exactly that
+        assert(mc.forfeitableUnits == expectedEi); // membership records the exact E_i
+        assert(sharesPost - sharesPre == mc.forfeitableUnits); // INV-G3 delta: shares grew by exactly that
     }
 
     // =========================================================================

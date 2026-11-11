@@ -1,14 +1,13 @@
 import { type Address } from 'viem'
 import { useAccount, useChainId } from 'wagmi'
-import { type OperatorInfo, type ServiceOperatorInfo } from '../../utils/mesh'
+import { type OperatorInfo, type ServiceOperatorInfo } from '../../lib/mesh'
 import { Notice, StatBlock, TokenAmount } from '../ui'
 import { CommitmentStatusBadge, OperatorStatusBadge } from '../protocol'
 import { DelegateToOperatorForm } from './DelegateToOperatorForm'
 import { ResolveCommitmentButton } from '../commitment/ResolveCommitmentButton'
 import { getContractAddresses } from '../../config/contracts'
-import { useVaultPosition } from '../../hooks/useVaultPosition'
 import { useOperatorMetadata } from '../../hooks/useIndexerMetadata'
-import { type CommitmentWithStatus } from '../../utils/commitments'
+import { type CommitmentWithStatus } from '../../lib/commitments'
 import { OperatorProfileCard } from './OperatorProfileCard'
 import { OperatorProfileEditor } from './OperatorProfileEditor'
 
@@ -31,12 +30,7 @@ export function OperatorDetail({
 }: OperatorDetailProps) {
   const chainId = useChainId()
   const { address: account, isConnected } = useAccount()
-  const { commitmentsVault, commitmentManager, operatorRegistry } = getContractAddresses(chainId)
-  const position = useVaultPosition({
-    vaultAddress: commitmentsVault,
-    viewAddress: account,
-    managerAddress: commitmentManager,
-  })
+  const { commitmentManager, operatorRegistry } = getContractAddresses(chainId)
 
   const metadata = useOperatorMetadata(operator.address as Address)
   const isConnectedOperator =
@@ -48,7 +42,7 @@ export function OperatorDetail({
     .toISOString()
     .slice(0, 10)
 
-  const canDelegate = isConnected && operator.active && account !== operator.address
+  const canDelegate = isConnected && operator.active && !isConnectedOperator
 
   const signingKey = serviceInfo?.signingKey ? (serviceInfo.signingKey as Address) : undefined
   // A profile card already renders for `ok` metadata and for the
@@ -149,7 +143,6 @@ export function OperatorDetail({
                 <ResolveCommitmentButton
                   commitment={c}
                   managerAddress={commitmentManager}
-                  vaultAddress={commitmentsVault}
                   connectedAddress={account}
                   isConnected={isConnected}
                   onActed={onDelegationActed}
@@ -166,8 +159,6 @@ export function OperatorDetail({
           operatorAddress={operator.address as Address}
           commitmentManagerAddress={commitmentManager}
           operatorRegistryAddress={operatorRegistry}
-          freeShares={position.free}
-          shareDecimals={position.shareDecimals}
         />
       )}
     </section>

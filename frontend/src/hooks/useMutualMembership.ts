@@ -1,10 +1,7 @@
+import { useReadContract } from 'wagmi'
 import { type Address } from 'viem'
-import {
-  useReadCommitmentManagerGetMembership,
-  useReadCommitmentManagerGetMutual,
-  useReadCommitmentManagerGetMutualLossProposal,
-  useReadCommitmentManagerPendingMemberLoss,
-} from '../generated'
+import { commitmentManagerAbi } from '../generated'
+import { POLL } from './polling'
 
 export interface MutualMembership {
   /** Mutual the commitment belongs to. `undefined` while loading, `0n` == not a member. */
@@ -52,33 +49,41 @@ export function useMutualMembership({
     data: membership,
     isLoading: membershipLoading,
     refetch: refetchMembership,
-  } = useReadCommitmentManagerGetMembership({
+  } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMembership',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled, refetchInterval: 15_000 },
+    query: { enabled, refetchInterval: POLL.fast },
   })
 
   // mutualId 0 is the "not a member" sentinel (mutual ids are 1-based).
   const mutualId = membership !== undefined ? BigInt(membership.mutualId) : undefined
   const isMember = mutualId !== undefined && mutualId !== 0n
 
-  const { data: mutual, refetch: refetchMutual } = useReadCommitmentManagerGetMutual({
+  const { data: mutual, refetch: refetchMutual } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'getMutual',
     address: managerAddress,
     args: mutualId !== undefined ? [mutualId] : undefined,
-    query: { enabled: isMember, refetchInterval: 15_000 },
+    query: { enabled: isMember, refetchInterval: POLL.fast },
   })
 
   const { data: lossProposal, refetch: refetchLoss } =
-    useReadCommitmentManagerGetMutualLossProposal({
+    useReadContract({
+      abi: commitmentManagerAbi,
+      functionName: 'getMutualLossProposal',
       address: managerAddress,
       args: mutualId !== undefined ? [mutualId] : undefined,
-      query: { enabled: isMember, refetchInterval: 15_000 },
+      query: { enabled: isMember, refetchInterval: POLL.fast },
     })
 
-  const { data: owedRaw, refetch: refetchOwed } = useReadCommitmentManagerPendingMemberLoss({
+  const { data: owedRaw, refetch: refetchOwed } = useReadContract({
+    abi: commitmentManagerAbi,
+    functionName: 'pendingMemberLoss',
     address: managerAddress,
     args: commitmentId !== undefined ? [commitmentId] : undefined,
-    query: { enabled: isMember, refetchInterval: 15_000 },
+    query: { enabled: isMember, refetchInterval: POLL.fast },
   })
 
   const lossPending =

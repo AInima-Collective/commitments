@@ -164,49 +164,6 @@ function sigNonces(address account) external view returns (uint256);
 |`<none>`|`uint256`|The signer's current nonce.|
 
 
-### getOperatorStake
-
-Returns the total stake (self + delegated) for an operator in required-token units.
-
-
-```solidity
-function getOperatorStake(address operator) external view returns (uint256);
-```
-
-### stakeAt
-
-Returns an operator's aggregate `totalDelegatedStake` as of a past `timestamp`,
-read from the timestamped checkpoint trace. Lets an arbiter adjudicating
-an offense at time T, epoch/snapshot rewards, or a dispute read stake-at-offense
-on-chain rather than only the live value.
-
-A checkpoint is pushed on every stake mutation (register/delegate/release/forfeit).
-This is a SEPARATE, `block.timestamp`-keyed path from TokenWeighting's block-number
-OZ Checkpoints (governance votes) and from the per-commitment `registeredAmount` freeze
-(which snapshots one commitment's credited amount for exact hook decrements). Semantics:
-returns 0 for a `timestamp` before the first checkpoint (or an operator that never
-staked); the checkpoint value exactly on a boundary; and the latest value for a
-`timestamp` at/after the last checkpoint.
-
-
-```solidity
-function stakeAt(address operator, uint64 timestamp, uint256 hint) external view returns (uint256);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`operator`|`address`|The operator to query.|
-|`timestamp`|`uint64`|The historical Unix timestamp to read stake as-of.|
-|`hint`|`uint256`|A checkpoint index guess for an O(1) answer. If it covers `timestamp` the read is O(1); otherwise the call falls back to a bounded binary search. TRUSTLESS — a wrong/empty/out-of-range hint only costs gas, never correctness: both paths return the identical historically-correct value.|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`<none>`|`uint256`|The operator's `totalDelegatedStake` in required-token units as of `timestamp`.|
-
-
 ### isOperator
 
 Returns whether an address is a registered, active operator.
@@ -229,7 +186,7 @@ function getOperatorSet() external view returns (address[] memory);
 
 ### getOperator
 
-Returns full operator struct with all performance metrics.
+Returns the full operator record, including its current `totalDelegatedStake`.
 
 
 ```solidity
@@ -292,6 +249,26 @@ function onDelegationForfeited(uint256 commitmentId, uint256 forfeitedAmount, ui
 |`commitmentId`|`uint256`|The forfeited commitment.|
 |`forfeitedAmount`|`uint256`|Backing-token units forfeited (penalty portion).|
 |`fullAmount`|`uint256`|Full commitment amount (for proper totalDelegatedStake accounting).|
+
+
+### reconcile
+
+Close a routed commitment whose release or forfeit hook failed in the manager.
+
+Permissionless. Runs the same close path as the hooks when the commitment is still
+routed here but the manager shows it released or forfeited, and emits the matching
+`DelegationReleased` or `DelegationForfeited`. Reverts `CommitmentNotTracked` when it
+is not routed here and `CommitmentStillOpen` when it is still open in the manager.
+
+
+```solidity
+function reconcile(uint256 commitmentId) external;
+```
+**Parameters**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`commitmentId`|`uint256`|The commitment to reconcile.|
 
 
 ### minOperatorStake
@@ -587,9 +564,27 @@ event DelegationForfeited(
 ```
 
 ### OperatorBelowMinStake
+Emitted when a release or forfeit leaves an active operator below `minOperatorStake`.
+
 
 ```solidity
 event OperatorBelowMinStake(address indexed operator, uint256 currentStake, uint256 minStake);
+```
+
+### MinOperatorStakeUpdated
+Emitted when admin changes `minOperatorStake`.
+
+
+```solidity
+event MinOperatorStakeUpdated(uint256 oldValue, uint256 newValue);
+```
+
+### MaxDelegationsPerOperatorUpdated
+Emitted when admin changes `maxDelegationsPerOperator`.
+
+
+```solidity
+event MaxDelegationsPerOperatorUpdated(uint256 oldValue, uint256 newValue);
 ```
 
 ### OperatorMetadataUpdated
@@ -681,26 +676,6 @@ event StrategyAllowlistUpdated(address indexed strategy, bool allowed);
 |----|----|-----------|
 |`strategy`|`address`|The distribution strategy toggled.|
 |`allowed`|`bool`|True if the strategy is now bindable on register/delegate commitments.|
-
-### StakeCheckpointed
-Emitted whenever an operator's aggregate `totalDelegatedStake` is checkpointed
-into the timestamped `stakeAt` trace — on register, delegate, release, and
-forfeit. Indexers can reconstruct the full stake history from this
-event alone. Multiple mutations in the same block collapse to a single checkpoint
-(the last emit for that timestamp carries the final value).
-
-
-```solidity
-event StakeCheckpointed(address indexed operator, uint64 indexed timestamp, uint256 newStake);
-```
-
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`operator`|`address`|The operator whose stake was checkpointed.|
-|`timestamp`|`uint64`|The `block.timestamp` key of the checkpoint (matches the `stakeAt` axis).|
-|`newStake`|`uint256`|The operator's aggregate stake AFTER the mutation, in required-token units.|
 
 ## Errors
 ### AlreadyRegistered
@@ -928,27 +903,39 @@ same-block cooldown blocks register⇄deregister flip griefing.
 error SameBlockToggle();
 ```
 
-### StakeCheckpointOverflow
-A stake checkpoint value exceeded `uint192`. Practically unreachable
-for any real ERC-20's raw units (uint192 max ≈ 6.3e57); the guard exists so a
-checkpoint reverts rather than silently truncating and corrupting `stakeAt`.
+### CommitmentClosed
+register/delegate was called with a commitment that is already released or forfeited.
 
 
 ```solidity
-error StakeCheckpointOverflow();
+error CommitmentClosed();
+```
+
+### CommitmentNotTracked
+`reconcile` was called for a commitment that is not routed to this registry.
+
+
+```solidity
+error CommitmentNotTracked();
+```
+
+### CommitmentStillOpen
+`reconcile` was called for a commitment that is still open in the manager.
+
+
+```solidity
+error CommitmentStillOpen();
 ```
 
 ## Structs
 ### Operator
-Operator record tracking registration, stake, and performance metrics.
+Operator record tracking registration and stake.
 
 Field order is packing-sensitive: `operator` (160) + `registeredAt` (64) +
-`active` (8) + `belowMinStake` (8) = 240 bits share slot 0. The struct fits in
-4 storage slots (0: address+flags, 1: selfStakeCommitmentId, 2: totalDelegatedStake,
-3: activeDelegationCount + selfStakeActive). `selfStakeActive` is an append-only
-addition that packs into slot 3 with `activeDelegationCount` — records
-written pre-upgrade read it as false ("self-stake not known live"), which
-conservatively requires all tracked commitments to close before deregistering.
+`active` (8) = 232 bits share slot 0. The struct fits in 4 storage slots
+(0: address+flag, 1: selfStakeCommitmentId, 2: totalDelegatedStake,
+3: activeDelegationCount + selfStakeActive). An operator is below the minimum when
+`totalDelegatedStake < minOperatorStake()`; that is derived, not stored.
 
 
 ```solidity
@@ -956,7 +943,6 @@ struct Operator {
     address operator;
     uint64 registeredAt;
     bool active;
-    bool belowMinStake; // flagged when totalDelegatedStake drops below minOperatorStake
     uint256 selfStakeCommitmentId;
     uint256 totalDelegatedStake; // self + delegated stake in required-token units
     uint32 activeDelegationCount; // number of active delegations including self-stake
@@ -968,7 +954,7 @@ struct Operator {
 Mutable metadata sidecar for an operator.
 
 Stored in a mapping(address => OperatorMetadata) separate from the hot-path Operator record,
-so setOperatorMetadata does not touch storage slots read by isOperator/getOperatorStake/getOperatorSet.
+so setOperatorMetadata does not touch storage slots read by isOperator/getOperatorSet/getOperator.
 
 
 ```solidity

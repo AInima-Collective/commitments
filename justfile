@@ -35,7 +35,7 @@ fv-certora-local conf:
     verification/certora/certora-local.sh {{conf}}
 
 # Coverage-guided fuzz campaign reusing the conformance ManagerHandler.
-# Pass seconds, e.g. `just fv-medusa 3600` for the nightly hour.
+# Pass seconds, e.g. `just fv-medusa 14400` for the nightly campaign's length.
 fv-medusa timeout="120":
     FOUNDRY_PROFILE=medusa medusa fuzz --config verification/medusa/medusa.json --timeout {{timeout}}
 
@@ -118,7 +118,7 @@ demo-agent-breach:
     echo "demo-agent-breach: vault=$vault mutualId=$G"
     # Idempotency: an arbiter claim already exists (proposer != 0) -> loss already driven.
     proposer=$(cast call --rpc-url "$rpc" "$arb" \
-        "claims(uint256)(address,uint256,uint64,bool,bool,uint256,uint256,uint64,address)" "$G" | head -1 | awk '{print $1}')
+        "claims(uint256)(address,uint64,bool,uint256)" "$G" | head -1 | awk '{print $1}')
     if [ "$(echo "$proposer" | tr 'A-Z' 'a-z')" != "0x0000000000000000000000000000000000000000" ]; then
         echo "  mutual $G already has a loss claim ($proposer) — nothing to do (idempotent skip)"
         exit 0
@@ -178,7 +178,7 @@ install:
     pnpm install
 
 ws-test:
-    pnpm -r --if-present test
+    pnpm test
 
 ws-typecheck:
     pnpm -r --if-present typecheck
@@ -187,8 +187,8 @@ ws-typecheck:
 # Indexer
 # ---------------------------------------------------------------------------
 
-# Run the indexer in dev mode (pglite, port 65422). Requires contracts to be
-# deployed via `just anvil-seed` first so `broadcast/` has addresses.
+# Run the indexer in dev mode (pglite, port 65422). Requires `just dev-up` first:
+# it seeds anvil and writes indexer/deployments.31337.json, the address manifest.
 # The seed pins to the local node, so those CIDs are not necessarily
 # retrievable from the public gateway the fetcher otherwise defaults to. Probe
 # the conventional local gateway and trust it explicitly when it answers.
@@ -209,7 +209,7 @@ indexer-typecheck:
 # dev mode bumps an internal instance number on schema bumps, but doesn't
 # clear the old instance's rows, so old runs can shadow new ones until the
 # DB is dropped. Safe to run at any time; the next `just indexer-dev` will
-# rebuild from scratch by replaying broadcast events.
+# rebuild from scratch by replaying the chain's events.
 indexer-reset:
     rm -rf indexer/.ponder/pglite
     @echo "indexer: pglite cleared — run 'just indexer-dev' to rebuild"
@@ -234,8 +234,7 @@ frontend-test:
 # Start a local Kubo node so metadata can be pinned as `ipfs://` instead of
 # inlined into the URI. Without it, POST /metadata/pin falls back to a
 # `data:application/json;base64,…` URI, which is self-contained but has to fit
-# the whole document inside the contract's 512-byte URI cap (~360 bytes of
-# Start a local Kubo node so metadata can be pinned as ipfs:// instead of inlined.
+# the whole document inside the contract's 512-byte URI cap (~360 bytes of JSON).
 ipfs-up:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -261,9 +260,9 @@ ipfs-down:
 # ---------------------------------------------------------------------------
 
 # One-shot: starts anvil in the background, waits for it to be ready, then
-# deploys + seeds the full protocol. Idempotent — skips anvil start if :8545
-# is already bound. Logs go to /tmp/commitments-anvil.log, pid to
-# /tmp/commitments-anvil.pid.
+# deploys + seeds the full protocol. Skips the anvil start if :8545 is already
+# bound, but always re-runs the deploy and seed. Logs go to
+# /tmp/commitments-anvil.log, pid to /tmp/commitments-anvil.pid.
 dev-up:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -315,7 +314,7 @@ dev-up:
     # not milliseconds — 2000 here silently meant one block every ~33 minutes,
     # stalling every post-seed cast send until the next epoch tick.
     cast rpc --rpc-url http://127.0.0.1:8545 evm_setIntervalMining 2 > /dev/null
-    echo "env: syncing frontend/.env.local with fresh deployment"
+    echo "env: writing frontend/.env.local and the indexer's deployment manifest"
     node script/write-frontend-env.mjs
 
 # Stop the background anvil started by `just dev-up`.
@@ -328,7 +327,12 @@ dev-down:
         fi
         rm -f /tmp/commitments-anvil.pid
     else
-        pkill -x anvil 2>/dev/null && echo "anvil: stopped" || echo "anvil: not running"
+        pid=$(lsof -ti tcp:8545 -sTCP:LISTEN 2>/dev/null || true)
+        if [ -n "$pid" ] && kill $pid 2>/dev/null; then
+            echo "anvil: stopped (pid $pid on :8545)"
+        else
+            echo "anvil: not running"
+        fi
     fi
 
 dev-guide:

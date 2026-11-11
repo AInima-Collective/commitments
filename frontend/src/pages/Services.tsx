@@ -1,18 +1,18 @@
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useChainId } from "wagmi";
 import { type Address } from "viem";
 import { Card, EmptyState, EntityLogo, Notice, StatBlock, UsdAmount } from "../components/ui";
-import { PageHeader, useServiceMeta } from "../components/protocol";
+import { PageHeader } from "../components/protocol";
+import { useServiceMeta } from "../hooks/useServiceMeta";
 import { hostnameOf, twitterHandle } from "../lib/metadata";
 import { chainName } from "../lib/chainName";
-import { bigintToUsd } from "../lib/format";
 import { getContractAddresses, getServiceRegistry, type ServiceDescriptor } from "../config/contracts";
 import { useOperators } from "../hooks/useOperators";
 import { useOperatorsIndexed } from "../hooks/useOperatorsIndexed";
 import { useServiceOperators } from "../hooks/useServiceOperators";
 import { useServiceMetadata } from "../hooks/useIndexerMetadata";
-import { useServiceStakeSummary, type ServiceStakeDenom } from "../hooks/useServiceStakeSummary";
-import { useAssetPrices } from "../hooks/useAssetPrices";
+import { useServiceStakeUsd } from "../hooks/useServiceStakeSummary";
 
 export default function Services() {
   const chainId = useChainId();
@@ -76,23 +76,7 @@ function ServiceListRow({
   // Per-row stake summary so the list matches the detail page's headline
   // metric (Total committed in USD) — operators scouting services compare
   // here, not on the detail.
-  const stake = useServiceStakeSummary(stakeRegistry);
-  const stakeSymbols = useMemo(
-    () => Array.from(new Set(stake.denoms.map((d) => d.assetSymbol).filter((s): s is string => Boolean(s)))),
-    [stake.denoms],
-  );
-  const { getPrice } = useAssetPrices({ symbols: stakeSymbols });
-
-  const totalCommittedUsd = useMemo<bigint | null>(() => {
-    if (stake.denoms.length === 0) return 0n;
-    let acc = 0n;
-    for (const denom of stake.denoms) {
-      const usd = denomToUsd(denom, getPrice);
-      if (usd === null) return null;
-      acc += usd;
-    }
-    return acc;
-  }, [stake.denoms, getPrice]);
+  const { totalUsd: totalCommittedUsd } = useServiceStakeUsd(stakeRegistry);
 
   const serviceRegistered = serviceOperators.filter((w) => w.registeredInService).length;
 
@@ -152,7 +136,6 @@ function ServiceListRow({
               <UsdAmount
                 amount={totalCommittedUsd}
                 size="default"
-                tone={totalCommittedUsd === null ? "unavailable" : "neutral"}
                 compact
               />
             }
@@ -171,18 +154,8 @@ function ServiceListRow({
   }
 
   return (
-    <Card as="a" href={`/app/services/${service.slug}`} tone="neutral" density="regular" className="ds-service-row">
+    <Card as={Link} to={`/app/services/${service.slug}`} tone="neutral" density="regular" className="ds-service-row">
       {body}
     </Card>
   );
-}
-
-function denomToUsd(denom: ServiceStakeDenom, getPrice: ReturnType<typeof useAssetPrices>["getPrice"]): bigint | null {
-  const symbol = denom.assetSymbol;
-  const decimals = denom.assetDecimals;
-  const amount = denom.totalAssets;
-  if (!symbol || decimals === null || amount === null) return null;
-  const price = getPrice(symbol);
-  if (!price) return null;
-  return bigintToUsd(amount, decimals, price.usd);
 }

@@ -2,12 +2,11 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding} from "src/core/interfaces/IDistributionStrategy.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
 
 /// @title ManagerMutualTest
@@ -24,7 +23,6 @@ contract ManagerMutualTest is Test {
     address internal admin = makeAddr("admin");
     address internal arbiter = makeAddr("mutualArbiter");
     address internal beneficiary = makeAddr("beneficiary"); // a ClaimRouter stand-in
-    address internal valuation = makeAddr("valuationAuthority");
     address internal adapter = makeAddr("adapter");
 
     address internal u1 = makeAddr("u1");
@@ -35,12 +33,7 @@ contract ManagerMutualTest is Test {
     uint64 internal constant MEMBER_WINDOW = 1 days;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         token = new MockERC20("Numeraire", "NUM", 18);
         other = new MockERC20("Other", "OTH", 18);
 
@@ -66,7 +59,6 @@ contract ManagerMutualTest is Test {
             arbiter: arbiter,
             numeraire: address(token),
             beneficiary: beneficiary,
-            valuationAuthority: address(0),
             challengeWindow: MUTUAL_WINDOW,
             deallocationWindow: MUTUAL_WINDOW
         });
@@ -86,7 +78,7 @@ contract ManagerMutualTest is Test {
         p.challengeWindow = MEMBER_WINDOW;
         p.strategies = new StrategyBinding[](0);
         vm.prank(who);
-        cid = manager.joinMutual(gid, p, 0, "");
+        cid = manager.joinMutual(gid, p);
     }
 
     function _declareAndExecute(uint256 gid, uint256 loss) internal {
@@ -107,11 +99,10 @@ contract ManagerMutualTest is Test {
         ICM.Membership memory m = manager.getMembership(cid);
         assertEq(m.mutualId, gid, "mutualId");
         assertEq(m.forfeitableUnits, 100e18, "E_i frozen");
-        assertEq(m.creditedValue, 100e18, "creditedValue == E_i (homogeneous)");
         assertEq(m.settledUnits, 0, "no settle yet");
 
         ICM.Mutual memory g = manager.getMutual(gid);
-        assertEq(g.totalShares, 100e18, "totalShares = sum creditedValue");
+        assertEq(g.totalShares, 100e18, "totalShares = sum E_i");
         // The member's encumbrance is live.
         assertEq(manager.encumberedBalance(address(token), u1), 100e18, "encumbered");
     }
@@ -269,8 +260,7 @@ contract ManagerMutualTest is Test {
         manager.settleMemberLoss(cid);
         assertEq(manager.getMembership(cid).settledUnits, 40e18, "exiting member still slashed");
 
-        // After the window AND once settled, release returns the residual.
-        vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
+        // The declaration ran the clock past the window; once settled, release returns the residual.
         manager.releaseMutualMember(cid);
         assertEq(manager.getMembership(cid).mutualId, 0, "membership cleared");
         assertEq(manager.getCommitment(cid).released, true, "commitment released");
@@ -283,8 +273,7 @@ contract ManagerMutualTest is Test {
         uint256 cid = _join(gid, u1, 100e18, 10_000);
         vm.prank(u1);
         manager.requestMutualExit(cid);
-        _declareAndExecute(gid, 40e18); // loss within the window, NOT settled
-        vm.warp(block.timestamp + MUTUAL_WINDOW + 1);
+        _declareAndExecute(gid, 40e18); // loss within the window, NOT settled; the exit window is now open
         vm.expectRevert(ICM.MemberUnsettled.selector);
         manager.releaseMutualMember(cid);
     }
@@ -312,12 +301,6 @@ contract ManagerMutualTest is Test {
         vm.prank(u1);
         vm.expectRevert(ICM.CommitmentInMutual.selector);
         manager.contributeEncumbered(cid, 1);
-
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = cid;
-        vm.prank(arbiter);
-        vm.expectRevert(ICM.CommitmentInMutual.selector);
-        manager.batchReleaseCommitments(ids);
     }
 
     // =========================================================================
@@ -362,7 +345,7 @@ contract ManagerMutualTest is Test {
     }
 
     // =========================================================================
-    // Empty mutual / overflow / valuation guards
+    // Empty mutual / overflow / join guards
     // =========================================================================
 
     function test_emptyMutual_execute_shortfallAndTerminal() public {
@@ -384,19 +367,6 @@ contract ManagerMutualTest is Test {
         assertTrue(manager.getMutual(gid).terminal, "empty mutual wound down terminally");
     }
 
-    function test_createMutual_valuationAuthorityCannotBeArbiter() public {
-        ICM.MutualParams memory p = ICM.MutualParams({
-            arbiter: arbiter,
-            numeraire: address(token),
-            beneficiary: beneficiary,
-            valuationAuthority: arbiter, // == arbiter -> reject (OBJ-2)
-            challengeWindow: MUTUAL_WINDOW,
-            deallocationWindow: MUTUAL_WINDOW
-        });
-        vm.expectRevert(ICM.ValuationAuthorityIsArbiter.selector);
-        manager.createMutual(p);
-    }
-
     function test_join_numeraireMismatch_reverts() public {
         uint256 gid = _createHomogeneousMutual();
         ICM.CommitmentParams memory p;
@@ -410,7 +380,7 @@ contract ManagerMutualTest is Test {
         p.strategies = new StrategyBinding[](0);
         vm.prank(u1);
         vm.expectRevert(ICM.NumeraireMismatch.selector);
-        manager.joinMutual(gid, p, 0, "");
+        manager.joinMutual(gid, p);
     }
 
     function test_join_beneficiaryMismatch_reverts() public {
@@ -426,7 +396,7 @@ contract ManagerMutualTest is Test {
         p.strategies = new StrategyBinding[](0);
         vm.prank(u1);
         vm.expectRevert(ICM.MutualBeneficiaryMismatch.selector);
-        manager.joinMutual(gid, p, 0, "");
+        manager.joinMutual(gid, p);
     }
 
     function test_join_strategiesForbidden() public {
@@ -443,7 +413,7 @@ contract ManagerMutualTest is Test {
         p.strategies[0] = StrategyBinding(makeAddr("strat"), "");
         vm.prank(u1);
         vm.expectRevert(ICM.MemberStrategyForbidden.selector);
-        manager.joinMutual(gid, p, 0, "");
+        manager.joinMutual(gid, p);
     }
 
     function test_initiateMutualLoss_onlyArbiter() public {
@@ -463,104 +433,6 @@ contract ManagerMutualTest is Test {
         manager.executeMutualLoss(gid);
     }
 
-    // =========================================================================
-    // Attested (heterogeneous) mode — valuationAuthority signature + deadline (red-team #2)
-    // =========================================================================
-
-    function _attestation(
-        uint256 vaKey,
-        uint256 gid,
-        address committer,
-        address tok,
-        uint256 ei,
-        uint128 credited,
-        uint256 deadline
-    ) internal view returns (bytes memory) {
-        bytes32 inner = keccak256(
-            abi.encode("MutualValuation", block.chainid, address(manager), gid, committer, tok, ei, credited, deadline)
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(vaKey, MessageHashUtils.toEthSignedMessageHash(inner));
-        return abi.encode(deadline, abi.encodePacked(r, s, v));
-    }
-
-    function _attestedMutual(address va) internal returns (uint256 gid) {
-        ICM.MutualParams memory p = ICM.MutualParams({
-            arbiter: arbiter,
-            numeraire: address(token),
-            beneficiary: beneficiary,
-            valuationAuthority: va,
-            challengeWindow: MUTUAL_WINDOW,
-            deallocationWindow: MUTUAL_WINDOW
-        });
-        gid = manager.createMutual(p);
-        vm.prank(arbiter);
-        manager.activateMutual(gid);
-    }
-
-    function test_attestedMode_joinWithSignedValuation() public {
-        (address va, uint256 vaKey) = makeAddrAndKey("va");
-        uint256 gid = _attestedMutual(va);
-
-        uint256 amount = 100e18;
-        uint16 bps = 10_000;
-        uint256 ei = (amount * bps) / 10_000; // 100e18 units of `other`
-        uint128 credited = 90e18; // attested numeraire weight (a haircut on the heterogeneous token)
-        uint256 deadline = block.timestamp + 1 days;
-        bytes memory att = _attestation(vaKey, gid, u1, address(other), ei, credited, deadline);
-
-        ICM.CommitmentParams memory p;
-        p.arbiter = arbiter;
-        p.counterparty = beneficiary;
-        p.token = address(other); // heterogeneous collateral != numeraire
-        p.adapter = adapter;
-        p.amount = amount;
-        p.maxPenaltyBps = bps;
-        p.challengeWindow = MEMBER_WINDOW;
-        p.strategies = new StrategyBinding[](0);
-        vm.prank(u1);
-        uint256 cid = manager.joinMutual(gid, p, credited, att);
-
-        assertEq(manager.getMembership(cid).creditedValue, credited, "attested weight frozen");
-        assertEq(manager.getMembership(cid).forfeitableUnits, ei, "E_i in own token units");
-        assertEq(manager.getMutual(gid).totalShares, credited, "totalShares uses attested weight");
-    }
-
-    function test_attestedMode_expiredAttestationReverts() public {
-        (address va, uint256 vaKey) = makeAddrAndKey("va");
-        uint256 gid = _attestedMutual(va);
-        uint256 deadline = block.timestamp + 1 hours;
-        bytes memory att = _attestation(vaKey, gid, u1, address(other), 100e18, 90e18, deadline);
-        vm.warp(deadline + 1); // attestation now expired
-
-        ICM.CommitmentParams memory p = _otherParams();
-        vm.prank(u1);
-        vm.expectRevert(ICM.InvalidValuationAttestation.selector);
-        manager.joinMutual(gid, p, 90e18, att);
-    }
-
-    function test_attestedMode_wrongSignerReverts() public {
-        (address va,) = makeAddrAndKey("va");
-        (, uint256 impostorKey) = makeAddrAndKey("impostor");
-        uint256 gid = _attestedMutual(va);
-        bytes memory att = _attestation(impostorKey, gid, u1, address(other), 100e18, 90e18, block.timestamp + 1 days);
-
-        ICM.CommitmentParams memory p = _otherParams();
-        vm.prank(u1);
-        vm.expectRevert(ICM.InvalidValuationAttestation.selector);
-        manager.joinMutual(gid, p, 90e18, att);
-    }
-
-    function _otherParams() internal view returns (ICM.CommitmentParams memory p) {
-        p.arbiter = arbiter;
-        p.counterparty = beneficiary;
-        p.token = address(other);
-        p.adapter = adapter;
-        p.amount = 100e18;
-        p.maxPenaltyBps = 10_000;
-        p.challengeWindow = MEMBER_WINDOW;
-        p.strategies = new StrategyBinding[](0);
-    }
-
     function test_join_frozenDuringPendingLoss() public {
         uint256 gid = _createHomogeneousMutual();
         _join(gid, u1, 100e18, 10_000);
@@ -578,6 +450,104 @@ contract ManagerMutualTest is Test {
         p.strategies = new StrategyBinding[](0);
         vm.prank(u2);
         vm.expectRevert(ICM.MutualLossPending.selector);
-        manager.joinMutual(gid, p, 0, "");
+        manager.joinMutual(gid, p);
+    }
+
+    // =========================================================================
+    // exitingCover: cover with an exit request on record
+    // =========================================================================
+
+    function _covers(uint256 gid) internal view returns (uint256 active, uint256 exiting) {
+        ICM.Mutual memory g = manager.getMutual(gid);
+        return (g.activeCover, g.exitingCover);
+    }
+
+    function test_exitingCover_requestCountsCoverActiveUnchanged() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 200e18, "activeCover unchanged by a request");
+        assertEq(exiting, 100e18, "exitingCover rises by the member's cover");
+    }
+
+    function test_exitingCover_lossOnExitingMember_bothFallTogether() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        _declareAndExecute(gid, 50e18); // 25% of every line
+        manager.settleMemberLoss(c1);
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 175e18, "activeCover falls by the settled loss");
+        assertEq(exiting, 75e18, "exitingCover falls by the same amount");
+    }
+
+    function test_exitingCover_releaseRemovesCoverFromBoth() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        _declareAndExecute(gid, 50e18);
+        manager.settleMemberLoss(c1);
+        manager.releaseMutualMember(c1); // the declaration ran the clock into the exit window
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 100e18, "activeCover falls by the member's cover");
+        assertEq(exiting, 0, "exitingCover falls by the member's cover");
+    }
+
+    function test_exitingCover_lapsedRequestClearedByStranger_thenCountedOnce() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        vm.warp(block.timestamp + 2 * uint256(MUTUAL_WINDOW)); // lapsed
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = c1;
+        vm.expectEmit(true, true, false, true, address(manager));
+        emit ICM.MemberExitLapsed(gid, c1);
+        vm.prank(u3); // a stranger
+        manager.settleMembers(ids);
+        assertEq(manager.getMembership(c1).unbondRequestedAt, 0, "request cleared");
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 100e18, "activeCover unchanged");
+        assertEq(exiting, 0, "cover counts as staying again");
+
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        (, exiting) = _covers(gid);
+        assertEq(exiting, 100e18, "a second request counts the cover once");
+    }
+
+    function test_exitingCover_lapsedRequestWithUnsettledLoss_clearedAndSettled() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        _join(gid, u2, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        _declareAndExecute(gid, 50e18);
+        vm.warp(block.timestamp + 2 * uint256(MUTUAL_WINDOW)); // lapsed, loss still unsettled
+        manager.settleMemberLoss(c1);
+        assertEq(manager.getMembership(c1).settledUnits, 25e18, "loss settled");
+        (uint256 active, uint256 exiting) = _covers(gid);
+        assertEq(active, 175e18, "activeCover falls by the loss only");
+        assertEq(exiting, 0, "the lapsed request is cleared");
+    }
+
+    function test_exitingCover_reRequestAfterLapseWithoutClear_countedOnce() public {
+        uint256 gid = _createHomogeneousMutual();
+        uint256 c1 = _join(gid, u1, 100e18, 10_000);
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        vm.warp(block.timestamp + 2 * uint256(MUTUAL_WINDOW)); // lapsed, never cleared
+        vm.prank(u1);
+        manager.requestMutualExit(c1);
+        (, uint256 exiting) = _covers(gid);
+        assertEq(exiting, 100e18, "a request made again after a lapse is counted once");
     }
 }

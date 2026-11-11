@@ -78,31 +78,6 @@ function deployFanOut(address provider, address manager) external returns (addre
 |`clone`|`address`|The address of the deployed FanOut clone|
 
 
-### deployFanOutWithPenalty
-
-Deploy a FanOut clone with a configured input penalty cap (, ).
-
-
-```solidity
-function deployFanOutWithPenalty(address provider, address manager, uint16 inputMaxPenaltyBps)
-    external
-    returns (address clone);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`provider`|`address`|The single provider for the fan-out node|
-|`manager`|`address`|The manager/owner address|
-|`inputMaxPenaltyBps`|`uint16`|The cap in basis points (0..10_000) the provider committed upstream|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`clone`|`address`|The address of the deployed FanOut clone|
-
-
 ### deployTokenWeighting
 
 Deploy a TokenWeighting clone and initialize it atomically
@@ -170,17 +145,6 @@ function deployFanOutAt(bytes32 salt, address provider, address manager) externa
 |----|----|-----------|
 |`clone`|`address`|The deployed clone address|
 
-
-### deployFanOutWithPenaltyAt
-
-Deterministic FanOut deploy with a configured input penalty cap.
-
-
-```solidity
-function deployFanOutWithPenaltyAt(bytes32 salt, address provider, address manager, uint16 inputMaxPenaltyBps)
-    external
-    returns (address clone);
-```
 
 ### deployTokenWeightingAt
 

@@ -26,6 +26,7 @@ import {
   metadataTrust,
   rendersSchema,
 } from '../../lib/commitmentMetadata'
+import { zeroHash } from 'viem'
 
 interface CommitmentDetailContentProps {
   row: UnifiedCommitmentRowEntry
@@ -36,8 +37,6 @@ interface CommitmentDetailContentProps {
    *  row's status is UNBONDING. */
   unbondTotalSecs?: number
   unbondElapsed?: number
-  /** Clicking a tag chip. Wire it to the list's tag filter. */
-  onSelectTag?: (tag: string) => void
   /** Re-run the indexer's metadata fetch + verify. */
   onRefetchMetadata?: () => void
   /**
@@ -62,7 +61,6 @@ export function CommitmentDetailContent({
   row,
   unbondTotalSecs,
   unbondElapsed,
-  onSelectTag,
   onRefetchMetadata,
   label,
 }: CommitmentDetailContentProps) {
@@ -108,7 +106,6 @@ export function CommitmentDetailContent({
         termsURI={metadataTermsURI(row)}
         tags={tags}
         attestationId={metadataAttestationId(row)}
-        onSelectTag={onSelectTag}
       />
 
       <LifecycleStepper steps={lifecycle} />
@@ -195,9 +192,8 @@ export function CommitmentDetailContent({
   )
 }
 
-const ZERO_HASH = `0x${'0'.repeat(64)}`
 
 /** The zero hash means "no attestation", not "the hash is all zeroes". */
 function nonZeroHash(hash: string | undefined): string | undefined {
-  return hash && hash.toLowerCase() !== ZERO_HASH ? hash : undefined
+  return hash && hash.toLowerCase() !== zeroHash ? hash : undefined
 }

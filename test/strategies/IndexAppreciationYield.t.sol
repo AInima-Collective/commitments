@@ -2,31 +2,15 @@
 pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {deployManager} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
 import {StrategyBinding, DistributeContext} from "src/core/interfaces/IDistributionStrategy.sol";
-import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
 import {IndexAppreciationYield} from "src/distributions/IndexAppreciationYield.sol";
 import {MockERC20} from "../helpers/MockERC20.sol";
-
-/// @dev Settable index adapter — models an appreciating venue without a full 4626 mock.
-contract MockIndexAdapter is IBackingAdapter {
-    uint256 public index = 1e18;
-
-    function setIndex(uint256 v) external {
-        index = v;
-    }
-
-    function indexNow(address) external view returns (uint256) {
-        return index;
-    }
-
-    function payoutDenomination(address token) external pure returns (address) {
-        return token;
-    }
-}
+import {StrategyBase} from "src/distributions/StrategyBase.sol";
+import {MockIndexAdapter} from "../helpers/Mocks.sol";
 
 contract IndexAppreciationYieldTest is Test {
     CommitmentManager internal manager;
@@ -43,12 +27,7 @@ contract IndexAppreciationYieldTest is Test {
     uint64 internal constant WINDOW = 1 days;
 
     function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, 7 days, 14 days)))
-            )
-        );
+        manager = deployManager(admin, 7 days, 14 days);
         token = new MockERC20("mUSDC", "mUSDC", 18);
         adapter = new MockIndexAdapter();
         strategy = new IndexAppreciationYield(address(manager));
@@ -106,7 +85,7 @@ contract IndexAppreciationYieldTest is Test {
 
     function test_hooks_managerOnly() public {
         DistributeContext memory ctx;
-        vm.expectRevert(IndexAppreciationYield.OnlyManager.selector);
+        vm.expectRevert(StrategyBase.OnlyManager.selector);
         strategy.distribute(ctx);
     }
 
@@ -149,7 +128,7 @@ contract IndexAppreciationYieldTest is Test {
         assertEq(owed, 0);
 
         vm.prank(bob);
-        vm.expectRevert(IndexAppreciationYield.NothingToClaim.selector);
+        vm.expectRevert(StrategyBase.NothingToClaim.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -157,7 +136,7 @@ contract IndexAppreciationYieldTest is Test {
         adapter.setIndex(1.04e18);
         manager.distribute(id, address(strategy));
         vm.prank(makeAddr("mallory"));
-        vm.expectRevert(IndexAppreciationYield.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(id, address(strategy), "");
     }
 
@@ -228,7 +207,7 @@ contract IndexAppreciationYieldTest is Test {
         manager.releaseCommitment(id);
         vm.warp(block.timestamp + 90 days);
         vm.prank(bob);
-        vm.expectRevert(IndexAppreciationYield.NotAuthorized.selector);
+        vm.expectRevert(StrategyBase.NotAuthorized.selector);
         manager.claim(id, address(strategy), abi.encode(true));
     }
 

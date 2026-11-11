@@ -1,5 +1,3 @@
-export const DEFAULT_FORFEIT_PROPOSAL_TTL = 14n * 86_400n
-
 export interface ForfeitProposalSnapshot {
   penaltyBps: number
   initiatedAt: bigint

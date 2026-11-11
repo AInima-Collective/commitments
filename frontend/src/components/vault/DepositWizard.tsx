@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
-import { type Address, parseUnits } from 'viem'
+import { useEffect } from 'react'
+import { type Address } from 'viem'
+import { useAmountInput } from '../../hooks/useAmountInput'
 import { useDepositFlow } from '../../hooks/useDepositFlow'
-import { formatTokenAmount } from '../../lib/format'
-import { BalanceLine, Notice, TokenAmount, Tooltip, useToasts } from '../ui'
+import { BalanceLine, Button, Notice, TokenAmount, Tooltip, useToasts } from '../ui'
+import { DepositStepper } from './DepositStepper'
+import { deriveDepositSteps } from './depositSteps'
+import { legibleWriteError } from '../../lib/contractErrors'
 
 interface DepositWizardProps {
   vaultAddress: Address | undefined
@@ -15,70 +18,6 @@ interface DepositWizardProps {
   onDepositSuccess: () => void
 }
 
-// Stepper tone resolution per UI-SPEC §Stepper.
-type StepTone = 'neutral' | 'info' | 'success' | 'danger'
-type StepGlyph = '[ ]' | '[…]' | '[✓]' | '[!]'
-
-interface StepDescriptor {
-  tone: StepTone
-  glyph: StepGlyph
-  label: string
-}
-
-function deriveSteps(
-  step: 'idle' | 'approving' | 'approved' | 'depositing' | 'complete' | 'error',
-  hasAllowance: boolean,
-): { step1: StepDescriptor; step2: StepDescriptor | null } {
-  // 1-step path: allowance covers the requested amount
-  if (hasAllowance) {
-    if (step === 'depositing') {
-      return { step1: { tone: 'info', glyph: '[…]', label: 'STEP 1 OF 1 — DEPOSITING…' }, step2: null }
-    }
-    if (step === 'complete') {
-      return { step1: { tone: 'success', glyph: '[✓]', label: 'DEPOSIT COMPLETE' }, step2: null }
-    }
-    if (step === 'error') {
-      return { step1: { tone: 'danger', glyph: '[!]', label: 'STEP 1 OF 1 — DEPOSIT' }, step2: null }
-    }
-    return { step1: { tone: 'info', glyph: '[ ]', label: 'STEP 1 OF 1 — DEPOSIT' }, step2: null }
-  }
-
-  // 2-step path
-  switch (step) {
-    case 'approving':
-      return {
-        step1: { tone: 'info', glyph: '[…]', label: 'STEP 1 OF 2 — APPROVING…' },
-        step2: { tone: 'neutral', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-    case 'approved':
-      return {
-        step1: { tone: 'success', glyph: '[✓]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'info', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-    case 'depositing':
-      return {
-        step1: { tone: 'success', glyph: '[✓]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'info', glyph: '[…]', label: 'STEP 2 OF 2 — DEPOSITING…' },
-      }
-    case 'complete':
-      return {
-        step1: { tone: 'success', glyph: '[✓]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'success', glyph: '[✓]', label: 'DEPOSIT COMPLETE' },
-      }
-    case 'error':
-      return {
-        step1: { tone: 'danger', glyph: '[!]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'neutral', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-    case 'idle':
-    default:
-      return {
-        step1: { tone: 'info', glyph: '[ ]', label: 'STEP 1 OF 2 — APPROVE' },
-        step2: { tone: 'neutral', glyph: '[ ]', label: 'STEP 2 OF 2 — DEPOSIT' },
-      }
-  }
-}
-
 export function DepositWizard({
   vaultAddress,
   assetAddress,
@@ -89,9 +28,11 @@ export function DepositWizard({
   depositsPaused,
   onDepositSuccess,
 }: DepositWizardProps) {
-  const [inputValue, setInputValue] = useState('')
-  const [parseError, setParseError] = useState<string | null>(null)
-  const [parsedAmount, setParsedAmount] = useState<bigint | undefined>(undefined)
+  const decimals = assetDecimals ?? 18
+  const symbol = assetSymbol ?? 'TOKEN'
+  const amountInput = useAmountInput(decimals)
+  const parsedAmount = amountInput.amount
+  const parseError = amountInput.invalid
 
   const { push } = useToasts()
 
@@ -105,35 +46,6 @@ export function DepositWizard({
     assetAddress,
     userAddress,
   })
-
-  // Parse input on change
-  function handleInputChange(value: string) {
-    setInputValue(value)
-    if (!value) {
-      setParsedAmount(undefined)
-      setParseError(null)
-      return
-    }
-    try {
-      const decimals = assetDecimals ?? 18
-      const parsed = parseUnits(value, decimals)
-      setParsedAmount(parsed)
-      setParseError(null)
-    } catch {
-      setParsedAmount(undefined)
-      setParseError('INVALID AMOUNT')
-    }
-  }
-
-  // MAX button handler
-  function handleMax() {
-    if (flow.tokenBalance === undefined || assetDecimals === undefined) return
-    const maxValue = formatTokenAmount(flow.tokenBalance, assetDecimals).full
-    handleInputChange(maxValue)
-  }
-
-  const decimals = assetDecimals ?? 18
-  const symbol = assetSymbol ?? 'TOKEN'
 
   // Surface flow state changes via toasts (success/error). Auto-reset 3s
   // after a complete so the user can see the success toast and submit
@@ -174,9 +86,7 @@ export function DepositWizard({
       onDepositSuccess()
       const timer = setTimeout(() => {
         flow.reset()
-        setInputValue('')
-        setParsedAmount(undefined)
-        setParseError(null)
+        amountInput.clear()
       }, 3000)
       return () => clearTimeout(timer)
     }
@@ -184,10 +94,10 @@ export function DepositWizard({
       push({
         tone: 'danger',
         title: 'TRANSACTION FAILED',
-        body: flow.error?.message?.split('\n')[0] ?? 'Unknown error.',
+        body: legibleWriteError(flow.error),
       })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fires once per step transition; the flow object is new every render, so listing it would repeat the toast
   }, [flow.step])
 
   const exceedsBalance =
@@ -212,7 +122,7 @@ export function DepositWizard({
     !isConnected ||
     depositsPaused ||
     !parsedAmount ||
-    !!parseError ||
+    parseError ||
     exceedsBalance ||
     inProgress ||
     flow.step === 'complete'
@@ -226,7 +136,8 @@ export function DepositWizard({
     }
   }
 
-  const { step1, step2 } = deriveSteps(flow.step, hasAllowance)
+  // One step only when the allowance covered the amount before this flow approved anything.
+  const { step1, step2 } = deriveDepositSteps(flow.step, hasAllowance && !flow.approvedInFlow)
 
   return (
     <div className="ds-card ds-stack ds-stack-3">
@@ -250,12 +161,7 @@ export function DepositWizard({
         without giving up the yield.
       </p>
 
-      <div className="ds-stepper">
-        <Notice tone={step1.tone} size="sm" icon={step1.glyph}>{step1.label}</Notice>
-        {step2 && (
-          <Notice tone={step2.tone} size="sm" icon={step2.glyph}>{step2.label}</Notice>
-        )}
-      </div>
+      <DepositStepper steps={[step1, step2]} />
 
       {depositsPaused && (
         <Notice tone="warn" size="md" title="DEPOSITS PAUSED">
@@ -274,8 +180,8 @@ export function DepositWizard({
         className="ds-input"
         placeholder={`Amount (${symbol})`}
         aria-label={`Amount in ${symbol}`}
-        value={inputValue}
-        onChange={(e) => handleInputChange(e.target.value)}
+        value={amountInput.text}
+        onChange={(e) => amountInput.setText(e.target.value)}
         disabled={depositsPaused || !isConnected || inProgress}
       />
 
@@ -285,7 +191,7 @@ export function DepositWizard({
           amount={flow.tokenBalance}
           decimals={decimals}
           symbol={symbol}
-          onMax={handleMax}
+          onMax={() => flow.tokenBalance !== undefined && amountInput.setMax(flow.tokenBalance)}
           maxDisabled={depositsPaused || !isConnected || inProgress}
         />
       )}
@@ -299,14 +205,9 @@ export function DepositWizard({
         <Notice tone="danger" size="sm" title="EXCEEDS BALANCE" />
       )}
 
-      <button
-        type="button"
-        className="ds-btn ds-btn--primary ds-btn--full"
-        onClick={handleAction}
-        disabled={actionDisabled}
-      >
+      <Button variant="primary" fullWidth onClick={handleAction} disabled={actionDisabled}>
         {actionLabel}
-      </button>
+      </Button>
     </div>
   )
 }

@@ -1,53 +1,23 @@
-import { Hono, type Context } from 'hono'
-import { and, asc, desc, eq } from 'ponder'
-import { db, publicClients } from 'ponder:api'
+import { Hono } from 'hono'
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, sql } from 'ponder'
+import { db } from 'ponder:api'
 import schema from 'ponder:schema'
-import type { Hex } from 'viem'
 
-import { commitmentManagerAbi } from '../abis'
-import { CHAIN_NAME } from '../env'
-
-// Loose typing — getMutualPremiumState returns a flat 9-tuple of named outputs.
-interface MinimalManagerClient {
-  readContract(args: {
-    address: Hex
-    abi: typeof commitmentManagerAbi
-    functionName: 'getMutualPremiumState'
-    args: [bigint]
-  }): Promise<readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint]>
-  readContract(args: {
-    address: Hex
-    abi: typeof commitmentManagerAbi
-    functionName: 'getMutualJuniorPool'
-    args: [bigint]
-  }): Promise<bigint>
-}
-
-function getManagerClient(): MinimalManagerClient | null {
-  const clients = publicClients as Record<string, MinimalManagerClient | undefined>
-  return clients[CHAIN_NAME] ?? null
-}
-
-/** Parse the `:id` path param as a numeric mutualId, or null when missing/malformed. */
-function parseMutualId(c: Context): bigint | null {
-  const raw = c.req.param('id')
-  if (raw === undefined) return null
-  try {
-    return BigInt(raw)
-  } catch {
-    return null
-  }
-}
+import { jsonBig, parseId, parseLimit } from './http'
+import { DAY, foldMutualHistory } from './mutualHistoryMath'
 
 const app = new Hono()
 
 /**
  * Mutual / Synthetic Mutual endpoints.
  *
- *   GET /mutuals                    — every mutual row + derived liveCapacity / memberCount.
+ *   GET /mutuals                    — every mutual row + derived liveCapacity / memberCount,
+ *                                    and the registry listing terms when registered.
  *   GET /mutuals/:id/members        — the mutual's member roster + derived owedUnits / unbondRequestedAt.
  *   GET /mutuals/:id/ledger?limit=N — mutual dossier: the mutual row, its members,
  *                                    and its event timeline (newest first).
+ *   GET /mutuals/:id/premium        — premium funding, claims and cover bindings.
+ *   GET /mutuals/:id/history?days=N — one point per UTC day: premium APR, capital, cover sold.
  *
  * The `:id` path parameter is the numeric mutualId. A single-manager deployment
  * (the v2 norm) has one mutual per id; if multiple managers ever share an id
@@ -60,65 +30,43 @@ const app = new Hono()
 // every per-member loss snapshot. See MutualLib.LAMBDA_ONE.
 const ONE = 1_000_000_000_000_000_000n
 
-// Convert every bigint field on a row to its string form; pass other types through.
-function serialize<T extends Record<string, unknown>>(row: T): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(row)) {
-    out[k] = typeof v === 'bigint' ? v.toString() : v
-  }
-  return out
-}
-
 /**
  * GET /mutuals
  *
- * One entry per Mutual row, ordered by mutualId. `liveCapacity` and
- * `memberCount` are aggregated from the mutual's `membership` rows:
+ * One entry per Mutual row, ordered by mutualId.
  *
  *   memberCount  — active, non-exiting underwriters. On-chain this is
  *                  `unbondRequestedAt == 0 AND membership present`; in the
  *                  indexer that maps exactly to status === 'active' (a pending
  *                  exit flips status to 'exitRequested', release to 'released').
  *
- *   liveCapacity — loss-adjusted coverage still slashable, raw numeraire units:
- *                  Σ forfeitableUnits_i * (1e18 - lossSnapshot_i) / 1e18 over
- *                  members still in the pool. A line stays in `totalShares` and
- *                  mutual-slashable until releaseGroupMember (status 'released'):
- *                  merely *requesting* exit ('exitRequested') does NOT remove it,
- *                  so exitRequested members still contribute coverage and are
- *                  counted here; only 'released' members are excluded.
+ *   liveCapacity — loss headroom, numeraire units:
+ *                  totalShares × (1e18 − cumulativeLoss) / 1e18, the contract's
+ *                  own formula in MutualLib.executeMutualLoss. It moves the moment
+ *                  a loss executes, not when each member is lazily settled.
  */
 app.get('/', async (c) => {
-  const [mutuals, memberships] = await Promise.all([
+  const [mutuals, counts] = await Promise.all([
     db.select().from(schema.mutual).orderBy(asc(schema.mutual.mutualId)),
-    db.select().from(schema.membership),
+    db
+      .select({
+        manager: schema.membership.manager,
+        mutualId: schema.membership.mutualId,
+        active: sql<string>`COUNT(*) FILTER (WHERE ${schema.membership.status} = 'active')::text`,
+      })
+      .from(schema.membership)
+      .groupBy(schema.membership.manager, schema.membership.mutualId),
   ])
-
-  // Bucket memberships by their parent mutual PK (`${manager}-${mutualId}`).
-  const byMutual = new Map<string, typeof memberships>()
-  for (const m of memberships) {
-    const key = `${m.manager.toLowerCase()}-${m.mutualId.toString()}`
-    const arr = byMutual.get(key)
-    if (arr) arr.push(m)
-    else byMutual.set(key, [m])
-  }
+  const memberCounts = new Map(counts.map((r) => [`${r.manager.toLowerCase()}-${r.mutualId}`, Number(r.active)]))
 
   const out = mutuals.map((g) => {
-    const members = byMutual.get(g.id) ?? []
-    let liveCapacity = 0n
-    let memberCount = 0
-    for (const m of members) {
-      if (m.status === 'active') memberCount += 1
-      if (m.status !== 'released') {
-        liveCapacity += (m.forfeitableUnits * (ONE - m.lossSnapshot)) / ONE
-      }
-    }
+    const liveCapacity = (g.totalShares * (ONE - g.cumulativeLoss)) / ONE
+    const memberCount = memberCounts.get(g.id) ?? 0
     return {
       mutualId: g.mutualId.toString(),
       arbiter: g.arbiter,
       beneficiary: g.beneficiary,
       numeraire: g.numeraire,
-      valuationAuthority: g.valuationAuthority,
       challengeWindow: Number(g.challengeWindow),
       deallocationWindow: Number(g.deallocationWindow),
       totalShares: g.totalShares.toString(),
@@ -140,13 +88,11 @@ app.get('/', async (c) => {
       // from the vault's own yield (stamped by the conduit's PremiumFunded).
       coveredVault: g.coveredVault,
       conduit: g.conduit,
-      // Heterogeneous mode (§H §8 / M4) — `heterogeneous` is the canonical flag (bandAdapter set).
-      heterogeneous: g.bandAdapter != null,
-      bandAdapter: g.bandAdapter,
-      valuationFloorBps: Number(g.valuationFloorBps),
-      valuationCeilBps: Number(g.valuationCeilBps),
-      juniorBps: Number(g.juniorBps),
-      juniorPool: g.juniorPool.toString(),
+      // MutualRegistry listing terms (NULL for a mutual never registered there).
+      targetCapacity: g.targetCapacity?.toString() ?? null,
+      termEnd: g.termEnd === null ? null : Number(g.termEnd),
+      perilURI: g.perilURI,
+      perilHash: g.perilHash,
     }
   })
 
@@ -162,37 +108,21 @@ app.get('/', async (c) => {
  * markdown at the mutual's current Lambda, mirroring MutualLib.pendingMemberLoss.
  */
 app.get('/:id/members', async (c) => {
-  const mutualId = parseMutualId(c)
+  const mutualId = parseId(c.req.param('id'))
   if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
 
-  const [members, exitEvents, mutualRows] = await Promise.all([
+  const [members, mutualRows] = await Promise.all([
     db
       .select()
       .from(schema.membership)
       .where(eq(schema.membership.mutualId, mutualId))
       .orderBy(asc(schema.membership.commitmentId)),
-    // The on-chain `unbondRequestedAt` (uint64 block.timestamp set by
-    // requestGroupExit) is not denormalized onto the membership row, but the
-    // 'exitRequested' mutualEvent's blockTimestamp IS that exact value — derive
-    // it (latest per commitment) rather than widening the schema.
-    db
-      .select()
-      .from(schema.mutualEvent)
-      .where(and(eq(schema.mutualEvent.mutualId, mutualId), eq(schema.mutualEvent.kind, 'exitRequested'))),
     db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1),
   ])
 
   // Lambda — the parent mutual's cumulative loss fraction (1e18-scaled). Absent
   // mutual => 0, which yields owedUnits 0 for the (empty) member set anyway.
   const lambda = mutualRows[0]?.cumulativeLoss ?? 0n
-
-  const exitAt = new Map<string, bigint>()
-  for (const e of exitEvents) {
-    if (e.commitmentId == null) continue
-    const key = e.commitmentId.toString()
-    const prev = exitAt.get(key)
-    if (prev == null || e.blockTimestamp > prev) exitAt.set(key, e.blockTimestamp)
-  }
 
   const out = members.map((m) => {
     // owed = forfeitableUnits*(Lambda - lossSnapshot)/1e18, clamped to
@@ -208,7 +138,7 @@ app.get('/:id/members', async (c) => {
       if (owed < 0n) owed = 0n
     }
     // status 'active' <=> on-chain unbondRequestedAt == 0.
-    const unbond = m.status === 'active' ? 0n : (exitAt.get(m.commitmentId.toString()) ?? 0n)
+    const unbond = m.status === 'active' ? 0n : (m.exitRequestedAt ?? 0n)
     return {
       commitmentId: m.commitmentId.toString(),
       committer: m.committer,
@@ -217,6 +147,7 @@ app.get('/:id/members', async (c) => {
       creditedValue: m.creditedValue.toString(),
       lossSnapshot: m.lossSnapshot.toString(),
       unbondRequestedAt: Number(unbond),
+      slashableUntil: m.slashableUntil === null ? null : Number(m.slashableUntil),
       owedUnits: owed.toString(),
     }
   })
@@ -229,14 +160,13 @@ app.get('/:id/members', async (c) => {
  *
  * Mirrors the vaults forfeit-ledger style: a single read assembling the mutual,
  * its membership roster, and the chronological mutual-event timeline. Members are
- * ordered by commitmentId; events newest-first. `?limit=N` caps each list (1..500,
+ * ordered by commitmentId; events newest-first by (blockNumber, logIndex). `?limit=N` caps each list (1..500,
  * default 100).
  */
 app.get('/:id/ledger', async (c) => {
-  const mutualId = parseMutualId(c)
+  const mutualId = parseId(c.req.param('id'))
   if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
-  const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 500)
+  const limit = parseLimit(c, 100, 500)
 
   const [mutualRows, members, events] = await Promise.all([
     db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1),
@@ -250,15 +180,15 @@ app.get('/:id/ledger', async (c) => {
       .select()
       .from(schema.mutualEvent)
       .where(eq(schema.mutualEvent.mutualId, mutualId))
-      .orderBy(desc(schema.mutualEvent.blockNumber))
+      .orderBy(desc(schema.mutualEvent.blockNumber), desc(schema.mutualEvent.logIndex))
       .limit(limit),
   ])
 
-  return c.json({
+  return jsonBig(c, {
     mutualId: mutualId.toString(),
-    mutual: mutualRows[0] ? serialize(mutualRows[0]) : null,
-    members: members.map(serialize),
-    events: events.map(serialize),
+    mutual: mutualRows[0] ?? null,
+    members,
+    events,
     counts: {
       members: members.length,
       events: events.length,
@@ -270,20 +200,20 @@ app.get('/:id/ledger', async (c) => {
  * GET /mutuals/:id/premium
  *
  * The mutual's §G premium feed: the premium funding/outflow ledger
- * (`premiumFunding` — funded / standby / reclaimed / swept), the member claim
+ * (`premiumFunding` — funded / reclaimed / swept), the member claim
  * history (`premiumClaim`), and the cover bindings sold against it
- * (`coverBinding`). Each list is newest-first (claims/funding) or active-first
- * (bindings) and capped by `?limit=N` (1..500, default 100).
+ * (`coverBinding`). Each list is newest-first by (blockNumber, logIndex)
+ * (claims/funding) or active-first (bindings) and capped by `?limit=N`
+ * (1..500, default 100).
  *
- * `premiumState` is the LIVE on-chain `getMutualPremiumState(mutualId)` snapshot
- * (read off the mutual's manager) — `null` if the mutual is unknown or the chain
- * read fails; the indexed `mutual` row carries the last-persisted copy regardless.
+ * `premiumState` carries the `getMutualPremiumState` fields as the indexer last
+ * read them (on the mutual's latest value-moving event); `null` for an unknown
+ * mutual. Values between events (accrual since `lastUpdate`) are not included.
  */
 app.get('/:id/premium', async (c) => {
-  const mutualId = parseMutualId(c)
+  const mutualId = parseId(c.req.param('id'))
   if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
-  const rawLimit = Number(c.req.query('limit') ?? 100)
-  const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 100, 1), 500)
+  const limit = parseLimit(c, 100, 500)
 
   const [mutualRows, funding, claims, bindings] = await Promise.all([
     db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1),
@@ -291,13 +221,13 @@ app.get('/:id/premium', async (c) => {
       .select()
       .from(schema.premiumFunding)
       .where(eq(schema.premiumFunding.mutualId, mutualId))
-      .orderBy(desc(schema.premiumFunding.blockNumber))
+      .orderBy(desc(schema.premiumFunding.blockNumber), desc(schema.premiumFunding.logIndex))
       .limit(limit),
     db
       .select()
       .from(schema.premiumClaim)
       .where(eq(schema.premiumClaim.mutualId, mutualId))
-      .orderBy(desc(schema.premiumClaim.blockNumber))
+      .orderBy(desc(schema.premiumClaim.blockNumber), desc(schema.premiumClaim.logIndex))
       .limit(limit),
     db
       .select()
@@ -307,60 +237,120 @@ app.get('/:id/premium', async (c) => {
       .limit(limit),
   ])
 
-  // Live premium snapshot off the mutual's manager (best-effort).
-  let premiumState: Record<string, string | null> | null = null
   const mutual = mutualRows[0]
-  const client = getManagerClient()
-  if (mutual && client) {
-    try {
-      const [r, juniorPool] = await Promise.all([
-        client.readContract({
-          address: mutual.manager,
-          abi: commitmentManagerAbi,
-          functionName: 'getMutualPremiumState',
-          args: [mutualId],
-        }),
-        // Live junior reserve (funded − drawn); 0 for homogeneous mutuals. Surfaced alongside the
-        // premium snapshot so the underwriter view reads one consistent on-chain state.
-        client
-          .readContract({
-            address: mutual.manager,
-            abi: commitmentManagerAbi,
-            functionName: 'getMutualJuniorPool',
-            args: [mutualId],
-          })
-          .catch(() => null),
-      ])
-      premiumState = {
-        premiumPerShareStored: r[0].toString(),
-        activeCover: r[1].toString(),
-        settledTotal: r[2].toString(),
-        rewardRate: r[3].toString(),
-        lastUpdate: r[4].toString(),
-        periodFinish: r[5].toString(),
-        premiumRemainder: r[6].toString(),
-        bankedTotal: r[7].toString(),
-        premiumPool: r[8].toString(),
-        juniorPool: juniorPool == null ? null : juniorPool.toString(),
+  const premiumState = mutual
+    ? {
+        premiumPerShareStored: mutual.premiumPerShareStored,
+        activeCover: mutual.activeCover,
+        settledTotal: mutual.settledTotal,
+        rewardRate: mutual.rewardRate,
+        lastUpdate: mutual.lastUpdate,
+        periodFinish: mutual.periodFinish,
+        premiumRemainder: mutual.premiumRemainder,
+        bankedTotal: mutual.bankedTotal,
+        premiumPool: mutual.premiumPool,
       }
-    } catch {
-      premiumState = null
-    }
-  }
+    : null
 
-  return c.json({
+  return jsonBig(c, {
     mutualId: mutualId.toString(),
-    mutual: mutual ? serialize(mutual) : null,
+    mutual: mutual ?? null,
     premiumState,
-    funding: funding.map(serialize),
-    claims: claims.map(serialize),
-    bindings: bindings.map(serialize),
+    funding,
+    claims,
+    bindings,
     counts: {
       funding: funding.length,
       claims: claims.length,
       bindings: bindings.length,
     },
   })
+})
+
+const HISTORY_DAYS = new Set(['7', '30', '90'])
+
+/**
+ * GET /mutuals/:id/history?days=7|30|90   (default 30)
+ *
+ * One point per UTC day, oldest first, today last. Each day is sampled at its
+ * last second (today: now) from the last `mutualState` row at or before that
+ * instant, so values step exactly where the chain moved. A day before the
+ * mutual's first value-moving event has every value `null`.
+ *
+ *   {
+ *     mutualId: string,                 // decimal
+ *     days: 7 | 30 | 90,
+ *     points: Array<{
+ *       date: string,                   // 'YYYY-MM-DD' (UTC)
+ *       t: string,                      // unix seconds sampled
+ *       premiumAprBps: string | null,   // rewardRate × 31_536_000 × 1e4 / activeCover, basis
+ *                                       //   points; rewardRate is 0 from periodFinish on;
+ *                                       //   null when activeCover is 0
+ *       capital: string | null,         // totalShares × (1e18 − cumulativeLoss) / 1e18,
+ *                                       //   numeraire base units
+ *       coverSold: string | null,       // Σ notional of bindings with createdAt ≤ t < expiry
+ *                                       //   and not expired by t, numeraire base units
+ *     }>
+ *   }
+ *
+ * Unknown mutual id: 200 with every point null.
+ */
+app.get('/:id/history', async (c) => {
+  const mutualId = parseId(c.req.param('id'))
+  if (mutualId === null) return c.json({ error: 'invalid mutual id' }, 400)
+  const rawDays = c.req.query('days') ?? '30'
+  if (!HISTORY_DAYS.has(rawDays)) return c.json({ error: 'days must be 7, 30 or 90' }, 400)
+  const days = Number(rawDays)
+  let now = BigInt(Math.floor(Date.now() / 1000))
+
+  const [mutual] = await db.select().from(schema.mutual).where(eq(schema.mutual.mutualId, mutualId)).limit(1)
+  let rows: (typeof schema.mutualState.$inferSelect)[] = []
+  let bindings: (typeof schema.coverBinding.$inferSelect)[] = []
+  if (mutual) {
+    const st = schema.mutualState
+    const ofMutual = and(eq(st.manager, mutual.manager), eq(st.mutualId, mutualId))
+    // A dev chain can run ahead of the server clock (anvil after a time warp). Anchor "now"
+    // to the newest indexed state when it is later, as /vaults/:vault/periodic does, so those
+    // rows are not dropped as being in the future.
+    const [newest] = await db
+      .select({ t: st.blockTimestamp })
+      .from(st)
+      .where(ofMutual)
+      .orderBy(desc(st.blockTimestamp))
+      .limit(1)
+    if (newest && newest.t > now) now = newest.t
+    const windowStart = now - (now % DAY) - BigInt(days - 1) * DAY
+    const [before, inWindow, bound] = await Promise.all([
+      // The state carried into the window's first day.
+      db
+        .select()
+        .from(st)
+        .where(and(ofMutual, lt(st.blockTimestamp, windowStart)))
+        .orderBy(desc(st.blockTimestamp), desc(st.blockNumber))
+        .limit(1),
+      db
+        .select()
+        .from(st)
+        .where(and(ofMutual, gte(st.blockTimestamp, windowStart), lte(st.blockTimestamp, now)))
+        .orderBy(asc(st.blockNumber)),
+      // Bindings that can be in force at some sample in the window.
+      db
+        .select()
+        .from(schema.coverBinding)
+        .where(
+          and(
+            eq(schema.coverBinding.mutualId, mutualId),
+            lte(schema.coverBinding.createdAt, now),
+            gt(schema.coverBinding.expiry, windowStart),
+            or(isNull(schema.coverBinding.expiredAt), gt(schema.coverBinding.expiredAt, windowStart)),
+          ),
+        ),
+    ])
+    rows = [...before, ...inWindow]
+    bindings = bound
+  }
+
+  return c.json({ mutualId: mutualId.toString(), days, points: foldMutualHistory(rows, bindings, now, days) })
 })
 
 export default app

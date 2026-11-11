@@ -1,7 +1,8 @@
+import { useReadContract } from 'wagmi'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
 
-import { useReadCommitmentsVaultConvertToAssets } from '../../generated'
+import { commitmentsVaultAbi } from '../../generated'
 import { useAgentIdentity } from '../../hooks/useAgentIdentities'
 import { useVaultCoverage } from '../../hooks/useVaultCoverage'
 import { formatDuration, formatPercent } from '../../lib/format'
@@ -30,7 +31,9 @@ export function VaultCoverageCard({ vaultAddress, assetDecimals, assetSymbol }: 
 
   // Pool capacity is denominated in vault shares (the mutual numeraire);
   // present it in the underlying via the vault's own conversion.
-  const { data: capacityAssets } = useReadCommitmentsVaultConvertToAssets({
+  const { data: capacityAssets } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'convertToAssets',
     address: vaultAddress,
     args: coverage ? [coverage.mutual.liveCapacity] : undefined,
     query: { enabled: Boolean(coverage) },
@@ -95,7 +98,7 @@ export function VaultCoverageCard({ vaultAddress, assetDecimals, assetSymbol }: 
         />
         <StatBlock
           label="premium stream"
-          tone={isStreaming ? 'positive' : 'negative'}
+          tone={isStreaming ? 'success' : 'danger'}
           value={isStreaming ? 'streaming' : 'paused'}
           meta={isStreaming ? `ends in ${formatDuration(secondsRemaining)}` : 'awaiting next skim'}
         />
@@ -106,7 +109,7 @@ export function VaultCoverageCard({ vaultAddress, assetDecimals, assetSymbol }: 
         />
         <StatBlock
           label="earn · premium APR"
-          tone={premiumAprBps !== undefined && premiumAprBps > 0 ? 'positive' : 'neutral'}
+          tone={premiumAprBps !== undefined && premiumAprBps > 0 ? 'success' : 'neutral'}
           value={premiumAprBps !== undefined ? formatPercent(premiumAprBps) : '—'}
           meta="to underwriters, on deployed cover"
         />

@@ -17,7 +17,7 @@ interface ContractAddresses {
   /** Two-controller ruling + appeal court deployment, when configured. */
   twoTierArbiter: Address | undefined
   // v2 backing adapters + distribution strategies (token-agnostic singletons,
-  // deployed by DeployAdaptersAndStrategies / Simulate). Undefined until
+  // deployed by Simulate). Undefined until
   // `just dev-up` writes them into .env.local.
   erc20Adapter: Address | undefined
   erc4626Adapter: Address | undefined
@@ -28,18 +28,8 @@ interface ContractAddresses {
   usdtToken: Address | undefined
   /** Underlying DAI MockERC20 of the agent-managed cvaDAI vault (open mint on anvil). */
   daiToken: Address | undefined
-  // Live demo yield strategies (MockStrategy) bound to each vault. The admin
-  // Risk tab drives donate()/simulateLoss() through these to move NAV (seed
-  // base yield, or trigger the NAV-shortfall peril). Undefined off Anvil.
-  usdcStrategy: Address | undefined
-  wethStrategy: Address | undefined
-  usdtStrategy: Address | undefined
   indexYieldStrategy: Address | undefined
   flatFeeStrategy: Address | undefined
-  // Marketplace pattern reference contracts (May 2026). Undefined until
-  // `just dev-up` runs Simulate.s.sol; offers anchored on these addresses
-  // surface a "preview / address pending" state when the env var is empty.
-  vaultDepositorAggregator: Address | undefined
   optimisticInsuranceArbiter: Address | undefined
   // Second OptimisticInsuranceArbiter instance, bonded in DAI for the
   // agent-managed cvaDAI market — one arbiter instance per bond denomination
@@ -61,9 +51,8 @@ interface ContractAddresses {
   agentMutualArbiter: Address | undefined
   agentVaultBeneficiary: Address | undefined
   // Mutual surface. MutualRegistry indexes the pooled shared-loss mutuals;
-  // OptimisticMutualArbiter is the bonded loss proposer; ClaimRouter is the
-  // beneficiary settlement sink. Undefined until `just dev-up` runs
-  // DeployMutual.s.sol.
+  // OptimisticMutualArbiter is the bonded loss proposer. Undefined until
+  // `just dev-up` writes them into .env.local.
   mutualRegistry: Address | undefined
   optimisticMutualArbiter: Address | undefined
   // Premium leg: utilization-curve pricing (PremiumScheduler) + cover
@@ -71,11 +60,6 @@ interface ContractAddresses {
   // policyholder's entry point for buying cover (bindCover).
   premiumScheduler: Address | undefined
   linkedMutualPolicy: Address | undefined
-  // Per-peril ClaimRouter beneficiaries. claimRouter is the NAV mutual's; the
-  // De-Peg and Slashing mutuals each have their own.
-  claimRouter: Address | undefined
-  depegClaimRouter: Address | undefined
-  slashingClaimRouter: Address | undefined
   // ERC-8004 ("Trustless Agents") identity registry — ERC-721 where
   // agentId = tokenId (ids start at 0), owner = the agent's controlling
   // account, tokenURI = the registration JSON. Written by
@@ -104,12 +88,8 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
     wethToken: import.meta.env.VITE_WETH_TOKEN_ADDRESS as Address | undefined,
     usdtToken: import.meta.env.VITE_USDT_TOKEN_ADDRESS as Address | undefined,
     daiToken: import.meta.env.VITE_DAI_TOKEN_ADDRESS as Address | undefined,
-    usdcStrategy: import.meta.env.VITE_USDC_STRATEGY_ADDRESS as Address | undefined,
-    wethStrategy: import.meta.env.VITE_WETH_STRATEGY_ADDRESS as Address | undefined,
-    usdtStrategy: import.meta.env.VITE_USDT_STRATEGY_ADDRESS as Address | undefined,
     indexYieldStrategy: import.meta.env.VITE_INDEX_YIELD_STRATEGY_ADDRESS as Address | undefined,
     flatFeeStrategy: import.meta.env.VITE_FLAT_FEE_STRATEGY_ADDRESS as Address | undefined,
-    vaultDepositorAggregator: import.meta.env.VITE_VAULT_DEPOSITOR_AGGREGATOR_ADDRESS as Address | undefined,
     optimisticInsuranceArbiter: import.meta.env.VITE_OPTIMISTIC_INSURANCE_ARBITER_ADDRESS as Address | undefined,
     daiOptimisticArbiter: import.meta.env.VITE_DAI_OPTIMISTIC_ARBITER_ADDRESS as Address | undefined,
     agentVault: import.meta.env.VITE_AGENT_VAULT_ADDRESS as Address | undefined,
@@ -121,17 +101,14 @@ export function getContractAddresses(_chainId: number): ContractAddresses {
     optimisticMutualArbiter: import.meta.env.VITE_OPTIMISTIC_MUTUAL_ARBITER_ADDRESS as Address | undefined,
     premiumScheduler: import.meta.env.VITE_PREMIUM_SCHEDULER_ADDRESS as Address | undefined,
     linkedMutualPolicy: import.meta.env.VITE_LINKED_MUTUAL_POLICY_ADDRESS as Address | undefined,
-    claimRouter: import.meta.env.VITE_CLAIM_ROUTER_ADDRESS as Address | undefined,
-    depegClaimRouter: import.meta.env.VITE_DEPEG_CLAIM_ROUTER_ADDRESS as Address | undefined,
-    slashingClaimRouter: import.meta.env.VITE_SLASHING_CLAIM_ROUTER_ADDRESS as Address | undefined,
     agentIdentityRegistry: import.meta.env.VITE_AGENT_IDENTITY_REGISTRY_ADDRESS as Address | undefined,
   }
 }
 
 /**
- * Static metadata for a single vault entry in the multi-vault registry.
- * Live numbers (TVL, APY, your position) are read on demand by hooks; this
- * config is just the shape of "which vaults exist and what do we call them".
+ * One vault: which vaults exist and what we call them. `useVaults` reads them
+ * from the indexer; {@link getVaultRegistry} is the env fallback. Live numbers
+ * (TVL, APY, your position) are read on demand by hooks.
  */
 export interface VaultDescriptor {
   address: Address
@@ -139,69 +116,58 @@ export interface VaultDescriptor {
   name?: string
   /** Asset symbol shown in the asset column. */
   assetSymbol: string
-  /** One-line description shown on the list page. */
-  description?: string
-  /** Optional risk-tier override; otherwise computed from on-chain params. */
-  riskTier?: 'low' | 'mid' | 'high'
+  /** Underlying asset and its decimals, when indexed. */
+  asset?: Address
+  assetDecimals?: number
+}
+
+const ENV_VAULTS: Array<{ address: Address | undefined; name: string; assetSymbol: string; description: string }> = [
+  {
+    address: import.meta.env.VITE_COMMITMENTS_VAULT_ADDRESS as Address | undefined,
+    name: 'USDC Vault',
+    assetSymbol: 'USDC',
+    description:
+      'Single-asset, permissionless ERC-4626 vault. Yield routes pro-rata to depositors and counterparties.',
+  },
+  {
+    address: import.meta.env.VITE_ETH_VAULT_ADDRESS as Address | undefined,
+    name: 'ETH Vault',
+    assetSymbol: 'WETH',
+    description:
+      'Wrapped Ether collateral pool. Same ERC-4626 commitment surface as the USDC vault, denominated in WETH.',
+  },
+  {
+    address: import.meta.env.VITE_USDT_VAULT_ADDRESS as Address | undefined,
+    name: 'USDT Vault',
+    assetSymbol: 'USDT',
+    description:
+      'Yield-bearing USDT savings. Holders can buy De-Peg cover from the mutual to protect against USDT trading below peg.',
+  },
+  {
+    address: import.meta.env.VITE_AGENT_VAULT_ADDRESS as Address | undefined,
+    name: 'Agent Alpha DAI Vault',
+    assetSymbol: 'DAI',
+    description:
+      'Agent-managed DAI strategy, automatically covered: underwriters back a 5% drawdown floor and are paid from the vault’s own yield; a proven breach marks them down and restores depositor NAV. The ERC-8004 manager underwrites its own vault.',
+  },
+]
+
+/**
+ * Vault registry from env: the fallback for {@link useVaults} when the indexer
+ * is not configured, and the list for callers outside React. The indexer's
+ * `vault` table has every factory-deployed vault; prefer `useVaults`.
+ */
+export function getVaultRegistry(_chainId: number): VaultDescriptor[] {
+  return ENV_VAULTS.flatMap(({ address, name, assetSymbol }) => (address ? [{ address, name, assetSymbol }] : []))
 }
 
 /**
- * Vault registry — shipped as a hardcoded list per § 3 of
- * frontend/docs/restructure-plan.md. Source of truth becomes a VaultFactory
- * event subscription via Ponder when the factory is deployed, then an
- * on-chain registry query long-term. The list is static today because we
- * have a single canonical vault whose address is sourced from env.
- *
- * To add another vault: append a new entry. The /vaults list page renders
- * every entry; per-vault detail lives at /vaults/:address.
+ * The hand-written one-line description of an env-configured vault. The
+ * indexed vault row carries none; a vault's own metadata `description` wins.
  */
-export function getVaultRegistry(_chainId: number): VaultDescriptor[] {
-  const canonical = import.meta.env.VITE_COMMITMENTS_VAULT_ADDRESS as Address | undefined
-  const ethVault = import.meta.env.VITE_ETH_VAULT_ADDRESS as Address | undefined
-  const usdtVault = import.meta.env.VITE_USDT_VAULT_ADDRESS as Address | undefined
-  const agentVault = import.meta.env.VITE_AGENT_VAULT_ADDRESS as Address | undefined
-  const entries: VaultDescriptor[] = []
-  if (canonical) {
-    entries.push({
-      address: canonical,
-      name: 'USDC Vault',
-      assetSymbol: 'USDC',
-      description:
-        'Single-asset, permissionless ERC-4626 vault. Yield routes pro-rata to depositors and counterparties.',
-      riskTier: 'low',
-    })
-  }
-  if (ethVault) {
-    entries.push({
-      address: ethVault,
-      name: 'ETH Vault',
-      assetSymbol: 'WETH',
-      description:
-        'Wrapped Ether collateral pool. Same ERC-4626 commitment surface as the USDC vault, denominated in WETH.',
-      riskTier: 'mid',
-    })
-  }
-  if (usdtVault) {
-    entries.push({
-      address: usdtVault,
-      name: 'USDT Vault',
-      assetSymbol: 'USDT',
-      description:
-        'Yield-bearing USDT savings. Holders can buy De-Peg cover from the mutual to protect against USDT trading below peg.',
-      riskTier: 'mid',
-    })
-  }
-  if (agentVault) {
-    entries.push({
-      address: agentVault,
-      name: 'Agent Alpha DAI Vault',
-      assetSymbol: 'DAI',
-      description:
-        'Agent-managed DAI strategy, automatically covered: underwriters back a 5% drawdown floor and are paid from the vault’s own yield; a proven breach marks them down and restores depositor NAV. The ERC-8004 manager underwrites its own vault.',
-      riskTier: 'high',
-    })
-  }
-  return entries
+export function getVaultDescription(address: Address): string | undefined {
+  const lower = address.toLowerCase()
+  return ENV_VAULTS.find((v) => v.address?.toLowerCase() === lower)?.description
 }
 
 /**
@@ -218,7 +184,8 @@ export interface BackingOption {
 }
 
 /**
- * Known (token, adapter) backing pairs for the connected chain. The canonical
+ * Known (token, adapter) backing pairs for the connected chain: every vault in
+ * `vaults` (pass `useVaults().vaults`; defaults to the env list). The canonical
  * vault share (priced by the ERC-4626 adapter) is the default and leads the
  * list; raw ERC-20s (priced by the ERC20StaticAdapter) follow. Returns an empty
  * array until `just dev-up` writes the adapter + token addresses.
@@ -227,7 +194,10 @@ export interface BackingOption {
  * `decimals`/`symbol` from each option's token on-chain via `useTokenMeta`, so
  * this label only has to be human-recognizable in the picker.
  */
-export function getBackingOptions(chainId: number): BackingOption[] {
+export function getBackingOptions(
+  chainId: number,
+  vaults: VaultDescriptor[] = getVaultRegistry(chainId),
+): BackingOption[] {
   const env = getContractAddresses(chainId)
   const options: BackingOption[] = []
   // Vault shares first — every vault in the registry is a valid ERC-4626
@@ -235,7 +205,7 @@ export function getBackingOptions(chainId: number): BackingOption[] {
   // canonical one. The registry is ordered canonical-first, so the historical
   // default backing still leads the list.
   if (env.erc4626Adapter) {
-    for (const descriptor of getVaultRegistry(chainId)) {
+    for (const descriptor of vaults) {
       options.push({
         token: descriptor.address,
         adapter: env.erc4626Adapter,
@@ -261,8 +231,8 @@ export function getBackingOptions(chainId: number): BackingOption[] {
 }
 
 /** The default backing pair (canonical vault share), or undefined if unconfigured. */
-export function getDefaultBacking(chainId: number): BackingOption | undefined {
-  return getBackingOptions(chainId)[0]
+export function getDefaultBacking(chainId: number, vaults?: VaultDescriptor[]): BackingOption | undefined {
+  return getBackingOptions(chainId, vaults)[0]
 }
 
 /**
@@ -319,16 +289,6 @@ export function findKnownAddress(
   if (!address) return undefined
   const lower = address.toLowerCase()
   return getKnownAddresses(chainId).find((k) => k.address.toLowerCase() === lower)
-}
-
-/** Return the descriptor for a given vault address, or undefined. */
-export function getVaultDescriptor(
-  chainId: number,
-  address: Address | undefined,
-): VaultDescriptor | undefined {
-  if (!address) return undefined
-  const lower = address.toLowerCase()
-  return getVaultRegistry(chainId).find((v) => v.address.toLowerCase() === lower)
 }
 
 /**

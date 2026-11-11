@@ -1,3 +1,5 @@
+import { anvil } from '../config/anvil'
+
 /**
  * Block-explorer URL helper for Phase 21 ServicePolicyCard / DelegateToOperatorForm
  * / OperatorCompareDrawer arbiter + operator-address links.
@@ -19,7 +21,7 @@ export function getBlockExplorer(chainId: number): string {
       return 'https://etherscan.io'
     case 11155111:
       return 'https://sepolia.etherscan.io'
-    case 31337:
+    case anvil.id:
       return ''
     default:
       return ''

@@ -6,7 +6,7 @@ generated: true
 ---
 # IndexAppreciationYield
 **Inherits:**
-[IDistributionStrategy](/docs/protocol/reference/contracts/core/interfaces/IDistributionStrategy)
+[StrategyBase](/docs/protocol/reference/contracts/distributions/StrategyBase)
 
 **Title:**
 IndexAppreciationYield
@@ -24,7 +24,7 @@ counterpartyYield = yieldAccrued × yieldShareBps / 10_000
 yieldUnits        = counterpartyYield × 1e18 / nowIndex, clamped to currentEncumbered
 
 
-## Constants
+## State Variables
 ### RECLAIM_WINDOW
 Counterparty abandonment TTL: after this long past commitment close, the
 committer may reclaim unclaimed accrual (strategy-internal policy, ERC taxonomy).
@@ -35,14 +35,6 @@ uint64 public constant RECLAIM_WINDOW = 90 days
 ```
 
 
-### manager
-
-```solidity
-address public immutable manager
-```
-
-
-## State Variables
 ### _positions
 
 ```solidity
@@ -55,14 +47,7 @@ mapping(uint256 commitmentId => Position) internal _positions
 
 
 ```solidity
-constructor(address manager_) ;
-```
-
-### onlyManager
-
-
-```solidity
-modifier onlyManager() ;
+constructor(address manager_) StrategyBase(manager_);
 ```
 
 ### positionOf
@@ -101,7 +86,7 @@ Allowed kinds: FromEncumberedToEscrow, FromEncumberedToExternal.
 
 
 ```solidity
-function distribute(DistributeContext calldata ctx) external onlyManager returns (TokenMovement[] memory);
+function distribute(DistributeContext calldata ctx) external override onlyManager returns (TokenMovement[] memory);
 ```
 
 ### onCommitmentReleased
@@ -115,7 +100,11 @@ encumbrance (ERC §C.1), so the sweep still has an encumbered source.
 
 
 ```solidity
-function onCommitmentReleased(LifecycleContext calldata ctx) external onlyManager returns (TokenMovement[] memory);
+function onCommitmentReleased(LifecycleContext calldata ctx)
+    external
+    override
+    onlyManager
+    returns (TokenMovement[] memory);
 ```
 
 ### onCommitmentForfeited
@@ -131,7 +120,11 @@ never exceeds the commitment's pre-forfeit amount (ERC taxonomy SHOULD).
 
 
 ```solidity
-function onCommitmentForfeited(ForfeitContext calldata ctx) external onlyManager returns (TokenMovement[] memory);
+function onCommitmentForfeited(ForfeitContext calldata ctx)
+    external
+    override
+    onlyManager
+    returns (TokenMovement[] memory);
 ```
 
 ### claim
@@ -196,40 +189,10 @@ function _accrualPreview(Position storage pos, address adapter, address token, u
 ```
 
 ## Errors
-### OnlyManager
-
-```solidity
-error OnlyManager();
-```
-
 ### YieldBpsExceedsMax
 
 ```solidity
 error YieldBpsExceedsMax();
-```
-
-### AlreadyBound
-
-```solidity
-error AlreadyBound();
-```
-
-### NotBound
-
-```solidity
-error NotBound();
-```
-
-### NothingToClaim
-
-```solidity
-error NothingToClaim();
-```
-
-### NotAuthorized
-
-```solidity
-error NotAuthorized();
 ```
 
 ### ReclaimWindowActive

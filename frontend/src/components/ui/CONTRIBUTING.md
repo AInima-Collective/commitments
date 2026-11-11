@@ -5,10 +5,6 @@ Every primitive in `components/ui/` follows them. Every PR adding or changing
 a primitive is reviewed against them. Rules are documented here so contributors
 can ship without re-deriving the spec.
 
-The long-form rationale lives in [`frontend/docs/design-system.md`](../../../docs/design-system.md).
-This file is the rule-first companion — read it first, read the rationale only
-when you need it.
-
 ## 1. Composition over configuration
 
 Rule: primitives compose; they do not embed feature knowledge. A primitive
@@ -37,8 +33,13 @@ that same shape so callers don't have to relearn the API per primitive.
 Rule: the scale prop is `size`, not `variant`. Allowed values:
 `xs | sm | md | lg | xl` (or the named-scale equivalents already used by
 `TokenAmount`: `inline | default | display`). The semantic prop is `tone`.
-Allowed values: `neutral | info | success | warn | danger`. No bespoke names
-— `small`, `large`, `huge`, `error`, `important`, `critical` are forbidden.
+Allowed values: `neutral | info | success | warn | danger`, plus two extras:
+`accent` on primitives that colour a value, series or segment (`StatBlock`,
+`VaultHeader`, `YieldSparkline`, `TimeSeriesChart`, `AllocationBar`), and
+`muted` on the last two. No bespoke names —
+`small`, `large`, `huge`, `error`, `positive`, `negative`, `important`,
+`critical` are forbidden. A data state such as stale or unavailable is not a
+tone.
 
 Both props are forwarded to `data-size` and `data-tone` attributes on the
 root element so styling is attribute-driven CSS, not prop-mapped class soup.
@@ -126,24 +127,13 @@ always "expose the state shape, let the caller render the children". See
 how `useToasts` exposes a list rather than a fire-and-forget emitter.
 
 ```tsx
-// GOOD — useToasts exposes a state shape; the page renders <Toast>.
-const { toasts, push, dismiss } = useToasts()
+// GOOD — useToasts returns the list plus dispatchers. ToastProvider renders
+// the list, so a page only pushes.
+const { push } = useToasts()
 return (
-  <>
-    {toasts.map((t) => (
-      <Toast
-        key={t.id}
-        tone={t.tone}
-        title={t.title}
-        onDismiss={() => dismiss(t.id)}
-      >
-        {t.message}
-      </Toast>
-    ))}
-    <Button onClick={() => push({ tone: 'success', message: 'Saved.' })}>
-      Save
-    </Button>
-  </>
+  <Button onClick={() => push({ tone: 'success', title: 'Saved.' })}>
+    Save
+  </Button>
 )
 
 // BAD — imperative emitter; pages can't observe lifecycle, can't SSR.
@@ -158,7 +148,6 @@ These rules are enforced by:
   in feature folders, no hex literals outside `tokens.css`
 - Code review — rules 1, 2, 3, 4, 5, 6 (no automated check yet for the
   composition shape; rely on reviewers)
-- `frontend/docs/design-system.md` — long-form rationale, sections 1-12
 
 When in doubt: if the rule isn't here, it isn't a rule. Add a section in a
 follow-up PR rather than enforcing tribal knowledge through review comments.

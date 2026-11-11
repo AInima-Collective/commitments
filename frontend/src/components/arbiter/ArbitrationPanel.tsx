@@ -18,7 +18,7 @@ import {
   nextForfeitEvent,
   type ForfeitEnforcement,
 } from '../../lib/forfeitEnforcement'
-import { formatBps } from '../../utils/commitments'
+import { formatBps } from '../../lib/commitments'
 import { AddressDisplay, Notice, Skeleton, TokenAmount } from '../ui'
 import { PartyRow } from '../protocol'
 

@@ -10,9 +10,8 @@ ILinkedMutualPolicy
 
 Read/write surface of the LinkedMutualPolicy, factored into an interface so the
 PremiumScheduler (reads `getActiveNotionalSold`), the OptimisticMutualArbiter (reads
-`getCoverBinding` to snapshot a policy into a loss claim), and the MutualRegistry
-(reads `getActiveNotionalSold` for its utilization view) can all reference the policy
-without importing the concrete contract (avoids a deploy-ordering import cycle).
+`getCoverBinding` to snapshot a policy into a loss claim), and the vault periphery can
+reference the policy without importing the concrete contract (avoids a deploy-ordering import cycle).
 
 
 ## Functions
@@ -31,8 +30,14 @@ Fund the existing `Pi` stream with a standby reservation fee (no notional record
 
 
 ```solidity
-function fundStandby(uint256 mutualId, uint64 duration) external;
+function fundStandby(uint256 mutualId, uint64 duration) external returns (uint256 premiumPaid);
 ```
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`premiumPaid`|`uint256`|the numeraire pulled from the caller and streamed|
+
 
 ### expireBinding
 

@@ -2,23 +2,15 @@
 pragma solidity ^0.8.27;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {ITokenWeighting} from "src/extensions/mesh/interfaces/ITokenWeighting.sol";
-import {
-    IFlowQuery,
-    ProviderInfo,
-    ConsumerInfo,
-    StakeInfo,
-    AvailableDenom,
-    FlowNodeTypes
-} from "src/extensions/mesh/interfaces/IFlowQuery.sol";
-import {IFlowQueryPath, DenomLink} from "src/extensions/mesh/interfaces/IFlowQueryPath.sol";
-import {FlowPathLib} from "src/extensions/mesh/libraries/FlowPathLib.sol";
+import {TOKEN_WEIGHTING_TYPE_ID} from "src/extensions/mesh/interfaces/IMeshFactory.sol";
 import {IVotingPowerSource} from "src/shared/interfaces/IVotingPowerSource.sol";
 import {IEntity} from "src/shared/interfaces/IEntity.sol";
 import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
@@ -26,19 +18,16 @@ import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 /// @title TokenWeighting
 /// @notice Sink node that normalizes multi-asset stake into unified governance-compatible voting power.
 ///         Weights are configurable per denom in basis points (e.g., 10000 = 1.0x, 8000 = 0.8x).
-///         Historical voting power is queryable at past block numbers via OZ Checkpoints.Trace256.
+///         Historical voting power is queryable at past block numbers via OZ Checkpoints.Trace208
+///         (`uint48` block key, `uint208` value, one slot per checkpoint).
 ///         Implements pull-based reward accumulator (Synthetix/Compound per-share pattern).
-///         Implements IFlowQuery for topology discovery, IFlowQueryPath for single-call
-///         provenance walks, and IVotingPowerSource so service managers (ECDSA BLS)
+///         Implements IVotingPowerSource so service managers (ECDSA / BLS)
 ///         can read per-address power directly from the mesh.
-contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyGuard, AccessControl {
-    /// @notice `IEntity` type id: `keccak256("commitments.mesh.token_weighting")`. Self-verifies
-    ///         this implementation when `MeshFactory` whitelists it.
-    bytes32 internal constant FACTORY_TYPE_ID = keccak256("commitments.mesh.token_weighting");
-
+contract TokenWeighting is ITokenWeighting, IEntity, ReentrancyGuardTransient, AccessControl {
     /// @inheritdoc IEntity
+    /// @dev `TOKEN_WEIGHTING_TYPE_ID`; self-verifies this implementation when `MeshFactory` whitelists it.
     function factoryTypeId() external pure returns (bytes32) {
-        return FACTORY_TYPE_ID;
+        return TOKEN_WEIGHTING_TYPE_ID;
     }
 
     /// @notice lock the implementation contract. Clones (via MeshFactory)
@@ -49,7 +38,8 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
 
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
-    using Checkpoints for Checkpoints.Trace256;
+    using Checkpoints for Checkpoints.Trace208;
+    using SafeCast for uint256;
 
     // ============================================================
     // CONSTANTS
@@ -59,7 +49,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     bytes32 public constant REWARDER_ROLE = keccak256("REWARDER_ROLE");
 
     /// @notice maximum distinct reward tokens per stakeDenom. Bounds the cost of
-    ///         stake releaseStake's reward-debt iteration, preventing a permissionless
+    ///         stake / releaseStake's reward-debt iteration, preventing a permissionless
     ///         attacker from growing the set past the block gas limit.
     uint256 public constant MAX_REWARD_TOKENS = 32;
 
@@ -101,18 +91,18 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     ///         force at the queried block (see `_weightHistory`). Storing RAW stake
     ///         here — rather than pre-weighted power — is what makes a weight retune
     ///         O(1): a weight change never has to rewrite any per-staker checkpoint.
-    mapping(address => mapping(bytes32 => Checkpoints.Trace256)) private _stakeHistory;
+    mapping(address => mapping(bytes32 => Checkpoints.Trace208)) private _stakeHistory;
 
     /// @notice Per-denom RAW total-stake history, keyed by block.number. Mirrors
     ///         `_stakeHistory` aggregated across stakers, so getTotalPowerAt is
     ///         O(denoms) on read instead of O(stakers).
-    mapping(bytes32 => Checkpoints.Trace256) private _totalStakeHistory;
+    mapping(bytes32 => Checkpoints.Trace208) private _totalStakeHistory;
 
     /// @notice Per-denom WEIGHT history — the "weight epoch" ledger — keyed by
     ///         block.number. `updateWeight` pushes exactly one checkpoint here;
     ///         historical power queries resolve the weight in force at the queried
-    ///         block via `upperLookup`, so a retune is O(1) regardless of staker count.
-    mapping(bytes32 => Checkpoints.Trace256) private _weightHistory;
+    ///         block via `upperLookupRecent`, so a retune is O(1) regardless of staker count.
+    mapping(bytes32 => Checkpoints.Trace208) private _weightHistory;
 
     // ---- Current state mirrors (for efficient getVotingPower) ----
 
@@ -198,7 +188,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
         // Because weight is applied to RAW stake at read time, we never iterate the
         // staker set here — this is the fix for the prior O(stakers × denoms) loop
         // that could exceed the block gas limit and permanently brick governance.
-        _weightHistory[denom].push(block.number, weightBps);
+        _weightHistory[denom].push(block.number.toUint48(), weightBps.toUint208());
 
         emit WeightUpdated(denom, oldWeight, weightBps);
     }
@@ -217,11 +207,11 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
             // Has stake history ⇒ it cannot leave the iterated set without altering
             // historical `getVotingPowerAt` / `getTotalPowerAt`. Make it inert instead:
             // a weight-0 epoch zeroes its contribution from this block onward, while
-            // `upperLookup` still resolves the pre-retirement weight for earlier blocks.
+            // `upperLookupRecent` still resolves the pre-retirement weight for earlier blocks.
             uint256 previous = weights[denom];
             _retired[denom] = true;
             weights[denom] = 0;
-            _weightHistory[denom].push(block.number, 0);
+            _weightHistory[denom].push(block.number.toUint48(), 0);
             emit DenomRetired(denom, previous);
         }
     }
@@ -283,7 +273,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     // ============================================================
 
     /// @inheritdoc ITokenWeighting
-    function stake(address staker, bytes32 denom, uint256 amount) external nonReentrant onlyProvider {
+    function stake(address staker, bytes32 denom, uint256 amount) external onlyProvider {
         if (amount == 0) revert ZeroAmount();
         if (_retired[denom]) revert DenomIsRetired();
 
@@ -317,7 +307,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     }
 
     /// @inheritdoc ITokenWeighting
-    function releaseStake(address staker, bytes32 denom, uint256 amount) external nonReentrant onlyProvider {
+    function releaseStake(address staker, bytes32 denom, uint256 amount) external onlyProvider {
         if (amount == 0) revert ZeroAmount();
 
         uint256 current = currentStake[staker][denom];
@@ -361,12 +351,13 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     ///      O(stakers), and the per-denom rounding matches the live `getVotingPower`
     ///      path exactly, so historical and live values agree for a given weight set.
     function getVotingPowerAt(address staker, uint256 blockNumber) external view returns (uint256 power) {
+        uint48 key = blockNumber.toUint48();
         uint256 len = _denoms.length;
         for (uint256 i = 0; i < len; i++) {
             bytes32 denom = _denoms[i];
-            uint256 stakeAt = _stakeHistory[staker][denom].upperLookup(blockNumber);
+            uint256 stakeAt = _stakeHistory[staker][denom].upperLookupRecent(key);
             if (stakeAt == 0) continue;
-            uint256 wAt = _weightHistory[denom].upperLookup(blockNumber);
+            uint256 wAt = _weightHistory[denom].upperLookupRecent(key);
             if (wAt == 0) continue;
             power += stakeAt * wAt / BPS_DENOMINATOR;
         }
@@ -382,12 +373,13 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     ///      RAW total stake, so the total is recovered in O(denoms) without iterating
     ///      the staker set.
     function getTotalPowerAt(uint256 blockNumber) external view returns (uint256 power) {
+        uint48 key = blockNumber.toUint48();
         uint256 len = _denoms.length;
         for (uint256 i = 0; i < len; i++) {
             bytes32 denom = _denoms[i];
-            uint256 totalAt = _totalStakeHistory[denom].upperLookup(blockNumber);
+            uint256 totalAt = _totalStakeHistory[denom].upperLookupRecent(key);
             if (totalAt == 0) continue;
-            uint256 wAt = _weightHistory[denom].upperLookup(blockNumber);
+            uint256 wAt = _weightHistory[denom].upperLookupRecent(key);
             if (wAt == 0) continue;
             power += totalAt * wAt / BPS_DENOMINATOR;
         }
@@ -400,7 +392,7 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     /// @inheritdoc ITokenWeighting
     /// @dev role-gated and capped at MAX_REWARD_TOKENS distinct
     ///      reward tokens per stakeDenom to prevent unbounded set growth that would
-    ///      DoS stake() releaseStake().
+    ///      DoS stake() / releaseStake().
     function distributeRewards(bytes32 stakeDenom, address rewardToken, uint256 rewardAmount)
         external
         nonReentrant
@@ -454,103 +446,6 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     }
 
     // ============================================================
-    // IFLOWQUERY VIEWS
-    // ============================================================
-
-    /// @inheritdoc IFlowQuery
-    function nodeType() external pure returns (bytes32) {
-        return FlowNodeTypes.TOKEN_WEIGHTING;
-    }
-
-    /// @inheritdoc IFlowQuery
-    function nodeTypeName() external pure returns (string memory) {
-        return "token_weighting";
-    }
-
-    /// @inheritdoc IFlowQuery
-    function providers() external view returns (ProviderInfo[] memory) {
-        uint256 len = _denoms.length;
-        StakeInfo[] memory stakes = new StakeInfo[](len);
-
-        for (uint256 i = 0; i < len; i++) {
-            bytes32 denom = _denoms[i];
-            stakes[i] = StakeInfo({
-                denom: denom,
-                maxPenaltyBps: 0, // sink node: no forfeiture upstream
-                unbondingPeriod: 0,
-                amount: currentStake[provider][denom]
-            });
-        }
-
-        ProviderInfo[] memory result = new ProviderInfo[](1);
-        result[0] = ProviderInfo({provider: provider, stakes: stakes});
-        return result;
-    }
-
-    /// @inheritdoc IFlowQuery
-    /// @notice Sink node — no downstream consumers
-    function consumers() external pure returns (ConsumerInfo[] memory) {
-        return new ConsumerInfo[](0);
-    }
-
-    /// @inheritdoc IFlowQuery
-    function availableDenoms() external view returns (AvailableDenom[] memory) {
-        uint256 len = _denoms.length;
-        AvailableDenom[] memory result = new AvailableDenom[](len);
-        for (uint256 i = 0; i < len; i++) {
-            bytes32 denom = _denoms[i];
-            result[i] = AvailableDenom({local: denom, sourceProvider: provider, sourceDenom: denom});
-        }
-        return result;
-    }
-
-    // ============================================================
-    // PAGINATED VIEWS
-    // ============================================================
-
-    /// @inheritdoc IFlowQuery
-    /// @dev TokenWeighting has a single provider; pagination collapses similarly.
-    function providersPaged(uint256 offset, uint256 limit) external view returns (ProviderInfo[] memory) {
-        if (offset >= 1 || limit == 0) return new ProviderInfo[](0);
-        return this.providers();
-    }
-
-    /// @inheritdoc IFlowQuery
-    /// @dev TokenWeighting is a sink — no downstream consumers — so pagination is empty.
-    function consumersPaged(uint256, uint256) external pure returns (ConsumerInfo[] memory) {
-        return new ConsumerInfo[](0);
-    }
-
-    /// @inheritdoc IFlowQuery
-    function availableDenomsPaged(uint256 offset, uint256 limit) external view returns (AvailableDenom[] memory) {
-        uint256 total = _denoms.length;
-        if (offset >= total) return new AvailableDenom[](0);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        uint256 sliceLen = end - offset;
-        AvailableDenom[] memory result = new AvailableDenom[](sliceLen);
-        for (uint256 i = 0; i < sliceLen; i++) {
-            bytes32 denom = _denoms[offset + i];
-            result[i] = AvailableDenom({local: denom, sourceProvider: provider, sourceDenom: denom});
-        }
-        return result;
-    }
-
-    // ============================================================
-    // IFlowQueryPath
-    // ============================================================
-
-    /// @inheritdoc IFlowQueryPath
-    function MAX_PATH_DEPTH() external pure returns (uint16) {
-        return FlowPathLib.MAX_PATH_DEPTH;
-    }
-
-    /// @inheritdoc IFlowQueryPath
-    function denomPath(bytes32 local, uint16 maxDepth) external view returns (DenomLink[] memory) {
-        return FlowPathLib.walk(this, local, maxDepth);
-    }
-
-    // ============================================================
     // INTERNAL HELPERS
     // ============================================================
 
@@ -584,7 +479,8 @@ contract TokenWeighting is ITokenWeighting, IFlowQueryPath, IEntity, ReentrancyG
     ///      here; it is applied at read time keyed by the weight epoch, so a weight
     ///      retune never has to touch these per-staker checkpoints. Cost is O(1).
     function _checkpointStake(address staker, bytes32 denom) internal {
-        _stakeHistory[staker][denom].push(block.number, currentStake[staker][denom]);
-        _totalStakeHistory[denom].push(block.number, totalStake[denom]);
+        uint48 key = block.number.toUint48();
+        _stakeHistory[staker][denom].push(key, currentStake[staker][denom].toUint208());
+        _totalStakeHistory[denom].push(key, totalStake[denom].toUint208());
     }
 }

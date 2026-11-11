@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useChainId } from 'wagmi'
+import { useChainId, useReadContract } from 'wagmi'
 import { isAddress, type Address } from 'viem'
 
 import { CommitmentsGraph } from '../components/graph/CommitmentsGraph'
@@ -20,8 +20,8 @@ import {
 } from '../components/ui'
 import { PageHeader } from '../components/protocol'
 import { ActivityFeed, type ActivityEvent } from '../components/protocol/ActivityFeed'
-import { getContractAddresses, getVaultRegistry } from '../config/contracts'
-import { useNowSeconds } from '../hooks/useNow'
+import { getContractAddresses } from '../config/contracts'
+import { useVaults } from '../hooks/useVaults'
 import { useVaultStats } from '../hooks/useVaultStats'
 import { useOperatorsIndexed } from '../hooks/useOperatorsIndexed'
 import { useServiceOperators } from '../hooks/useServiceOperators'
@@ -33,10 +33,11 @@ import {
   type PartyLeaderboardRow,
 } from '../hooks/useProtocolLeaderboards'
 import { useProtocolArbitersList, useProtocolCommitmentsList } from '../hooks/useProtocolEntityList'
-import { useTokenMetaMap } from '../hooks/useTokenMeta'
-import { deriveOperatorStatus } from '../utils/mesh'
+import { useTokenMeta, useTokenMetaMap } from '../hooks/useTokenMeta'
+import { commitmentsVaultAbi } from '../generated'
+import { deriveOperatorStatus } from '../lib/mesh'
 import type { OperatorsGraphPayload } from '../lib/graph/types'
-import { arbiterProfilePath } from '../lib/arbitrationRoutes'
+import { arbiterProfilePath, commitmentDetailPath } from '../lib/arbitrationRoutes'
 
 type GraphMode = 'agreements' | 'operators' | 'flow'
 
@@ -47,11 +48,11 @@ const VIEW_OPTIONS = [
 ] as const
 
 /**
- * /explorer — protocol-wide overview. Hero is the existing CommitmentsGraph
- * fed unscoped data via four ViewToggle modes. Below the graph: an
- * Etherscan-style EntityBrowser with sortable tables for vaults, commitments,
- * agreements, and operators. KPI strip up top is sourced from the
- * /protocol/stats endpoint plus on-chain TVL via useVaultStats.
+ * /explorer — protocol-wide overview. Hero is the CommitmentsGraph (or the
+ * flow Sankey) fed unscoped data via three ViewToggle modes. Below the graph:
+ * an Etherscan-style EntityBrowser with tabs for commitments, agreements,
+ * arbiters and cases. KPI strip up top is sourced from the /protocol/stats
+ * endpoint plus on-chain TVL via useVaultStats.
  *
  * Search bar accepts:
  *   - 0x-address → highlights node in the active graph
@@ -62,8 +63,9 @@ export default function Explorer() {
   const navigate = useNavigate()
 
   const { stakeRegistry: stakeRegistryAddress } = getContractAddresses(chainId)
-  const vaults = useMemo(() => getVaultRegistry(chainId), [chainId])
+  const { vaults } = useVaults()
   const primaryVault = vaults[0]?.address
+  const primaryVaultName = vaults[0]?.name
 
   const stats = useProtocolStats()
   const agreementsPayload = useProtocolAgreements({ limit: 500 })
@@ -97,9 +99,17 @@ export default function Explorer() {
   }, [stakeRegistryAddress, indexed.operators, service.serviceOperators, service.totalPower])
 
   const vaultStats = useVaultStats(primaryVault)
+  const { data: primaryVaultAsset } = useReadContract({
+    abi: commitmentsVaultAbi,
+    functionName: 'asset',
+    address: primaryVault,
+    query: { enabled: !!primaryVault, staleTime: Infinity },
+  })
+  const primaryVaultAssetMeta = useTokenMeta(primaryVaultAsset)
 
   // Flow (Sankey) view aggregates the protocol-wide commitment list client-side.
-  const flowCommitments = useProtocolCommitmentsList({ limit: 500 })
+  // The same cached first page feeds the entity browser and the activity feed.
+  const flowCommitments = useProtocolCommitmentsList()
 
   const [mode, setMode] = useState<GraphMode>('agreements')
   const [search, setSearch] = useState('')
@@ -117,7 +127,7 @@ export default function Explorer() {
     const trimmed = search.trim()
     if (!trimmed) return
     if (/^\d+$/.test(trimmed)) {
-      navigate(`/app/commitments/${trimmed}`, {
+      navigate(commitmentDetailPath(BigInt(trimmed)), {
         state: { commitmentOrigin: 'explorer' },
       })
       setSearchError(null)
@@ -190,10 +200,15 @@ export default function Explorer() {
 
       <section className="ds-stat-grid" aria-label="Protocol summary">
         <StatBlock
-          label="TVL"
+          label={primaryVaultName ? `${primaryVaultName} assets` : 'Vault assets'}
           value={
-            primaryVault && vaultStats.totalAssets !== undefined ? (
-              <TokenAmount amount={vaultStats.totalAssets} decimals={6} symbol="USDC" compact />
+            primaryVaultAsset && !primaryVaultAssetMeta.isLoading && vaultStats.totalAssets !== undefined ? (
+              <TokenAmount
+                amount={vaultStats.totalAssets}
+                decimals={primaryVaultAssetMeta.decimals}
+                symbol={primaryVaultAssetMeta.symbol}
+                compact
+              />
             ) : (
               '—'
             )
@@ -303,7 +318,6 @@ function Leaderboards({
           tone="success"
           label="Top operators"
           description="Ranked by totalDelegatedStake on the operator registry."
-          meta={operators.data ? `${operators.data.length} of ${operators.data.length}` : undefined}
         >
           <OperatorLeaderboardList rows={operators.data} />
         </EntityCard>
@@ -312,7 +326,6 @@ function Leaderboards({
           tone="info"
           label="Top arbiters"
           description="Ranked by commitment count. Open an arbiter profile for token-grouped exposure."
-          meta={arbiters.data ? `${arbiters.data.length} of ${arbiters.data.length}` : undefined}
         >
           <PartyLeaderboardList rows={arbiters.data} arbiterLinks />
         </EntityCard>
@@ -321,11 +334,6 @@ function Leaderboards({
           tone="neutral"
           label="Top counterparties"
           description="Most-frequent counterparties — addresses that receive the most committed exposure."
-          meta={
-            counterparties.data
-              ? `${counterparties.data.length} of ${counterparties.data.length}`
-              : undefined
-          }
         >
           <PartyLeaderboardList rows={counterparties.data} />
         </EntityCard>
@@ -406,23 +414,20 @@ function OperatorLeaderboardList({ rows }: { rows: OperatorLeaderboardRow[] | un
  * latest 20 commitment-created events; v2 should fan out across forfeites,
  * settlements, donations, etc. once those streams are surfaced by the indexer.
  *
- * The indexer schema doesn't expose `createdTimestamp` on the commitment
- * table today (only `createdBlock`). We approximate with the current wall
- * clock so the relative-time formatter doesn't render "55 years ago" — order
- * is preserved by the urgency sort, only the per-row stamp is fuzzy.
+ * Each event is stamped with the row's `createdAt`; a row without one shows
+ * no time. Order is the urgency sort's.
  */
 function RecentActivity() {
-  const { rows, isLoading } = useProtocolCommitmentsList({ limit: 20 })
-  const tokenMeta = useTokenMetaMap(rows.map((row) => row.token))
-  // useNowSeconds returns bigint; ActivityEvent.timestamp is number.
-  const nowSecs = Number(useNowSeconds())
+  const list = useProtocolCommitmentsList()
+  const rows = useMemo(() => list.rows.slice(0, 20), [list.rows])
+  const { metaFor } = useTokenMetaMap(rows.map((row) => row.token))
 
   const events = useMemo<ActivityEvent[]>(
     () =>
-      rows.map((r, i) => ({
+      rows.map((r) => ({
         id: `${r.manager}-${r.id.toString()}`,
         type: 'commitment-created',
-        timestamp: nowSecs - i * 60,
+        timestamp: r.createdAt !== null ? Number(r.createdAt) : 0,
         title: (
           <span>
             Commitment <code>#{r.id.toString()}</code>{' '}
@@ -437,11 +442,11 @@ function RecentActivity() {
           </span>
         ),
         trailing: (() => {
-          const meta = tokenMeta.metaFor(r.token)
+          const meta = metaFor(r.token)
           return <TokenAmount amount={r.amount} decimals={meta.decimals} symbol={meta.symbol} compact />
         })(),
       })),
-    [rows, nowSecs, tokenMeta],
+    [rows, metaFor],
   )
 
   return (
@@ -453,7 +458,7 @@ function RecentActivity() {
       <ActivityFeed
         events={events}
         groupBy="none"
-        isLoading={isLoading}
+        isLoading={list.isLoading}
         emptyState={<EmptyState title="NO ACTIVITY" description="No commitments indexed yet." />}
       />
     </section>

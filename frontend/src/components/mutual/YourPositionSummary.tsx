@@ -1,5 +1,6 @@
 import { Button, Card, StatBlock, TokenAmount } from '../ui'
-import { formatDuration, formatTokenAmount } from '../../lib/format'
+import { useDisplayNow } from '../../hooks/useDisplayNow'
+import { formatDuration } from '../../lib/format'
 
 interface YourPositionSummaryProps {
   /** True when the viewer underwrites this mutual (has ≥1 member commitment). */
@@ -12,8 +13,6 @@ interface YourPositionSummaryProps {
   owed: bigint
   /** Aggregate active cover the viewer holds as a policyholder, if any. */
   coverHeld: { notional: bigint; expiry: bigint } | undefined
-  /** Unix seconds for the cover-expiry countdown (ticking). */
-  now: number
   decimals: number
   symbol: string
   /** Opens the manage-position drawer (claim / settle / exit). */
@@ -34,11 +33,11 @@ export function YourPositionSummary({
   claimablePremium,
   owed,
   coverHeld,
-  now,
   decimals,
   symbol,
   onManage,
 }: YourPositionSummaryProps) {
+  const now = useDisplayNow()
   const holdsCover = coverHeld !== undefined
   const coverRemaining = coverHeld ? coverHeld.expiry - BigInt(now) : 0n
 
@@ -61,9 +60,7 @@ export function YourPositionSummary({
             <StatBlock
               label="you posted"
               value={
-                <span title={formatTokenAmount(posted, decimals).full}>
-                  <TokenAmount amount={posted} decimals={decimals} symbol={symbol} compact />
-                </span>
+                <TokenAmount amount={posted} decimals={decimals} symbol={symbol} compact />
               }
               meta="backing shared losses"
             />
@@ -71,11 +68,9 @@ export function YourPositionSummary({
           {underwriting && (
             <StatBlock
               label="claimable premium"
-              tone={claimablePremium > 0n ? 'positive' : 'neutral'}
+              tone={claimablePremium > 0n ? 'success' : 'neutral'}
               value={
-                <span title={formatTokenAmount(claimablePremium, decimals).full}>
-                  <TokenAmount amount={claimablePremium} decimals={decimals} symbol={symbol} compact />
-                </span>
+                <TokenAmount amount={claimablePremium} decimals={decimals} symbol={symbol} compact />
               }
               meta={claimablePremium > 0n ? 'claim it in “manage”' : 'earned premium'}
             />
@@ -83,11 +78,9 @@ export function YourPositionSummary({
           {owed > 0n && (
             <StatBlock
               label="owed loss share"
-              tone="negative"
+              tone="danger"
               value={
-                <span title={formatTokenAmount(owed, decimals).full}>
-                  <TokenAmount amount={owed} decimals={decimals} symbol={symbol} compact />
-                </span>
+                <TokenAmount amount={owed} decimals={decimals} symbol={symbol} compact />
               }
               meta="settle in “manage”"
             />
@@ -97,9 +90,7 @@ export function YourPositionSummary({
               label="cover held"
               tone="accent"
               value={
-                <span title={formatTokenAmount(coverHeld.notional, decimals).full}>
-                  <TokenAmount amount={coverHeld.notional} decimals={decimals} symbol={symbol} compact />
-                </span>
+                <TokenAmount amount={coverHeld.notional} decimals={decimals} symbol={symbol} compact />
               }
               meta={coverRemaining > 0n ? `expires in ${formatDuration(Number(coverRemaining))}` : 'expired'}
             />

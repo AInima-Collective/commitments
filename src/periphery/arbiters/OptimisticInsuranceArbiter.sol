@@ -5,9 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-
 import {IArbiter} from "src/shared/arbitration/interfaces/IArbiter.sol";
+import {ArbiterBase} from "src/shared/arbitration/ArbiterBase.sol";
 import {ArbiterCapabilities} from "src/shared/arbitration/ArbiterCapabilities.sol";
 import {ICommitmentManager} from "src/core/interfaces/ICommitmentManager.sol";
 import {IBackingAdapter} from "src/core/interfaces/IBackingAdapter.sol";
@@ -36,7 +35,7 @@ import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 ///         ```
 ///         The manager-side forfeit proposal is opened AT PROPOSE TIME so the
 ///         committer cannot exit through `finalizeUnbond` / `expire` while a
-///         claim is pending (`_forfeitActive` blocks both). Each dispute
+///         claim is pending (`MovementLib.forfeitLive` blocks both). Each dispute
 ///         re-initiates the hold at the capped counter-answer, so the manager
 ///         proposal always mirrors the current top-of-stack assertion and its
 ///         challenge window restarts with the answer timer. `proposeClaim`
@@ -82,7 +81,7 @@ import {BPS_DENOMINATOR, WAD} from "src/shared/Constants.sol";
 ///         relying on continuous coverage must watch `ClaimProposed` and
 ///         finalize denials promptly; prefer commitments whose
 ///         `challengeWindow` comfortably exceeds `answerTimeout`.
-contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
+contract OptimisticInsuranceArbiter is ArbiterBase, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     enum ClaimState {
@@ -119,9 +118,6 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
     ///         can call `cancelStaleClaim` to release the depositor.
     ///         Mirrors `CommitmentManager.FORFEIT_PROPOSAL_TTL` semantics.
     uint64 public constant CLAIM_STALE_TTL = 14 days;
-
-    /// @notice CommitmentManager this arbiter dispatches to.
-    ICommitmentManager public immutable manager;
 
     /// @notice bond asset for proposeClaim disputeClaim.
     IERC20 public immutable bondToken;
@@ -164,12 +160,9 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
     mapping(uint256 commitmentId => uint256 activeClaimId) public activeClaimOf;
     uint256 public nextClaimId;
 
-    error WrongBondToken();
     error BondBelowFloor(uint256 minimum, uint256 provided);
     error BondNotDoubled(uint256 required, uint256 provided);
     error InvalidAmountBps(uint16 amountBps);
-    error CommitmentNotActive(uint256 commitmentId);
-    error WrongArbiter(address expected, address actual);
     error ClaimAlreadyActive(uint256 commitmentId, uint256 existingClaimId);
     error UnknownClaim(uint256 claimId);
     error WrongClaimState(ClaimState expected, ClaimState actual);
@@ -183,7 +176,6 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
     error ZeroAnswerTimeout();
     error InvalidWinnerShareBps();
     error StaleTtlNotElapsed(uint64 readyAt, uint64 nowTs);
-    error ChallengeWindowTooShort(uint64 required, uint64 actual);
     error ClaimAlreadyEnforced(uint256 claimId);
 
     event ClaimProposed(
@@ -199,7 +191,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 indexed claimId, address indexed disputer, uint16 amountBps, uint128 bond, bytes32 evidenceHash
     );
     event ClaimCancelled(uint256 indexed claimId);
-    event ClaimRuled(uint256 indexed claimId, uint16 winningAmtBps, address indexed source);
+    event ClaimRuled(uint256 indexed claimId, uint16 winningAmtBps);
     event ClaimFinalized(uint256 indexed claimId, uint16 winningAmtBps);
     event ClaimSettled(uint256 indexed claimId, uint256 winnerPayout, uint256 treasuryPayout, uint256 winningRefunds);
     event ClaimStaleCancelled(uint256 indexed claimId);
@@ -217,22 +209,16 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint64 answerTimeout_,
         uint16 winnerShareBps_,
         address treasury_
-    ) {
+    ) ArbiterBase(manager_) {
         if (answerTimeout_ == 0) revert ZeroAnswerTimeout();
         if (winnerShareBps_ > BPS_DENOMINATOR) revert InvalidWinnerShareBps();
         if (winnerShareBps_ < BPS_DENOMINATOR && treasury_ == address(0)) revert TreasuryRequired();
-        manager = ICommitmentManager(manager_);
         bondToken = IERC20(bondToken_);
         minBond = minBond_;
         bondBps = bondBps_;
         answerTimeout = answerTimeout_;
         winnerShareBps = winnerShareBps_;
         treasury = treasury_;
-    }
-
-    /// @inheritdoc IArbiter
-    function commitmentManager() external view returns (address) {
-        return address(manager);
     }
 
     /// @inheritdoc IArbiter
@@ -248,11 +234,6 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
     ///      pointer; returns empty.
     function arbiterMetadataURI() external pure returns (string memory) {
         return "";
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IArbiter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     /// @notice Full claim struct (including the bond stack) for `claimId`.
@@ -372,7 +353,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         c.stack.push(BondEntry({asserter: msg.sender, amountBps: counterAmountBps, bond: bond}));
 
         // Re-sync the hold to the new top-of-stack answer.
-        if (_proposalActive(p)) manager.cancelForfeit(c.commitmentId);
+        if (_forfeitProposalActive(p)) manager.cancelForfeit(c.commitmentId);
         manager.initiateForfeit(c.commitmentId, _capped(counterAmountBps, cm.maxPenaltyBps));
 
         emit ClaimDisputed(claimId, msg.sender, counterAmountBps, bond, evidenceHash);
@@ -393,7 +374,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
 
         // Release the hold (tolerate external execution / stale-cancel).
         ICommitmentManager.ForfeitProposal memory p = manager.getForfeitProposal(c.commitmentId);
-        if (_proposalActive(p)) manager.cancelForfeit(c.commitmentId);
+        if (_forfeitProposalActive(p)) manager.cancelForfeit(c.commitmentId);
 
         bondToken.safeTransfer(c.stack[0].asserter, refund);
         emit ClaimCancelled(claimId);
@@ -419,7 +400,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         // Top of stack wins by exhaustion.
         c.winningAmtBps = c.stack[c.stack.length - 1].amountBps;
         c.state = ClaimState.Resolved;
-        emit ClaimRuled(claimId, c.winningAmtBps, address(0));
+        emit ClaimRuled(claimId, c.winningAmtBps);
 
         // Cap the winning amount to the commitment's maxPenaltyBps to
         // protect against oversized rulings (depositor-side defense).
@@ -440,7 +421,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         if (capped == 0) {
             // No payout — cancel the hold and settle bonds with
             // winningAmtBps == 0 directly. Mirrors "claim denied".
-            if (_proposalActive(p)) manager.cancelForfeit(c.commitmentId);
+            if (_forfeitProposalActive(p)) manager.cancelForfeit(c.commitmentId);
             _settle(claimId, 0);
             return;
         }
@@ -449,7 +430,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
             // The hold was stale-cancelled externally and the committer
             // exited before finalization — there is no lien left to enforce.
             // Settle the bond game so no bond is ever stranded.
-            if (_proposalActive(p)) manager.cancelForfeit(c.commitmentId);
+            if (_forfeitProposalActive(p)) manager.cancelForfeit(c.commitmentId);
             _settle(claimId, capped);
             return;
         }
@@ -458,7 +439,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         // The hold already sits at `capped` (synced at propose/every dispute)
         // unless it was stale-cancelled externally — restore it then.
         if (p.cancelled) manager.initiateForfeit(c.commitmentId, capped);
-        emit ClaimFinalized(claimId, capped);
+        // `ClaimFinalized` fires once, from `executeClaim`, with the penalty enforced.
     }
 
     /// @notice Execute the manager-side forfeit after its challenge window.
@@ -486,10 +467,8 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
 
         if (!p.executed) manager.executeForfeit(c.commitmentId);
 
-        c.state = ClaimState.Settled;
-        _distributeBonds(claimId);
-        delete activeClaimOf[c.commitmentId];
-        emit ClaimFinalized(claimId, c.winningAmtBps);
+        // The hold sits at the capped winning answer, so `p.penaltyBps` is what was paid.
+        _settle(claimId, p.penaltyBps);
     }
 
     /// @notice Anyone can cancel a stale claim — one where the optimistic
@@ -515,7 +494,7 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
             // capped to the commitment max (synced at propose/every dispute).
             c.winningAmtBps = c.stack[c.stack.length - 1].amountBps;
             c.state = ClaimState.Resolved;
-            emit ClaimRuled(claimId, c.winningAmtBps, address(0));
+            emit ClaimRuled(claimId, c.winningAmtBps);
             _settle(claimId, p.penaltyBps);
             return;
         }
@@ -525,9 +504,9 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
 
         // Release the hold on the abandoned claim (tolerate an external
         // stale-cancel of the manager proposal).
-        if (_proposalActive(p)) manager.cancelForfeit(c.commitmentId);
+        if (_forfeitProposalActive(p)) manager.cancelForfeit(c.commitmentId);
 
-        // Refund all bonds proportionally — there's no winner, so nobody
+        // Refund every bond in full — there's no winner, so nobody
         // forfeits.
         _refundAllBonds(c);
         emit ClaimStaleCancelled(claimId);
@@ -555,11 +534,6 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 claimValue = (claimUnits * IBackingAdapter(cm.adapter).indexNow(cm.token)) / WAD;
         uint256 scaled = (claimValue * bondBps) / BPS_DENOMINATOR;
         if (scaled > floor) floor = scaled;
-    }
-
-    /// @dev An initiated proposal that is neither executed nor cancelled.
-    function _proposalActive(ICommitmentManager.ForfeitProposal memory p) internal pure returns (bool) {
-        return p.initiatedAt != 0 && !p.executed && !p.cancelled;
     }
 
     /// @dev Cap an asserted amount to the commitment's consented maximum.
@@ -602,14 +576,9 @@ contract OptimisticInsuranceArbiter is IArbiter, ReentrancyGuardTransient {
         uint256 winnerPayout;
         uint256 treasuryPayout;
         if (forfeitPool > 0) {
-            if (lastWinner != address(0)) {
-                winnerPayout = (forfeitPool * winnerShareBps) / BPS_DENOMINATOR;
-                treasuryPayout = forfeitPool - winnerPayout;
-            } else {
-                // Nobody asserted the winning answer. All forfeits to
-                // treasury — there's no asserter to reward.
-                treasuryPayout = forfeitPool;
-            }
+            // `winning` is always the top-of-stack answer, so `lastWinner` is set.
+            winnerPayout = (forfeitPool * winnerShareBps) / BPS_DENOMINATOR;
+            treasuryPayout = forfeitPool - winnerPayout;
             if (winnerPayout > 0) bondToken.safeTransfer(lastWinner, winnerPayout);
             if (treasuryPayout > 0 && treasury != address(0)) {
                 bondToken.safeTransfer(treasury, treasuryPayout);

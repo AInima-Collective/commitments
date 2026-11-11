@@ -4,7 +4,7 @@ import {
   type ManagerForfeitEventKind,
 } from '../../hooks/useCommitmentArbitration'
 import { AddressDisplay, Notice, Skeleton } from '../ui'
-import { formatBps } from '../../utils/commitments'
+import { formatBps } from '../../lib/commitments'
 
 interface ForfeitTimelineProps {
   managerAddress: Address

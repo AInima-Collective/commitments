@@ -27,7 +27,7 @@ The depositor specifies five things at creation:
 - **Arbiter:** the party authorized to release the commitment or trigger the transfer.
 - **Counterparty:** optionally, the party that receives capital if the commitment is broken.
 - **Maximum penalty:** the largest fraction of the depositor's backing the arbiter can take.
-- **Timing:** the challenge window between when the arbiter announces a transfer and when it can happen (at least one day, configurable upward for higher-stakes agreements), and the unbonding period for exit.
+- **Timing:** the challenge window between when the arbiter announces a transfer and when it can happen (at least one day, configurable upward for higher-stakes agreements). The unbonding period for exit is not a per-commitment term: it is one value for the whole manager, set by its admin.
 
 Ongoing value flows — an operator commission, an insurance premium, a yield-share donation — are not fields on the commitment. They attach as pluggable distribution strategies bound to it, so the same patterns are expressed without widening the primitive.
 
@@ -65,7 +65,7 @@ During the window, anyone can react. The arbiter can change their mind. The depo
 
 ## You can always leave
 
-If the arbiter goes offline, turns malicious, or loses control of their keys, the depositor doesn't lose access to their capital forever. They can announce their intention to exit, and after the commitment's unbonding period passes, anyone can close the commitment and free the depositor's capital.
+If the arbiter goes offline, turns malicious, or loses control of their keys, the depositor doesn't lose access to their capital forever. They can announce their intention to exit, and after the manager's unbonding period passes, anyone can close the commitment and free the depositor's capital.
 
 The arbiter keeps the right to act during the exit window: if the depositor genuinely misbehaved, the arbiter can still enforce before the exit completes. What the arbiter cannot do is block the exit by refusing to act. The depositor's path out doesn't depend on the arbiter's cooperation, only on the agreed waiting period elapsing. That's a guarantee most existing systems that lock capital don't provide.
 
@@ -73,7 +73,7 @@ The arbiter keeps the right to act during the exit window: if the depositor genu
 
 A lot of damage in finance follows one shape: someone promised more than they had, and the math was nowhere a counterparty could see it. Banks against deposits, exchanges against collateral, lenders against guarantees. The promises looked fine until the moment they didn't.
 
-A commitment can't be created against capital that isn't there. The protocol tracks each party's total exposure across all their active agreements and rejects any new commitment that would push them past what they actually hold. A party can split their backing across many agreements at different penalty levels. What they cannot do is pledge the same dollar twice.
+A commitment can't be created against capital that isn't there. Each commitment locks its backing out of the party's free balance, and the protocol rejects any new commitment that balance cannot cover. A party can split their backing across many agreements at different penalty levels. What they cannot do is pledge the same dollar twice.
 
 Solvency is structural, not audited. There's no global ledger to reconcile, no quarterly report to trust. Anyone can read on-chain whether a party is backed for what they've pledged, and the rule applies the same way to an individual, a DAO treasury, an operator, or an insurance underwriter. The protocol doesn't recognize "trusted" parties that get to overdraw.
 

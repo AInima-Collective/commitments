@@ -32,7 +32,7 @@ funder-of-record field; that is out of scope for this version. This contract
 only records the funder so a future version (and the indexer) can attribute the stream.
 
 
-## Constants
+## State Variables
 ### manager
 The custody root whose premium stream this policy funds.
 
@@ -43,7 +43,7 @@ ICommitmentManager public immutable manager
 
 
 ### scheduler
-The pricing brain (utilization curve + leverage cap + capture check).
+The pricing brain (utilization curve + leverage cap).
 
 
 ```solidity
@@ -51,7 +51,6 @@ PremiumScheduler public immutable scheduler
 ```
 
 
-## State Variables
 ### _coverBindings
 bindingId => cover binding (1-indexed; id 0 is never used).
 
@@ -79,6 +78,15 @@ mapping(uint256 => uint256) private _activeNotionalSold
 ```
 
 
+### _numeraire
+mutualId => numeraire, read from the core once (it is fixed at `createMutual`).
+
+
+```solidity
+mapping(uint256 => address) private _numeraire
+```
+
+
 ## Functions
 ### constructor
 
@@ -90,7 +98,7 @@ constructor(address manager_, address scheduler_) ;
 ### bindCover
 
 Price `notional` of cover for `duration`, pull the premium from the caller, fund the
-core stream, and record the binding. Atomic: any revert (capture, leverage cap,
+core stream, and record the binding. Atomic: any revert (leverage cap,
 `NoActiveCover`) rolls back the whole call.
 
 
@@ -109,8 +117,14 @@ top-up that compensates idle capacity (plan standby-dilution mitigation).
 
 
 ```solidity
-function fundStandby(uint256 mutualId, uint64 duration) external nonReentrant;
+function fundStandby(uint256 mutualId, uint64 duration) external nonReentrant returns (uint256 premium);
 ```
+**Returns**
+
+|Name|Type|Description|
+|----|----|-----------|
+|`premium`|`uint256`|premiumPaid the numeraire pulled from the caller and streamed|
+
 
 ### expireBinding
 

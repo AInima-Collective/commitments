@@ -9,7 +9,7 @@ Use this checklist with the full test suite. Test names are navigation aids, not
 
 ## CommitmentManager
 
-- Per-token free, encumbered, escrow, mutual-premium, and mutual-junior aggregates reconcile to token balance.
+- Per-token free, encumbered, escrow, and mutual-premium aggregates reconcile to token balance.
 - Fee-on-transfer deposits credit measured receipts.
 - Only free balance can be withdrawn.
 - Creation cannot exceed free balance or forfeitable-exposure allocation.
@@ -36,9 +36,8 @@ Primary suites: test/vault/ and test/adapters/Adapters.t.sol.
 ## Agreements, Mutuals, Mesh, and Services
 
 - Linked libraries use only CommitmentManagerStorage.
-- Mutual valuation authority cannot also be the loss arbiter.
 - Loss attribution and premium indices cannot exceed their bounded reserves.
-- Mesh allocation, retirement, path walking, and historical weighting are bounded.
+- Mesh allocation, retirement, and historical weighting are bounded.
 - Registry acceptance policy checks token, arbiter, penalty floor, active state, and strategy allow-list.
 - Signed-envelope validation binds service, payload, reference block, signing keys, threshold, quorum, and replay state.
 
@@ -54,7 +53,7 @@ Primary suites: test/manager/Agreement.t.sol, test/manager/Mutual.t.sol, test/mu
 - Claimed totals never decrease and insufficient funding fails safely.
 - Freeze and upgrade authority belong to the service, not the updater.
 
-Primary suites: test/rewards/ and test/conformance/RewardsCoordinatorInvariants.t.sol.
+Primary suites: test/rewards/ and test/rewards/conformance/RewardsCoordinatorInvariants.t.sol.
 
 ## Commands
 

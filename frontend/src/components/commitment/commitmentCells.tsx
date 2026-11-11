@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { type Address } from 'viem'
-import { AddressDisplay, TokenAmount } from '../ui'
+import { AddressDisplay, Button, TokenAmount } from '../ui'
 import { CommitmentStatusBadge, CommitmentTags, CommitmentTitle } from '../protocol'
 import { ResolveCommitmentModal } from './ResolveCommitmentModal'
-import { type CommitmentHints } from '../../hooks/commitmentReads'
+import { type CommitmentHints } from '../../lib/commitmentReads'
 import { useDisplayNow } from '../../hooks/useDisplayNow'
 import { useFullCommitment } from '../../hooks/useFullCommitment'
 import { type UnifiedRow } from '../../hooks/useUnifiedRows'
@@ -106,23 +106,25 @@ function windowDetail(
 /**
  * Status badge plus, when the row has an active time window (forfeit
  * challenge, unbonding maturity, proposal expiry), a live countdown beneath
- * it. `useDisplayNow` ticks on its own so callers needn't thread `now` through.
+ * it. Only rows with a window subscribe to the clock.
  */
 export function StatusCell({ row }: { row: UnifiedRow }) {
-  const now = useDisplayNow()
-  const detail = windowDetail(row, now)
+  // Whether a window exists does not depend on `now`; only its text does.
+  const hasWindow = windowDetail(row, 0) !== null
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
       <CommitmentStatusBadge status={row.status} />
-      {detail && (
-        <span
-          className="ds-mono-num"
-          style={{ fontSize: 'var(--text-xs)', color: detail.color }}
-          title={detail.title}
-        >
-          {detail.text}
-        </span>
-      )}
+      {hasWindow && <WindowCountdown row={row} />}
+    </span>
+  )
+}
+
+function WindowCountdown({ row }: { row: UnifiedRow }) {
+  const detail = windowDetail(row, useDisplayNow())
+  if (!detail) return null
+  return (
+    <span className="ds-mono-num" style={{ fontSize: 'var(--text-xs)', color: detail.color }} title={detail.title}>
+      {detail.text}
     </span>
   )
 }
@@ -155,15 +157,11 @@ export function NameCell({
   ctx,
   size = 'md',
   maxTags = 3,
-  onSelectTag,
-  activeTags,
 }: {
   row: UnifiedRow
   ctx: CommitmentLabelContext
   size?: 'sm' | 'md' | 'lg'
   maxTags?: number
-  onSelectTag?: (tag: string) => void
-  activeTags?: readonly string[]
 }) {
   const label = commitmentLabel(row, ctx)
   const tags = metadataTags(row)
@@ -203,7 +201,7 @@ export function NameCell({
               side {side}
             </span>
           )}
-          <CommitmentTags tags={tags} max={maxTags} onSelect={onSelectTag} active={activeTags} />
+          <CommitmentTags tags={tags} max={maxTags} />
         </span>
       )}
     </span>
@@ -242,9 +240,8 @@ export function RowResolveAction({
 
   return (
     <>
-      <button
-        type="button"
-        className="ds-btn ds-btn--sm"
+      <Button
+        size="sm"
         disabled={loading}
         aria-busy={loading || undefined}
         onClick={(e) => {
@@ -253,14 +250,13 @@ export function RowResolveAction({
         }}
       >
         {loading ? 'Loading…' : 'Resolve'}
-      </button>
+      </Button>
       {open && full && (
         <ResolveCommitmentModal
           open
           onClose={() => setOpen(false)}
           commitment={full}
           managerAddress={ctx.managerAddress}
-          vaultAddress={row.vault}
           connectedAddress={ctx.connectedAddress}
           isConnected={ctx.isConnected}
           onActed={ctx.onActed}

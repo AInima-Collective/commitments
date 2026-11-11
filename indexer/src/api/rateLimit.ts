@@ -1,6 +1,6 @@
 /**
  * Shared per-IP fixed-window rate limiting for the indexer's write/expensive
- * endpoints (metadata pinning, manual snapshot trigger).
+ * endpoints (metadata pinning).
  *
  * Intentionally simple: a single-process in-memory counter that blunts
  * accidental floods and casual abuse, not a distributed DoS. Each caller gets

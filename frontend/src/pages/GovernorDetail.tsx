@@ -25,7 +25,7 @@ import { useVotingPower } from '../hooks/useVotingPower'
 import {
   compareProposalsForDisplay,
   proposalTitle,
-} from '../utils/governance'
+} from '../lib/governance'
 
 const COLUMNS: DataTableColumn<ProposalRow>[] = [
   {

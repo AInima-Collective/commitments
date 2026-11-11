@@ -3,12 +3,12 @@ import { Button, CopyButton, Disclosure, Input, Notice, SourceBlock, TokenChip }
 import { useMetadataPin, type MetadataPinResult } from '../../hooks/useMetadataPin'
 import {
   MAX_INLINE_JSON_BYTES,
-  ZERO_HASH,
   computeHashFromJsonText,
   resolveMetadataArgs,
   validateMetadataHash,
   validateMetadataURI,
-} from '../../utils/metadataForm'
+} from '../../lib/metadataForm'
+import { zeroHash } from 'viem'
 
 /**
  * Schemas this editor knows how to author. The schema is a prop so the same
@@ -296,16 +296,15 @@ export function MetadataEditor({ schema, onChange, onStatusChange, disabled = fa
                   {tags.map((t) => (
                     <span key={t} className="ds-row ds-row-1" style={{ alignItems: 'center' }}>
                       <TokenChip symbol={t} />
-                      <button
-                        type="button"
-                        className="ds-btn ds-btn--sm"
+                      <Button
+                        size="sm"
                         aria-label={`Remove tag ${t}`}
                         title={`Remove tag ${t}`}
                         onClick={() => removeTag(t)}
                         disabled={controlsDisabled}
                       >
                         ×
-                      </button>
+                      </Button>
                     </span>
                   ))}
                 </div>
@@ -479,7 +478,7 @@ export function MetadataEditor({ schema, onChange, onStatusChange, disabled = fa
                 setManualHash(e.target.value)
                 invalidate()
               }}
-              placeholder={ZERO_HASH}
+              placeholder={zeroHash}
               disabled={controlsDisabled}
               tone={manualHashValidation.error ? 'danger' : 'neutral'}
               style={{ width: '100%' }}

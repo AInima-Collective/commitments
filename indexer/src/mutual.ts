@@ -8,11 +8,11 @@
  * Two surfaces feed these tables:
  *   1. The CommitmentManager mutual event surface (MutualCreated / MutualActivated /
  *      MemberJoined / MutualLoss{Initiated,Executed,Cancelled,Shortfall} /
- *      MemberSettled / GroupMember{ExitRequested,Released} / MutualTerminated).
+ *      MemberSettled / Member{ExitRequested,ExitLapsed,Released} / MutualTerminated).
  *      The manager is ALWAYS bound, so these handlers register unconditionally.
- *   2. The optional MutualRegistry (`MutualRegistered`), which annotates an
- *      existing mutual row with its synthetic-mutual cover terms. Gated on the
- *      registry being present in the deployment.
+ *   2. The MutualRegistry (`MutualRegistered`), which annotates an existing
+ *      mutual row with its synthetic-mutual cover terms. Its address list is
+ *      empty when the deployment has no registry.
  *
  * Accounting model (see CommitmentManager): `cumulativeLoss` (Lambda) is a
  * 1e18-scaled, monotonic, ≤1e18 cumulative loss FRACTION. A member owes raw units =
@@ -21,12 +21,13 @@
  * join/release. We refresh the snapshot (via `getMutual` / `getMembership`)
  * on every event that moves value, so the rows stay current.
  */
-import { ponder as typedPonder } from 'ponder:registry'
+import { ponder } from 'ponder:registry'
 import {
   commitment,
   coverBinding,
   mutual,
   mutualEvent,
+  mutualState,
   membership,
   premiumClaim,
   premiumFunding,
@@ -34,40 +35,11 @@ import {
 import { bumpAccount } from './accountStats'
 import { bumpEncumbered, recordFlow, type FlowEvent } from './ledgerFlow'
 
-import { commitmentManagerAbi, linkedMutualPolicyAbi, mutualRegistryAbi } from './abis'
-import { loadDeployments } from './loadDeployments'
-import { CHAIN_ID } from './env'
-
-// MutualRegistry and LinkedMutualPolicy are conditionally configured. Keep the
-// registration surface permissive across deployment shapes; Ponder validates
-// event names against the live config at runtime.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ponder = typedPonder as unknown as { on: (name: string, fn: (ctx: any) => Promise<void> | void) => void }
-
-// The MutualRegistry is only present in the Ponder config when the seed has
-// deployed it (absent in PROD until launch — see ponder.config.ts). Ponder
-// rejects `ponder.on` handlers for unconfigured contracts at startup, so we gate
-// the MutualRegistered registration on the same deployment-presence check the
-// config uses. Resolving the deployment a second time here (off the same
-// broadcast files) keeps this module self-contained.
-let MUTUAL_REGISTRY_ENABLED = false
-// The LinkedMutualPolicy (cover/standby premium router) is likewise only
-// present in the Ponder config when the seed has deployed it. Gate its event
-// handlers on the same deployment-presence check the config uses so the build
-// doesn't break when the seed ships no policy yet (mirrors MutualRegistry).
-let LINKED_POLICY_ENABLED = false
-try {
-  const d = loadDeployments(CHAIN_ID)
-  MUTUAL_REGISTRY_ENABLED = Boolean(d.mutualRegistry)
-  LINKED_POLICY_ENABLED = Boolean(d.linkedMutualPolicy)
-} catch {
-  // No resolvable deployment — leave mutual-registry indexing disabled.
-}
+import { commitmentManagerAbi, mutualRegistryAbi } from './abis'
 
 type Hex = `0x${string}`
-const ZERO = '0x0000000000000000000000000000000000000000' as Hex
 
-const mutualKey = (manager: Hex, mutualId: bigint) => `${manager.toLowerCase()}-${mutualId.toString()}`
+export const mutualKey = (manager: Hex, mutualId: bigint) => `${manager.toLowerCase()}-${mutualId.toString()}`
 const membershipKey = (manager: Hex, commitmentId: bigint) =>
   `${manager.toLowerCase()}-${commitmentId.toString()}`
 
@@ -79,43 +51,12 @@ type MutualSnapshot = {
   arbiter: Hex
   numeraire: Hex
   beneficiary: Hex
-  valuationAuthority: Hex
   challengeWindow: bigint
   deallocationWindow: bigint
   totalShares: bigint
   cumulativeLoss: bigint
   active: boolean
   terminal: boolean
-  // Heterogeneous mode (§H §8 / M4) — appended Mutual fields; all zero for homogeneous mutuals.
-  bandAdapter: Hex
-  valuationFloorBps: bigint
-  valuationCeilBps: bigint
-  juniorBps: bigint
-}
-
-/**
- * Read a single CommitmentManager view, returning null on any RPC failure so a
- * transient blip leaves the indexed column untouched rather than crashing the
- * handler. `context` is Ponder's untyped runtime context (see the cast note above),
- * so the abi-overload narrowing viem would normally apply is intentionally bypassed.
- */
-async function safeManagerRead<T>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  manager: Hex,
-  functionName: string,
-  args: readonly unknown[],
-): Promise<T | null> {
-  try {
-    return (await context.client.readContract({
-      abi: commitmentManagerAbi,
-      address: manager,
-      functionName,
-      args,
-    })) as T
-  } catch {
-    return null
-  }
 }
 
 async function readMutualSnapshot(
@@ -123,19 +64,22 @@ async function readMutualSnapshot(
   context: any,
   manager: Hex,
   mutualId: bigint,
-): Promise<MutualSnapshot | null> {
-  return safeManagerRead<MutualSnapshot>(context, manager, 'getMutual', [mutualId])
+): Promise<MutualSnapshot> {
+  return context.client.readContract({
+    abi: commitmentManagerAbi,
+    address: manager,
+    functionName: 'getMutual',
+    args: [mutualId],
+  })
 }
 
 type MembershipSnapshot = {
   mutualId: bigint
-  forfeitableUnits: bigint
-  settledUnits: bigint
-  creditedValue: bigint
   lossSnapshot: bigint
   unbondRequestedAt: bigint
-  // §G premium index (reward side) — appended to the GroupMembership struct.
-  premiumWeight: bigint
+  memberExitCumulativePausedAtStart: bigint
+  forfeitableUnits: bigint
+  settledUnits: bigint
   premiumSnapshot: bigint
   rewardBank: bigint
 }
@@ -159,11 +103,14 @@ async function readMutualPremiumState(
   context: any,
   manager: Hex,
   mutualId: bigint,
-): Promise<MutualPremiumSnapshot | null> {
-  const r = await safeManagerRead<
-    readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint]
-  >(context, manager, 'getMutualPremiumState', [mutualId])
-  if (!r) return null
+): Promise<MutualPremiumSnapshot> {
+  const r: readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint] =
+    await context.client.readContract({
+      abi: commitmentManagerAbi,
+      address: manager,
+      functionName: 'getMutualPremiumState',
+      args: [mutualId],
+    })
   return {
     premiumPerShareStored: r[0],
     activeCover: r[1],
@@ -177,24 +124,18 @@ async function readMutualPremiumState(
   }
 }
 
-// Live junior shortfall absorber reserve (funded − drawn) for a heterogeneous mutual; 0 for
-// homogeneous mutuals. Returns null on an RPC blip so the caller leaves the column untouched.
-async function readMutualJuniorPool(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  manager: Hex,
-  mutualId: bigint,
-): Promise<bigint | null> {
-  return safeManagerRead<bigint>(context, manager, 'getMutualJuniorPool', [mutualId])
-}
-
 async function readMembership(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
   manager: Hex,
   commitmentId: bigint,
-): Promise<MembershipSnapshot | null> {
-  return safeManagerRead<MembershipSnapshot>(context, manager, 'getMembership', [commitmentId])
+): Promise<MembershipSnapshot> {
+  return context.client.readContract({
+    abi: commitmentManagerAbi,
+    address: manager,
+    functionName: 'getMembership',
+    args: [commitmentId],
+  })
 }
 
 // Append one append-only timeline row. id = `${mutualId}-${blockNumber}-${logIndex}`.
@@ -209,11 +150,14 @@ async function recordMutualEvent(
     numeraireAmount?: bigint | null
     cumulativeLoss?: bigint | null
     actor?: Hex | null
+    evidenceHash?: Hex | null
+    stale?: boolean | null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     event: any
   },
 ): Promise<void> {
-  const { manager, mutualId, commitmentId, kind, numeraireAmount, cumulativeLoss, actor, event } = args
+  const { manager, mutualId, commitmentId, kind, numeraireAmount, cumulativeLoss, actor, evidenceHash, stale, event } =
+    args
   await context.db.insert(mutualEvent).values({
     id: `${mutualId.toString()}-${event.block.number}-${event.log.logIndex}`,
     manager,
@@ -223,27 +167,28 @@ async function recordMutualEvent(
     numeraireAmount: numeraireAmount ?? null,
     cumulativeLoss: cumulativeLoss ?? null,
     actor: actor ?? null,
+    evidenceHash: evidenceHash ?? null,
+    stale: stale ?? null,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
 }
 
 /**
- * Append a free-balance credit for one of the premium/junior pool payout paths.
+ * Append a free-balance credit for one of the premium pool payout paths.
  *
- * All four (`MemberPremiumClaimed`, `PremiumReclaimed`, `MutualPremiumSwept`,
- * `MutualJuniorSwept`) plus the settle-time `MutualJuniorDrawn` run through
- * `LedgerLib.mutualPremiumToFree` / `mutualJuniorToFree`, which credit
+ * All three (`MemberPremiumClaimed`, `PremiumReclaimed`, `MutualPremiumSwept`)
+ * run through `LedgerLib.mutualPremiumToFree`, which credit
  * `free[recipient]` in the mutual's numeraire. None of them emits a `Deposited`,
  * so without this the credit is invisible to the balance history.
  *
  * The funding direction is deliberately NOT recorded: `fundMutualPremium` pulls
  * the numeraire in and credits `free[funder]` (via `_pullNumeraireMeasured`),
  * then immediately debits the same measured amount back out through
- * `freeToMutualPremium` + `freeToMutualJunior`. The split is exact
- * (`premiumPortion = received - juniorShare`), so the funder's free balance nets
- * to zero across the call and there is nothing to log.
+ * `freeToMutualPremium`, so the funder's free balance nets to zero across the
+ * call and there is nothing to log.
  *
  * Returns silently when the mutual row is missing — the numeraire is only known
  * from the indexed row, and a wrong token is worse than a missing delta.
@@ -255,7 +200,7 @@ async function recordPoolCredit(
   mutualId: bigint,
   recipient: Hex,
   amount: bigint,
-  kind: 'premiumIn' | 'juniorIn',
+  kind: 'premiumIn',
   event: FlowEvent,
   commitmentId?: bigint,
 ): Promise<void> {
@@ -264,69 +209,55 @@ async function recordPoolCredit(
   if (!row) return
   await recordFlow(context.db, event, 'a', {
     user: recipient,
-    token: row.numeraire as Hex,
+    token: row.numeraire,
     kind,
     freeDelta: amount,
     commitmentId: commitmentId ?? null,
   })
 }
 
-// Re-read the mutual's snapshot and persist the value-moving fields. Leaves the
-// row untouched (apart from `extra`) on an RPC blip rather than zeroing it.
+// Re-read the mutual's snapshot, persist the value-moving fields, and upsert
+// this block's `mutualState` row. The reads are end-of-block state, so every
+// event in a block writes the same row.
 async function refreshMutual(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
   manager: Hex,
   mutualId: bigint,
-  block: bigint,
+  block: { number: bigint; timestamp: bigint },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extra: Record<string, any> = {},
 ): Promise<void> {
   const id = mutualKey(manager, mutualId)
   const row = await context.db.find(mutual, { id })
   if (!row) return
-  const [snap, premium, juniorPool] = await Promise.all([
+  const [snap, premium] = await Promise.all([
     readMutualSnapshot(context, manager, mutualId),
     readMutualPremiumState(context, manager, mutualId),
-    readMutualJuniorPool(context, manager, mutualId),
   ])
   await context.db.update(mutual, { id }).set({
-    ...(snap
-      ? {
-          totalShares: snap.totalShares,
-          cumulativeLoss: snap.cumulativeLoss,
-          active: snap.active,
-          terminal: snap.terminal,
-          // Heterogeneous config (immutable once set; NULL bandAdapter ⇒ homogeneous).
-          bandAdapter: heteroAdapterOrNull(snap.bandAdapter),
-          valuationFloorBps: snap.valuationFloorBps,
-          valuationCeilBps: snap.valuationCeilBps,
-          juniorBps: snap.juniorBps,
-        }
-      : {}),
-    ...(premium
-      ? {
-          premiumPerShareStored: premium.premiumPerShareStored,
-          activeCover: premium.activeCover,
-          settledTotal: premium.settledTotal,
-          rewardRate: premium.rewardRate,
-          lastUpdate: premium.lastUpdate,
-          periodFinish: premium.periodFinish,
-          premiumRemainder: premium.premiumRemainder,
-          bankedTotal: premium.bankedTotal,
-          premiumPool: premium.premiumPool,
-        }
-      : {}),
-    ...(juniorPool != null ? { juniorPool } : {}),
+    totalShares: snap.totalShares,
+    cumulativeLoss: snap.cumulativeLoss,
+    active: snap.active,
+    terminal: snap.terminal,
+    ...premium,
     ...extra,
-    updatedBlock: block,
+    updatedBlock: block.number,
   })
-}
-
-// The on-chain Mutual.bandAdapter is the zero address until configureHeterogeneous runs;
-// normalize that to NULL so `bandAdapter != null` is the canonical "is heterogeneous" predicate.
-function heteroAdapterOrNull(adapter: Hex): Hex | null {
-  return adapter && adapter !== '0x0000000000000000000000000000000000000000' ? adapter : null
+  const state = {
+    blockTimestamp: block.timestamp,
+    totalShares: snap.totalShares,
+    activeCover: premium.activeCover,
+    cumulativeLoss: snap.cumulativeLoss,
+    settledTotal: premium.settledTotal,
+    rewardRate: premium.rewardRate,
+    periodFinish: premium.periodFinish,
+    premiumPool: premium.premiumPool,
+  }
+  await context.db
+    .insert(mutualState)
+    .values({ id: `${id}-${block.number}`, manager, mutualId, blockNumber: block.number, ...state })
+    .onConflictDoUpdate(state)
 }
 
 // ----------------------------------------------------------------------------
@@ -334,8 +265,8 @@ function heteroAdapterOrNull(adapter: Hex): Hex | null {
 // ----------------------------------------------------------------------------
 
 ponder.on('CommitmentManager:MutualCreated', async ({ event, context }) => {
-  const { mutualId, arbiter, numeraire, beneficiary, valuationAuthority } = event.args
-  const manager = event.log.address as Hex
+  const { mutualId, arbiter, numeraire, beneficiary } = event.args
+  const manager = event.log.address
   const snap = await readMutualSnapshot(context, manager, mutualId)
   await context.db.insert(mutual).values({
     id: mutualKey(manager, mutualId),
@@ -344,14 +275,12 @@ ponder.on('CommitmentManager:MutualCreated', async ({ event, context }) => {
     arbiter,
     numeraire,
     beneficiary,
-    valuationAuthority,
-    challengeWindow: snap ? snap.challengeWindow : 0n,
-    deallocationWindow: snap ? snap.deallocationWindow : 0n,
-    totalShares: snap ? snap.totalShares : 0n,
-    cumulativeLoss: snap ? snap.cumulativeLoss : 0n,
-    active: snap ? snap.active : false,
-    terminal: snap ? snap.terminal : false,
-    status: 'forming',
+    challengeWindow: snap.challengeWindow,
+    deallocationWindow: snap.deallocationWindow,
+    totalShares: snap.totalShares,
+    cumulativeLoss: snap.cumulativeLoss,
+    active: snap.active,
+    terminal: snap.terminal,
     targetCapacity: null,
     termEnd: null,
     perilURI: null,
@@ -364,20 +293,20 @@ ponder.on('CommitmentManager:MutualCreated', async ({ event, context }) => {
 
 ponder.on('CommitmentManager:MutualActivated', async ({ event, context }) => {
   const { mutualId } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   const id = mutualKey(manager, mutualId)
   const row = await context.db.find(mutual, { id })
   if (row) {
     await context.db
       .update(mutual, { id })
-      .set({ status: 'active', active: true, updatedBlock: event.block.number })
+      .set({ active: true, updatedBlock: event.block.number })
   }
   await recordMutualEvent(context, { manager, mutualId, kind: 'activated', event })
 })
 
 ponder.on('CommitmentManager:MemberJoined', async ({ event, context }) => {
   const { mutualId, commitmentId, committer, creditedValue, forfeitableUnits } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   const mem = await readMembership(context, manager, commitmentId)
   await context.db.insert(membership).values({
     id: membershipKey(manager, commitmentId),
@@ -386,18 +315,17 @@ ponder.on('CommitmentManager:MemberJoined', async ({ event, context }) => {
     commitmentId,
     committer,
     forfeitableUnits,
-    settledUnits: mem ? mem.settledUnits : 0n,
+    settledUnits: mem.settledUnits,
     creditedValue,
-    lossSnapshot: mem ? mem.lossSnapshot : 0n,
-    premiumWeight: mem ? mem.premiumWeight : creditedValue,
-    premiumSnapshot: mem ? mem.premiumSnapshot : 0n,
-    rewardBank: mem ? mem.rewardBank : 0n,
+    lossSnapshot: mem.lossSnapshot,
+    premiumSnapshot: mem.premiumSnapshot,
+    rewardBank: mem.rewardBank,
     status: 'active',
     createdBlock: event.block.number,
     updatedBlock: event.block.number,
   })
   // totalShares moves on join — refresh from chain.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -410,25 +338,26 @@ ponder.on('CommitmentManager:MemberJoined', async ({ event, context }) => {
 })
 
 ponder.on('CommitmentManager:MutualLossInitiated', async ({ event, context }) => {
-  const { mutualId, lossNumeraire, proposer } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  const { mutualId, lossNumeraire, evidenceHash, proposer } = event.args
+  const manager = event.log.address
+  // Opening a loss proposal moves no indexed mutual field.
   await recordMutualEvent(context, {
     manager,
     mutualId,
     kind: 'lossInitiated',
     numeraireAmount: lossNumeraire,
     actor: proposer,
+    evidenceHash,
     event,
   })
 })
 
 ponder.on('CommitmentManager:MutualLossExecuted', async ({ event, context }) => {
   const { mutualId, appliedNumeraire, cumulativeLoss } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   // The event carries the authoritative post-execution Lambda; pin it directly
   // (refreshMutual also re-reads totalShares/active/terminal).
-  await refreshMutual(context, manager, mutualId, event.block.number, { cumulativeLoss })
+  await refreshMutual(context, manager, mutualId, event.block, { cumulativeLoss })
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -440,18 +369,15 @@ ponder.on('CommitmentManager:MutualLossExecuted', async ({ event, context }) => 
 })
 
 ponder.on('CommitmentManager:MutualLossCancelled', async ({ event, context }) => {
-  const { mutualId } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
-  await recordMutualEvent(context, { manager, mutualId, kind: 'lossCancelled', event })
+  const { mutualId, stale } = event.args
+  await recordMutualEvent(context, { manager: event.log.address, mutualId, kind: 'lossCancelled', stale, event })
 })
 
 ponder.on('CommitmentManager:MutualLossShortfall', async ({ event, context }) => {
   const { mutualId, shortfallNumeraire } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  // Emitted beside MutualLossExecuted, whose handler refreshes the mutual.
   await recordMutualEvent(context, {
-    manager,
+    manager: event.log.address,
     mutualId,
     kind: 'lossShortfall',
     numeraireAmount: shortfallNumeraire,
@@ -461,21 +387,16 @@ ponder.on('CommitmentManager:MutualLossShortfall', async ({ event, context }) =>
 
 ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
   const { mutualId, commitmentId, owedUnits, cumulativeLoss } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
   const mem = await readMembership(context, manager, commitmentId)
   if (row) {
     await context.db.update(membership, { id }).set({
-      settledUnits: mem ? mem.settledUnits : row.settledUnits + owedUnits,
-      lossSnapshot: mem ? mem.lossSnapshot : row.lossSnapshot,
-      ...(mem
-        ? {
-            premiumWeight: mem.premiumWeight,
-            premiumSnapshot: mem.premiumSnapshot,
-            rewardBank: mem.rewardBank,
-          }
-        : {}),
+      settledUnits: mem.settledUnits,
+      lossSnapshot: mem.lossSnapshot,
+      premiumSnapshot: mem.premiumSnapshot,
+      rewardBank: mem.rewardBank,
       updatedBlock: event.block.number,
     })
   }
@@ -495,32 +416,30 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
       // Without this the member's indexed encumbered balance stays at its
       // pre-loss value forever. (Same shape as the ForfeitExecuted handler in
       // index.ts, which already carries its own bumpEncumbered for this reason.)
-      // `event.args` is `any` through this module's ponder shim; bind the amount
-      // to bigint first so unary minus doesn't widen to number.
-      const owed = owedUnits as bigint
-      await bumpEncumbered(context.db, c.token as Hex, c.committer as Hex, -owed, event.block.number)
+      await bumpEncumbered(context.db, c.token, c.committer, -owedUnits, event.block.number)
       await recordFlow(context.db, event, 'a', {
-        user: c.committer as Hex,
-        token: c.token as Hex,
+        user: c.committer,
+        token: c.token,
         kind: 'forfeitOut',
-        encumberedDelta: -owed,
+        encumberedDelta: -owedUnits,
         commitmentId,
       })
       // The credit lands on the mutual's beneficiary, in the COMMITMENT's token
-      // (the stake), not the mutual numeraire — the junior top-up above is the
-      // numeraire-denominated leg and is logged separately by MutualJuniorDrawn.
+      // (the stake), which is the mutual numeraire.
       const g = await context.db.find(mutual, { id: mutualKey(manager, mutualId) })
       if (g) {
         await recordFlow(context.db, event, 'b', {
-          user: g.beneficiary as Hex,
-          token: c.token as Hex,
+          user: g.beneficiary,
+          token: c.token,
           kind: 'forfeitIn',
-          freeDelta: owed,
+          freeDelta: owedUnits,
           commitmentId,
         })
       }
     }
   }
+  // The settle moves settledTotal, activeCover and the premium accumulator.
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordMutualEvent(context, {
     manager,
     mutualId,
@@ -533,36 +452,57 @@ ponder.on('CommitmentManager:MemberSettled', async ({ event, context }) => {
 })
 
 ponder.on('CommitmentManager:MemberExitRequested', async ({ event, context }) => {
-  const { mutualId, commitmentId } = event.args
-  const manager = event.log.address as Hex
+  const { mutualId, commitmentId, slashableUntil } = event.args
+  const manager = event.log.address
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
   if (row) {
-    await context.db
-      .update(membership, { id })
-      .set({ status: 'exitRequested', updatedBlock: event.block.number })
+    // requestMutualExit banks the member's accrued premium — re-read it.
+    const mem = await readMembership(context, manager, commitmentId)
+    await context.db.update(membership, { id }).set({
+      status: 'exitRequested',
+      exitRequestedAt: event.block.timestamp,
+      slashableUntil,
+      premiumSnapshot: mem.premiumSnapshot,
+      rewardBank: mem.rewardBank,
+      updatedBlock: event.block.number,
+    })
   }
   await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'exitRequested', event })
 })
 
-ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
+// A lapsed exit request, cleared by whoever settled the member next. The member is ordinary
+// cover again and has to ask again to leave.
+ponder.on('CommitmentManager:MemberExitLapsed', async ({ event, context }) => {
   const { mutualId, commitmentId } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
   if (row) {
-    // releaseGroupMember auto-pays the member's accrued premium, so rewardBank
+    await context.db.update(membership, { id }).set({
+      status: 'active',
+      exitRequestedAt: null,
+      slashableUntil: null,
+      updatedBlock: event.block.number,
+    })
+  }
+  await refreshMutual(context, manager, mutualId, event.block)
+  await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'exitLapsed', event })
+})
+
+ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
+  const { mutualId, commitmentId } = event.args
+  const manager = event.log.address
+  const id = membershipKey(manager, commitmentId)
+  const row = await context.db.find(membership, { id })
+  if (row) {
+    // releaseMutualMember auto-pays the member's accrued premium, so rewardBank
     // drops — re-read the membership snapshot to capture it alongside the status.
     const mem = await readMembership(context, manager, commitmentId)
     await context.db.update(membership, { id }).set({
       status: 'released',
-      ...(mem
-        ? {
-            premiumWeight: mem.premiumWeight,
-            premiumSnapshot: mem.premiumSnapshot,
-            rewardBank: mem.rewardBank,
-          }
-        : {}),
+      premiumSnapshot: mem.premiumSnapshot,
+      rewardBank: mem.rewardBank,
       updatedBlock: event.block.number,
     })
   }
@@ -582,19 +522,19 @@ ponder.on('CommitmentManager:MemberReleased', async ({ event, context }) => {
     await bumpAccount(context.db, c.committer, { activeDelta: -1, releasedDelta: 1 })
   }
   // totalShares decremented on release — refresh from chain.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordMutualEvent(context, { manager, mutualId, commitmentId, kind: 'memberReleased', event })
 })
 
 ponder.on('CommitmentManager:MutualTerminated', async ({ event, context }) => {
   const { mutualId } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   const id = mutualKey(manager, mutualId)
   const row = await context.db.find(mutual, { id })
   if (row) {
     await context.db
       .update(mutual, { id })
-      .set({ status: 'terminated', terminal: true, updatedBlock: event.block.number })
+      .set({ terminal: true, updatedBlock: event.block.number })
   }
   await recordMutualEvent(context, { manager, mutualId, kind: 'terminated', event })
 })
@@ -630,6 +570,7 @@ async function recordPremiumFunding(
     rewardRate: rewardRate ?? null,
     periodFinish: periodFinish ?? null,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
@@ -637,373 +578,167 @@ async function recordPremiumFunding(
 
 ponder.on('CommitmentManager:MutualPremiumFunded', async ({ event, context }) => {
   const { mutualId, funder, received, rewardRate, periodFinish } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   // Premium fields (rewardRate / periodFinish / pool) all move on funding.
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPremiumFunding(context, {
     manager,
     mutualId,
     kind: 'funded',
-    actor: funder as Hex,
-    amount: received as bigint,
-    rewardRate: rewardRate as bigint,
-    periodFinish: periodFinish as bigint,
+    actor: funder,
+    amount: received,
+    rewardRate,
+    periodFinish,
     event,
   })
 })
 
 ponder.on('CommitmentManager:MemberPremiumClaimed', async ({ event, context }) => {
   const { commitmentId, recipient, amount } = event.args
-  const manager = event.log.address as Hex
+  const manager = event.log.address
   const id = membershipKey(manager, commitmentId)
   const row = await context.db.find(membership, { id })
-  // Resolve mutualId from the membership row (event carries only commitmentId);
-  // fall back to a live read if the row is somehow absent.
+  // Resolve mutualId from the membership row (event carries only commitmentId),
+  // else from the live membership read the rewardBank refresh needs anyway.
   const mem = await readMembership(context, manager, commitmentId)
-  const mutualId = row?.mutualId ?? (mem ? mem.mutualId : 0n)
+  const mutualId = row?.mutualId ?? mem.mutualId
   await context.db.insert(premiumClaim).values({
     id: `${manager.toLowerCase()}-${commitmentId.toString()}-${event.block.number}-${event.log.logIndex}`,
     manager,
     mutualId,
     commitmentId,
-    recipient: recipient as Hex,
-    amount: amount as bigint,
+    recipient,
+    amount,
     blockNumber: event.block.number,
+    logIndex: event.log.logIndex,
     blockTimestamp: event.block.timestamp,
     txHash: event.transaction.hash,
   })
   // The member's rewardBank drops on claim — refresh the membership snapshot.
   if (row) {
     await context.db.update(membership, { id }).set({
-      ...(mem
-        ? {
-            premiumWeight: mem.premiumWeight,
-            premiumSnapshot: mem.premiumSnapshot,
-            rewardBank: mem.rewardBank,
-          }
-        : {}),
+      premiumSnapshot: mem.premiumSnapshot,
+      rewardBank: mem.rewardBank,
       updatedBlock: event.block.number,
     })
   }
   // bankedTotal / premiumPool move on claim — refresh the mutual.
-  await refreshMutual(context, manager, mutualId, event.block.number)
-  await recordPoolCredit(
-    context,
-    manager,
-    mutualId,
-    recipient as Hex,
-    amount as bigint,
-    'premiumIn',
-    event,
-    commitmentId,
-  )
+  await refreshMutual(context, manager, mutualId, event.block)
+  await recordPoolCredit(context, manager, mutualId, recipient, amount, 'premiumIn', event, commitmentId)
 })
 
 ponder.on('CommitmentManager:PremiumReclaimed', async ({ event, context }) => {
   const { mutualId, recipient, unstreamed } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  const manager = event.log.address
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPremiumFunding(context, {
     manager,
     mutualId,
     kind: 'reclaimed',
-    actor: recipient as Hex,
-    amount: unstreamed as bigint,
+    actor: recipient,
+    amount: unstreamed,
     event,
   })
-  await recordPoolCredit(
-    context,
-    manager,
-    mutualId,
-    recipient as Hex,
-    unstreamed as bigint,
-    'premiumIn',
-    event,
-  )
+  await recordPoolCredit(context, manager, mutualId, recipient, unstreamed, 'premiumIn', event)
 })
 
 ponder.on('CommitmentManager:MutualPremiumSwept', async ({ event, context }) => {
   const { mutualId, recipient, amount } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
+  const manager = event.log.address
+  await refreshMutual(context, manager, mutualId, event.block)
   await recordPremiumFunding(context, {
     manager,
     mutualId,
     kind: 'swept',
-    actor: recipient as Hex,
-    amount: amount as bigint,
+    actor: recipient,
+    amount,
     event,
   })
-  await recordPoolCredit(context, manager, mutualId, recipient as Hex, amount as bigint, 'premiumIn', event)
+  await recordPoolCredit(context, manager, mutualId, recipient, amount, 'premiumIn', event)
 })
 
 // ----------------------------------------------------------------------------
-// Heterogeneous mode (§H §8 / M4) — band config, down-only remark, junior absorber.
+// MutualRegistry — annotate the mutual row with cover terms.
 // ----------------------------------------------------------------------------
 
-ponder.on('CommitmentManager:MutualHeterogeneousConfigured', async ({ event, context }) => {
-  const { mutualId, bandAdapter, valuationFloorBps, valuationCeilBps, juniorBps } = event.args
-  const manager = event.log.address as Hex
-  // The band/junior config arrives complete in the event args (immutable after), so set it
-  // directly rather than re-reading — more robust than a chain round-trip on an RPC blip.
+ponder.on('MutualRegistry:MutualRegistered', async ({ event, context }) => {
+  const { mutualId, beneficiary, numeraire, targetCapacity, termEnd, perilURI, perilHash } = event.args
+  // The registry's `manager()` is immutable; it rebuilds the mutual PK the
+  // event does not carry.
+  const manager = await context.client.readContract({
+    abi: mutualRegistryAbi,
+    address: event.log.address,
+    functionName: 'manager',
+    cache: 'immutable',
+  })
   const id = mutualKey(manager, mutualId)
+  const annotation = { targetCapacity, termEnd, perilURI, perilHash }
   const row = await context.db.find(mutual, { id })
   if (row) {
-    await context.db.update(mutual, { id }).set({
-      bandAdapter: heteroAdapterOrNull(bandAdapter as Hex),
-      valuationFloorBps: valuationFloorBps as bigint,
-      valuationCeilBps: valuationCeilBps as bigint,
-      juniorBps: juniorBps as bigint,
-      updatedBlock: event.block.number,
-    })
+    await context.db
+      .update(mutual, { id })
+      .set({ ...annotation, updatedBlock: event.block.number })
+    return
   }
-  await recordMutualEvent(context, {
+  // Registration observed before MutualCreated (unexpected given createMutual
+  // precedes registerMutual, but tolerate log-order surprises): seed the
+  // row from the live chain snapshot so the annotation isn't dropped.
+  const snap = await readMutualSnapshot(context, manager, mutualId)
+  await context.db.insert(mutual).values({
+    id,
     manager,
     mutualId,
-    kind: 'heteroConfigured',
-    actor: bandAdapter as Hex,
-    event,
+    arbiter: snap.arbiter,
+    numeraire,
+    beneficiary,
+    challengeWindow: snap.challengeWindow,
+    deallocationWindow: snap.deallocationWindow,
+    totalShares: snap.totalShares,
+    cumulativeLoss: snap.cumulativeLoss,
+    active: snap.active,
+    terminal: snap.terminal,
+    ...annotation,
+    createdBlock: event.block.number,
+    updatedBlock: event.block.number,
   })
-})
-
-ponder.on('CommitmentManager:MemberRemarked', async ({ event, context }) => {
-  const { commitmentId, newWeight } = event.args
-  const manager = event.log.address as Hex
-  const id = membershipKey(manager, commitmentId)
-  const row = await context.db.find(membership, { id })
-  const mem = await readMembership(context, manager, commitmentId)
-  if (row) {
-    await context.db.update(membership, { id }).set({
-      // premiumWeight ratcheted down; premiumSnapshot/rewardBank were poked-and-banked at the
-      // old effCover before the shrink, so pull the fresh values when the live read succeeds.
-      premiumWeight: mem ? mem.premiumWeight : (newWeight as bigint),
-      ...(mem ? { premiumSnapshot: mem.premiumSnapshot, rewardBank: mem.rewardBank } : {}),
-      updatedBlock: event.block.number,
-    })
-  }
-  const mutualId = row?.mutualId ?? (mem ? mem.mutualId : 0n)
-  // activeCover shrank by the deliverable-cover delta — refresh the mutual denominator.
-  if (mutualId !== 0n) await refreshMutual(context, manager, mutualId, event.block.number)
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    commitmentId,
-    kind: 'remarked',
-    numeraireAmount: newWeight as bigint, // the new (lower) premium weight
-    event,
-  })
-})
-
-ponder.on('CommitmentManager:MutualJuniorFunded', async ({ event, context }) => {
-  const { mutualId, funder, amount } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number) // juniorPool up
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    kind: 'juniorFunded',
-    actor: funder as Hex,
-    numeraireAmount: amount as bigint,
-    event,
-  })
-})
-
-ponder.on('CommitmentManager:MutualJuniorDrawn', async ({ event, context }) => {
-  const { commitmentId, amount } = event.args
-  const manager = event.log.address as Hex
-  const id = membershipKey(manager, commitmentId)
-  const row = await context.db.find(membership, { id })
-  const mutualId = row?.mutualId ?? (await readMembership(context, manager, commitmentId))?.mutualId ?? 0n
-  if (mutualId !== 0n) await refreshMutual(context, manager, mutualId, event.block.number) // juniorPool down
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    commitmentId,
-    kind: 'juniorDrawn',
-    numeraireAmount: amount as bigint,
-    event,
-  })
-  // The draw tops up the loss beneficiary's recovery, so the credit lands on
-  // the MUTUAL's beneficiary — the event names only the member commitment.
-  if (mutualId !== 0n) {
-    const g = await context.db.find(mutual, { id: mutualKey(manager, mutualId) })
-    if (g) {
-      await recordPoolCredit(
-        context,
-        manager,
-        mutualId,
-        g.beneficiary as Hex,
-        amount as bigint,
-        'juniorIn',
-        event,
-        commitmentId,
-      )
-    }
-  }
-})
-
-ponder.on('CommitmentManager:MutualJuniorSwept', async ({ event, context }) => {
-  const { mutualId, recipient, amount } = event.args
-  const manager = event.log.address as Hex
-  await refreshMutual(context, manager, mutualId, event.block.number)
-  await recordMutualEvent(context, {
-    manager,
-    mutualId,
-    kind: 'juniorSwept',
-    actor: recipient as Hex,
-    numeraireAmount: amount as bigint,
-    event,
-  })
-  await recordPoolCredit(context, manager, mutualId, recipient as Hex, amount as bigint, 'juniorIn', event)
 })
 
 // ----------------------------------------------------------------------------
-// MutualRegistry (optional) — annotate the mutual row with cover terms.
+// LinkedMutualPolicy — cover bindings.
 // ----------------------------------------------------------------------------
-
-// Resolve and cache the immutable `manager()` a registry/policy reports. The
-// binding never changes, so we read it once per address and reuse it to
-// reconstruct mutual PKs `${manager}-${mutualId}` that the events don't carry.
-// Returns null on an RPC blip without poisoning the cache.
-async function resolveManagerCached(
-  cache: Map<string, Hex>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  address: Hex,
-  abi: readonly unknown[],
-): Promise<Hex | null> {
-  const key = address.toLowerCase()
-  const cached = cache.get(key)
-  if (cached) return cached
-  try {
-    const m = (await context.client.readContract({ abi, address, functionName: 'manager' })) as Hex
-    cache.set(key, m)
-    return m
-  } catch {
-    return null
-  }
-}
-
-// The CommitmentManager a MutualRegistry's mutuals live under.
-const managerByRegistry = new Map<string, Hex>()
-async function resolveMutualManager(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  registry: Hex,
-): Promise<Hex | null> {
-  return resolveManagerCached(managerByRegistry, context, registry, mutualRegistryAbi)
-}
-
-if (MUTUAL_REGISTRY_ENABLED) {
-  ponder.on('MutualRegistry:MutualRegistered', async ({ event, context }) => {
-    const { mutualId, beneficiary, numeraire, targetCapacity, termEnd, perilURI, perilHash } =
-      event.args
-    const registry = event.log.address as Hex
-    const manager = await resolveMutualManager(context, registry)
-    if (!manager) return
-    const id = mutualKey(manager, mutualId)
-    const annotation = {
-      targetCapacity: targetCapacity as bigint,
-      termEnd: termEnd as bigint,
-      perilURI: perilURI as string,
-      perilHash: perilHash as string,
-    }
-    const row = await context.db.find(mutual, { id })
-    if (row) {
-      await context.db
-        .update(mutual, { id })
-        .set({ ...annotation, updatedBlock: event.block.number })
-      return
-    }
-    // Registration observed before MutualCreated (unexpected given createMutual
-    // precedes registerMutual, but tolerate log-order surprises): seed the
-    // row from the live chain snapshot so the annotation isn't dropped.
-    const snap = await readMutualSnapshot(context, manager, mutualId)
-    await context.db.insert(mutual).values({
-      id,
-      manager,
-      mutualId,
-      arbiter: snap?.arbiter ?? ZERO,
-      numeraire,
-      beneficiary,
-      valuationAuthority: snap?.valuationAuthority ?? ZERO,
-      challengeWindow: snap ? snap.challengeWindow : 0n,
-      deallocationWindow: snap ? snap.deallocationWindow : 0n,
-      totalShares: snap ? snap.totalShares : 0n,
-      cumulativeLoss: snap ? snap.cumulativeLoss : 0n,
-      active: snap ? snap.active : false,
-      terminal: snap ? snap.terminal : false,
-      status: snap?.active ? 'active' : 'forming',
-      ...annotation,
-      createdBlock: event.block.number,
-      updatedBlock: event.block.number,
-    })
-  })
-}
-
-// ----------------------------------------------------------------------------
-// LinkedMutualPolicy (optional) — cover bindings + standby premium funding.
-// ----------------------------------------------------------------------------
-
-// The CommitmentManager a LinkedMutualPolicy funds premium into (StandbyFunded
-// reconstructs the mutual PK `${manager}-${mutualId}` from it, since the event lacks it).
-const managerByPolicy = new Map<string, Hex>()
-async function resolvePolicyManager(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: any,
-  policy: Hex,
-): Promise<Hex | null> {
-  return resolveManagerCached(managerByPolicy, context, policy, linkedMutualPolicyAbi)
-}
 
 const coverBindingKey = (policy: Hex, bindingId: bigint) =>
   `${policy.toLowerCase()}-${bindingId.toString()}`
 
-if (LINKED_POLICY_ENABLED) {
-  ponder.on('LinkedMutualPolicy:CoverBound', async ({ event, context }) => {
-    const { bindingId, mutualId, policyholder, notional, expiry, premiumPaid } = event.args
-    const policy = event.log.address as Hex
-    await context.db.insert(coverBinding).values({
-      id: coverBindingKey(policy, bindingId as bigint),
-      policy,
-      mutualId: mutualId as bigint,
-      bindingId: bindingId as bigint,
-      policyholder: policyholder as Hex,
-      notional: notional as bigint,
-      expiry: expiry as bigint,
-      premiumPaid: premiumPaid as bigint,
-      active: true,
-      createdBlock: event.block.number,
-      updatedBlock: event.block.number,
-    })
+ponder.on('LinkedMutualPolicy:CoverBound', async ({ event, context }) => {
+  const { bindingId, mutualId, policyholder, notional, expiry, premiumPaid } = event.args
+  const policy = event.log.address
+  await context.db.insert(coverBinding).values({
+    id: coverBindingKey(policy, bindingId),
+    policy,
+    mutualId,
+    bindingId,
+    policyholder,
+    notional,
+    expiry,
+    premiumPaid,
+    active: true,
+    createdBlock: event.block.number,
+    createdAt: event.block.timestamp,
+    updatedBlock: event.block.number,
   })
+})
 
-  ponder.on('LinkedMutualPolicy:StandbyFunded', async ({ event, context }) => {
-    const { mutualId, funder, premiumPaid } = event.args
-    const policy = event.log.address as Hex
-    // Standby funding lands on the mutual's premium stream — refresh the mutual
-    // (resolve its manager from the policy) and append a standby funding row.
-    const manager = await resolvePolicyManager(context, policy)
-    if (manager) await refreshMutual(context, manager, mutualId as bigint, event.block.number)
-    await recordPremiumFunding(context, {
-      manager: manager ?? policy,
-      mutualId: mutualId as bigint,
-      kind: 'standby',
-      actor: funder as Hex,
-      amount: premiumPaid as bigint,
-      event,
-    })
-  })
+// StandbyFunded is not indexed: the policy funds through
+// `manager.fundMutualPremium`, so the same transaction's MutualPremiumFunded
+// already writes the `funded` row and refreshes the mutual.
 
-  ponder.on('LinkedMutualPolicy:BindingExpired', async ({ event, context }) => {
-    const { bindingId } = event.args
-    const policy = event.log.address as Hex
-    const id = coverBindingKey(policy, bindingId as bigint)
-    const row = await context.db.find(coverBinding, { id })
-    if (row) {
-      await context.db
-        .update(coverBinding, { id })
-        .set({ active: false, updatedBlock: event.block.number })
-    }
-  })
-}
+ponder.on('LinkedMutualPolicy:BindingExpired', async ({ event, context }) => {
+  const id = coverBindingKey(event.log.address, event.args.bindingId)
+  const row = await context.db.find(coverBinding, { id })
+  if (row) {
+    await context.db
+      .update(coverBinding, { id })
+      .set({ active: false, expiredAt: event.block.timestamp, updatedBlock: event.block.number })
+  }
+})

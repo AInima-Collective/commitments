@@ -102,20 +102,19 @@ function acceptAgreement(uint256 proposalId)
 function cancelAgreementProposal(uint256 proposalId) external;
 function forfeitAgreement(uint256 agreementId, uint16 penaltyBps) external;
 function releaseAgreement(uint256 agreementId) external;
-function requestAgreementUnbond(uint256 agreementId) external;
 
 /// The agreement a proposal produced (0 = never accepted); the canonical
 /// terminal-state read for a proposalId.
 function agreementOfProposal(uint256 proposalId) external view returns (uint256);
 ```
 
-`proposeAgreement` MUST encumber the proposer's free balance of `proposerLeg.token` immediately (`proposerLeg.amount` units, moved free → encumbered on the manager's ledger) and MUST check the exposure allocation invariant (core INV-3) for the proposer before encumbering. Each leg MUST independently satisfy: non-zero `token` and `adapter`, non-zero `amount`, `maxPenaltyBps ≤ 10_000`, and `strategies.length ≤ MAX_STRATEGIES` (core §0.3). The proposal MUST expire after `proposalDuration` seconds. `proposalDuration` MUST NOT exceed `MAX_PROPOSAL_DURATION` (core §0.3).
+`proposeAgreement` MUST encumber the proposer's free balance of `proposerLeg.token` immediately (`proposerLeg.amount` units, moved free → encumbered on the manager's ledger) and adds the proposer's exposure (core INV-3, which holds by construction; core §C.2 erratum). Each leg MUST independently satisfy: non-zero `token` and `adapter`, non-zero `amount`, `maxPenaltyBps ≤ 10_000`, and `strategies.length ≤ MAX_STRATEGIES` (core §0.3). The proposal MUST expire after `proposalDuration` seconds. `proposalDuration` MUST NOT exceed `MAX_PROPOSAL_DURATION` (core §0.3).
 
 **Independent legs.** The two legs are validated on their own token/adapter/amount/penalty/strategy set; there is **no** cross-leg equality requirement. A cross-token agreement (`proposerLeg.token != acceptorLeg.token`) is a first-class configuration, not an error. This is coherent with bilateral settlement (§5), which is denominated in the **payer** leg's token in each direction.
 
 **Pending-proposal reads.** There is no proposal-struct getter. The immutable per-leg economic terms of a pending proposal are event-sourced via `AgreementProposedTerms` (§6) — one `getLogs` by `proposalId` is authoritative because the terms never change after propose. A proposal's terminal state resolves via `agreementOfProposal(proposalId)` (non-zero ⇒ accepted, and the returned value is the produced `agreementId`) or via the accept/cancel events.
 
-`acceptAgreement` MUST be callable only by the named acceptor and MUST encumber the acceptor's free balance of `acceptorLeg.token`. It MUST create two linked commitments (proposer→acceptor, acceptor→proposer) sharing the same arbiter and `challengeWindow`, each carrying its own leg's `token`, `adapter`, `amount`, and `maxPenaltyBps`, linked under a shared `agreementId`. The exposure allocation invariant (core INV-3) MUST be checked for the acceptor before encumbrance. It returns `(agreementId, commitmentIdA, commitmentIdB)` — the proposer leg and the acceptor leg — so callers need no follow-up `getAgreementPair`.
+`acceptAgreement` MUST be callable only by the named acceptor and MUST encumber the acceptor's free balance of `acceptorLeg.token`. It MUST create two linked commitments (proposer→acceptor, acceptor→proposer) sharing the same arbiter and `challengeWindow`, each carrying its own leg's `token`, `adapter`, `amount`, and `maxPenaltyBps`, linked under a shared `agreementId`. The acceptor's exposure is added as at propose (core INV-3 holds by construction; core §C.2 erratum). Each leg stores the proposal's `metadataHash`; the `metadataURI` stays on the proposal and is emitted in each leg's `CommitmentCreated` and in `AgreementAccepted`, not copied into the legs. It returns `(agreementId, commitmentIdA, commitmentIdB)` — the proposer leg and the acceptor leg — so callers need no follow-up `getAgreementPair`.
 
 **Strategy bindings.** Each leg carries its **own** strategy set (`LegTerms.strategies`, each bounded by `MAX_STRATEGIES`, core §0.3), bound only to that leg. On acceptance, for each leg the manager MUST invoke every bound strategy's `onCommitmentCreated` hook once with that leg's `CreatedContext` and MUST emit `CommitmentBoundToStrategy` once per (leg, strategy). A strategy that cannot serve its leg's `(adapter, token)` reverts at `onCommitmentCreated`, aborting acceptance atomically (the core's compatibility-refusal mechanism). Zero and duplicate strategy addresses within a leg's set are rejected at propose time.
 
@@ -123,7 +122,7 @@ function agreementOfProposal(uint256 proposalId) external view returns (uint256)
 
 ### 3. Atomic forfeit and release
 
-`forfeitAgreement(id, penaltyBps)` MUST initiate forfeit proposals on both legs at the caller-supplied `penaltyBps`. Only the shared arbiter MAY call this. `penaltyBps` MUST NOT exceed either **unresolved** leg's `maxPenaltyBps`; the manager MUST validate against every unresolved leg and revert `PenaltyExceedsMax` **before** mutating either leg, so an out-of-range penalty never produces a partial one-leg forfeit. If one side is already resolved (released, forfeited, or finalized), the function MUST emit `AgreementPartialForfeit` for that side and proceed on the other. Pass each leg's `maxPenaltyBps` for a full forfeit.
+`forfeitAgreement(id, penaltyBps)` MUST initiate forfeit proposals on both legs at the caller-supplied `penaltyBps`. Only the shared arbiter MAY call this. `penaltyBps` MUST NOT exceed either **unresolved** leg's `maxPenaltyBps`; the manager MUST validate against every unresolved leg and revert `PenaltyExceedsMax` **before** mutating either leg, so an out-of-range penalty never produces a partial one-leg forfeit. If one side is already resolved (released, forfeited, or finalized), the function MUST emit `AgreementPartialForfeit` for that side and proceed on the other. An unresolved leg that already has an active forfeit proposal is left unchanged; if no leg receives a new proposal, the function MUST revert `ForfeitPending`, so `AgreementForfeited` is emitted only when at least one proposal was written. To change the penalty of a live proposal, the arbiter cancels it first. Pass each leg's `maxPenaltyBps` for a full forfeit.
 
 `releaseAgreement(id)` MUST release both commitments atomically. Only the shared arbiter MAY call this. Each leg's release runs that leg's bound-strategy `onCommitmentReleased` hooks under the core's guarded-hook semantics (core Part D §D.6) — a reverting strategy parks its accrual and the release completes.
 
@@ -140,8 +139,6 @@ This gating is a deliberate, consented override of the core §C.1/§C.3 per-comm
 ### 4. Symmetric unbond
 
 `requestUnbond(commitmentId)` (core §C.5) MUST auto-propagate to the partner commitment when the input commitment is part of an agreement. `finalizeUnbond` on either side after the window MUST be permitted. `cancelUnbond` on either side MUST cancel the unbond on both sides — the agreement simply continues.
-
-`requestAgreementUnbond(agreementId)` is a convenience that performs `requestUnbond` on both sides explicitly and emits `AgreementUnbondRequested(agreementId)`.
 
 This preserves the bilateral-symmetry guarantee under committer-liveness: when one party walks, both walk; when one party stays, neither party is forced out.
 
@@ -174,13 +171,13 @@ event AgreementSettled(
 `settleAgreement(agreementId, fromProposer, units, evidenceHash)` moves `units` denominated in the **payer** leg's token — the proposer leg when `fromProposer == true`, else the acceptor leg. It MUST:
 
 - Be callable only by the agreement's shared arbiter (`NotArbiter`).
-- Revert `ZeroAmount` if `units == 0`, and `SettlementCapExceeded(type(uint128).max, 0)` if `units > type(uint128).max` (the cumulative-flow counters are `uint128`).
+- Revert `ZeroAmount` if `units == 0`, and `SettlementCapExceeded(type(uint128).max, cap)` if `units > type(uint128).max`, where `cap` is the direction's `uint128` cap (the cumulative-flow counters are `uint128`, so the request is reported saturated).
 - Revert if either leg is released or forfeited (`CommitmentInactive`), has an active forfeit proposal (`ForfeitPending`), or has a pending unbond on either side (`UnbondPending`).
 - Revert if the per-direction cap is zero (`SettlementCapZero`), or if the ratcheted cumulative would exceed it (`SettlementCapExceeded(cumulAfter, cap)`).
 - Revert `InsufficientCommitmentAmount(units, payerAmount)` if `units` exceeds the payer leg's current `amount`.
 - **Advance strategy accrual at pre-settle principal.** Before shifting any principal, the manager MUST invoke `distribute` on every strategy bound to either leg, in each leg's `strategies[]` array order, via the core's guarded-hook mechanism (try/catch + min-gas guard, core §D.6). A leg that is resolved or has a pending forfeit is skipped for the pre-distribute; a strategy whose `distribute` reverts or returns invalid movements is skipped (its movements are not applied and `StrategyHookFailed` is emitted); the settlement proceeds. Accrual baselines reset at pre-settle principals so subsequent `distribute` calls accrue against the post-settle amounts, and no strategy can veto an arbiter settlement.
 - Move `units` of the payer leg's token from the payer's **encumbered** balance to the receiver committer's **free** balance, as a manager-internal ledger operation. The settled value becomes liquid to the receiver — it is **not** re-encumbered under the agreement, so it carries no forfeit risk. Conservation: for the payer's token, the manager ledger's encumbered goes down and the receiver's free goes up by the same `units`; the per-token sums of the ledger and the manager's token balance are unchanged (core INV-1 holds across the move).
-- Update **only** the payer leg's `commitment.amount` and the payer's per-`(user, token)` exposure (encumbered + forfeitable); the receiver leg is untouched. Forfeitable updates MUST use the exposure-before/after diff (not `(units × maxPenaltyBps) / 10_000` recomputation) to keep core INV-3 dust-free across integer truncation (see core Rationale §"Exposure-before/after diff").
+- Update **only** the payer leg's `commitment.amount` and the payer's per-`(user, token)` forfeitable exposure (the encumbered side is the ledger balance, which the shift debits); the receiver leg is untouched. Forfeitable updates MUST use the exposure-before/after diff (not `(units × maxPenaltyBps) / 10_000` recomputation) to keep core INV-3 dust-free across integer truncation (see core Rationale §"Exposure-before/after diff").
 - Update the payer-direction cumulative-flow counter and emit `AgreementSettled`.
 
 **Storage discipline.** Per-direction caps and cumulative-flow counters live in parallel mappings on the manager's namespaced (EIP-7201) storage, not on the `AgreementProposal` struct. The `AgreementSettled` event is the on-chain transcript of cumulative state for indexers; on-chain reads go through the companion view:
@@ -232,7 +229,6 @@ event AgreementProposalExpiredCancelled(uint256 indexed proposalId, address inde
 event AgreementForfeited(uint256 indexed agreementId);
 event AgreementReleased(uint256 indexed agreementId);
 event AgreementPartialForfeit(uint256 indexed agreementId, uint256 indexed commitmentId);
-event AgreementUnbondRequested(uint256 indexed agreementId);
 event AgreementSettled(uint256 indexed agreementId, bool fromProposer, uint256 units, uint256 cumulativeProposerToAcceptor, uint256 cumulativeAcceptorToProposer, bytes32 evidenceHash);
 
 // Extension-specific errors.
@@ -249,7 +245,7 @@ error SettlementCapExceeded(uint128 requested, uint128 cap);
 error InsufficientCommitmentAmount(uint256 requested, uint256 available);
 ```
 
-Agreement operations also surface errors reused from the core standard: `UseAgreementPath` (§3.1 — a per-leg lifecycle call on an agreement leg), `NotArbiter` (forfeit/release/settle authority), `PenaltyExceedsMax` (§3 penalty range and per-leg validation), `ZeroAmount` (`settleAgreement` with `units == 0`, and per-leg zero amount), `ExposureAllocationExceeded` (INV-3 check at propose/accept), `CommitmentInactive` / `ForfeitPending` / `UnbondPending` (`settleAgreement` state guards), and the leg-validation errors `ZeroArbiter`, `ZeroCounterparty`, `ZeroAddress`, `TooManyStrategies`, `DuplicateStrategy`, `ChallengeWindowTooShort`, and `URITooLong`.
+Agreement operations also surface errors reused from the core standard: `UseAgreementPath` (§3.1 — a per-leg lifecycle call on an agreement leg), `NotArbiter` (forfeit/release/settle authority), `PenaltyExceedsMax` (§3 penalty range and per-leg validation), `ZeroAmount` (`settleAgreement` with `units == 0`, and per-leg zero amount), `CommitmentInactive` / `ForfeitPending` / `UnbondPending` (`settleAgreement` state guards; `ForfeitPending` also when `forfeitAgreement` writes no new proposal), and the leg-validation errors `ZeroArbiter`, `ZeroCounterparty`, `ZeroAddress`, `TooManyStrategies`, `DuplicateStrategy`, `ChallengeWindowTooShort`, and `URITooLong`.
 
 ### 7. Invariants
 
@@ -292,8 +288,8 @@ The reference implementation ships an agreements suite at `test/manager/Agreemen
 
 The agreements extension is implemented as an external delegatecall library:
 
-- `src/extensions/agreements/AgreementLib.sol` — propose/accept/cancel, atomic bilateral forfeit and release, symmetric unbond, and bilateral settlement (guarded pre-settle distribute plus the per-direction cap and encumbered→free shift).
-- `src/core/manager/CommitmentManager.sol` — the thin dispatch wrappers (`proposeAgreement`, `acceptAgreement`, `cancelAgreementProposal`, `forfeitAgreement`, `releaseAgreement`, `requestAgreementUnbond`, `settleAgreement`) and the `getAgreementPair` / `agreementOf` / `agreementOfProposal` / `getAgreementSettlement` views.
+- `src/extensions/agreements/AgreementLib.sol` — propose/accept/cancel, atomic bilateral forfeit and release, and bilateral settlement (guarded pre-settle distribute plus the per-direction cap and encumbered→free shift).
+- `src/core/manager/CommitmentManager.sol` — the thin dispatch wrappers (`proposeAgreement`, `acceptAgreement`, `cancelAgreementProposal`, `forfeitAgreement`, `releaseAgreement`, `settleAgreement`) and the `getAgreementPair` / `agreementOf` / `agreementOfProposal` / `getAgreementSettlement` views.
 - `src/core/interfaces/ICommitmentManager.sol` — the `LegTerms` / `AgreementParams` / `AgreementProposal` / `AgreementSettlement` structs, events, and errors.
 
 ## Security Considerations

@@ -3,60 +3,22 @@ pragma solidity ^0.8.27;
 
 import "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {CommitmentManager} from "src/core/manager/CommitmentManager.sol";
+import {ManagerTestBase} from "../helpers/ManagerTestBase.sol";
 import {ICommitmentManager as ICM} from "src/core/interfaces/ICommitmentManager.sol";
-import {MockERC20} from "../helpers/MockERC20.sol";
 import {MockERC20Permit} from "../helpers/MockERC20Permit.sol";
+import {FeeOnTransferERC20} from "../helpers/Mocks.sol";
 
-/// @dev Fee-on-transfer mock: skims `feeBps` on every transfer. Used to prove the
-///      measured-delta rule keeps the ledger honest (ERC §A.2).
-contract FeeOnTransferERC20 is ERC20 {
-    uint16 public feeBps;
-
-    constructor(uint16 feeBps_) ERC20("Fee", "FEE") {
-        feeBps = feeBps_;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-
-    function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0)) {
-            uint256 fee = (value * feeBps) / 10_000;
-            super._update(from, address(0xdead), fee);
-            super._update(from, to, value - fee);
-        } else {
-            super._update(from, to, value);
-        }
-    }
-}
-
-contract CustodyTest is Test {
-    CommitmentManager internal manager;
-    MockERC20 internal token;
-
-    address internal admin = makeAddr("admin");
+contract CustodyTest is ManagerTestBase {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal strategy = makeAddr("strategy");
     address internal pauser = makeAddr("pauser");
     address internal unpauser = makeAddr("unpauser");
 
-    uint64 internal constant UNBONDING = 7 days;
-
-    function setUp() public {
-        CommitmentManager impl = new CommitmentManager();
-        manager = CommitmentManager(
-            address(
-                new ERC1967Proxy(
-                    address(impl), abi.encodeCall(CommitmentManager.initialize, (admin, UNBONDING, 14 days))
-                )
-            )
-        );
-        token = new MockERC20("Backing", "BCK", 18);
+    function setUp() public override {
+        super.setUp();
 
         token.mint(alice, 1_000e18);
         token.mint(bob, 1_000e18);
@@ -71,9 +33,13 @@ contract CustodyTest is Test {
         vm.stopPrank();
     }
 
+    function _paused() internal view returns (bool paused) {
+        (paused,,,,) = manager.pauseState();
+    }
+
     function _partitionHolds() internal view {
-        (uint256 free, uint256 enc, uint256 esc) = manager.ledgerTotals(address(token));
-        assertEq(free + enc + esc, token.balanceOf(address(manager)), "INV-1 partition");
+        (uint256 free, uint256 enc, uint256 esc, uint256 mp) = manager.ledgerTotals(address(token));
+        assertEq(free + enc + esc + mp, token.balanceOf(address(manager)), "INV-1 partition");
     }
 
     // =========================================================================
@@ -92,7 +58,7 @@ contract CustodyTest is Test {
         assertEq(manager.unbondingPeriod(), UNBONDING);
         assertEq(manager.MIN_CHALLENGE_WINDOW(), 86_400);
         assertEq(manager.hookGasCap(), 500_000);
-        assertFalse(manager.forfeiturePaused());
+        assertFalse(_paused());
     }
 
     // =========================================================================
@@ -126,7 +92,7 @@ contract CustodyTest is Test {
 
         // 1% skimmed in transit: the ledger credits what actually arrived.
         assertEq(manager.freeBalance(address(fee), alice), 99e18, "credited measured delta");
-        (uint256 free,,) = manager.ledgerTotals(address(fee));
+        (uint256 free,,,) = manager.ledgerTotals(address(fee));
         assertEq(free, 99e18);
         assertEq(fee.balanceOf(address(manager)), 99e18, "INV-1 holds for fee token");
     }
@@ -281,7 +247,7 @@ contract CustodyTest is Test {
         manager.fundStrategy(strategy, address(token), 50e18);
 
         assertEq(manager.escrowOf(address(token), strategy), 50e18);
-        (,, uint256 esc) = manager.ledgerTotals(address(token));
+        (,, uint256 esc,) = manager.ledgerTotals(address(token));
         assertEq(esc, 50e18);
         _partitionHolds();
     }
@@ -314,7 +280,7 @@ contract CustodyTest is Test {
     function test_pause_roles() public {
         vm.prank(pauser);
         manager.pauseForfeiture();
-        assertTrue(manager.forfeiturePaused());
+        assertTrue(_paused());
 
         // Pauser cannot unpause (role separation).
         vm.prank(pauser);
@@ -323,7 +289,7 @@ contract CustodyTest is Test {
 
         vm.prank(unpauser);
         manager.unpauseForfeiture();
-        assertFalse(manager.forfeiturePaused());
+        assertFalse(_paused());
     }
 
     function test_pause_unauthorizedReverts() public {
@@ -365,12 +331,13 @@ contract CustodyTest is Test {
         assertEq(manager.MIN_CHALLENGE_WINDOW(), 1 days, "failed update leaves default active");
     }
 
-    function test_setMinChallengeWindow_zeroRestoresLazyDefault() public {
+    function test_setMinChallengeWindow_rejectsZero() public {
         vm.prank(admin);
         manager.setMinChallengeWindow(2 days);
         vm.prank(admin);
+        vm.expectRevert(ICM.MinChallengeWindowBelowFloor.selector);
         manager.setMinChallengeWindow(0);
-        assertEq(manager.MIN_CHALLENGE_WINDOW(), 86_400, "0 restores default");
+        assertEq(manager.MIN_CHALLENGE_WINDOW(), 2 days, "failed update leaves the value");
     }
 
     function test_setHookGasCap_floorEnforced() public {
@@ -383,8 +350,9 @@ contract CustodyTest is Test {
         manager.setHookGasCap(499_999);
 
         vm.prank(admin);
+        vm.expectRevert(ICM.ZeroAmount.selector);
         manager.setHookGasCap(0);
-        assertEq(manager.hookGasCap(), 500_000, "0 restores default");
+        assertEq(manager.hookGasCap(), 1_000_000, "failed update leaves the value");
     }
 
     function test_adminSetters_unauthorizedRevert() public {

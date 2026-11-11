@@ -17,7 +17,7 @@ transaction, preventing initializer front-running.
 Gas cost per clone + initialize is below 200k.
 
 Shares the extracted `Factory` base: the three node implementations are
-whitelisted at construction, each self-verified against its `FACTORY_TYPE_ID`, so the
+whitelisted at construction, each self-verified against its type id from `IMeshFactory.sol`, so the
 factory can only ever clone vetted node types. The `deploy*` entry points remain
 PERMISSIONLESS (the OperatorRegistry lazily clones per-operator FanIn nodes) — they
 just gate on the whitelist/blacklist ladder, so the factory owner can `blacklist` a
@@ -25,35 +25,7 @@ node implementation to freeze new clones of it. `Multicallable` lets a caller ba
 several node deploys (e.g. FanIn + TokenWeighting) into one transaction.
 
 
-## Constants
-### FAN_IN_TYPE_ID
-Must equal `FanInNode.FACTORY_TYPE_ID`. Hardcoded so the factory asserts each slot's
-node type and the implementation self-confirms it (a FanOut cannot fill the FanIn slot).
-
-
-```solidity
-bytes32 private constant FAN_IN_TYPE_ID = keccak256("commitments.mesh.fan_in")
-```
-
-
-### FAN_OUT_TYPE_ID
-Must equal `FanOutNode.FACTORY_TYPE_ID`.
-
-
-```solidity
-bytes32 private constant FAN_OUT_TYPE_ID = keccak256("commitments.mesh.fan_out")
-```
-
-
-### TOKEN_WEIGHTING_TYPE_ID
-Must equal `TokenWeighting.FACTORY_TYPE_ID`.
-
-
-```solidity
-bytes32 private constant TOKEN_WEIGHTING_TYPE_ID = keccak256("commitments.mesh.token_weighting")
-```
-
-
+## State Variables
 ### fanInImpl
 FanIn implementation contract (immutable)
 
@@ -85,7 +57,7 @@ address public immutable tokenWeightingImpl
 ### constructor
 
 Whitelists each implementation via the `Factory` base, self-verifying it against
-the node's `FACTORY_TYPE_ID`. The deployer becomes the owner of the
+the node's type id (`FAN_IN_TYPE_ID`, ...). The deployer becomes the owner of the
 implementation-set controls (whitelist additions / blacklist valve).
 
 
@@ -137,31 +109,6 @@ function deployFanOut(address provider, address manager) external returns (addre
 |----|----|-----------|
 |`provider`|`address`|The single provider for the fan-out node|
 |`manager`|`address`|The manager/owner address|
-
-**Returns**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`clone`|`address`|The address of the deployed FanOut clone|
-
-
-### deployFanOutWithPenalty
-
-Deploy a FanOut clone with a configured input penalty cap (, ).
-
-
-```solidity
-function deployFanOutWithPenalty(address provider, address manager, uint16 inputMaxPenaltyBps)
-    external
-    returns (address clone);
-```
-**Parameters**
-
-|Name|Type|Description|
-|----|----|-----------|
-|`provider`|`address`|The single provider for the fan-out node|
-|`manager`|`address`|The manager/owner address|
-|`inputMaxPenaltyBps`|`uint16`|The cap in basis points (0..10_000) the provider committed upstream|
 
 **Returns**
 
@@ -240,17 +187,6 @@ function deployFanOutAt(bytes32 salt, address provider, address manager) externa
 |----|----|-----------|
 |`clone`|`address`|The deployed clone address|
 
-
-### deployFanOutWithPenaltyAt
-
-Deterministic FanOut deploy with a configured input penalty cap.
-
-
-```solidity
-function deployFanOutWithPenaltyAt(bytes32 salt, address provider, address manager, uint16 inputMaxPenaltyBps)
-    external
-    returns (address clone);
-```
 
 ### deployTokenWeightingAt
 

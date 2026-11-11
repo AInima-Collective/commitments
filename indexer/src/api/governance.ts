@@ -15,12 +15,13 @@
  * the way out.
  */
 import { Hono } from 'hono'
-import { and, asc, desc, eq, gte, lte, sql } from 'ponder'
+import { and, asc, desc, eq, lt, or, sql } from 'ponder'
 import { db, publicClients } from 'ponder:api'
 import schema from 'ponder:schema'
 import type { Hex } from 'viem'
 
 import { CHAIN_NAME } from '../env'
+import { encodeBlockCursor, parseBlockCursor, parseId, parseLimit } from './http'
 
 interface MinimalBlockClient {
   getBlockNumber(): Promise<bigint>
@@ -257,31 +258,45 @@ app.get('/:address', async (c) => {
 
 /**
  * GET /governors/:address/proposals?state=&kind=&proposer=&limit=&cursor=
+ *
+ * Newest first by (createdBlock, proposalId). `cursor` is the previous page's
+ * `nextCursor` (`<block>:<proposalId>`); the next page starts strictly after it.
  */
 app.get('/:address/proposals', async (c) => {
   const address = c.req.param('address').toLowerCase() as Hex
   const stateFilter = c.req.query('state') ?? undefined
   const kindFilter = c.req.query('kind') ?? undefined
   const proposerFilter = c.req.query('proposer')?.toLowerCase() as Hex | undefined
-  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 50), 1), 200)
-  const cursor = c.req.query('cursor')
+  const limit = parseLimit(c, 50, 200)
+  const rawCursor = c.req.query('cursor')
+  const cursor = rawCursor ? parseBlockCursor(rawCursor) : null
+  const cursorId = cursor ? parseId(cursor.key) : null
+  if (rawCursor && cursorId === null) return c.json({ error: 'invalid cursor' }, 400)
 
   const conditions = [eq(schema.proposal.governor, address)]
   if (stateFilter) conditions.push(eq(schema.proposal.state, stateFilter))
   if (kindFilter) conditions.push(eq(schema.proposal.kind, kindFilter))
   if (proposerFilter) conditions.push(eq(schema.proposal.proposer, proposerFilter))
-  if (cursor) conditions.push(lte(schema.proposal.createdBlock, BigInt(cursor)))
+  if (cursor && cursorId !== null) {
+    conditions.push(
+      or(
+        lt(schema.proposal.createdBlock, cursor.block),
+        and(eq(schema.proposal.createdBlock, cursor.block), lt(schema.proposal.proposalId, cursorId)),
+      )!,
+    )
+  }
 
   const rows = (await db
     .select()
     .from(schema.proposal)
     .where(and(...conditions))
-    .orderBy(desc(schema.proposal.createdBlock))
+    .orderBy(desc(schema.proposal.createdBlock), desc(schema.proposal.proposalId))
     .limit(limit + 1)) as ProposalRow[]
 
   const hasNext = rows.length > limit
   const slice = hasNext ? rows.slice(0, limit) : rows
-  const nextCursor = hasNext ? slice[slice.length - 1].createdBlock.toString() : null
+  const last = slice[slice.length - 1]
+  const nextCursor = hasNext ? encodeBlockCursor(last.createdBlock, last.proposalId) : null
 
   const block = await currentBlock()
 
@@ -297,8 +312,8 @@ app.get('/:address/proposals', async (c) => {
  */
 app.get('/:address/proposals/:id', async (c) => {
   const address = c.req.param('address').toLowerCase() as Hex
-  const id = c.req.param('id')
-  const proposalIdBig = BigInt(id)
+  const proposalIdBig = parseId(c.req.param('id'))
+  if (proposalIdBig === null) return c.json({ error: 'invalid proposal id' }, 400)
 
   const proposalRows = (await db
     .select()
@@ -357,29 +372,49 @@ app.get('/:address/proposals/:id', async (c) => {
 
 /**
  * GET /governors/:address/proposals/:id/votes?support=&limit=&cursor=
+ *
+ * Newest first by (blockNumber, voter). `cursor` is the previous page's
+ * `nextCursor` (`<block>:<voter>`); one vote per voter makes the pair unique.
  */
 app.get('/:address/proposals/:id/votes', async (c) => {
   const address = c.req.param('address').toLowerCase() as Hex
-  const id = c.req.param('id')
-  const proposalIdBig = BigInt(id)
+  const proposalIdBig = parseId(c.req.param('id'))
+  if (proposalIdBig === null) return c.json({ error: 'invalid proposal id' }, 400)
+  // GovernorCountingSimple: 0 against, 1 for, 2 abstain.
   const supportFilter = c.req.query('support')
-  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 100), 1), 500)
-  const cursor = c.req.query('cursor')
+  if (supportFilter !== undefined && !/^[012]$/.test(supportFilter)) {
+    return c.json({ error: 'invalid support' }, 400)
+  }
+  const limit = parseLimit(c, 100, 500)
+  const rawCursor = c.req.query('cursor')
+  const cursor = rawCursor ? parseBlockCursor(rawCursor) : null
+  if (rawCursor && !(cursor && /^0x[0-9a-f]{40}$/.test(cursor.key))) {
+    return c.json({ error: 'invalid cursor' }, 400)
+  }
 
   const conditions = [eq(schema.vote.governor, address), eq(schema.vote.proposalId, proposalIdBig)]
   if (supportFilter !== undefined) conditions.push(eq(schema.vote.support, Number(supportFilter)))
-  if (cursor) conditions.push(lte(schema.vote.blockNumber, BigInt(cursor)))
+  if (cursor) {
+    const voter = cursor.key as Hex
+    conditions.push(
+      or(
+        lt(schema.vote.blockNumber, cursor.block),
+        and(eq(schema.vote.blockNumber, cursor.block), lt(schema.vote.voter, voter)),
+      )!,
+    )
+  }
 
   const rows = await db
     .select()
     .from(schema.vote)
     .where(and(...conditions))
-    .orderBy(desc(schema.vote.blockNumber))
+    .orderBy(desc(schema.vote.blockNumber), desc(schema.vote.voter))
     .limit(limit + 1)
 
   const hasNext = rows.length > limit
   const slice = hasNext ? rows.slice(0, limit) : rows
-  const nextCursor = hasNext ? slice[slice.length - 1].blockNumber.toString() : null
+  const last = slice[slice.length - 1]
+  const nextCursor = hasNext ? encodeBlockCursor(last.blockNumber, last.voter) : null
 
   return c.json({
     rows: slice.map((v) => ({
@@ -395,9 +430,5 @@ app.get('/:address/proposals/:id/votes', async (c) => {
     nextCursor,
   })
 })
-
-// `gte` is imported above for future range filters; reference it here so the
-// typecheck doesn't complain about unused imports while the surface evolves.
-void gte
 
 export default app
