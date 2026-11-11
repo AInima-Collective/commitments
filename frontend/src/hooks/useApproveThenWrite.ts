@@ -92,6 +92,8 @@ export function useApproveThenWrite({ token, spender, owner, onApproved, onSucce
     write: writeTx.write,
     /** The latest write call's parameters, for flows with more than one write. */
     writeVariables: writeTx.variables,
+    /** True once this flow's approve has mined, until `reset`: the flow took two steps. */
+    approvedInFlow: approveTx.step === 'confirmed',
     /** True while the active transaction waits on the wallet rather than the chain. */
     awaitingWallet: (writeTx.step === 'idle' ? approveTx : writeTx).step === 'signing',
     /** The follow-up write's receipt, once mined. */

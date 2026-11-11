@@ -21,6 +21,8 @@ export interface ManagerLedgerFlow {
   walletBalance: bigint | undefined
   /** Current allowance the user has granted the manager to pull `token`. */
   currentAllowance: bigint | undefined
+  /** This flow's approve has mined: render it as two steps until it resets. */
+  approvedInFlow: boolean
   /**
    * Whether `token` implements ERC-2612 permit — i.e. `depositWithPermit` can
    * collapse approve + deposit into a single tx. `undefined` while probing.
@@ -178,6 +180,7 @@ export function useManagerLedgerFlow({
     step,
     walletBalance: flow.balance,
     currentAllowance: flow.allowance,
+    approvedInFlow: flow.approvedInFlow,
     supportsPermit,
     approve,
     deposit,

@@ -8,6 +8,8 @@ export interface DepositFlow {
   step: DepositStep
   tokenBalance: bigint | undefined
   currentAllowance: bigint | undefined
+  /** This flow's approve has mined: render it as two steps until it resets. */
+  approvedInFlow: boolean
   approve: (amount: bigint) => void
   deposit: (amount: bigint) => void
   reset: () => void
@@ -49,6 +51,7 @@ export function useDepositFlow({
     step: flow.step === 'writing' ? 'depositing' : flow.step,
     tokenBalance: flow.balance,
     currentAllowance: flow.allowance,
+    approvedInFlow: flow.approvedInFlow,
     approve: flow.approve,
     deposit,
     reset: flow.reset,

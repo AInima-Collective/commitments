@@ -320,7 +320,7 @@ export function BackingFlow({
     parsed !== undefined &&
     backFlow.currentAllowance !== undefined &&
     backFlow.currentAllowance >= parsed
-  const rawSteps = deriveDepositSteps(backFlow.step, rawHasAllowance || backUsesPermit)
+  const rawSteps = deriveDepositSteps(backFlow.step, (rawHasAllowance && !backFlow.approvedInFlow) || backUsesPermit)
 
   return (
     <Card>

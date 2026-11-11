@@ -136,7 +136,8 @@ export function DepositWizard({
     }
   }
 
-  const { step1, step2 } = deriveDepositSteps(flow.step, hasAllowance)
+  // One step only when the allowance covered the amount before this flow approved anything.
+  const { step1, step2 } = deriveDepositSteps(flow.step, hasAllowance && !flow.approvedInFlow)
 
   return (
     <div className="ds-card ds-stack ds-stack-3">
