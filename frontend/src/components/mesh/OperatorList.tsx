@@ -25,6 +25,8 @@ interface OperatorListProps {
   operators: OperatorWithStatus[]
   isLoading: boolean
   serviceOperators?: ServiceOperatorInfo[]
+  /** Decimals of the token operators stake (the registry's required token). */
+  stakeDecimals?: number
 }
 
 /** Number of body cells in each operator-table row — kept in one place so the
@@ -56,7 +58,7 @@ function SkeletonOperatorRow() {
   )
 }
 
-export function OperatorList({ operators, isLoading, serviceOperators }: OperatorListProps) {
+export function OperatorList({ operators, isLoading, serviceOperators, stakeDecimals }: OperatorListProps) {
   const myDelegations = useMyDelegations()
   const [expandedAddress, setExpandedAddress] = useState<Address | null>(null)
   const [filterState, setFilterState] = useState<OperatorFilterState>({
@@ -198,6 +200,7 @@ export function OperatorList({ operators, isLoading, serviceOperators }: Operato
                       )
                     }
                     columnCount={COLUMN_COUNT}
+                    decimals={stakeDecimals}
                     hasDelegated={myDelegations.delegatedOperators.has(
                       op.address.toLowerCase(),
                     )}

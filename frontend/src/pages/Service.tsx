@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useChainId } from "wagmi";
-import { type Address } from "viem";
+import { type Address, zeroAddress } from "viem";
 import { getContractAddresses, getServiceDescriptor } from "../config/contracts";
 import { useOperators } from "../hooks/useOperators";
 import { useOperatorsIndexed } from "../hooks/useOperatorsIndexed";
+import { useRegistryPolicy } from "../hooks/useRegistryPolicy";
+import { useTokenMeta } from "../hooks/useTokenMeta";
 import { useServiceMetadata } from "../hooks/useIndexerMetadata";
 import { useServiceStakeUsd } from "../hooks/useServiceStakeSummary";
 import { useServiceOperators } from "../hooks/useServiceOperators";
@@ -36,6 +38,11 @@ export default function Service() {
     : { operators: chain.operators, isLoading: indexed.isLoading || chain.isLoading };
 
   const operatorAddresses = operators.map((op) => op.address as Address);
+  // Stakes are in the registry's required token; with none required, tokens can mix.
+  const policy = useRegistryPolicy(registryAddress);
+  const stakeToken =
+    policy.requiredToken && policy.requiredToken !== zeroAddress ? policy.requiredToken : undefined;
+  const stakeMeta = useTokenMeta(stakeToken);
   const { serviceOperators, isLoading: isLoadingService } = useServiceOperators({
     stakeRegistryAddress,
     operatorAddresses,
@@ -163,8 +170,9 @@ export default function Service() {
           </header>
           <OperatorList
             operators={operators}
-            isLoading={isLoading}
+            isLoading={isLoading || policy.isLoading || (!!stakeToken && stakeMeta.isLoading)}
             serviceOperators={hasService ? serviceOperators : undefined}
+            stakeDecimals={stakeToken ? stakeMeta.decimals : undefined}
           />
         </Tabs.Panel>
 
